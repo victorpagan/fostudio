@@ -1,0 +1,12 @@
+# File: content/site/faq.yml
+items:
+  - q: "Can I cancel anytime?"
+    a: "Memberships are month-to-month with a short minimum commitment. If you cancel, your spot may be offered to the waitlist."
+  - q: "How do credits work?"
+    a: "Credits are used to book studio time. Peak hours use more credits so availability stays fair."
+  - q: "Can I book if I’m not a member?"
+    a: "Yes. Non-members can book limited availability (shorter booking window) at the hourly rate."
+  - q: "How do equipment holds work?"
+    a: "Holds reserve the studio from the end of your booking until 10am the next day. Holds are limited and may require credits or a fee."
+  - q: "What’s included for members?"
+    a: "Studio access plus included equipment use (details on the equipment page)."

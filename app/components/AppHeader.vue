@@ -1,87 +1,73 @@
 <script setup lang="ts">
 const route = useRoute()
 
-const items = computed(() => [{
-  label: 'Docs',
-  to: '/docs',
-  active: route.path.startsWith('/docs')
-}, {
-  label: 'Pricing',
-  to: '/pricing'
-}, {
-  label: 'Blog',
-  to: '/blog'
-}, {
-  label: 'Changelog',
-  to: '/changelog'
-}])
+const links = [
+  { label: 'Calendar', to: '/calendar' },
+  { label: 'Memberships', to: '/memberships' },
+  { label: 'Equipment', to: '/equipment' },
+  { label: 'FAQ', to: '/faq' },
+  { label: 'Contact', to: '/contact' }
+]
+
+// Later you can wire real auth state (Supabase, etc.)
+const isAuthed = false
+const rightLinks = computed(() => {
+  if (isAuthed) return [{ label: 'Dashboard', to: '/dashboard' }]
+  return [{ label: 'Login', to: '/login' }]
+})
 </script>
 
 <template>
-  <UHeader>
-    <template #left>
-      <NuxtLink to="/">
-        <AppLogo class="w-auto h-6 shrink-0" />
+  <header class="sticky top-0 z-50 border-b border-gray-200/60 bg-white/75 backdrop-blur dark:border-gray-800/60 dark:bg-gray-950/75">
+    <UContainer class="flex h-16 items-center justify-between">
+      <NuxtLink to="/" class="flex items-center gap-2">
+        <div class="h-9 w-9 rounded-xl bg-gray-900 dark:bg-gray-100" />
+        <span class="font-semibold tracking-tight">FO Studio</span>
       </NuxtLink>
-      <TemplateMenu />
-    </template>
 
-    <UNavigationMenu
-      :items="items"
-      variant="link"
-    />
+      <!-- Desktop nav -->
+      <nav class="hidden items-center gap-6 md:flex">
+        <NuxtLink
+          v-for="l in links"
+          :key="l.to"
+          :to="l.to"
+          class="text-sm transition-colors"
+          :class="route.path === l.to
+            ? 'text-gray-900 dark:text-white'
+            : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'"
+        >
+          {{ l.label }}
+        </NuxtLink>
+      </nav>
 
-    <template #right>
-      <UColorModeButton />
+      <div class="flex items-center gap-2">
+        <UButton color="gray" variant="soft" to="/calendar" class="hidden sm:inline-flex">
+          View Availability
+        </UButton>
+        <UButton to="/memberships">
+          Join
+        </UButton>
 
-      <UButton
-        icon="i-lucide-log-in"
-        color="neutral"
-        variant="ghost"
-        to="/login"
-        class="lg:hidden"
-      />
+        <NuxtLink
+          v-for="l in rightLinks"
+          :key="l.to"
+          :to="l.to"
+          class="ml-2 hidden text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white md:inline"
+        >
+          {{ l.label }}
+        </NuxtLink>
 
-      <UButton
-        label="Sign in"
-        color="neutral"
-        variant="outline"
-        to="/login"
-        class="hidden lg:inline-flex"
-      />
-
-      <UButton
-        label="Sign up"
-        color="neutral"
-        trailing-icon="i-lucide-arrow-right"
-        class="hidden lg:inline-flex"
-        to="/signup"
-      />
-    </template>
-
-    <template #body>
-      <UNavigationMenu
-        :items="items"
-        orientation="vertical"
-        class="-mx-2.5"
-      />
-
-      <USeparator class="my-6" />
-
-      <UButton
-        label="Sign in"
-        color="neutral"
-        variant="subtle"
-        to="/login"
-        block
-        class="mb-3"
-      />
-      <UButton
-        label="Sign up"
-        color="neutral"
-        to="/signup"
-        block
-      />
-    </template>
-  </UHeader>
+        <!-- Mobile menu -->
+        <UDropdown
+          class="md:hidden"
+          :items="[
+            links.map(l => ({ label: l.label, to: l.to })),
+            [{ label: isAuthed ? 'Dashboard' : 'Login', to: isAuthed ? '/dashboard' : '/login' }]
+          ]"
+        >
+          <UButton icon="i-heroicons-bars-3" color="gray" variant="ghost" aria-label="Menu" />
+        </UDropdown>
+      </div>
+    </UContainer>
+  </header>
 </template>

@@ -6,7 +6,8 @@ export default defineNuxtConfig({
     '@nuxt/ui',
     '@nuxt/content',
     '@vueuse/nuxt',
-    'nuxt-og-image'
+    'nuxt-og-image',
+    '@nuxtjs/supabase'
   ],
 
   devtools: {
@@ -15,9 +16,17 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
-  routeRules: {
-    '/docs': { redirect: '/docs/getting-started', prerender: false }
+  supabase: {
+    redirectOptions: {
+      login: '/login',
+      callback: '/onboarding',
+      exclude: ['/']
+    }
   },
+
+  components: [
+    { path: '~/components', pathPrefix: false }
+  ],
 
   compatibilityDate: '2024-07-11',
 

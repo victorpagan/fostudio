@@ -1,0 +1,135 @@
+import { z } from 'zod'
+import { DateTime } from 'luxon'
+
+const schema = z.object({
+  start_time: z.string(),
+  end_time: z.string(),
+  notes: z.string().optional().nullable(),
+  request_hold: z.boolean().optional().default(false)
+})
+
+const TZ = 'America/Los_Angeles'
+
+// Peak: Mon–Thu, 11:00–16:00 local
+function isPeak(dt: DateTime) {
+  const weekday = dt.weekday // 1=Mon ... 7=Sun
+  const hour = dt.hour + dt.minute / 60
+  const inWeekday = weekday >= 1 && weekday <= 4
+  return inWeekday && hour >= 11 && hour < 16
+}
+
+// Credits: baseline 1 credit/hour off-peak; peak multiplier applies per 15-min bucket
+function computeCredits(startIso: string, endIso: string, peakMultiplier: number) {
+  const start = DateTime.fromISO(startIso, { zone: TZ })
+  const end = DateTime.fromISO(endIso, { zone: TZ })
+  if (!start.isValid || !end.isValid) throw new Error('Invalid datetime')
+  if (!(start < end)) throw new Error('Invalid time range')
+
+  const stepMinutes = 15
+  let cursor = start
+  let credits = 0
+
+  while (cursor < end) {
+    const next = cursor.plus({ minutes: stepMinutes })
+    const bucketEnd = next < end ? next : end
+    const minutes = bucketEnd.diff(cursor, 'minutes').minutes
+
+    const rate = isPeak(cursor) ? peakMultiplier : 1.0
+    credits += (minutes / 60) * rate
+
+    cursor = bucketEnd
+  }
+
+  // Round to 2 decimals for display/debug; burn uses ceil() in SQL
+  return Math.round(credits * 100) / 100
+}
+
+export default defineEventHandler(async (event) => {
+  const user = await serverSupabaseUser(event)
+  if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
+
+  const supabase = await serverSupabaseClient(event)
+  const body = schema.parse(await readBody(event))
+
+  // Membership active + tier id
+  const { data: membership, error: memErr } = await supabase
+    .from('memberships')
+    .select('status,tier')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
+  if (!membership || (membership.status || '').toLowerCase() !== 'active') {
+    throw createError({ statusCode: 403, statusMessage: 'Membership required' })
+  }
+
+  // Tier rules (DB catalog)
+  const { data: tierRow, error: tierErr } = await supabase
+    .from('membership_tiers')
+    .select('booking_window_days, peak_multiplier')
+    .eq('id', membership.tier)
+    .maybeSingle()
+
+  if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
+  if (!tierRow) throw createError({ statusCode: 400, statusMessage: 'Tier configuration missing' })
+
+  const start = DateTime.fromISO(body.start_time, { zone: TZ })
+  const end = DateTime.fromISO(body.end_time, { zone: TZ })
+  if (!start.isValid || !end.isValid) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
+  if (!(start < end)) throw createError({ statusCode: 400, statusMessage: 'Invalid time range' })
+
+  // Booking window enforcement
+  const now = DateTime.now().setZone(TZ)
+  const maxStart = now.plus({ days: Number(tierRow.booking_window_days ?? 30) })
+  if (start > maxStart) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: `Your plan allows booking up to ${tierRow.booking_window_days} days ahead.`
+    })
+  }
+
+  // Compute credits
+  const creditsNeeded = computeCredits(body.start_time, body.end_time, Number(tierRow.peak_multiplier))
+
+  // Customer id for linkage
+  const { data: cust, error: custErr } = await supabase
+    .from('customers')
+    .select('id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (custErr) throw createError({ statusCode: 500, statusMessage: custErr.message })
+  if (!cust?.id) throw createError({ statusCode: 400, statusMessage: 'Customer profile missing' })
+
+  // Call atomic RPC (booking + burn + hold)
+  const { data: result, error: rpcErr } = await supabase.rpc('create_confirmed_booking_with_burn', {
+    p_user_id: user.id,
+    p_customer_id: cust.id,
+    p_start_time: start.toUTC().toISO(), // store in UTC
+    p_end_time: end.toUTC().toISO(),
+    p_notes: body.notes ?? null,
+    p_request_hold: body.request_hold ?? false,
+    p_credits_needed: creditsNeeded
+  })
+
+  if (rpcErr) {
+    // Constraint overlap or insufficient credits or hold overlap errors surface here
+    const msg = rpcErr.message || 'Booking failed'
+    if (msg.toLowerCase().includes('insufficient credits')) {
+      throw createError({ statusCode: 402, statusMessage: 'Insufficient credits' })
+    }
+    if ((rpcErr as any).code === '23P01') {
+      throw createError({ statusCode: 409, statusMessage: 'Time slot not available' })
+    }
+    throw createError({ statusCode: 409, statusMessage: msg })
+  }
+
+  return {
+    ok: true,
+    creditsNeeded,
+    burned: result?.[0]?.credits_burned ?? null,
+    newBalance: result?.[0]?.new_balance ?? null,
+    booking_id: result?.[0]?.booking_id ?? null,
+    hold_id: result?.[0]?.hold_id ?? null
+  }
+})

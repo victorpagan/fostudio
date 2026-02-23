@@ -1,124 +1,30 @@
 <script setup lang="ts">
-const columns = [{
-  label: 'Resources',
-  children: [{
-    label: 'Help center'
-  }, {
-    label: 'Docs'
-  }, {
-    label: 'Roadmap'
-  }, {
-    label: 'Changelog'
-  }]
-}, {
-  label: 'Features',
-  children: [{
-    label: 'Affiliates'
-  }, {
-    label: 'Portal'
-  }, {
-    label: 'Jobs'
-  }, {
-    label: 'Sponsors'
-  }]
-}, {
-  label: 'Company',
-  children: [{
-    label: 'About'
-  }, {
-    label: 'Pricing'
-  }, {
-    label: 'Careers'
-  }, {
-    label: 'Blog'
-  }]
-}]
+const year = new Date().getFullYear()
 
-const toast = useToast()
-
-const email = ref('')
-const loading = ref(false)
-
-function onSubmit() {
-  loading.value = true
-
-  toast.add({
-    title: 'Subscribed!',
-    description: 'You\'ve been subscribed to our newsletter.'
-  })
-}
+const footerLinks = [
+  { label: 'Policies', to: '/policies' },
+  { label: 'Contact', to: '/contact' },
+  { label: 'Member login', to: '/login' }
+]
 </script>
 
 <template>
-  <USeparator
-    icon="i-simple-icons-nuxtdotjs"
-    class="h-px"
-  />
+  <UFooter class="border-t border-gray-200/60 py-10 dark:border-gray-800/60">
+    <UContainer class="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-sm text-gray-600 dark:text-gray-300">
+        © {{ year }} FO Studio Rentals
+      </div>
 
-  <UFooter :ui="{ top: 'border-b border-default' }">
-    <template #top>
-      <UContainer>
-        <UFooterColumns :columns="columns">
-          <template #right>
-            <form @submit.prevent="onSubmit">
-              <UFormField
-                name="email"
-                label="Subscribe to our newsletter"
-                size="lg"
-              >
-                <UInput
-                  v-model="email"
-                  type="email"
-                  class="w-full"
-                  placeholder="Enter your email"
-                >
-                  <template #trailing>
-                    <UButton
-                      type="submit"
-                      size="xs"
-                      color="neutral"
-                      label="Subscribe"
-                    />
-                  </template>
-                </UInput>
-              </UFormField>
-            </form>
-          </template>
-        </UFooterColumns>
-      </UContainer>
-    </template>
-
-    <template #left>
-      <p class="text-muted text-sm">
-        Built with Nuxt UI • © {{ new Date().getFullYear() }}
-      </p>
-    </template>
-
-    <template #right>
-      <UButton
-        to="https://go.nuxt.com/discord"
-        target="_blank"
-        icon="i-simple-icons-discord"
-        aria-label="Nuxt on Discord"
-        color="neutral"
-        variant="ghost"
-      />
-      <UButton
-        to="https://go.nuxt.com/x"
-        target="_blank"
-        icon="i-simple-icons-x"
-        aria-label="Nuxt on X"
-        color="neutral"
-        variant="ghost"
-      />
-      <UButton
-        to="https://github.com/nuxt-ui-templates/saas"
-        target="_blank"
-        icon="i-simple-icons-github"
-        aria-label="Nuxt UI on GitHub"
-        color="neutral"
-        variant="ghost"
-      />
-    </template>
+      <div class="flex flex-wrap gap-4 text-sm">
+        <NuxtLink
+          v-for="l in footerLinks"
+          :key="l.to"
+          :to="l.to"
+          class="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+        >
+          {{ l.label }}
+        </NuxtLink>
+      </div>
+    </UContainer>
   </UFooter>
 </template>

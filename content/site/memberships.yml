@@ -1,0 +1,37 @@
+# File: content/site/memberships.yml
+tiers:
+  - id: "creator"
+    name: "Creator"
+    price: 350
+    credits: 12
+    bookingWindowDays: 14
+    tagline: "Practice & build your portfolio"
+    bestFor:
+      - "Budding photographers"
+      - "Mostly off-peak & weekends"
+      - "Low-friction practice time"
+    cap: 10
+
+  - id: "pro"
+    name: "Pro"
+    price: 650
+    credits: 26
+    bookingWindowDays: 21
+    tagline: "Reliable access for working shooters"
+    bestFor:
+      - "Freelancers"
+      - "Regular weekday shoots"
+      - "Plan ahead with priority"
+    cap: 5
+
+  - id: "studio_plus"
+    name: "Studio+"
+    price: 950
+    credits: 42
+    bookingWindowDays: 30
+    tagline: "Heavy use & priority access"
+    bestFor:
+      - "High-frequency pros"
+      - "Small teams"
+      - "Priority booking window"
+    cap: 3

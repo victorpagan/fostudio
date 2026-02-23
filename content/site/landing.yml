@@ -1,0 +1,77 @@
+# File: content/site/landing.yml
+hero:
+  headline: "A studio you can rely on — when you need it."
+  subheadline: "Membership-based photo studio rentals with included equipment, priority booking, and credit-based access."
+  primaryCta:
+    label: "See Availability"
+    to: "/calendar"
+  secondaryCta:
+    label: "Explore Memberships"
+    to: "/memberships"
+  chips:
+    - "Members-first availability"
+    - "Equipment included"
+    - "Priority booking windows"
+  media:
+    type: "grid"
+    images:
+      - src: "/images/studio-hero-1.jpg"
+        alt: "Studio overview"
+      - src: "/images/studio-hero-2.jpg"
+        alt: "Backdrop area"
+      - src: "/images/studio-hero-3.jpg"
+        alt: "Lighting setup"
+
+howItWorks:
+  title: "How it works"
+  steps:
+    - title: "Pick a membership"
+      body: "Choose a tier based on how often you shoot."
+    - title: "Get monthly credits"
+      body: "Credits refresh monthly and can roll for a limited time."
+    - title: "Book with priority"
+      body: "Higher tiers book further ahead."
+    - title: "Shoot with included gear"
+      body: "Members can use studio equipment at no extra cost."
+    - title: "Add an overnight hold"
+      body: "Leave your setup overnight (limited availability)."
+
+membershipsPreview:
+  title: "Memberships"
+  subtitle: "Spots are limited to protect availability."
+  cta:
+    label: "Compare plans"
+    to: "/memberships"
+
+valueProps:
+  title: "What you get"
+  bullets:
+    - "Professional lighting and modifiers"
+    - "Backdrops and grip"
+    - "Clean, controlled environment"
+    - "Equipment included for members"
+    - "Optional overnight equipment holds"
+  cta:
+    label: "See equipment"
+    to: "/equipment"
+
+fairness:
+  title: "Peak time stays fair"
+  body: "Peak hours use more credits. This protects availability for working photographers and keeps scheduling predictable."
+  bullets:
+    - "Higher tiers book further ahead"
+    - "Top-offs available for busy months"
+    - "Overnight holds are limited and optional"
+
+faq:
+  title: "FAQ"
+
+finalCta:
+  title: "Ready to shoot?"
+  body: "Check availability or choose a membership tier. Spots are limited to protect access."
+  primaryCta:
+    label: "See Availability"
+    to: "/calendar"
+  secondaryCta:
+    label: "Explore Memberships"
+    to: "/memberships"
