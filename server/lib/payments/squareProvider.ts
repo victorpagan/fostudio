@@ -1,41 +1,29 @@
 import { randomUUID } from 'crypto'
-import type { PaymentsProvider, CreateCheckoutSessionInput, CreateCheckoutSessionOutput, TierId, Cadence } from './providers'
-import {useSquareClient} from "~~/server/utils/square";
-import type {H3Event} from "h3";
-
-function getEnvOrThrow(key: string) {
-  const v = process.env[key]
-  if (!v) throw new Error(`Missing env var: ${key}`)
-  return v
-}
-
-function planVariationEnvKey(tier: TierId, cadence: Cadence) {
-  const t = tier.toUpperCase() // CREATOR / PRO / STUDIO_PLUS
-  const c = cadence.toUpperCase() // MONTHLY / QUARTERLY / ANNUAL
-  return `SQUARE_PLAN_VARIATION_${t}_${c}`
-}
+import { getRequestURL } from 'h3'
+import type { PaymentsProvider, CreateCheckoutSessionInput, CreateCheckoutSessionOutput } from './providers'
+import { useSquareClient } from '~~/server/utils/square'
+import { getServerConfig } from '~~/server/utils/config/secret'
+import type { H3Event } from 'h3'
 
 export const squareProvider: PaymentsProvider = {
   name: 'square',
 
   async createCheckoutSession(input: CreateCheckoutSessionInput, event: H3Event): Promise<CreateCheckoutSessionOutput> {
-    const locationId = getEnvOrThrow('SQUARE_LOCATION_ID')
-    const baseUrl = getEnvOrThrow('APP_BASE_URL')
+    const [locationId, planVariationId] = await Promise.all([
+      getServerConfig(event, 'SQUARE_LOCATION_ID'),
+      getServerConfig(event, `SQUARE_PLAN_VARIATION_${input.tier.toUpperCase()}_${input.cadence.toUpperCase()}`)
+    ])
 
     const client = await useSquareClient(event)
-
-    const envKey = planVariationEnvKey(input.tier, input.cadence)
-    const planVariationId = getEnvOrThrow(envKey)
-
     const idempotencyKey = randomUUID()
-    const redirectUrl = `${baseUrl}/checkout/success`
+    const { origin } = getRequestURL(event)
+    const redirectUrl = `${origin}/checkout/success`
 
     const body: any = {
       idempotencyKey,
       quickPay: {
         name: `FO Studio Membership (${input.tier} • ${input.cadence})`,
         locationId,
-        // IMPORTANT: Square expects the SUBSCRIPTION_PLAN_VARIATION id here
         subscriptionPlanId: planVariationId
       },
       checkoutOptions: { redirectUrl },

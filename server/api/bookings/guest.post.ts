@@ -22,7 +22,7 @@ import { DateTime } from 'luxon'
 import { randomUUID } from 'node:crypto'
 import { serverSupabaseClient } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
-import { getServerConfigMap } from '~~/server/utils/config/secret'
+import { getServerConfig, getServerConfigMap } from '~~/server/utils/config/secret'
 
 const TZ = 'America/Los_Angeles'
 
@@ -137,8 +137,8 @@ export default defineEventHandler(async (event) => {
 
   // Create or find Square customer for this guest
   const square = await useSquareClient(event)
-  const locationId = process.env.SQUARE_LOCATION_ID || ''
-  const baseUrl = process.env.APP_BASE_URL || ''
+  const locationId = await getServerConfig(event, 'SQUARE_LOCATION_ID')
+  const { origin } = getRequestURL(event)
 
   // Insert pending booking with guest info in dedicated columns
   const { data: booking, error: bookingErr } = await supabase
@@ -167,7 +167,7 @@ export default defineEventHandler(async (event) => {
   const startLabel = start.toFormat('EEE MMM d h:mm a')
 
   // Create one-time Square payment link
-  const createRes = await (square as any).checkout.createPaymentLink({
+  const createRes = await (square as any).checkout.paymentLinks.create({
     idempotencyKey,
     quickPay: {
       name: `Studio Booking — ${startLabel} (${durationLabel})`,
@@ -178,7 +178,7 @@ export default defineEventHandler(async (event) => {
       locationId
     },
     checkoutOptions: {
-      redirectUrl: `${baseUrl}/checkout/booking-success?booking_id=${booking.id}`
+      redirectUrl: `${origin}/checkout/booking-success?booking_id=${booking.id}`
     },
     order: {
       locationId,

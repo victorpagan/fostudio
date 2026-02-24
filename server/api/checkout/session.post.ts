@@ -95,10 +95,9 @@ export default defineEventHandler(async (event) => {
   // 4) Create Square payment link (subscription checkout) using your Square util
   const square = await useSquareClient(event)
 
-  // For redirect URL, you can use env or system_config:
-  // const baseUrl = await getServerConfig(event, 'APP_BASE_URL')
-  const baseUrl = process.env.APP_BASE_URL || ""
-  const redirectUrl = `${baseUrl}/checkout/success`
+  const locationId = await getServerConfig(event, 'SQUARE_LOCATION_ID')
+  const { origin } = getRequestURL(event)
+  const redirectUrl = `${origin}/checkout/success`
 
   const idempotencyKey = randomUUID()
 
@@ -106,14 +105,14 @@ export default defineEventHandler(async (event) => {
     idempotencyKey,
     quickPay: {
       name: `${tier.display_name} (${cadence})`,
-      locationId: process.env.SQUARE_LOCATION_ID || 'LMKTTKQG7R9JS',
+      locationId,
       subscriptionPlanId: planVariationId
     },
     checkoutOptions: {
       redirectUrl
     },
     order: {
-      locationId: process.env.SQUARE_LOCATION_ID || 'LMKTTKQG7R9JS',
+      locationId,
       referenceId: membershipId,
       metadata: {
         user_id: user.id,
