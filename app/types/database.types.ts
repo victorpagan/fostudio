@@ -12,8 +12,156 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "12.2.3 (519615d)"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
+      booking_holds: {
+        Row: {
+          booking_id: string
+          cash_cost_cents: number | null
+          created_at: string
+          credits_cost: number | null
+          hold_end: string
+          hold_range: unknown
+          hold_start: string
+          hold_type: string
+          id: string
+        }
+        Insert: {
+          booking_id: string
+          cash_cost_cents?: number | null
+          created_at?: string
+          credits_cost?: number | null
+          hold_end: string
+          hold_range?: unknown
+          hold_start: string
+          hold_type?: string
+          id?: string
+        }
+        Update: {
+          booking_id?: string
+          cash_cost_cents?: number | null
+          created_at?: string
+          credits_cost?: number | null
+          hold_end?: string
+          hold_range?: unknown
+          hold_start?: string
+          hold_type?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_holds_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bookings: {
+        Row: {
+          created_at: string
+          credits_burned: number | null
+          credits_estimated: number | null
+          credits_final: number | null
+          customer_id: string | null
+          end_time: string
+          guest_email: string | null
+          guest_name: string | null
+          id: string
+          notes: string | null
+          square_order_id: string | null
+          start_time: string
+          status: string
+          time_range: unknown
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          credits_burned?: number | null
+          credits_estimated?: number | null
+          credits_final?: number | null
+          customer_id?: string | null
+          end_time: string
+          guest_email?: string | null
+          guest_name?: string | null
+          id?: string
+          notes?: string | null
+          square_order_id?: string | null
+          start_time: string
+          status?: string
+          time_range?: unknown
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          credits_burned?: number | null
+          credits_estimated?: number | null
+          credits_final?: number | null
+          customer_id?: string | null
+          end_time?: string
+          guest_email?: string | null
+          guest_name?: string | null
+          id?: string
+          notes?: string | null
+          square_order_id?: string | null
+          start_time?: string
+          status?: string
+          time_range?: unknown
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookings_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "links_with_customers"
+            referencedColumns: ["db_customer_id"]
+          },
+          {
+            foreignKeyName: "bookings_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "orders_with_customers"
+            referencedColumns: ["db_customer_id"]
+          },
+        ]
+      }
       cart_items: {
         Row: {
           cart_id: string | null
@@ -134,31 +282,87 @@ export type Database = {
         }
         Relationships: []
       }
+      credits_ledger: {
+        Row: {
+          created_at: string
+          delta: number
+          external_ref: string | null
+          id: string
+          membership_id: string | null
+          metadata: Json | null
+          reason: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          delta: number
+          external_ref?: string | null
+          id?: string
+          membership_id?: string | null
+          metadata?: Json | null
+          reason: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          delta?: number
+          external_ref?: string | null
+          id?: string
+          membership_id?: string | null
+          metadata?: Json | null
+          reason?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credits_ledger_membership_id_fkey"
+            columns: ["membership_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customers: {
         Row: {
           address: Json | null
           created_at: string
-          email: string
+          email: string | null
+          first_name: string | null
           id: string
+          lab_notes: string | null
+          last_name: string | null
           phone: string | null
+          square_customer_id: string | null
+          square_customer_json: Json | null
           updated_at: string
           user_id: string | null
         }
         Insert: {
           address?: Json | null
           created_at?: string
-          email: string
-          id: string
+          email?: string | null
+          first_name?: string | null
+          id?: string
+          lab_notes?: string | null
+          last_name?: string | null
           phone?: string | null
+          square_customer_id?: string | null
+          square_customer_json?: Json | null
           updated_at?: string
           user_id?: string | null
         }
         Update: {
           address?: Json | null
           created_at?: string
-          email?: string
+          email?: string | null
+          first_name?: string | null
           id?: string
+          lab_notes?: string | null
+          last_name?: string | null
           phone?: string | null
+          square_customer_id?: string | null
+          square_customer_json?: Json | null
           updated_at?: string
           user_id?: string | null
         }
@@ -242,6 +446,7 @@ export type Database = {
           expires_date: string | null
           id: string
           link: string | null
+          locationId: string | null
           orderId: string | null
           password: string | null
           ssOrderId: number | null
@@ -251,6 +456,7 @@ export type Database = {
           expires_date?: string | null
           id?: string
           link?: string | null
+          locationId?: string | null
           orderId?: string | null
           password?: string | null
           ssOrderId?: number | null
@@ -260,9 +466,177 @@ export type Database = {
           expires_date?: string | null
           id?: string
           link?: string | null
+          locationId?: string | null
           orderId?: string | null
           password?: string | null
           ssOrderId?: number | null
+        }
+        Relationships: []
+      }
+      membership_plan_variations: {
+        Row: {
+          active: boolean
+          cadence: string
+          credits_per_month: number
+          currency: string
+          discount_label: string | null
+          id: string
+          price_cents: number
+          provider: string
+          provider_plan_id: string | null
+          provider_plan_variation_id: string
+          sort_order: number
+          tier_id: string
+          visible: boolean
+        }
+        Insert: {
+          active?: boolean
+          cadence: string
+          credits_per_month: number
+          currency?: string
+          discount_label?: string | null
+          id?: string
+          price_cents: number
+          provider?: string
+          provider_plan_id?: string | null
+          provider_plan_variation_id: string
+          sort_order?: number
+          tier_id: string
+          visible?: boolean
+        }
+        Update: {
+          active?: boolean
+          cadence?: string
+          credits_per_month?: number
+          currency?: string
+          discount_label?: string | null
+          id?: string
+          price_cents?: number
+          provider?: string
+          provider_plan_id?: string | null
+          provider_plan_variation_id?: string
+          sort_order?: number
+          tier_id?: string
+          visible?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "membership_plan_variations_tier_id_fkey"
+            columns: ["tier_id"]
+            isOneToOne: false
+            referencedRelation: "membership_tiers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      membership_tiers: {
+        Row: {
+          active: boolean
+          booking_window_days: number
+          description: string | null
+          display_name: string
+          holds_included: number
+          id: string
+          max_bank: number
+          max_slots: number | null
+          peak_multiplier: number
+          sort_order: number
+          updated_at: string
+          visible: boolean
+        }
+        Insert: {
+          active?: boolean
+          booking_window_days: number
+          description?: string | null
+          display_name: string
+          holds_included?: number
+          id: string
+          max_bank: number
+          max_slots?: number | null
+          peak_multiplier: number
+          sort_order?: number
+          updated_at?: string
+          visible?: boolean
+        }
+        Update: {
+          active?: boolean
+          booking_window_days?: number
+          description?: string | null
+          display_name?: string
+          holds_included?: number
+          id?: string
+          max_bank?: number
+          max_slots?: number | null
+          peak_multiplier?: number
+          sort_order?: number
+          updated_at?: string
+          visible?: boolean
+        }
+        Relationships: []
+      }
+      memberships: {
+        Row: {
+          billing_customer_id: string | null
+          billing_provider: string | null
+          billing_subscription_id: string | null
+          cadence: string | null
+          checkout_order_template_id: string | null
+          checkout_payment_link_id: string | null
+          checkout_provider: string | null
+          created_at: string
+          current_period_end: string | null
+          current_period_start: string | null
+          id: string
+          last_invoice_id: string | null
+          last_paid_at: string | null
+          square_customer_id: string | null
+          square_plan_variation_id: string | null
+          square_subscription_id: string | null
+          status: Database["public"]["Enums"]["membership_status"]
+          tier: Database["public"]["Enums"]["membership_tier"]
+          user_id: string
+        }
+        Insert: {
+          billing_customer_id?: string | null
+          billing_provider?: string | null
+          billing_subscription_id?: string | null
+          cadence?: string | null
+          checkout_order_template_id?: string | null
+          checkout_payment_link_id?: string | null
+          checkout_provider?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          last_invoice_id?: string | null
+          last_paid_at?: string | null
+          square_customer_id?: string | null
+          square_plan_variation_id?: string | null
+          square_subscription_id?: string | null
+          status?: Database["public"]["Enums"]["membership_status"]
+          tier: Database["public"]["Enums"]["membership_tier"]
+          user_id: string
+        }
+        Update: {
+          billing_customer_id?: string | null
+          billing_provider?: string | null
+          billing_subscription_id?: string | null
+          cadence?: string | null
+          checkout_order_template_id?: string | null
+          checkout_payment_link_id?: string | null
+          checkout_provider?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          last_invoice_id?: string | null
+          last_paid_at?: string | null
+          square_customer_id?: string | null
+          square_plan_variation_id?: string | null
+          square_subscription_id?: string | null
+          status?: Database["public"]["Enums"]["membership_status"]
+          tier?: Database["public"]["Enums"]["membership_tier"]
+          user_id?: string
         }
         Relationships: []
       }
@@ -428,64 +802,56 @@ export type Database = {
         }
         Relationships: []
       }
-      refund_queue: {
+      print_jobs: {
         Row: {
-          id: number
-          order_id: string
-          order_db_id: number
-          amount: number
-          reason: string | null
-          status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
-          initiated_by: string | null
-          idempotency_key: string
-          square_refund_id: string | null
-          square_response: Json | null
-          error_message: string | null
+          attempts: number
+          claimed_at: string | null
+          claimed_by: string | null
           created_at: string
-          processed_at: string | null
+          id: string
+          job_type: string
+          last_error: string | null
+          location_id: string
+          order_id: number
+          order_square_id: string | null
+          printed_at: string | null
+          printer_name: string | null
+          status: string
           updated_at: string
         }
         Insert: {
-          id?: number
-          order_id: string
-          order_db_id: number
-          amount: number
-          reason?: string | null
-          status?: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
-          initiated_by?: string | null
-          idempotency_key?: string
-          square_refund_id?: string | null
-          square_response?: Json | null
-          error_message?: string | null
+          attempts?: number
+          claimed_at?: string | null
+          claimed_by?: string | null
           created_at?: string
-          processed_at?: string | null
+          id?: string
+          job_type?: string
+          last_error?: string | null
+          location_id: string
+          order_id: number
+          order_square_id?: string | null
+          printed_at?: string | null
+          printer_name?: string | null
+          status?: string
           updated_at?: string
         }
         Update: {
-          id?: number
-          order_id?: string
-          order_db_id?: number
-          amount?: number
-          reason?: string | null
-          status?: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
-          initiated_by?: string | null
-          idempotency_key?: string
-          square_refund_id?: string | null
-          square_response?: Json | null
-          error_message?: string | null
+          attempts?: number
+          claimed_at?: string | null
+          claimed_by?: string | null
           created_at?: string
-          processed_at?: string | null
+          id?: string
+          job_type?: string
+          last_error?: string | null
+          location_id?: string
+          order_id?: number
+          order_square_id?: string | null
+          printed_at?: string | null
+          printer_name?: string | null
+          status?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "refund_queue_order_db_id_fkey"
-            columns: ["order_db_id"]
-            isOneToOne: false
-            referencedRelation: "orders2"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       products: {
         Row: {
@@ -514,6 +880,57 @@ export type Database = {
           price?: number
           square_variation_id?: string
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      refund_queue: {
+        Row: {
+          amount: number
+          created_at: string
+          error_message: string | null
+          id: number
+          idempotency_key: string
+          initiated_by: string | null
+          order_db_id: number
+          order_id: string
+          processed_at: string | null
+          reason: string | null
+          square_refund_id: string | null
+          square_response: Json | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          error_message?: string | null
+          id?: number
+          idempotency_key?: string
+          initiated_by?: string | null
+          order_db_id: number
+          order_id: string
+          processed_at?: string | null
+          reason?: string | null
+          square_refund_id?: string | null
+          square_response?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          error_message?: string | null
+          id?: number
+          idempotency_key?: string
+          initiated_by?: string | null
+          order_db_id?: number
+          order_id?: string
+          processed_at?: string | null
+          reason?: string | null
+          square_refund_id?: string | null
+          square_response?: Json | null
+          status?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -588,6 +1005,7 @@ export type Database = {
           orderDownload: string | null
           orderFulfilled: string | null
           orderPickupReminder: string | null
+          orderRefund: string | null
         }
         Insert: {
           created_at?: string
@@ -597,6 +1015,7 @@ export type Database = {
           orderDownload?: string | null
           orderFulfilled?: string | null
           orderPickupReminder?: string | null
+          orderRefund?: string | null
         }
         Update: {
           created_at?: string
@@ -606,6 +1025,7 @@ export type Database = {
           orderDownload?: string | null
           orderFulfilled?: string | null
           orderPickupReminder?: string | null
+          orderRefund?: string | null
         }
         Relationships: []
       }
@@ -701,44 +1121,150 @@ export type Database = {
         }
         Relationships: []
       }
+      credit_balance: {
+        Row: {
+          balance: number | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      links_with_customers: {
+        Row: {
+          customer_email: string | null
+          customer_phone: string | null
+          db_customer_id: string | null
+          email: string | null
+          expires_date: string | null
+          first_name: string | null
+          id: string | null
+          lab_notes: string | null
+          last_name: string | null
+          link: string | null
+          orderId: string | null
+          password: string | null
+          square_customer_id: string | null
+          ssOrderId: number | null
+        }
+        Relationships: []
+      }
+      orders_with_customers: {
+        Row: {
+          completed: string | null
+          confirmationSent: boolean | null
+          created: string | null
+          customer_email: string | null
+          customer_phone: string | null
+          customerId: string | null
+          db_customer_id: string | null
+          email: string | null
+          first_name: string | null
+          id: number | null
+          internalNotes: string | null
+          isServiceOrder: boolean | null
+          lab_notes: string | null
+          last_name: string | null
+          lineItems: Json[] | null
+          locationId: string | null
+          name: string | null
+          orderId: string | null
+          phone: string | null
+          pickedup: boolean | null
+          refunded_amount: number | null
+          shipping_status: string | null
+          square_customer_id: string | null
+          squareOrderJSON: Json | null
+          ssOrderId: number | null
+          state: string | null
+          terminalStatus: string | null
+          total: number | null
+          type: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
       refund_queue_with_details: {
         Row: {
-          id: number
-          order_id: string
-          order_db_id: number
-          amount: number
-          reason: string | null
-          status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
-          initiated_by: string | null
-          idempotency_key: string
-          square_refund_id: string | null
-          square_response: Json | null
+          amount: number | null
+          created_at: string | null
+          customer_email: string | null
+          customerId: string | null
           error_message: string | null
-          created_at: string
-          processed_at: string | null
-          updated_at: string
-          order_total: number | null
+          first_name: string | null
+          id: number | null
+          idempotency_key: string | null
+          initiated_by: string | null
+          last_name: string | null
+          locationId: string | null
+          order_db_id: number | null
+          order_id: string | null
           order_refunded_amount: number | null
           order_state: string | null
-          customerId: string | null
-          locationId: string | null
+          order_total: number | null
+          processed_at: string | null
+          reason: string | null
+          square_refund_id: string | null
+          square_response: Json | null
           squareOrderJSON: Json | null
-          first_name: string | null
-          last_name: string | null
-          customer_email: string | null
+          status: string | null
+          updated_at: string | null
         }
         Relationships: []
       }
     }
     Functions: {
+      claim_print_job: {
+        Args: { p_claimed_by: string; p_job_id: string; p_printer_name: string }
+        Returns: {
+          attempts: number
+          id: string
+          job_type: string
+          location_id: string
+          order_id: number
+          order_square_id: string
+          status: string
+        }[]
+      }
+      create_confirmed_booking_with_burn: {
+        Args: {
+          p_credits_needed: number
+          p_customer_id: string
+          p_end_time: string
+          p_notes: string
+          p_request_hold: boolean
+          p_start_time: string
+          p_user_id: string
+        }
+        Returns: {
+          booking_id: string
+          credits_burned: number
+          hold_id: string
+          new_balance: number
+        }[]
+      }
+      get_membership_by_square_variation: {
+        Args: { variation_id: string }
+        Returns: {
+          booking_window_days: number
+          cadence: string
+          credits_per_month: number
+          currency: string
+          holds_included: number
+          max_bank: number
+          peak_multiplier: number
+          price_cents: number
+          tier_id: string
+        }[]
+      }
       get_secret: { Args: { secret_name: string }; Returns: string }
       increment_refunded_amount: {
-        Args: { p_order_id: string; p_amount: number }
+        Args: { p_amount: number; p_order_id: string }
         Returns: undefined
       }
+      is_admin: { Args: never; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      membership_status: "pending_checkout" | "active" | "past_due" | "canceled"
+      membership_tier: "creator" | "pro" | "studio_plus"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -864,7 +1390,13 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  public: {
+  graphql_public: {
     Enums: {},
+  },
+  public: {
+    Enums: {
+      membership_status: ["pending_checkout", "active", "past_due", "canceled"],
+      membership_tier: ["creator", "pro", "studio_plus"],
+    },
   },
 } as const

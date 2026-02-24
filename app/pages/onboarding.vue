@@ -32,7 +32,7 @@ const { data: membership } = await useAsyncData('myMembership', async () => {
           Next step: we’ll add waiver + policies + billing checkout.
         </div>
         <div class="mt-4 flex gap-2">
-          <UButton to="/dashboard" color="gray" variant="soft">Go to dashboard</UButton>
+          <UButton to="/dashboard" color="neutral" variant="soft">Go to dashboard</UButton>
           <UButton to="/memberships">Back to memberships</UButton>
         </div>
       </UCard>

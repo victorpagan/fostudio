@@ -1,33 +1,49 @@
-// File: server/api/memberships.get.ts
-export default defineEventHandler(async () => {
-  // Initial caps you picked
-  const caps: Record<string, number> = {
-    creator: 10,
-    pro: 5,
-    studio_plus: 3
+import { serverSupabaseClient } from '#supabase/server'
+
+export default defineEventHandler(async (event) => {
+  const supabase = await serverSupabaseClient(event)
+
+  // Pull all active + visible tiers so caps are DB-driven, not hardcoded
+  const { data: tiers, error: tiersErr } = await supabase
+    .from('membership_tiers')
+    .select('id, max_slots')
+    .eq('active', true)
+    .eq('visible', true)
+
+  if (tiersErr) throw createError({ statusCode: 500, statusMessage: tiersErr.message })
+
+  // Count active memberships grouped by tier
+  const { data: counts, error: countsErr } = await supabase
+    .from('memberships')
+    .select('tier')
+    .eq('status', 'active')
+
+  if (countsErr) throw createError({ statusCode: 500, statusMessage: countsErr.message })
+
+  // Build counts map
+  const activeByTier: Record<string, number> = {}
+  for (const row of counts ?? []) {
+    if (row.tier) {
+      activeByTier[row.tier] = (activeByTier[row.tier] ?? 0) + 1
+    }
   }
 
-  // TODO: replace with DB counts:
-  // e.g. SELECT tier, count(*) FROM memberships WHERE status='active' GROUP BY tier
-  const active: Record<string, number> = {
-    creator: 0,
-    pro: 0,
-    studio_plus: 0
-  }
+  const availability: Record<string, {
+    cap: number | null
+    active: number
+    spotsLeft: number | null
+    isFull: boolean
+  }> = {}
 
-  const availability: Record<
-    string,
-    { cap: number; active: number; spotsLeft: number; isFull: boolean }
-  > = {}
-
-  for (const [tier, cap] of Object.entries(caps)) {
-    const used = active[tier] ?? 0
-    const spotsLeft = Math.max(cap - used, 0)
-    availability[tier] = {
+  for (const tier of tiers ?? []) {
+    const cap = tier.max_slots ?? null // null = unlimited
+    const active = activeByTier[tier.id] ?? 0
+    const spotsLeft = cap !== null ? Math.max(cap - active, 0) : null
+    availability[tier.id] = {
       cap,
-      active: used,
+      active,
       spotsLeft,
-      isFull: spotsLeft <= 0
+      isFull: cap !== null ? active >= cap : false
     }
   }
 

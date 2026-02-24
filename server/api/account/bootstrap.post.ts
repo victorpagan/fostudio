@@ -157,7 +157,7 @@ export default defineEventHandler(async (event) => {
       .select('*')
       .single()
 
-    if (insErr) throw createError({ statusCode: 500, statusMessage: `Failed to create customer row: ${insErr.message}` })
+    if (insErr || !inserted) throw createError({ statusCode: 500, statusMessage: `Failed to create customer row: ${insErr?.message ?? 'No data returned'}` })
     customerRow = inserted
   } else {
     // 4) Ensure user_id is linked
@@ -186,9 +186,12 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  // At this point customerRow is guaranteed non-null (we threw above if insert failed)
+  const row = customerRow!
+
   // 6) Square sync: ensure we have square_customer_id + json
-  let squareCustomerId: string | null = customerRow.square_customer_id ?? null
-  let squareCustomerJson: any | null = customerRow.square_customer_json ?? null
+  let squareCustomerId: string | null = row.square_customer_id ?? null
+  let squareCustomerJson: any | null = row.square_customer_json ?? null
 
   // If we have an id but no json, refresh it
   if (squareCustomerId && !squareCustomerJson) {
@@ -198,14 +201,14 @@ export default defineEventHandler(async (event) => {
       await supa
         .from('customers')
         .update({ square_customer_json: sq })
-        .eq('id', customerRow.id)
+        .eq('id', row.id)
     }
-    return { ok: true, customer_id: customerRow.id, square_customer_id: squareCustomerId }
+    return { ok: true, customer_id: row.id, square_customer_id: squareCustomerId }
   }
 
   // If no Square id, try to find existing in Square
   if (!squareCustomerId) {
-    squareCustomerId = await searchSquareCustomerId(event, customerRow.email ?? email, customerRow.phone ?? phone)
+    squareCustomerId = await searchSquareCustomerId(event, row.email ?? email, row.phone ?? phone)
   }
 
   // If found in Square, fetch & store
@@ -217,23 +220,23 @@ export default defineEventHandler(async (event) => {
     }
 
     // Backfill missing local fields from Square
-    if (!customerRow.email && sq?.emailAddress) patch.email = sq.emailAddress
-    if (!customerRow.phone && sq?.phoneNumber) patch.phone = sq.phoneNumber
-    if (!customerRow.first_name && sq?.givenName) patch.first_name = sq.givenName
-    if (!customerRow.last_name && sq?.familyName) patch.last_name = sq.familyName
+    if (!row.email && sq?.emailAddress) patch.email = sq.emailAddress
+    if (!row.phone && sq?.phoneNumber) patch.phone = sq.phoneNumber
+    if (!row.first_name && sq?.givenName) patch.first_name = sq.givenName
+    if (!row.last_name && sq?.familyName) patch.last_name = sq.familyName
 
-    const { error: updErr } = await supa.from('customers').update(patch).eq('id', customerRow.id)
+    const { error: updErr } = await supa.from('customers').update(patch).eq('id', row.id)
     if (updErr) throw createError({ statusCode: 500, statusMessage: `Failed to store Square customer: ${updErr.message}` })
 
-    return { ok: true, customer_id: customerRow.id, square_customer_id: squareCustomerId }
+    return { ok: true, customer_id: row.id, square_customer_id: squareCustomerId }
   }
 
   // Otherwise, create Square customer
   const created = await createSquareCustomer(event, {
-    email: customerRow.email ?? email,
-    phone: customerRow.phone ?? phone,
-    first_name: customerRow.first_name ?? first_name,
-    last_name: customerRow.last_name ?? last_name
+    email: row.email ?? email,
+    phone: row.phone ?? phone,
+    first_name: row.first_name ?? first_name,
+    last_name: row.last_name ?? last_name
   })
 
   if (!created?.id) throw createError({ statusCode: 500, statusMessage: 'Failed to create Square customer' })
@@ -244,9 +247,9 @@ export default defineEventHandler(async (event) => {
       square_customer_id: created.id,
       square_customer_json: created
     })
-    .eq('id', customerRow.id)
+    .eq('id', row.id)
 
   if (finalErr) throw createError({ statusCode: 500, statusMessage: `Failed to persist Square customer: ${finalErr.message}` })
 
-  return { ok: true, customer_id: customerRow.id, square_customer_id: created.id }
+  return { ok: true, customer_id: row.id, square_customer_id: created.id }
 })

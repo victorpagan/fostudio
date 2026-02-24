@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import {serverSupabaseClient} from "#supabase/server";
+import { serverSupabaseClient } from '#supabase/server'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: bookings, error } = await supabase
     .from('bookings')
-    .select('id,start_time,end_time,status')
+    .select('id, start_time, end_time, status')
     .eq('status', 'confirmed')
     .lt('start_time', to.toISOString())
     .gt('end_time', from.toISOString())
@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: holds, error: holdsErr } = await supabase
     .from('booking_holds')
-    .select('id,hold_start,hold_end')
+    .select('id, hold_start, hold_end')
     .lt('hold_start', to.toISOString())
     .gt('hold_end', from.toISOString())
     .order('hold_start', { ascending: true })
@@ -38,15 +38,19 @@ export default defineEventHandler(async (event) => {
       id: `b_${b.id}`,
       start: b.start_time,
       end: b.end_time,
+      title: 'Booked',
       display: 'background',
-      title: 'Booked'
+      color: '#64748b', // slate — neutral, no info leak
+      extendedProps: { type: 'booking' }
     })),
     ...(holds ?? []).map((h) => ({
       id: `h_${h.id}`,
       start: h.hold_start,
       end: h.hold_end,
+      title: 'Hold',
       display: 'background',
-      title: 'Hold'
+      color: '#f59e0b', // amber
+      extendedProps: { type: 'hold' }
     }))
   ]
 

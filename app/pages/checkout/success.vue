@@ -48,14 +48,14 @@ onMounted(async () => {
 
         <div class="mt-3 text-sm">
           Current status:
-          <UBadge :color="status === 'active' ? 'green' : 'gray'" variant="soft">
+          <UBadge :color="status === 'active' ? 'success' : 'neutral'" variant="soft">
             {{ status }}
           </UBadge>
         </div>
 
         <div class="mt-6 flex gap-2">
           <UButton to="/dashboard">Go to dashboard</UButton>
-          <UButton color="gray" variant="soft" to="/calendar">View calendar</UButton>
+          <UButton color="neutral" variant="soft" to="/calendar">View calendar</UButton>
         </div>
 
         <p class="mt-4 text-xs text-gray-500 dark:text-gray-400">

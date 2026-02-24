@@ -1,29 +1,32 @@
-import type { Database } from '~/types/supabase' // adjust path
-
+/**
+ * membership-required.ts
+ * Ensures the user has an active membership before accessing protected pages.
+ * Admins bypass this check so they can access all dashboard pages.
+ */
 export default defineNuxtRouteMiddleware(async (to) => {
   const user = useSupabaseUser()
-  if (!user.value) {
-    // let auth middleware handle it (or send to login here)
-    return
-  }
+  if (!user.value) return // let auth middleware handle redirect
 
-  const supabase = useSupabaseClient<Database>()
+  // Admins always pass through
+  const role = (user.value.app_metadata?.role as string | undefined) ?? null
+  if (role === 'admin' || role === 'service') return
 
-  // Check membership status
+  const supabase = useSupabaseClient()
+
   const { data, error } = await supabase
     .from('memberships')
-    .select('status,tier,cadence')
+    .select('status, tier, cadence')
     .eq('user_id', user.value.id)
     .maybeSingle()
 
   if (error) {
-    // Fail closed: require membership if membership lookup fails
-    return navigateTo(`/memberships?returnTo=${encodeURIComponent(to.fullPath)}`)
+    // Fail closed on DB errors — send to memberships with context
+    console.error('[membership-required] DB error:', error.message)
+    return navigateTo(`/memberships?returnTo=${encodeURIComponent(to.fullPath)}&reason=error`)
   }
 
-  const status = (data?.status || '').toLowerCase()
+  const status = (data?.status ?? '').toLowerCase()
 
-  // Treat only "active" as bookable
   if (status !== 'active') {
     return navigateTo(`/memberships?returnTo=${encodeURIComponent(to.fullPath)}`)
   }

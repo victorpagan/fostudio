@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
-import {serverSupabaseClient} from "#supabase/server"; // you have this; used for APP_BASE_URL if you want
+import { serverSupabaseUser, serverSupabaseClient } from "#supabase/server"
 
 const bodySchema = z.object({
   tier: z.string().min(1),
@@ -63,9 +63,9 @@ export default defineEventHandler(async (event) => {
       .from('memberships')
       .insert({
         user_id: user.id,
-        tier: tierId,
+        tier: tierId as 'creator' | 'pro' | 'studio_plus',
         cadence,
-        status: 'pending_checkout'
+        status: 'pending_checkout' as const
       })
       .select('id')
       .single()
@@ -82,9 +82,9 @@ export default defineEventHandler(async (event) => {
     const { error: updErr } = await supabase
       .from('memberships')
       .update({
-        tier: tierId,
+        tier: tierId as 'creator' | 'pro' | 'studio_plus',
         cadence,
-        status: 'pending_checkout'
+        status: 'pending_checkout' as const
       })
       .eq('id', membership.id)
 
@@ -95,25 +95,24 @@ export default defineEventHandler(async (event) => {
   // 4) Create Square payment link (subscription checkout) using your Square util
   const square = await useSquareClient(event)
 
-  // For redirect URL, you can use env or system_config:
-  // const baseUrl = await getServerConfig(event, 'APP_BASE_URL')
-  const baseUrl = process.env.APP_BASE_URL || ""
-  const redirectUrl = `${baseUrl}/checkout/success`
+  const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
+  const { origin } = getRequestURL(event)
+  const redirectUrl = `${origin}/checkout/success`
 
   const idempotencyKey = randomUUID()
 
-  const createRes = await square.checkout.createPaymentLink({
+  const createRes = await square.checkout.paymentLinks.create({
     idempotencyKey,
     quickPay: {
       name: `${tier.display_name} (${cadence})`,
-      locationId: process.env.SQUARE_LOCATION_ID || 'LMKTTKQG7R9JS',
+      locationId,
       subscriptionPlanId: planVariationId
     },
     checkoutOptions: {
       redirectUrl
     },
     order: {
-      locationId: process.env.SQUARE_LOCATION_ID || 'LMKTTKQG7R9JS',
+      locationId,
       referenceId: membershipId,
       metadata: {
         user_id: user.id,

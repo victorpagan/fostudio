@@ -1,0 +1,108 @@
+/**
+ * DELETE /api/bookings/:id
+ *
+ * Cancels a booking and — if cancelled > 24h before start — refunds the credits.
+ *
+ * Rules:
+ *  - Must be authenticated
+ *  - Must own the booking (or be admin)
+ *  - Booking must be 'confirmed' or 'requested' (not already cancelled/completed)
+ *  - Credit refund only if start_time is more than 24h from now
+ *  - Admins can cancel any booking regardless of time
+ */
+import { serverSupabaseUser, serverSupabaseServiceRole, serverSupabaseClient } from '#supabase/server'
+import { DateTime } from 'luxon'
+
+const TZ = 'America/Los_Angeles'
+const REFUND_WINDOW_HOURS = 24
+
+export default defineEventHandler(async (event) => {
+  const user = await serverSupabaseUser(event)
+  if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
+
+  const bookingId = getRouterParam(event, 'id')
+  if (!bookingId) throw createError({ statusCode: 400, statusMessage: 'Missing booking id' })
+
+  const isAdmin = (user.app_metadata?.role as string | undefined) === 'admin'
+
+  // Use service role for admin, user client for member (RLS enforces ownership)
+  const supabase = isAdmin
+    ? serverSupabaseServiceRole(event)
+    : await serverSupabaseClient(event)
+
+  // 1. Fetch the booking
+  const { data: booking, error: fetchErr } = await supabase
+    .from('bookings')
+    .select('id, user_id, start_time, end_time, status, credits_burned')
+    .eq('id', bookingId)
+    .maybeSingle()
+
+  if (fetchErr) throw createError({ statusCode: 500, statusMessage: fetchErr.message })
+  if (!booking) throw createError({ statusCode: 404, statusMessage: 'Booking not found' })
+
+  // 2. Ownership check (non-admin)
+  if (!isAdmin && booking.user_id !== user.id) {
+    throw createError({ statusCode: 403, statusMessage: 'Not your booking' })
+  }
+
+  // 3. Only cancel active bookings
+  const cancelableStatuses = ['confirmed', 'requested']
+  if (!cancelableStatuses.includes(booking.status)) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: `Cannot cancel a booking with status '${booking.status}'`
+    })
+  }
+
+  // 4. Determine if within refund window
+  const now = DateTime.now().setZone(TZ)
+  const start = DateTime.fromISO(booking.start_time, { zone: TZ })
+  const hoursUntilStart = start.diff(now, 'hours').hours
+  const eligibleForRefund = hoursUntilStart >= REFUND_WINDOW_HOURS
+  const creditsToRefund = eligibleForRefund ? (booking.credits_burned ?? 0) : 0
+
+  // 5. Cancel the booking (service role needed for ledger insert)
+  const serviceSupabase = serverSupabaseServiceRole(event)
+
+  const { error: cancelErr } = await serviceSupabase
+    .from('bookings')
+    .update({
+      status: 'canceled',
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', bookingId)
+
+  if (cancelErr) throw createError({ statusCode: 500, statusMessage: cancelErr.message })
+
+  // 6. Refund credits if eligible
+  if (creditsToRefund > 0) {
+    const { error: refundErr } = await serviceSupabase
+      .from('credits_ledger')
+      .insert({
+        user_id: booking.user_id!,
+        delta: creditsToRefund,
+        reason: 'refund',
+        external_ref: bookingId,
+        metadata: {
+          booking_id: bookingId,
+          original_burn: booking.credits_burned,
+          cancelled_at: new Date().toISOString(),
+          hours_before_start: Math.round(hoursUntilStart * 10) / 10
+        }
+      })
+
+    if (refundErr) {
+      // Booking is already cancelled — log but don't fail the request
+      console.error('[cancel] credit refund failed:', refundErr)
+    }
+  }
+
+  return {
+    ok: true,
+    bookingId,
+    status: 'canceled',
+    creditsRefunded: creditsToRefund,
+    eligible_for_refund: eligibleForRefund,
+    hours_until_start: Math.round(hoursUntilStart * 10) / 10
+  }
+})

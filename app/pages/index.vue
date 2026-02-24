@@ -100,7 +100,7 @@ const openWaitlist = ref(false)
                     <template #header>
                       <div class="flex items-center justify-between">
                         <div class="font-semibold">Join the waitlist</div>
-                        <UButton icon="i-heroicons-x-mark" color="gray" variant="ghost" @click="openWaitlist = false" />
+                        <UButton icon="i-heroicons-x-mark" color="neutral" variant="ghost" @click="openWaitlist = false" />
                       </div>
                     </template>
 
@@ -154,7 +154,7 @@ const openWaitlist = ref(false)
                       Coming soon (wire to bookings table)
                     </div>
                   </div>
-                  <UButton size="sm" color="gray" variant="soft" to="/calendar">Open calendar</UButton>
+                  <UButton size="sm" color="neutral" variant="soft" to="/calendar">Open calendar</UButton>
                 </div>
               </UCard>
             </div>

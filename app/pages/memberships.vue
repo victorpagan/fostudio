@@ -88,7 +88,7 @@ function checkoutUrl(tierId: string, cadence: Cadence) {
             <div class="min-w-0">
               <div class="text-sm font-semibold flex items-center gap-2">
                 <span>{{ cadenceLabel(opt.cadence) }}</span>
-                <UBadge v-if="opt.discount_label" color="gray" variant="soft">{{ opt.discount_label }}</UBadge>
+                <UBadge v-if="opt.discount_label" color="neutral" variant="soft">{{ opt.discount_label }}</UBadge>
               </div>
               <div class="text-xs text-gray-500 dark:text-gray-400">
                 {{ opt.credits_per_month }} credits / month

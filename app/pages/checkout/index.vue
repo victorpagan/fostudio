@@ -45,7 +45,7 @@ async function beginCheckout() {
     <div class="mx-auto max-w-3xl space-y-4">
       <h1 class="text-3xl font-semibold tracking-tight">Checkout</h1>
 
-      <UAlert v-if="errorMsg" color="red" variant="soft" :title="errorMsg" />
+      <UAlert v-if="errorMsg" color="error" variant="soft" :title="errorMsg" />
 
       <UCard>
         <div class="text-sm text-gray-600 dark:text-gray-300">
@@ -63,7 +63,7 @@ async function beginCheckout() {
           <UButton :loading="loading" :disabled="loading" @click="beginCheckout">
             Continue to secure checkout
           </UButton>
-          <UButton color="gray" variant="soft" to="/memberships">
+          <UButton color="neutral" variant="soft" to="/memberships">
             Back
           </UButton>
         </div>

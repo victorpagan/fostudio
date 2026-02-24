@@ -1,18 +1,17 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
-import type { Database } from '~/types/supabase' // adjust path if needed
 
 defineProps<{ collapsed?: boolean }>()
 
-const supabase = useSupabaseClient<Database>()
+const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const router = useRouter()
 
 const colorMode = useColorMode()
 const appConfig = useAppConfig()
 
-const colors = ['red','orange','amber','yellow','lime','green','emerald','teal','cyan','sky','blue','indigo','violet','purple','fuchsia','pink','rose']
-const neutrals = ['slate','gray','zinc','neutral','stone']
+const colors = ['error','orange','warning','yellow','lime','success','emerald','teal','cyan','sky','blue','indigo','violet','purple','fuchsia','pink','rose']
+const neutrals = ['slate','neutral','zinc','neutral','stone']
 
 const { data: customer } = await useAsyncData('userMenuCustomer', async () => {
   if (!user.value) return null

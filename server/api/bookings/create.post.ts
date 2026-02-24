@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
+import { serverSupabaseUser, serverSupabaseClient } from '#supabase/server'
 
 const schema = z.object({
   start_time: z.string(),
@@ -105,9 +106,9 @@ export default defineEventHandler(async (event) => {
   const { data: result, error: rpcErr } = await supabase.rpc('create_confirmed_booking_with_burn', {
     p_user_id: user.id,
     p_customer_id: cust.id,
-    p_start_time: start.toUTC().toISO(), // store in UTC
-    p_end_time: end.toUTC().toISO(),
-    p_notes: body.notes ?? null,
+    p_start_time: start.toUTC().toISO()!, // non-null — valid Luxon DT guaranteed above
+    p_end_time: end.toUTC().toISO()!,
+    p_notes: (body.notes ?? '') as string,
     p_request_hold: body.request_hold ?? false,
     p_credits_needed: creditsNeeded
   })
