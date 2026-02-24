@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const route = useRoute()
+const isOpen = ref(false)
 
 const links = [
   { label: 'Calendar', to: '/calendar' },
@@ -57,17 +58,43 @@ const rightLinks = computed(() => {
           {{ l.label }}
         </NuxtLink>
 
-        <!-- Mobile menu -->
-        <UDropdown
+        <!-- Mobile menu button -->
+        <UButton
+          icon="i-heroicons-bars-3"
+          color="neutral"
+          variant="ghost"
+          aria-label="Menu"
           class="md:hidden"
-          :items="[
-            links.map(l => ({ label: l.label, to: l.to })),
-            [{ label: isAuthed ? 'Dashboard' : 'Login', to: isAuthed ? '/dashboard' : '/login' }]
-          ]"
-        >
-          <UButton icon="i-heroicons-bars-3" color="neutral" variant="ghost" aria-label="Menu" />
-        </UDropdown>
+          @click="isOpen = !isOpen"
+        />
       </div>
     </UContainer>
+
+    <!-- Mobile menu -->
+    <div v-if="isOpen" class="border-t border-gray-200/60 bg-white/75 backdrop-blur dark:border-gray-800/60 dark:bg-gray-950/75 md:hidden">
+      <UContainer class="space-y-2 py-4">
+        <NuxtLink
+          v-for="l in links"
+          :key="l.to"
+          :to="l.to"
+          class="block rounded px-3 py-2 text-sm transition-colors"
+          :class="route.path === l.to
+            ? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-white'
+            : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900'"
+          @click="isOpen = false"
+        >
+          {{ l.label }}
+        </NuxtLink>
+        <NuxtLink
+          v-for="l in rightLinks"
+          :key="l.to"
+          :to="l.to"
+          class="block rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900"
+          @click="isOpen = false"
+        >
+          {{ l.label }}
+        </NuxtLink>
+      </UContainer>
+    </div>
   </header>
 </template>
