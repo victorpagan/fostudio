@@ -12,7 +12,7 @@
 
 INSERT INTO public.system_config (key, value)
 VALUES
-  -- Square location ID for the studio. Required for all payment link and order creation.
-  ('SQUARE_LOCATION_ID', '"LMKTTKQG7R9JS"'::jsonb)
+  -- Square location ID for the FO Studio location. Required for all payment link and order creation.
+  ('SQUARE_STUDIO_LOCATION_ID', '"LMKTTKQG7R9JS"'::jsonb)
 
 ON CONFLICT (key) DO NOTHING;

@@ -137,7 +137,7 @@ export default defineEventHandler(async (event) => {
 
   // Create or find Square customer for this guest
   const square = await useSquareClient(event)
-  const locationId = await getServerConfig(event, 'SQUARE_LOCATION_ID')
+  const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
   const { origin } = getRequestURL(event)
 
   // Insert pending booking with guest info in dedicated columns

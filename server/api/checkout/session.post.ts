@@ -95,7 +95,7 @@ export default defineEventHandler(async (event) => {
   // 4) Create Square payment link (subscription checkout) using your Square util
   const square = await useSquareClient(event)
 
-  const locationId = await getServerConfig(event, 'SQUARE_LOCATION_ID')
+  const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
   const { origin } = getRequestURL(event)
   const redirectUrl = `${origin}/checkout/success`
 

@@ -10,7 +10,7 @@ export const squareProvider: PaymentsProvider = {
 
   async createCheckoutSession(input: CreateCheckoutSessionInput, event: H3Event): Promise<CreateCheckoutSessionOutput> {
     const [locationId, planVariationId] = await Promise.all([
-      getServerConfig(event, 'SQUARE_LOCATION_ID'),
+      getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID'),
       getServerConfig(event, `SQUARE_PLAN_VARIATION_${input.tier.toUpperCase()}_${input.cadence.toUpperCase()}`)
     ])
 
