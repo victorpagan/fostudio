@@ -41,7 +41,7 @@ const rightLinks = computed(() => {
       </nav>
 
       <div class="flex items-center gap-2">
-        <UButton color="gray" variant="soft" to="/calendar" class="hidden sm:inline-flex">
+        <UButton color="neutral" variant="soft" to="/calendar" class="hidden sm:inline-flex">
           View Availability
         </UButton>
         <UButton to="/memberships">
@@ -65,7 +65,7 @@ const rightLinks = computed(() => {
             [{ label: isAuthed ? 'Dashboard' : 'Login', to: isAuthed ? '/dashboard' : '/login' }]
           ]"
         >
-          <UButton icon="i-heroicons-bars-3" color="gray" variant="ghost" aria-label="Menu" />
+          <UButton icon="i-heroicons-bars-3" color="neutral" variant="ghost" aria-label="Menu" />
         </UDropdown>
       </div>
     </UContainer>

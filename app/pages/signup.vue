@@ -134,8 +134,8 @@ async function handleSignup() {
         </div>
 
         <div class="mt-6 flex flex-wrap gap-2">
-          <UButton color="gray" variant="soft" to="/memberships">Change tier</UButton>
-          <UButton color="gray" variant="ghost" to="/calendar">View calendar</UButton>
+          <UButton color="neutral" variant="soft" to="/memberships">Change tier</UButton>
+          <UButton color="neutral" variant="ghost" to="/calendar">View calendar</UButton>
         </div>
       </UCard>
 
@@ -146,8 +146,8 @@ async function handleSignup() {
         </template>
 
         <div class="space-y-4">
-          <UAlert v-if="errorMsg" color="red" variant="soft" :title="errorMsg" />
-          <UAlert v-if="successMsg" color="green" variant="soft" :title="successMsg" />
+          <UAlert v-if="errorMsg" color="error" variant="soft" :title="errorMsg" />
+          <UAlert v-if="successMsg" color="success" variant="soft" :title="successMsg" />
 
           <div class="grid gap-3 sm:grid-cols-2">
             <UInput v-model="form.firstName" placeholder="First name" />

@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import type { Database } from '~/types/supabase' // adjust
 definePageMeta({
   middleware: ['auth', 'membership-required']
 })
 
-const supabase = useSupabaseClient<Database>()
+const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 
-type LedgerRow = Database['public']['Tables']['credits_ledger']['Row']
+// Manually typed until supabase type gen includes studio tables
+type LedgerRow = {
+  id: string
+  delta: number
+  reason: string
+  external_ref: string | null
+  created_at: string
+  metadata: Record<string, unknown> | null
+}
 
 const { data: balance, refresh: refreshBalance } = await useAsyncData('creditBalance', async () => {
   if (!user.value) return 0
@@ -63,7 +70,7 @@ async function refreshAll() {
         </template>
 
         <template #right>
-          <UButton color="gray" variant="soft" size="sm" @click="refreshAll">
+          <UButton color="neutral" variant="soft" size="sm" @click="refreshAll">
             Refresh
           </UButton>
         </template>
@@ -84,7 +91,7 @@ async function refreshAll() {
 
             <div class="mt-4 flex gap-2">
               <UButton size="sm" to="/dashboard/membership">Manage membership</UButton>
-              <UButton size="sm" color="gray" variant="soft" to="/book">Book studio</UButton>
+              <UButton size="sm" color="neutral" variant="soft" to="/dashboard/book">Book studio</UButton>
             </div>
           </UCard>
 

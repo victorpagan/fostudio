@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import {serverSupabaseClient} from "#supabase/server";
+import { serverSupabaseUser, serverSupabaseClient } from "#supabase/server";
 
 const schema = z.object({
   start_time: z.string(),

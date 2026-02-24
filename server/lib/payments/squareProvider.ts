@@ -9,11 +9,6 @@ function getEnvOrThrow(key: string) {
   return v
 }
 
-function squareEnv() {
-  const env = (process.env.SQUARE_ENVIRONMENT || 'sandbox').toLowerCase()
-  return env === 'production' ? Environment.Production : Environment.Sandbox
-}
-
 function planVariationEnvKey(tier: TierId, cadence: Cadence) {
   const t = tier.toUpperCase() // CREATOR / PRO / STUDIO_PLUS
   const c = cadence.toUpperCase() // MONTHLY / QUARTERLY / ANNUAL
@@ -27,7 +22,7 @@ export const squareProvider: PaymentsProvider = {
     const locationId = getEnvOrThrow('SQUARE_LOCATION_ID')
     const baseUrl = getEnvOrThrow('APP_BASE_URL')
 
-    const client = useSquareClient(event)
+    const client = await useSquareClient(event)
 
     const envKey = planVariationEnvKey(input.tier, input.cadence)
     const planVariationId = getEnvOrThrow(envKey)
@@ -57,7 +52,7 @@ export const squareProvider: PaymentsProvider = {
     }
 
     const res = await client.checkout.paymentLinks.create(body)
-    const paymentLink = res.result.paymentLink
+    const paymentLink = res.paymentLink
 
     if (!paymentLink?.url) throw new Error('Square did not return a payment link URL.')
 

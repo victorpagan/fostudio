@@ -32,7 +32,7 @@ const fields = [{
   type: 'checkbox' as const
 }]
 
-const providers = [/*{
+const providers: Array<{ label: string; icon: string; onClick: () => void }> = [/*{
   label: 'Google',
   icon: 'i-simple-icons-google',
   onClick: () => toast.add({ title: 'Google', description: 'OAuth not wired yet' })
@@ -63,7 +63,7 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
     toast.add({ title: 'Welcome back', description: 'Signed in successfully' })
     await router.push('/dashboard')
   } catch (e: any) {
-    toast.add({ title: 'Login failed', description: e?.message ?? 'Unknown error', color: 'red' })
+    toast.add({ title: 'Login failed', description: e?.message ?? 'Unknown error', color: 'error' })
   } finally {
     loading.value = false
   }

@@ -17,10 +17,33 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
 
   supabase: {
+    // Point the module at our local types file so useSupabaseClient() is
+    // fully typed everywhere without needing explicit generic parameters.
+    // Use the Nuxt alias ~/types (resolves to app/types in Nuxt 4)
+    types: '~/types/database.types.ts',
     redirectOptions: {
       login: '/login',
       callback: '/onboarding',
-      exclude: ['/']
+      // Routes accessible without authentication
+      // /book is intentionally included — the page itself handles
+      // the member vs guest split; middleware is not used there
+      exclude: [
+        '/',
+        '/calendar',
+        '/memberships',
+        '/pricing',
+        '/blog',
+        '/blog/**',
+        '/docs/**',
+        '/changelog',
+        '/changelog/**',
+        '/book',
+        '/login',
+        '/signup',
+        '/onboarding',
+        '/checkout',
+        '/checkout/**'
+      ]
     }
   },
 
