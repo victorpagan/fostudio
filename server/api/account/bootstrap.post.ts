@@ -70,9 +70,11 @@ async function createSquareCustomer(event: H3Event, input: {
   return (res as any)?.customer ?? null
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
-  if (!user) {
+  if (!user?.id || !UUID_RE.test(user.id)) {
     throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
   }
 

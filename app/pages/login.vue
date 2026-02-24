@@ -48,18 +48,14 @@ type Schema = z.output<typeof schema>
 async function onSubmit(payload: FormSubmitEvent<Schema>) {
   loading.value = true
   try {
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email: payload.data.email.trim(),
       password: payload.data.password
     })
     if (error) throw error
 
-    // Link/sync customers row + Square customer
-    await $fetch('/api/account/bootstrap', {
-      method: 'POST',
-      body: { email: payload.data.email.trim() }
-    })
-
+    // Bootstrap (customer row + Square sync) is handled by the bootstrap-customer
+    // middleware on the /dashboard navigation, once the session cookie is set.
     toast.add({ title: 'Welcome back', description: 'Signed in successfully' })
     await router.push('/dashboard')
   } catch (e: any) {
