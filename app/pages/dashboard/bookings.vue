@@ -1,8 +1,12 @@
 <script setup lang="ts">
-definePageMeta({ middleware: ['auth', 'membership-required'] })
+// auth only — no membership-required middleware. We handle the no-membership
+// state inline so users can purchase right from this page.
+definePageMeta({ middleware: ['auth'] })
 
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
+const { isAdmin } = useCurrentUser()
+const router = useRouter()
 const toast = useToast()
 
 type Booking = {
@@ -15,10 +19,45 @@ type Booking = {
   created_at: string
 }
 
+type PlanOption = {
+  cadence: 'monthly' | 'quarterly' | 'annual'
+  credits_per_month: number
+  price_cents: number
+  currency: string
+  discount_label?: string | null
+}
+
+type Tier = {
+  id: string
+  display_name: string
+  description?: string | null
+  booking_window_days: number
+  peak_multiplier: number
+  max_bank: number
+  holds_included: number
+  membership_plan_variations: PlanOption[]
+}
+
 const now = new Date().toISOString()
 
+// Check membership status first (admins always pass)
+const { data: membershipData } = await useAsyncData('bookings:membership', async () => {
+  if (!user.value) return null
+  const { data } = await supabase
+    .from('memberships')
+    .select('status, tier, cadence')
+    .eq('user_id', user.value.id)
+    .maybeSingle()
+  return data
+})
+
+const hasMembership = computed(() =>
+  isAdmin.value || (membershipData.value?.status ?? '').toLowerCase() === 'active'
+)
+
+// Only fetch bookings when membership is confirmed
 const { data: upcoming, refresh: refreshUpcoming } = await useAsyncData('bookings:upcoming', async () => {
-  if (!user.value) return []
+  if (!user.value || !hasMembership.value) return []
   const { data, error } = await supabase
     .from('bookings')
     .select('id, start_time, end_time, status, notes, credits_burned, created_at')
@@ -32,7 +71,7 @@ const { data: upcoming, refresh: refreshUpcoming } = await useAsyncData('booking
 })
 
 const { data: past, refresh: refreshPast } = await useAsyncData('bookings:past', async () => {
-  if (!user.value) return []
+  if (!user.value || !hasMembership.value) return []
   const { data, error } = await supabase
     .from('bookings')
     .select('id, start_time, end_time, status, notes, credits_burned, created_at')
@@ -43,6 +82,15 @@ const { data: past, refresh: refreshPast } = await useAsyncData('bookings:past',
   if (error) throw error
   return (data ?? []) as Booking[]
 })
+
+// Fetch tiers for upsell panel (only loaded when no active membership)
+const { data: catalogData } = await useAsyncData('bookings:catalog', async () => {
+  if (hasMembership.value) return null
+  const res = await $fetch<{ tiers: Tier[] }>('/api/membership/catalog')
+  return res
+}, { watch: [hasMembership] })
+
+const tiers = computed(() => catalogData.value?.tiers ?? [])
 
 async function refreshAll() {
   await Promise.all([refreshUpcoming(), refreshPast()])
@@ -107,6 +155,20 @@ function canCancel(booking: Booking) {
 function isRefundEligible(booking: Booking) {
   return (new Date(booking.start_time).getTime() - Date.now()) / 3600000 > 24
 }
+
+function formatMoney(cents: number, currency: string) {
+  return currency === 'USD' ? `$${(cents / 100).toFixed(0)}` : `${(cents / 100).toFixed(0)} ${currency}`
+}
+
+function cadenceLabel(c: string) {
+  if (c === 'monthly') return 'Monthly'
+  if (c === 'quarterly') return 'Quarterly'
+  return 'Annual'
+}
+
+function goCheckout(tierId: string, cadence: string) {
+  router.push(`/checkout?tier=${encodeURIComponent(tierId)}&cadence=${encodeURIComponent(cadence)}&returnTo=/dashboard/bookings`)
+}
 </script>
 
 <template>
@@ -117,14 +179,88 @@ function isRefundEligible(booking: Booking) {
           <UDashboardSidebarCollapse />
         </template>
         <template #right>
-          <UButton size="sm" icon="i-lucide-refresh-cw" color="neutral" variant="ghost" @click="refreshAll" />
-          <UButton size="sm" icon="i-lucide-calendar-plus" to="/dashboard/book">Book studio</UButton>
+          <template v-if="hasMembership">
+            <UButton size="sm" icon="i-lucide-refresh-cw" color="neutral" variant="ghost" @click="refreshAll" />
+            <UButton size="sm" icon="i-lucide-calendar-plus" to="/dashboard/book">Book studio</UButton>
+          </template>
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
-      <div class="p-4 space-y-6">
+      <!-- ── No active membership: show tier upsell ── -->
+      <div v-if="!hasMembership" class="p-4 space-y-6">
+        <UCard>
+          <div class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p class="font-semibold">You don't have an active membership</p>
+              <p class="mt-1 text-sm text-dimmed">
+                Choose a plan below to unlock studio booking, credits, and priority access.
+              </p>
+            </div>
+            <UBadge color="warning" variant="soft">No active plan</UBadge>
+          </div>
+        </UCard>
+
+        <div class="grid gap-4 lg:grid-cols-3">
+          <UCard v-for="tier in tiers" :key="tier.id">
+            <div class="text-base font-semibold">{{ tier.display_name }}</div>
+            <p v-if="tier.description" class="mt-1 text-sm text-dimmed">{{ tier.description }}</p>
+
+            <div class="mt-4 grid grid-cols-3 gap-2">
+              <div class="rounded-lg border border-default p-2 text-center">
+                <div class="text-sm font-medium">{{ tier.booking_window_days }}d</div>
+                <div class="text-xs text-dimmed">booking</div>
+              </div>
+              <div class="rounded-lg border border-default p-2 text-center">
+                <div class="text-sm font-medium">{{ tier.peak_multiplier }}×</div>
+                <div class="text-xs text-dimmed">peak</div>
+              </div>
+              <div class="rounded-lg border border-default p-2 text-center">
+                <div class="text-sm font-medium">{{ tier.max_bank }}</div>
+                <div class="text-xs text-dimmed">max credits</div>
+              </div>
+            </div>
+
+            <div class="mt-4 space-y-2">
+              <div
+                v-for="opt in tier.membership_plan_variations"
+                :key="opt.cadence"
+                class="flex items-center justify-between rounded-lg border border-default p-3"
+              >
+                <div>
+                  <div class="text-sm font-medium flex items-center gap-2">
+                    {{ cadenceLabel(opt.cadence) }}
+                    <UBadge v-if="opt.discount_label" color="neutral" variant="soft" size="xs">
+                      {{ opt.discount_label }}
+                    </UBadge>
+                  </div>
+                  <div class="text-xs text-dimmed">{{ opt.credits_per_month }} credits/mo</div>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm font-semibold">{{ formatMoney(opt.price_cents, opt.currency) }}</div>
+                  <div class="text-xs text-dimmed">/ {{ opt.cadence === 'monthly' ? 'mo' : opt.cadence === 'quarterly' ? 'qtr' : 'yr' }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 grid gap-2">
+              <UButton
+                v-for="opt in tier.membership_plan_variations"
+                :key="opt.cadence + '-cta'"
+                block
+                size="sm"
+                @click="goCheckout(tier.id, opt.cadence)"
+              >
+                Start {{ tier.display_name }} · {{ cadenceLabel(opt.cadence) }}
+              </UButton>
+            </div>
+          </UCard>
+        </div>
+      </div>
+
+      <!-- ── Active membership: show bookings ── -->
+      <div v-else class="p-4 space-y-6">
         <!-- Upcoming -->
         <div>
           <h2 class="text-sm font-semibold text-muted mb-3 flex items-center gap-2">

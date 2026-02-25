@@ -28,21 +28,31 @@ export default defineNuxtConfig({
       // /book is intentionally included — the page itself handles
       // the member vs guest split; middleware is not used there
       exclude: [
+        // Public marketing / info pages
         '/',
         '/calendar',
         '/memberships',
+        '/equipment',
+        '/faq',
+        '/contact',
+        '/policies',
         '/pricing',
+        // Auth pages
+        '/login',
+        '/signup',
+        '/forgot-password',
+        '/reset-password',
+        '/onboarding',
+        // Booking & checkout (page-level auth guards handle branching)
+        '/book',
+        '/checkout',
+        '/checkout/**',
+        // Misc
         '/blog',
         '/blog/**',
         '/docs/**',
         '/changelog',
-        '/changelog/**',
-        '/book',
-        '/login',
-        '/signup',
-        '/onboarding',
-        '/checkout',
-        '/checkout/**'
+        '/changelog/**'
       ]
     }
   },
