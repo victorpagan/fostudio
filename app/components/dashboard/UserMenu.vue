@@ -18,7 +18,7 @@ const { data: customer } = await useAsyncData('userMenuCustomer', async () => {
   const { data } = await supabase
     .from('customers')
     .select('first_name,last_name,email')
-    .eq('user_id', user.value.id)
+    .eq('user_id', user.value.sub)
     .maybeSingle()
   return data
 })

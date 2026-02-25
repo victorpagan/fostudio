@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
   if (!booking) throw createError({ statusCode: 404, statusMessage: 'Booking not found' })
 
   // 2. Ownership check (non-admin)
-  if (!isAdmin && booking.user_id !== user.id) {
+  if (!isAdmin && booking.user_id !== user.sub) {
     throw createError({ statusCode: 403, statusMessage: 'Not your booking' })
   }
 

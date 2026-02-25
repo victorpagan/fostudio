@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
   const { data: membership, error: memErr } = await supabase
     .from('memberships')
     .select('tier, status')
-    .eq('user_id', user.id)
+    .eq('user_id', user.sub)
     .maybeSingle()
 
   if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
@@ -67,7 +67,7 @@ export default defineEventHandler(async (event) => {
   // Shape events for FullCalendar — distinguish own bookings from others
   const events = [
     ...(bookings ?? []).map((b) => {
-      const isOwn = b.user_id === user.id
+      const isOwn = b.user_id === user.sub
       return {
         id: `b_${b.id}`,
         start: b.start_time,

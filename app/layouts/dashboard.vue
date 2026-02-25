@@ -13,13 +13,13 @@ const links = [[
   {
     label: 'Book Studio',
     icon: 'i-lucide-calendar-plus',
-    to: '/book',
+    to: '/dashboard/book',
     onSelect: () => { open.value = false }
   },
   {
     label: 'Calendar',
     icon: 'i-lucide-calendar',
-    to: '/calendar',
+    to: '/dashboard/calendar',
     onSelect: () => { open.value = false }
   },
   {

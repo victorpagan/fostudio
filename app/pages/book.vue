@@ -25,7 +25,7 @@ onMounted(async () => {
   const { data } = await supabase
     .from('memberships')
     .select('status')
-    .eq('user_id', user.value.id)
+    .eq('user_id', user.value.sub)
     .maybeSingle()
 
   membershipStatus.value = data?.status ?? null

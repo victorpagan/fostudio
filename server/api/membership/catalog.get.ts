@@ -1,10 +1,18 @@
 // File: server/api/membership/catalog.get.ts
-import {serverSupabaseClient} from "#supabase/server";
+// Returns the membership tier catalog. Admins also receive hidden tiers
+// (visible=false), such as the special 'test' tier for dry-run checkout.
+import { serverSupabaseUser, serverSupabaseClient } from '#supabase/server'
 
 export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient(event)
 
-  const { data, error } = await supabase
+  // Admins see all active tiers including hidden ones (e.g. the test tier).
+  // Everyone else only sees active + visible tiers.
+  const user = await serverSupabaseUser(event).catch(() => null)
+  const role = (user as any)?.app_metadata?.role as string | undefined
+  const isAdmin = role === 'admin' || role === 'service'
+
+  let query = supabase
     .from('membership_tiers')
     .select(`
       id,
@@ -31,8 +39,14 @@ export default defineEventHandler(async (event) => {
       )
     `)
     .eq('active', true)
-    .eq('visible', true)
     .order('sort_order', { ascending: true })
+
+  // Non-admins only see public tiers
+  if (!isAdmin) {
+    query = query.eq('visible', true)
+  }
+
+  const { data, error } = await query
 
   if (error) {
     throw createError({ statusCode: 500, statusMessage: error.message })
@@ -40,10 +54,12 @@ export default defineEventHandler(async (event) => {
 
   const tiers = (data ?? []).map((t: any) => ({
     ...t,
+    // Mark test/hidden tiers so the UI can label them appropriately
+    adminOnly: t.visible === false,
     membership_plan_variations: (t.membership_plan_variations ?? [])
-      .filter((v: any) => v.provider === 'square' && v.active && v.visible)
+      .filter((v: any) => v.provider === 'square' && v.active && (isAdmin || v.visible))
       .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
   }))
 
-  return { tiers }
+  return tiers
 })
