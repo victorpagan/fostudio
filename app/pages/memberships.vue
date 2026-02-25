@@ -22,7 +22,16 @@ type Tier = {
 }
 
 const route = useRoute()
+const router = useRouter()
 const returnTo = computed(() => (route.query.returnTo as string | undefined) ?? '/dashboard')
+
+const { user } = useCurrentUser()
+const isAuthed = computed(() => !!user.value)
+
+// Modal for unauthenticated users
+const guestModalOpen = ref(false)
+const pendingTierId = ref<string | null>(null)
+const pendingCadence = ref<Cadence | null>(null)
 
 const { data } = await useFetch<{ tiers: Tier[] }>('/api/membership/catalog', {
   default: () => ({ tiers: [] })
@@ -43,6 +52,31 @@ function cadenceLabel(c: Cadence) {
 
 function checkoutUrl(tierId: string, cadence: Cadence) {
   return `/checkout?tier=${encodeURIComponent(tierId)}&cadence=${encodeURIComponent(cadence)}&returnTo=${encodeURIComponent(returnTo.value)}`
+}
+
+function onSelectPlan(tierId: string, cadence: Cadence) {
+  if (isAuthed.value) {
+    router.push(checkoutUrl(tierId, cadence))
+  } else {
+    // Store the intended plan and show the sign-up prompt
+    pendingTierId.value = tierId
+    pendingCadence.value = cadence
+    guestModalOpen.value = true
+  }
+}
+
+function goSignup() {
+  const dest = pendingTierId.value && pendingCadence.value
+    ? checkoutUrl(pendingTierId.value, pendingCadence.value)
+    : '/checkout'
+  router.push(`/signup?returnTo=${encodeURIComponent(dest)}`)
+}
+
+function goLogin() {
+  const dest = pendingTierId.value && pendingCadence.value
+    ? checkoutUrl(pendingTierId.value, pendingCadence.value)
+    : '/checkout'
+  router.push(`/login?returnTo=${encodeURIComponent(dest)}`)
 }
 </script>
 
@@ -84,7 +118,11 @@ function checkoutUrl(tierId: string, cadence: Cadence) {
         <div class="mt-6 space-y-2">
           <div class="text-sm font-medium">Choose cadence</div>
 
-          <div v-for="opt in tier.membership_plan_variations" :key="opt.cadence" class="flex items-center justify-between gap-3 rounded-xl border border-gray-200/60 p-3 dark:border-gray-800/60">
+          <div
+            v-for="opt in tier.membership_plan_variations"
+            :key="opt.cadence"
+            class="flex items-center justify-between gap-3 rounded-xl border border-gray-200/60 p-3 dark:border-gray-800/60"
+          >
             <div class="min-w-0">
               <div class="text-sm font-semibold flex items-center gap-2">
                 <span>{{ cadenceLabel(opt.cadence) }}</span>
@@ -97,7 +135,9 @@ function checkoutUrl(tierId: string, cadence: Cadence) {
 
             <div class="text-right shrink-0">
               <div class="text-sm font-semibold">{{ formatMoney(opt.price_cents, opt.currency) }}</div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">per {{ opt.cadence === 'monthly' ? 'month' : opt.cadence === 'quarterly' ? 'quarter' : 'year' }}</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">
+                per {{ opt.cadence === 'monthly' ? 'month' : opt.cadence === 'quarterly' ? 'quarter' : 'year' }}
+              </div>
             </div>
           </div>
         </div>
@@ -106,8 +146,8 @@ function checkoutUrl(tierId: string, cadence: Cadence) {
           <UButton
             v-for="opt in tier.membership_plan_variations"
             :key="opt.cadence + '-btn'"
-            :to="checkoutUrl(tier.id, opt.cadence)"
             block
+            @click="onSelectPlan(tier.id, opt.cadence)"
           >
             Start {{ tier.display_name }} ({{ cadenceLabel(opt.cadence) }})
           </UButton>
@@ -118,5 +158,40 @@ function checkoutUrl(tierId: string, cadence: Cadence) {
         </div>
       </UCard>
     </div>
+
+    <!-- Sign-up prompt modal for unauthenticated users -->
+    <UModal v-model:open="guestModalOpen">
+      <template #content>
+        <UCard>
+          <template #header>
+            <div class="flex items-center justify-between">
+              <p class="font-semibold">Create an account to continue</p>
+              <UButton icon="i-heroicons-x-mark" color="neutral" variant="ghost" @click="guestModalOpen = false" />
+            </div>
+          </template>
+
+          <div class="space-y-3">
+            <p class="text-sm text-gray-600 dark:text-gray-400">
+              A membership is tied to your account — you'll need one to book studio time,
+              track credits, and manage your subscription. It only takes a minute.
+            </p>
+            <p class="text-sm text-gray-600 dark:text-gray-400">
+              Your credit card is handled securely through Square. We never store payment details.
+            </p>
+          </div>
+
+          <template #footer>
+            <div class="flex flex-col gap-2 sm:flex-row">
+              <UButton class="flex-1" @click="goSignup">
+                Create account &amp; continue
+              </UButton>
+              <UButton color="neutral" variant="soft" class="flex-1" @click="goLogin">
+                I already have an account
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
   </UContainer>
 </template>

@@ -10,9 +10,13 @@ const bodySchema = z.object({
   cadence: z.enum(['monthly', 'quarterly', 'annual']).optional()
 })
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
-  if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
+  if (!user?.id || !UUID_RE.test(user.id)) {
+    throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
+  }
 
   const supabase = await serverSupabaseClient(event)
 
