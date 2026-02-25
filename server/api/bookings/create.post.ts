@@ -56,7 +56,7 @@ export default defineEventHandler(async (event) => {
   const { data: membership, error: memErr } = await supabase
     .from('memberships')
     .select('status,tier')
-    .eq('user_id', user.id)
+    .eq('user_id', user.sub)
     .maybeSingle()
 
   if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
@@ -96,7 +96,7 @@ export default defineEventHandler(async (event) => {
   const { data: cust, error: custErr } = await supabase
     .from('customers')
     .select('id')
-    .eq('user_id', user.id)
+    .eq('user_id', user.sub)
     .maybeSingle()
 
   if (custErr) throw createError({ statusCode: 500, statusMessage: custErr.message })
@@ -104,7 +104,7 @@ export default defineEventHandler(async (event) => {
 
   // Call atomic RPC (booking + burn + hold)
   const { data: result, error: rpcErr } = await supabase.rpc('create_confirmed_booking_with_burn', {
-    p_user_id: user.id,
+    p_user_id: user.sub,
     p_customer_id: cust.id,
     p_start_time: start.toUTC().toISO()!, // non-null — valid Luxon DT guaranteed above
     p_end_time: end.toUTC().toISO()!,

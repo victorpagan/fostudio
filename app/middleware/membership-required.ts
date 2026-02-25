@@ -16,7 +16,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const { data, error } = await supabase
     .from('memberships')
     .select('status, tier, cadence')
-    .eq('user_id', user.value.id)
+    .eq('user_id', user.value.sub)
     .maybeSingle()
 
   if (error) {

@@ -20,7 +20,7 @@ const { data: membership, refresh: refreshMembership } = await useAsyncData('das
   const { data, error } = await supabase
     .from('memberships')
     .select('id, tier, cadence, status, created_at')
-    .eq('user_id', user.value.id)
+    .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
   return data
@@ -32,7 +32,7 @@ const { data: creditBalance, refresh: refreshBalance } = await useAsyncData('das
   const { data, error } = await supabase
     .from('credit_balance')
     .select('balance')
-    .eq('user_id', user.value.id)
+    .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
   return data?.balance ?? null
@@ -44,7 +44,7 @@ const { data: upcomingCount } = await useAsyncData('dash:home:upcoming', async (
   const { count, error } = await supabase
     .from('bookings')
     .select('id', { count: 'exact', head: true })
-    .eq('user_id', user.value.id)
+    .eq('user_id', user.value.sub)
     .gte('start_time', new Date().toISOString())
     .in('status', ['confirmed', 'requested'])
   if (error) return 0

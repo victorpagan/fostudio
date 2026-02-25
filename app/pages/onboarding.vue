@@ -12,7 +12,7 @@ const { data: membership } = await useAsyncData('myMembership', async () => {
   const { data } = await supabase
     .from('memberships')
     .select('tier,status,created_at')
-    .eq('user_id', user.value.id)
+    .eq('user_id', user.value.sub)
     .single()
   return data
 })

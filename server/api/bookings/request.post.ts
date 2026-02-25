@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
   const { data: membership } = await supabase
     .from('memberships')
     .select('status')
-    .eq('user_id', user.id)
+    .eq('user_id', user.sub)
     .maybeSingle()
 
   if (!membership || (membership.status || '').toLowerCase() !== 'active') {
@@ -41,14 +41,14 @@ export default defineEventHandler(async (event) => {
   const { data: cust } = await supabase
     .from('customers')
     .select('id')
-    .eq('user_id', user.id)
+    .eq('user_id', user.sub)
     .maybeSingle()
 
   // insert booking request
   const { data: booking, error } = await supabase
     .from('bookings')
     .insert({
-      user_id: user.id,
+      user_id: user.sub,
       customer_id: cust?.id ?? null,
       start_time: start.toISOString(),
       end_time: end.toISOString(),

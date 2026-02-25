@@ -15,7 +15,7 @@ async function poll() {
   const { data } = await supabase
     .from('memberships')
     .select('status')
-    .eq('user_id', user.value.id)
+    .eq('user_id', user.value.sub)
     .single()
 
   status.value = data?.status ?? 'pending'
@@ -43,7 +43,8 @@ onMounted(async () => {
 
       <UCard>
         <p class="text-sm text-gray-600 dark:text-gray-300">
-          Thanks — your subscription is being activated.
+          <span v-if="isTest">Test membership activated — no charge was made.</span>
+          <span v-else>Thanks — your subscription is being activated.</span>
         </p>
 
         <div class="mt-3 text-sm">

@@ -18,7 +18,7 @@ const { data: customer, refresh } = await useAsyncData('dash:profile', async () 
   const { data, error } = await supabase
     .from('customers')
     .select('id, first_name, last_name, email, phone')
-    .eq('user_id', user.value.id)
+    .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
   return data as CustomerRow | null

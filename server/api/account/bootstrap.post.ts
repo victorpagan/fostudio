@@ -74,7 +74,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
-  if (!user?.id || !UUID_RE.test(user.id)) {
+  if (!user?.sub || !UUID_RE.test(user.sub)) {
     throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
   }
 
@@ -91,7 +91,7 @@ export default defineEventHandler(async (event) => {
   const { data: linked, error: linkedErr } = await supa
     .from('customers')
     .select('*')
-    .eq('user_id', user.id)
+    .eq('user_id', user.sub)
     .maybeSingle()
 
   if (linkedErr) {
@@ -116,7 +116,7 @@ export default defineEventHandler(async (event) => {
       // Pick the newest row. If it is linked to someone else, block.
       const candidate = rows?.[0]
       if (candidate) {
-        if (candidate.user_id && candidate.user_id !== user.id) {
+        if (candidate.user_id && candidate.user_id !== user.sub) {
           throw createError({ statusCode: 409, statusMessage: 'This email is already linked to another account.' })
         }
         customerRow = candidate
@@ -136,7 +136,7 @@ export default defineEventHandler(async (event) => {
 
       const candidate = rows?.[0]
       if (candidate) {
-        if (candidate.user_id && candidate.user_id !== user.id) {
+        if (candidate.user_id && candidate.user_id !== user.sub) {
           throw createError({ statusCode: 409, statusMessage: 'This phone is already linked to another account.' })
         }
         customerRow = candidate
@@ -149,7 +149,7 @@ export default defineEventHandler(async (event) => {
     const { data: inserted, error: insErr } = await supa
       .from('customers')
       .insert({
-        user_id: user.id,
+        user_id: user.sub,
         email,
         phone,
         first_name,
@@ -166,11 +166,11 @@ export default defineEventHandler(async (event) => {
     if (!customerRow.user_id) {
       const { error: linkErr } = await supa
         .from('customers')
-        .update({ user_id: user.id })
+        .update({ user_id: user.sub })
         .eq('id', customerRow.id)
 
       if (linkErr) throw createError({ statusCode: 500, statusMessage: `Failed to link customer row: ${linkErr.message}` })
-      customerRow.user_id = user.id
+      customerRow.user_id = user.sub
     }
 
     // 5) Fill missing basic fields from signup form (don’t overwrite existing)

@@ -14,7 +14,7 @@ export default defineNuxtRouteMiddleware(async () => {
   // Guard: user must be fully loaded with a valid UUID before hitting the server.
   // Prevents the "invalid input syntax for type uuid: undefined" error that occurs
   // when the middleware fires before the Supabase session has fully hydrated.
-  if (!user.value?.id || !UUID_RE.test(user.value.id)) return
+  if (!user.value?.sub || !UUID_RE.test(user.value.sub)) return
 
   const bootstrapped = useState<boolean>('customer:bootstrapped', () => false)
   if (bootstrapped.value) return

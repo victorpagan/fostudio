@@ -3,6 +3,8 @@ definePageMeta({ middleware: ['auth'] })
 
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
+const { isAdmin } = useCurrentUser()
+const router = useRouter()
 
 type MembershipRow = {
   id: string
@@ -30,12 +32,25 @@ type PlanVariation = {
   discount_label: string | null
 }
 
+type CatalogTier = {
+  id: string
+  display_name: string
+  description?: string | null
+  booking_window_days: number
+  peak_multiplier: number
+  max_bank: number
+  holds_included: boolean
+  adminOnly?: boolean
+  membership_plan_variations: PlanVariation[]
+}
+
+// ── Current membership ─────────────────────────────────────────────────────
 const { data: membership, refresh } = await useAsyncData('dash:membership', async () => {
   if (!user.value) return null
   const { data, error } = await supabase
     .from('memberships')
     .select('id, tier, cadence, status, created_at, square_plan_variation_id')
-    .eq('user_id', user.value.id)
+    .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
   return data as MembershipRow | null
@@ -65,6 +80,7 @@ const { data: variations } = await useAsyncData('dash:variations', async () => {
   return (data ?? []) as PlanVariation[]
 }, { watch: [membership] })
 
+// ── Tier catalog (shown when no active membership) ─────────────────────────
 const membershipState = computed(() => {
   const s = (membership.value?.status ?? '').toLowerCase()
   if (s === 'active') return 'active'
@@ -75,6 +91,21 @@ const membershipState = computed(() => {
   return 'inactive'
 })
 
+const showCatalog = computed(() =>
+  !isAdmin.value && (membershipState.value === 'none' || membershipState.value === 'inactive' || membershipState.value === 'canceled')
+)
+
+const { data: tierCatalog } = await useAsyncData('dash:tierCatalog', async () => {
+  if (!showCatalog.value) return []
+  const res = await $fetch<CatalogTier[]>('/api/membership/catalog')
+  return res ?? []
+}, { watch: [showCatalog] })
+
+function goCheckout(tierId: string, cadence: string) {
+  router.push(`/checkout?tier=${tierId}&cadence=${cadence}&returnTo=/dashboard/membership`)
+}
+
+// ── Formatting helpers ─────────────────────────────────────────────────────
 const statusColor = computed(() => {
   switch (membershipState.value) {
     case 'active': return 'success'
@@ -124,41 +155,128 @@ function memberSince(createdAt: string | null) {
 
     <template #body>
       <div class="p-4 space-y-4">
-        <!-- No membership -->
-        <template v-if="membershipState === 'none'">
-          <UCard>
-            <div class="text-center py-6">
-              <UIcon name="i-lucide-badge-x" class="size-12 text-dimmed mx-auto mb-3" />
-              <h2 class="text-lg font-semibold">No membership yet</h2>
-              <p class="mt-2 text-sm text-dimmed max-w-xs mx-auto">
-                Choose a plan to get started. Credits are minted when your first invoice is paid.
-              </p>
-              <UButton class="mt-4" to="/memberships">View plans</UButton>
+
+        <!-- ── No membership: inline tier picker ──────────────────────── -->
+        <template v-if="membershipState === 'none' || (showCatalog && tierCatalog?.length)">
+          <UCard v-if="membershipState === 'none'" class="mb-2">
+            <div class="flex items-center gap-3">
+              <UIcon name="i-lucide-badge-x" class="size-8 text-dimmed shrink-0" />
+              <div>
+                <h2 class="font-semibold">No membership yet</h2>
+                <p class="mt-0.5 text-sm text-dimmed">
+                  Choose a plan below to get started. Credits are minted when your first invoice is paid.
+                </p>
+              </div>
             </div>
           </UCard>
+
+          <!-- Canceled/inactive state notice -->
+          <UAlert
+            v-if="membershipState === 'canceled' || membershipState === 'inactive'"
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-circle-off"
+            title="Membership ended"
+            description="Your previous membership has ended. Pick a plan below to reactivate."
+          />
+
+          <!-- Tier cards -->
+          <div v-if="tierCatalog?.length" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <UCard
+              v-for="t in tierCatalog"
+              :key="t.id"
+              class="flex flex-col"
+            >
+              <div class="flex-1 space-y-3">
+                <div class="flex items-center gap-2">
+                <div class="font-semibold text-base">{{ t.display_name }}</div>
+                <UBadge v-if="t.adminOnly" color="warning" variant="soft" size="xs" icon="i-lucide-flask-conical">Admin only</UBadge>
+              </div>
+                <p v-if="t.description" class="text-sm text-dimmed">{{ t.description }}</p>
+                <ul class="text-sm space-y-1.5 text-dimmed">
+                  <li class="flex justify-between">
+                    <span>Booking window</span>
+                    <span class="font-medium text-default">{{ t.booking_window_days }}d</span>
+                  </li>
+                  <li class="flex justify-between">
+                    <span>Peak multiplier</span>
+                    <span class="font-medium text-default">{{ t.peak_multiplier }}×</span>
+                  </li>
+                  <li class="flex justify-between">
+                    <span>Max credit bank</span>
+                    <span class="font-medium text-default">{{ t.max_bank }} cr</span>
+                  </li>
+                  <li class="flex justify-between">
+                    <span>Equipment holds</span>
+                    <UBadge :color="t.holds_included ? 'success' : 'neutral'" variant="soft" size="xs">
+                      {{ t.holds_included ? 'Included' : 'Extra' }}
+                    </UBadge>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="mt-4 space-y-2 border-t border-default pt-4">
+                <div
+                  v-for="plan in t.membership_plan_variations"
+                  :key="plan.cadence"
+                  class="flex items-center justify-between gap-2"
+                >
+                  <div class="text-sm">
+                    <span class="font-medium">{{ formatCadence(plan.cadence) }}</span>
+                    <span class="text-dimmed"> · {{ plan.credits_per_month }} cr/mo</span>
+                    <UBadge v-if="plan.discount_label" color="success" variant="soft" size="xs" class="ml-1">
+                      {{ plan.discount_label }}
+                    </UBadge>
+                  </div>
+                  <UButton size="xs" @click="goCheckout(t.id, plan.cadence)">
+                    {{ formatPrice(plan.price_cents) }}/mo
+                  </UButton>
+                </div>
+              </div>
+            </UCard>
+          </div>
+
+          <div v-else-if="showCatalog" class="flex items-center justify-center py-10">
+            <UIcon name="i-lucide-loader-circle" class="size-6 animate-spin text-dimmed" />
+          </div>
         </template>
 
-        <!-- Pending checkout -->
+        <!-- ── Pending checkout ────────────────────────────────────────── -->
         <template v-else-if="membershipState === 'pending_checkout'">
           <UAlert
             color="warning"
             variant="soft"
             title="Checkout not completed"
             description="Your membership is reserved but payment hasn't been processed yet."
-            :actions="[{ label: 'Finish checkout', to: '/memberships' }]"
           />
+          <UCard>
+            <div class="text-center py-6">
+              <UIcon name="i-lucide-clock" class="size-10 text-warning mx-auto mb-3" />
+              <h2 class="font-semibold">Awaiting payment</h2>
+              <p class="mt-2 text-sm text-dimmed max-w-xs mx-auto">
+                Complete checkout to activate your membership.
+              </p>
+              <div class="mt-4 flex gap-2 justify-center">
+                <UButton @click="goCheckout(membership?.tier ?? 'creator', membership?.cadence ?? 'monthly')">
+                  Retry checkout
+                </UButton>
+                <UButton color="neutral" variant="soft" @click="() => refresh()">
+                  Refresh status
+                </UButton>
+              </div>
+            </div>
+          </UCard>
         </template>
 
-        <!-- Active or other states -->
+        <!-- ── Active or other states: plan summary ───────────────────── -->
         <template v-else>
-          <!-- Status banner -->
+          <!-- Status banner for non-active states -->
           <UAlert
             v-if="membershipState !== 'active'"
             :color="statusColor"
             variant="soft"
             :title="membershipState === 'past_due' ? 'Payment past due' : 'Membership inactive'"
             description="Please update your payment method or contact support."
-            :actions="[{ label: 'Manage billing', to: '/memberships' }]"
           />
 
           <!-- Plan summary -->
@@ -254,8 +372,8 @@ function memberSince(createdAt: string | null) {
           <UCard>
             <div class="text-sm font-medium mb-3">Manage membership</div>
             <div class="flex flex-wrap gap-2">
-              <UButton color="neutral" variant="soft" to="/memberships" icon="i-lucide-arrow-up-circle">
-                Upgrade plan
+              <UButton color="neutral" variant="soft" icon="i-lucide-arrow-up-circle" @click="goCheckout(membership?.tier ?? 'creator', membership?.cadence ?? 'monthly')">
+                Change plan
               </UButton>
               <UButton color="neutral" variant="ghost" icon="i-lucide-external-link" target="_blank">
                 Manage billing (Square)
@@ -266,6 +384,7 @@ function memberSince(createdAt: string | null) {
             </p>
           </UCard>
         </template>
+
       </div>
     </template>
   </UDashboardPanel>

@@ -85,7 +85,7 @@ export default defineEventHandler(async (event) => {
     const { data: membership } = await supabase
       .from('memberships')
       .select('tier, status')
-      .eq('user_id', user.id)
+      .eq('user_id', user.sub)
       .maybeSingle()
 
     if (!membership || membership.status !== 'active') {

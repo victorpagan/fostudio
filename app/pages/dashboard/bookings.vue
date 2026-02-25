@@ -35,6 +35,7 @@ type Tier = {
   peak_multiplier: number
   max_bank: number
   holds_included: number
+  adminOnly?: boolean
   membership_plan_variations: PlanOption[]
 }
 
@@ -46,7 +47,7 @@ const { data: membershipData } = await useAsyncData('bookings:membership', async
   const { data } = await supabase
     .from('memberships')
     .select('status, tier, cadence')
-    .eq('user_id', user.value.id)
+    .eq('user_id', user.value.sub)
     .maybeSingle()
   return data
 })
@@ -61,7 +62,7 @@ const { data: upcoming, refresh: refreshUpcoming } = await useAsyncData('booking
   const { data, error } = await supabase
     .from('bookings')
     .select('id, start_time, end_time, status, notes, credits_burned, created_at')
-    .eq('user_id', user.value.id)
+    .eq('user_id', user.value.sub)
     .gte('start_time', now)
     .in('status', ['confirmed', 'requested'])
     .order('start_time', { ascending: true })
@@ -75,7 +76,7 @@ const { data: past, refresh: refreshPast } = await useAsyncData('bookings:past',
   const { data, error } = await supabase
     .from('bookings')
     .select('id, start_time, end_time, status, notes, credits_burned, created_at')
-    .eq('user_id', user.value.id)
+    .eq('user_id', user.value.sub)
     .lt('start_time', now)
     .order('start_time', { ascending: false })
     .limit(20)
@@ -86,11 +87,11 @@ const { data: past, refresh: refreshPast } = await useAsyncData('bookings:past',
 // Fetch tiers for upsell panel (only loaded when no active membership)
 const { data: catalogData } = await useAsyncData('bookings:catalog', async () => {
   if (hasMembership.value) return null
-  const res = await $fetch<{ tiers: Tier[] }>('/api/membership/catalog')
+  const res = await $fetch<Tier[]>("/api/membership/catalog")
   return res
 }, { watch: [hasMembership] })
 
-const tiers = computed(() => catalogData.value?.tiers ?? [])
+const tiers = computed(() => catalogData.value ?? [])
 
 async function refreshAll() {
   await Promise.all([refreshUpcoming(), refreshPast()])
@@ -204,7 +205,10 @@ function goCheckout(tierId: string, cadence: string) {
 
         <div class="grid gap-4 lg:grid-cols-3">
           <UCard v-for="tier in tiers" :key="tier.id">
-            <div class="text-base font-semibold">{{ tier.display_name }}</div>
+            <div class="flex items-center gap-2">
+              <div class="text-base font-semibold">{{ tier.display_name }}</div>
+              <UBadge v-if="tier.adminOnly" color="warning" variant="soft" size="xs" icon="i-lucide-flask-conical">Admin only</UBadge>
+            </div>
             <p v-if="tier.description" class="mt-1 text-sm text-dimmed">{{ tier.description }}</p>
 
             <div class="mt-4 grid grid-cols-3 gap-2">
