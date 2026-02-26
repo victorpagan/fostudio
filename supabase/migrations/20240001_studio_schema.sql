@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS public.membership_tiers (
   peak_multiplier     numeric(4,2) NOT NULL DEFAULT 1.5,
   max_bank            integer,                   -- max credits a member can hold
   max_slots           integer,                   -- max members in this tier (NULL = unlimited)
-  holds_included      boolean     NOT NULL DEFAULT false,
+  holds_included      integer     NOT NULL DEFAULT 0,
   active              boolean     NOT NULL DEFAULT true,
   visible             boolean     NOT NULL DEFAULT true,
   sort_order          integer     NOT NULL DEFAULT 0,
