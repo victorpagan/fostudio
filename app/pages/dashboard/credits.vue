@@ -31,7 +31,7 @@ type Tier = {
   booking_window_days: number
   peak_multiplier: number
   max_bank: number
-  holds_included: boolean
+  holds_included: number
   adminOnly?: boolean
   membership_plan_variations: PlanOption[]
 }

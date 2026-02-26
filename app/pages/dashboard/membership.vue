@@ -21,7 +21,7 @@ type TierRow = {
   booking_window_days: number | null
   peak_multiplier: number | null
   max_bank: number | null
-  holds_included: boolean | null
+  holds_included: number | null
 }
 
 type PlanVariation = {
@@ -39,7 +39,7 @@ type CatalogTier = {
   booking_window_days: number
   peak_multiplier: number
   max_bank: number
-  holds_included: boolean
+  holds_included: number
   adminOnly?: boolean
   membership_plan_variations: PlanVariation[]
 }

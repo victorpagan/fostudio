@@ -24,8 +24,8 @@ INSERT INTO public.membership_tiers (
   30,
   1.0,
   999,
-  true,
-  true,    -- active = true so it can be checked out
+  1,       -- holds_included (integer, not boolean — 1 = holds included)
+  true,    -- active
   false,   -- visible = false so it's hidden from public catalog
   99       -- sort last
 )
