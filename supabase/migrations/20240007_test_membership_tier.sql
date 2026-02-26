@@ -38,13 +38,15 @@ ON CONFLICT (id) DO UPDATE SET
 -- Add plan variations for the test tier (price_cents=0, visible=false)
 INSERT INTO public.membership_plan_variations (
   tier_id, cadence, provider,
+  provider_plan_variation_id,
   credits_per_month, price_cents, currency,
   discount_label, active, visible, sort_order
 ) VALUES
-  ('test', 'monthly',   'square', 100, 0, 'USD', NULL, true, false, 1),
-  ('test', 'quarterly', 'square', 100, 0, 'USD', NULL, true, false, 2),
-  ('test', 'annual',    'square', 100, 0, 'USD', NULL, true, false, 3)
+  ('test', 'monthly',   'square', 'TEST_PLAN_MONTHLY',   100, 0, 'USD', NULL, true, false, 1),
+  ('test', 'quarterly', 'square', 'TEST_PLAN_QUARTERLY', 100, 0, 'USD', NULL, true, false, 2),
+  ('test', 'annual',    'square', 'TEST_PLAN_ANNUAL',    100, 0, 'USD', NULL, true, false, 3)
 ON CONFLICT (tier_id, cadence, provider) DO UPDATE SET
+  provider_plan_variation_id = EXCLUDED.provider_plan_variation_id,
   price_cents = EXCLUDED.price_cents,
   active      = EXCLUDED.active,
   visible     = EXCLUDED.visible;
