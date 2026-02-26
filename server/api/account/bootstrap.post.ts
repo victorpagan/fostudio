@@ -87,18 +87,29 @@ export default defineEventHandler(async (event) => {
   const last_name = (body.last_name ?? '').trim() || null
   const address = body.address ?? null
 
-  // 1) If already linked to this auth user, update+sync and return
-  const { data: linked, error: linkedErr } = await supa
+  // 1) Find the customer row linked to this auth user.
+  //    If duplicates exist (shouldn't after the unique constraint is added, but
+  //    guard defensively), pick the most-recently-updated one and discard extras.
+  const { data: linkedRows, error: linkedErr } = await supa
     .from('customers')
     .select('*')
     .eq('user_id', user.sub)
-    .maybeSingle()
+    .order('updated_at', { ascending: false })
+    .limit(10)
 
   if (linkedErr) {
     throw createError({ statusCode: 500, statusMessage: `Customer lookup failed: ${linkedErr.message}` })
   }
 
-  let customerRow = linked
+  // De-duplicate: keep the first (newest), delete the rest
+  if ((linkedRows?.length ?? 0) > 1) {
+    const [keep, ...extras] = linkedRows!
+    const extraIds = extras.map((r: any) => r.id)
+    await supa.from('customers').delete().in('id', extraIds)
+    console.warn(`[bootstrap] Removed ${extraIds.length} duplicate customer rows for user ${user.sub}`)
+  }
+
+  let customerRow = linkedRows?.[0] ?? null
 
   // 2) If not linked: try to find an existing customer row by email/phone (and link it)
   if (!customerRow) {
