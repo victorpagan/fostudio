@@ -15,28 +15,28 @@
     "@fullcalendar/interaction": "^6.1.20",
     "@fullcalendar/timegrid": "^6.1.20",
     "@fullcalendar/vue3": "^6.1.20",
-    "@iconify-json/lucide": "^1.2.86",
-    "@iconify-json/simple-icons": "^1.2.67",
-    "@nuxt/content": "^3.11.0",
+    "@iconify-json/lucide": "^1.2.94",
+    "@iconify-json/simple-icons": "^1.2.71",
+    "@nuxt/content": "^3.11.2",
     "@nuxt/image": "^2.0.0",
-    "@nuxt/ui": "^4.4.0",
+    "@nuxt/ui": "^4.5.0",
     "@nuxtjs/supabase": "2.0.3",
     "@standard-schema/spec": "^1.1.0",
-    "@vueuse/nuxt": "^14.1.0",
+    "@vueuse/nuxt": "^14.2.1",
     "better-sqlite3": "^12.6.2",
     "luxon": "^3.7.2",
-    "nuxt": "^4.2.2",
+    "nuxt": "^4.3.1",
     "nuxt-og-image": "^5.1.13",
     "square": "^44.0.0",
-    "tailwindcss": "^4.1.18",
-    "zod": "^4.3.5"
+    "tailwindcss": "^4.2.1",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@nuxt/eslint": "^1.12.1",
-    "@vueuse/core": "^14.1.0",
-    "eslint": "^9.39.2",
+    "@nuxt/eslint": "^1.15.2",
+    "@vueuse/core": "^14.2.1",
+    "eslint": "^9.39.3",
     "typescript": "^5.9.3",
-    "vue-tsc": "^3.2.2"
+    "vue-tsc": "^3.2.5"
   },
   "packageManager": "pnpm@10.28.1"
 }
