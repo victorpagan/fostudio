@@ -12,6 +12,8 @@ export default defineEventHandler(async (event) => {
   const role = (user as any)?.app_metadata?.role as string | undefined
   const isAdmin = role === 'admin' || role === 'service'
 
+  console.log(`[catalog] user=${user?.sub}, role=${role}, isAdmin=${isAdmin}`)
+
   let query = supabase
     .from('membership_tiers')
     .select(`
@@ -61,5 +63,6 @@ export default defineEventHandler(async (event) => {
       .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
   }))
 
+  console.log(`[catalog] returning ${tiers.length} tiers:`, tiers.map(t => ({ id: t.id, visible: t.visible, plans: t.membership_plan_variations.length })))
   return { tiers }
 })
