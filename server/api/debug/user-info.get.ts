@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
     return { authenticated: false, user: null }
   }
 
-  const role = (user as any)?.app_metadata?.role as string | undefined
+  const role = (user as any)?.user_metadata?.role ?? (user as any)?.app_metadata?.role as string | undefined
   const isAdmin = role === 'admin' || role === 'service'
 
   return {

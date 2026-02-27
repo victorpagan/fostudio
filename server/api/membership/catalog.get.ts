@@ -9,7 +9,8 @@ export default defineEventHandler(async (event) => {
   // Admins see all active tiers including hidden ones (e.g. the test tier).
   // Everyone else only sees active + visible tiers.
   const user = await serverSupabaseUser(event).catch(() => null)
-  const role = (user as any)?.app_metadata?.role as string | undefined
+  // Check user_metadata first (current), then app_metadata (more secure, backend-only)
+  const role = (user as any)?.user_metadata?.role ?? (user as any)?.app_metadata?.role as string | undefined
   const isAdmin = role === 'admin' || role === 'service'
 
   console.log(`[catalog] user=${user?.sub}, role=${role}, isAdmin=${isAdmin}`)
