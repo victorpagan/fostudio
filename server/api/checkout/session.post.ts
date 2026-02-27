@@ -25,8 +25,8 @@ export default defineEventHandler(async (event) => {
   const tierId = parsed.tier
   const cadence = parsed.cadence ?? 'monthly'
 
-  // Derive user role from JWT app_metadata (set by Supabase Admin API)
-  const role = (user as any).app_metadata?.role as string | undefined
+  // Derive user role from JWT (check user_metadata first, then app_metadata for backend-only security)
+  const role = (user as any).user_metadata?.role ?? (user as any).app_metadata?.role as string | undefined
   const isAdmin = role === 'admin' || role === 'service'
 
   // ── 1) Validate tier exists and is accessible ──────────────────────────

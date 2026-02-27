@@ -23,7 +23,8 @@ export default defineEventHandler(async (event) => {
   const bookingId = getRouterParam(event, 'id')
   if (!bookingId) throw createError({ statusCode: 400, statusMessage: 'Missing booking id' })
 
-  const isAdmin = (user.app_metadata?.role as string | undefined) === 'admin'
+  const role = (user as any).user_metadata?.role ?? (user as any).app_metadata?.role as string | undefined
+  const isAdmin = role === 'admin' || role === 'service'
 
   // Use service role for admin, user client for member (RLS enforces ownership)
   const supabase = isAdmin
