@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { H3Event } from 'h3'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
+import { sanitizeForJSON } from '~~/server/utils/sanitize'
 
 const schema = z.object({
   email: z.string().email().optional(),
@@ -213,7 +214,7 @@ export default defineEventHandler(async (event) => {
       squareCustomerJson = sq
       await supa
         .from('customers')
-        .update({ square_customer_json: sq })
+        .update({ square_customer_json: sanitizeForJSON(sq) })
         .eq('id', row.id)
     }
     return { ok: true, customer_id: row.id, square_customer_id: squareCustomerId }
@@ -229,7 +230,7 @@ export default defineEventHandler(async (event) => {
     const sq = await retrieveSquareCustomer(event, squareCustomerId)
     const patch: any = {
       square_customer_id: squareCustomerId,
-      square_customer_json: sq
+      square_customer_json: sanitizeForJSON(sq)
     }
 
     // Backfill missing local fields from Square
@@ -258,7 +259,7 @@ export default defineEventHandler(async (event) => {
     .from('customers')
     .update({
       square_customer_id: created.id,
-      square_customer_json: created
+      square_customer_json: sanitizeForJSON(created)
     })
     .eq('id', row.id)
 
