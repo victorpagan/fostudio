@@ -48,11 +48,6 @@ export default defineNuxtConfig({
         '/checkout',
         '/checkout/**',
         // Misc
-        '/blog',
-        '/blog/**',
-        '/docs/**',
-        '/changelog',
-        '/changelog/**'
       ]
     }
   },
