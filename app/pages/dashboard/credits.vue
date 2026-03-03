@@ -54,8 +54,8 @@ const hasMembership = computed(() =>
 // ── Tier catalog (only loaded when no active membership) ───────────────────
 const { data: tierCatalog } = await useAsyncData('credits:tiers', async () => {
   if (hasMembership.value) return []
-  const res = await $fetch<Tier[]>('/api/membership/catalog')
-  return res ?? []
+  const res = await $fetch<{ tiers: Tier[] }>('/api/membership/catalog')
+  return res?.tiers ?? []
 }, { watch: [hasMembership] })
 
 function goCheckout(tierId: string, cadence: string) {

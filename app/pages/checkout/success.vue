@@ -5,10 +5,16 @@ const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 
 const route = useRoute()
-const returnTo = computed(() => (route.query.returnTo as string | undefined) ?? '/dashboard')
+const returnTo = computed(() => {
+  const value = route.query.returnTo
+  if (typeof value === 'string' && value.startsWith('/')) return value
+  return '/dashboard'
+})
+const isTest = computed(() => route.query.test === '1')
 
 const status = ref<string>('pending')
 const tries = ref(0)
+let timer: ReturnType<typeof setInterval> | null = null
 
 async function poll() {
   if (!user.value) return
@@ -16,23 +22,30 @@ async function poll() {
     .from('memberships')
     .select('status')
     .eq('user_id', user.value.sub)
-    .single()
+    .maybeSingle()
 
-  status.value = data?.status ?? 'pending'
+  status.value = data?.status ?? (isTest.value ? 'active' : 'pending')
 }
 
 onMounted(async () => {
-  // basic polling (v1)
-  const timer = setInterval(async () => {
+  await poll()
+  if (status.value === 'active') {
+    await navigateTo(returnTo.value)
+    return
+  }
+
+  timer = setInterval(async () => {
     tries.value++
     await poll()
     if (status.value === 'active' || tries.value >= 10) {
-      clearInterval(timer)
+      if (timer) clearInterval(timer)
       await navigateTo(returnTo.value)
     }
   }, 2000)
+})
 
-  await poll()
+onBeforeUnmount(() => {
+  if (timer) clearInterval(timer)
 })
 </script>
 

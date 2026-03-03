@@ -1,16 +1,46 @@
 // File: server/api/checkout/session.post.ts
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
+import type { H3Event } from 'h3'
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { serverSupabaseUser, serverSupabaseClient } from '#supabase/server'
 
 const bodySchema = z.object({
   tier: z.string().min(1),
-  cadence: z.enum(['monthly', 'quarterly', 'annual']).optional()
+  cadence: z.enum(['monthly', 'quarterly', 'annual']).optional(),
+  returnTo: z.string().min(1).optional()
 })
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function normalizeReturnTo(value: string | undefined, fallback = '/dashboard/membership') {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return fallback
+  return value
+}
+
+async function resolvePlanVariationId(
+  event: H3Event,
+  providerPlanVariationId: string | null | undefined,
+  tierId: string,
+  cadence: 'monthly' | 'quarterly' | 'annual'
+) {
+  const directValue = providerPlanVariationId?.trim()
+  if (directValue) return directValue
+
+  const configKey = `SQUARE_PLAN_VARIATION_${tierId.toUpperCase()}_${cadence.toUpperCase()}`
+
+  try {
+    const configuredValue = await getServerConfig(event, configKey)
+    if (typeof configuredValue === 'string' && configuredValue.trim()) {
+      return configuredValue.trim()
+    }
+  } catch {
+    // Missing config should fall through to a clear checkout error below.
+  }
+
+  return null
+}
 
 export default defineEventHandler(async (event) => {
   // serverSupabaseUser returns JwtPayload in @nuxtjs/supabase v2; the UUID is in `.sub`
@@ -24,6 +54,7 @@ export default defineEventHandler(async (event) => {
   const parsed = bodySchema.parse(await readBody(event))
   const tierId = parsed.tier
   const cadence = parsed.cadence ?? 'monthly'
+  const returnTo = normalizeReturnTo(parsed.returnTo)
 
   // Derive user role from JWT (check user_metadata first, then app_metadata for backend-only security)
   const role = (user as any).user_metadata?.role ?? (user as any).app_metadata?.role as string | undefined
@@ -65,6 +96,25 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Plan option not available' })
   }
 
+  const isTestTier = tierId === 'test'
+  let resolvedPlanVariationId: string | null = null
+
+  if (!isTestTier) {
+    resolvedPlanVariationId = await resolvePlanVariationId(
+      event,
+      variation.provider_plan_variation_id,
+      tierId,
+      cadence
+    )
+
+    if (!resolvedPlanVariationId) {
+      throw createError({
+        statusCode: 503,
+        statusMessage: 'This membership plan is not configured for checkout yet.'
+      })
+    }
+  }
+
   // ── 3) Upsert membership row ─────────────────────────────────────────────
   const { data: membership, error: memErr } = await supabase
     .from('memberships')
@@ -75,7 +125,6 @@ export default defineEventHandler(async (event) => {
   if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
 
   // Allow re-checkout if previously active AND it's a test tier (so admins can re-run)
-  const isTestTier = tierId === 'test'
   if (membership?.status?.toLowerCase() === 'active' && !isTestTier) {
     throw createError({ statusCode: 409, statusMessage: 'Membership already active' })
   }
@@ -86,7 +135,7 @@ export default defineEventHandler(async (event) => {
       .from('memberships')
       .insert({
         user_id: user.sub,
-        tier: tierId,
+        tier: tierId as never,
         cadence,
         status: 'pending_checkout' as const
       })
@@ -99,7 +148,7 @@ export default defineEventHandler(async (event) => {
     const { error: updErr } = await supabase
       .from('memberships')
       .update({
-        tier: tierId,
+        tier: tierId as never,
         cadence,
         status: 'pending_checkout' as const
       })
@@ -119,16 +168,15 @@ export default defineEventHandler(async (event) => {
       .update({
         status: 'active',
         checkout_provider: 'test',
+        activated_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
       .eq('id', membershipId)
 
     if (confirmErr) throw createError({ statusCode: 500, statusMessage: confirmErr.message })
 
-    console.log(`[checkout] Test tier activated for user ${user.sub}, membership ${membershipId}`)
-
     return {
-      redirectUrl: `${origin}/checkout/success?test=1`,
+      redirectUrl: `${origin}/checkout/success?test=1&returnTo=${encodeURIComponent(returnTo)}`,
       provider: 'test'
     }
   }
@@ -136,9 +184,9 @@ export default defineEventHandler(async (event) => {
   // ── 4) Create Square payment link (real subscription checkout) ───────────
   const square = await useSquareClient(event)
   const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
-  const redirectUrl = `${origin}/checkout/success`
+  const redirectUrl = `${origin}/checkout/success?returnTo=${encodeURIComponent(returnTo)}`
   const idempotencyKey = randomUUID()
-  const planVariationId = variation.provider_plan_variation_id
+  const planVariationId = resolvedPlanVariationId as string
 
   const createRes = await square.checkout.paymentLinks.create({
     idempotencyKey,

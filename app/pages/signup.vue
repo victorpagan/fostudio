@@ -3,23 +3,62 @@
 definePageMeta({ auth: false })
 
 type TierId = 'creator' | 'pro' | 'studio_plus'
+type Cadence = 'monthly' | 'quarterly' | 'annual'
+
 const route = useRoute()
 const router = useRouter()
 
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 
-const tierCatalog: Record<TierId, { name: string; price: number; credits: number; bookingWindowDays: number }> = {
-  creator: { name: 'Creator', price: 350, credits: 12, bookingWindowDays: 14 },
-  pro: { name: 'Pro', price: 650, credits: 26, bookingWindowDays: 21 },
-  studio_plus: { name: 'Studio+', price: 950, credits: 42, bookingWindowDays: 30 }
+const tierCatalog: Record<TierId, { name: string; credits: number; bookingWindowDays: number }> = {
+  creator: { name: 'Creator', credits: 12, bookingWindowDays: 14 },
+  pro: { name: 'Pro', credits: 26, bookingWindowDays: 21 },
+  studio_plus: { name: 'Studio+', credits: 42, bookingWindowDays: 30 }
 }
 
-const tier = computed<TierId>(() => {
-  const t = (route.query.tier as string | undefined)?.toLowerCase()
-  if (t === 'creator' || t === 'pro' || t === 'studio_plus') return t
-  return 'creator'
+const returnTo = computed(() => {
+  const value = route.query.returnTo
+  if (typeof value === 'string' && value.startsWith('/')) return value
+  return '/onboarding'
 })
+
+const loginTo = computed(() =>
+  `/login?returnTo=${encodeURIComponent(returnTo.value)}`
+)
+
+const selectedPlan = computed(() => {
+  const selected = {
+    tier: null as TierId | null,
+    cadence: null as Cadence | null
+  }
+
+  try {
+    const target = new URL(returnTo.value, 'https://fostudio.local')
+    const tier = target.searchParams.get('tier')?.toLowerCase()
+    const cadence = target.searchParams.get('cadence')?.toLowerCase()
+
+    if (tier === 'creator' || tier === 'pro' || tier === 'studio_plus') {
+      selected.tier = tier
+    }
+
+    if (cadence === 'monthly' || cadence === 'quarterly' || cadence === 'annual') {
+      selected.cadence = cadence
+    }
+  } catch {
+    // Ignore malformed returnTo values and fall back to safe defaults.
+  }
+
+  return selected
+})
+
+const tier = computed<TierId>(() => {
+  const direct = (route.query.tier as string | undefined)?.toLowerCase()
+  if (direct === 'creator' || direct === 'pro' || direct === 'studio_plus') return direct
+  return selectedPlan.value.tier ?? 'creator'
+})
+
+const cadence = computed<Cadence>(() => selectedPlan.value.cadence ?? 'monthly')
 
 const tierInfo = computed(() => tierCatalog[tier.value])
 
@@ -37,8 +76,14 @@ const successMsg = ref<string | null>(null)
 
 watchEffect(() => {
   // If already logged in, send them onward
-  if (user.value) router.replace('/onboarding')
+  if (user.value) router.replace(returnTo.value)
 })
+
+function cadenceLabel(value: Cadence) {
+  if (value === 'monthly') return 'Monthly'
+  if (value === 'quarterly') return 'Quarterly'
+  return 'Annual'
+}
 
 async function handleSignup() {
   errorMsg.value = null
@@ -49,7 +94,7 @@ async function handleSignup() {
       email: form.email.trim(),
       password: form.password,
       options: {
-        emailRedirectTo: `${window.location.origin}/onboarding`
+        emailRedirectTo: `${window.location.origin}/onboarding?returnTo=${encodeURIComponent(returnTo.value)}`
       }
     })
     if (error) throw error
@@ -68,22 +113,12 @@ async function handleSignup() {
           last_name: form.lastName.trim() || undefined
         }
       })
+
+      await router.push(returnTo.value)
+      return
     }
 
-    // Create membership row (pending checkout)
-    // (If you prefer, we can move this to a server endpoint too.)
-    const { error: memErr } = await supabase
-      .from('memberships')
-      .insert({
-        user_id: data.user.id,
-        tier: tier.value,
-        cadence: 'monthly',
-        status: 'pending_checkout'
-      } as any)
-    if (memErr) throw memErr
-
-    successMsg.value = 'Account created. Check your email if confirmation is required. Redirecting…'
-    await router.push('/onboarding')
+    successMsg.value = 'Account created. Check your email to confirm your account, then log in to continue.'
   } catch (e: any) {
     errorMsg.value = e?.message ?? 'Signup failed.'
   } finally {
@@ -99,11 +134,14 @@ async function handleSignup() {
       <UCard>
         <div class="text-sm text-gray-500 dark:text-gray-400">You selected</div>
         <div class="mt-1 text-2xl font-semibold">{{ tierInfo.name }}</div>
+        <div class="mt-1 text-sm text-gray-600 dark:text-gray-300">
+          {{ cadenceLabel(cadence) }} billing
+        </div>
 
         <div class="mt-4 grid grid-cols-3 gap-2">
           <div class="rounded-xl border border-gray-200/60 p-3 text-center dark:border-gray-800/60">
-            <div class="text-sm font-medium">${{ tierInfo.price }}</div>
-            <div class="text-xs text-gray-500 dark:text-gray-400">per month</div>
+            <div class="text-sm font-medium">{{ cadenceLabel(cadence) }}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">billing</div>
           </div>
           <div class="rounded-xl border border-gray-200/60 p-3 text-center dark:border-gray-800/60">
             <div class="text-sm font-medium">{{ tierInfo.credits }}</div>
@@ -128,7 +166,7 @@ async function handleSignup() {
             </li>
             <li class="flex gap-2">
               <span class="mt-1 h-1.5 w-1.5 rounded-full bg-gray-400" />
-              <span>Checkout (we’ll wire billing next)</span>
+              <span>Complete secure checkout for your membership</span>
             </li>
           </ul>
         </div>
@@ -170,7 +208,7 @@ async function handleSignup() {
 
           <div class="text-sm text-gray-600 dark:text-gray-300">
             Already have an account?
-            <NuxtLink class="underline" to="/login">Log in</NuxtLink>
+            <NuxtLink class="underline" :to="loginTo">Log in</NuxtLink>
           </div>
         </div>
       </UCard>

@@ -3,7 +3,7 @@ type Cadence = 'monthly' | 'quarterly' | 'annual'
 
 type PlanOption = {
   cadence: Cadence
-  provider_plan_variation_id: string
+  provider_plan_variation_id: string | null
   credits_per_month: number
   price_cents: number
   currency: string
@@ -18,12 +18,17 @@ type Tier = {
   peak_multiplier: number
   max_bank: number
   holds_included: number
+  adminOnly?: boolean
   membership_plan_variations: PlanOption[]
 }
 
 const route = useRoute()
 const router = useRouter()
-const returnTo = computed(() => (route.query.returnTo as string | undefined) ?? '/dashboard')
+const returnTo = computed(() => {
+  const value = route.query.returnTo
+  if (typeof value === 'string' && value.startsWith('/')) return value
+  return '/dashboard'
+})
 
 const { user } = useCurrentUser()
 const isAuthed = computed(() => !!user.value)
@@ -93,7 +98,12 @@ function goLogin() {
       <UCard v-for="tier in tiers" :key="tier.id">
         <div class="flex items-start justify-between gap-4">
           <div>
-            <div class="text-lg font-semibold">{{ tier.display_name }}</div>
+            <div class="flex items-center gap-2 text-lg font-semibold">
+              <span>{{ tier.display_name }}</span>
+              <UBadge v-if="tier.adminOnly" color="warning" variant="soft" size="xs" icon="i-lucide-flask-conical">
+                Admin only
+              </UBadge>
+            </div>
             <div class="mt-1 text-sm text-gray-600 dark:text-gray-300">
               {{ tier.description || '' }}
             </div>

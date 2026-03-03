@@ -1,10 +1,10 @@
 /**
  * useCurrentUser — shared composable for auth user + role awareness.
  *
- * Role is read from Supabase's app_metadata (set server-side via Admin API
- * or via DB trigger/RLS). Current roles:
+ * Role is read from Supabase user metadata first, then app metadata as a
+ * fallback. Current roles:
  *   - 'admin'   — full admin access, bypasses membership guards
- *   - 'service' — service account, typically API-only
+ *   - 'service' — privileged service account
  *   - (none)    — standard member
  *
  * Usage:
@@ -15,11 +15,12 @@ export const useCurrentUser = createSharedComposable(() => {
 
   const role = computed<string | null>(() => {
     if (!user.value) return null
-    // app_metadata is set by Supabase Admin API / triggers, not by the client
-    return (user.value.app_metadata?.role as string | undefined) ?? null
+    return (user.value.user_metadata?.role as string | undefined)
+      ?? (user.value.app_metadata?.role as string | undefined)
+      ?? null
   })
 
-  const isAdmin = computed(() => role.value === 'admin')
+  const isAdmin = computed(() => role.value === 'admin' || role.value === 'service')
   const isService = computed(() => role.value === 'service')
   // Members are authenticated non-service, non-admin users
   const isMember = computed(() => !!user.value && !isAdmin.value && !isService.value)

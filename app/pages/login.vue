@@ -10,9 +10,20 @@ useSeoMeta({
 })
 
 const supabase = useSupabaseClient()
+const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const loading = ref(false)
+
+const returnTo = computed(() => {
+  const value = route.query.returnTo
+  if (typeof value === 'string' && value.startsWith('/')) return value
+  return '/dashboard'
+})
+
+const signupTo = computed(() =>
+  `/signup?returnTo=${encodeURIComponent(returnTo.value)}`
+)
 
 // Keep the remember checkbox separate so it doesn't sit between password
 // and the submit button — some browsers skip form submit on Enter when a
@@ -60,7 +71,7 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
     if (error) throw error
 
     toast.add({ title: 'Welcome back', description: 'Signed in successfully' })
-    await router.push('/dashboard')
+    await router.push(returnTo.value)
   } catch (e: any) {
     toast.add({ title: 'Login failed', description: e?.message ?? 'Unknown error', color: 'error' })
   } finally {
@@ -83,7 +94,7 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
     >
       <template #description>
         Don't have an account?
-        <ULink to="/signup" class="text-primary font-medium">Sign up</ULink>.
+        <ULink :to="signupTo" class="text-primary font-medium">Sign up</ULink>.
       </template>
 
       <template #password-hint>

@@ -4,6 +4,13 @@ definePageMeta({ middleware: ['auth'] })
 
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
+const route = useRoute()
+
+const returnTo = computed(() => {
+  const value = route.query.returnTo
+  if (typeof value === 'string' && value.startsWith('/')) return value
+  return '/dashboard'
+})
 
 await $fetch('/api/account/bootstrap', { method: 'POST', body: {} })
 
@@ -33,7 +40,7 @@ const { data: membership } = await useAsyncData('myMembership', async () => {
         </div>
         <div class="mt-4 flex gap-2">
           <UButton to="/dashboard" color="neutral" variant="soft">Go to dashboard</UButton>
-          <UButton to="/memberships">Back to memberships</UButton>
+          <UButton :to="returnTo">{{ returnTo.startsWith('/checkout') ? 'Continue to checkout' : 'Continue' }}</UButton>
         </div>
       </UCard>
     </div>

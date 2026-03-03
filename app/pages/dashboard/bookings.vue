@@ -87,8 +87,8 @@ const { data: past, refresh: refreshPast } = await useAsyncData('bookings:past',
 // Fetch tiers for upsell panel (only loaded when no active membership)
 const { data: catalogData } = await useAsyncData('bookings:catalog', async () => {
   if (hasMembership.value) return null
-  const res = await $fetch<Tier[]>("/api/membership/catalog")
-  return res
+  const res = await $fetch<{ tiers: Tier[] }>('/api/membership/catalog')
+  return res?.tiers ?? []
 }, { watch: [hasMembership] })
 
 const tiers = computed(() => catalogData.value ?? [])

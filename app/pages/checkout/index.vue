@@ -19,7 +19,11 @@ const cadence = computed(() => {
   return 'monthly'
 })
 
-const returnTo = computed(() => (route.query.returnTo as string | undefined) ?? '/dashboard/membership')
+const returnTo = computed(() => {
+  const value = route.query.returnTo
+  if (typeof value === 'string' && value.startsWith('/')) return value
+  return '/dashboard/membership'
+})
 
 const isTestTier = computed(() => tier.value === 'test')
 
@@ -31,7 +35,8 @@ async function beginCheckout() {
       method: 'POST',
       body: {
         tier: tier.value,
-        cadence: cadence.value
+        cadence: cadence.value,
+        returnTo: returnTo.value
       }
     })
 

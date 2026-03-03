@@ -3,7 +3,6 @@ definePageMeta({ middleware: ['auth'] })
 
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
-const { isAdmin } = useCurrentUser()
 const router = useRouter()
 
 type MembershipRow = {
@@ -92,13 +91,13 @@ const membershipState = computed(() => {
 })
 
 const showCatalog = computed(() =>
-  !isAdmin.value && (membershipState.value === 'none' || membershipState.value === 'inactive' || membershipState.value === 'canceled')
+  membershipState.value === 'none' || membershipState.value === 'inactive' || membershipState.value === 'canceled'
 )
 
 const { data: tierCatalog } = await useAsyncData('dash:tierCatalog', async () => {
   if (!showCatalog.value) return []
-  const res = await $fetch<CatalogTier[]>('/api/membership/catalog')
-  return res ?? []
+  const res = await $fetch<{ tiers: CatalogTier[] }>('/api/membership/catalog')
+  return res?.tiers ?? []
 }, { watch: [showCatalog] })
 
 function goCheckout(tierId: string, cadence: string) {
