@@ -38,11 +38,19 @@ const guestModalOpen = ref(false)
 const pendingTierId = ref<string | null>(null)
 const pendingCadence = ref<Cadence | null>(null)
 
-const { data } = await useFetch<{ tiers: Tier[] }>('/api/membership/catalog', {
+const { data, refresh } = await useFetch<{ tiers: Tier[] }>('/api/membership/catalog', {
   default: () => ({ tiers: [] })
 })
 
 const tiers = computed(() => data.value?.tiers ?? [])
+
+watch(() => user.value?.sub, async () => {
+  await refresh()
+})
+
+onMounted(async () => {
+  await refresh()
+})
 
 function formatMoney(cents: number, currency: string) {
   const dollars = (cents / 100).toFixed(0)

@@ -2,6 +2,7 @@
 // Returns the membership tier catalog. Admins also receive hidden tiers
 // (visible=false), such as the special 'test' tier for dry-run checkout.
 import { serverSupabaseUser, serverSupabaseClient } from '#supabase/server'
+import { resolveServerUserRole } from '~~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient(event)
@@ -9,9 +10,7 @@ export default defineEventHandler(async (event) => {
   // Admins see all active tiers including hidden ones (e.g. the test tier).
   // Everyone else only sees active + visible tiers.
   const user = await serverSupabaseUser(event).catch(() => null)
-  // Check user_metadata first (current), then app_metadata (more secure, backend-only)
-  const role = (user as any)?.user_metadata?.role ?? (user as any)?.app_metadata?.role as string | undefined
-  const isAdmin = role === 'admin' || role === 'service'
+  const { isAdmin } = await resolveServerUserRole(event, user)
 
   let query = supabase
     .from('membership_tiers')

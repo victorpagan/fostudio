@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import type { H3Event } from 'h3'
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
+import { resolveServerUserRole } from '~~/server/utils/auth'
 import { serverSupabaseUser, serverSupabaseClient } from '#supabase/server'
 
 const bodySchema = z.object({
@@ -56,9 +57,7 @@ export default defineEventHandler(async (event) => {
   const cadence = parsed.cadence ?? 'monthly'
   const returnTo = normalizeReturnTo(parsed.returnTo)
 
-  // Derive user role from JWT (check user_metadata first, then app_metadata for backend-only security)
-  const role = (user as any).user_metadata?.role ?? (user as any).app_metadata?.role as string | undefined
-  const isAdmin = role === 'admin' || role === 'service'
+  const { isAdmin } = await resolveServerUserRole(event, user)
 
   // ── 1) Validate tier exists and is accessible ──────────────────────────
   const { data: tier, error: tierErr } = await supabase
