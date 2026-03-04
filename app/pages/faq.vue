@@ -5,67 +5,113 @@ definePageMeta({
 
 const faqs = [
   {
-    question: 'What are the studio hours?',
-    answer: 'Our studio is open Monday through Friday, 9 AM to 6 PM. Weekend hours are available by appointment.'
+    question: 'Do I need a membership to book the studio?',
+    answer: 'No. You can book as a guest for a one-off session. Membership becomes the better fit when you need repeat access, a longer booking window, and a steadier cost structure.'
   },
   {
-    question: 'Do I need to be a member to book?',
-    answer: 'No, you can book as a guest for one-time sessions. Membership provides discounts and credits for regular users.'
+    question: 'How do membership credits work on quarterly and annual plans?',
+    answer: 'Credits still release month by month. Even if you are billed quarterly or annually, the usable credit balance is added on a monthly schedule so it stays predictable.'
   },
   {
-    question: 'Can I cancel my booking?',
-    answer: 'Yes, cancellations within 24 hours of your session receive a full credit refund. Cancellations within 24 hours are non-refundable.'
+    question: 'What is the difference between peak and off-peak time?',
+    answer: 'Off-peak time uses the base credit rate. Peak windows use a higher multiplier so the calendar stays fair during the busiest production hours.'
   },
   {
-    question: 'What is included in each membership tier?',
-    answer: 'Each tier provides different monthly credits, booking window, and premium features. View our memberships page for details.'
+    question: 'Can I try the studio before joining a membership?',
+    answer: 'Yes. The guest booking flow exists for exactly that. It is a good option when you want to test the room, run a single client day, or confirm the studio fits your workflow before committing.'
   },
   {
-    question: 'How do credits work?',
-    answer: 'Credits are used to book studio time. 1 credit equals 1 hour off-peak. Peak times (Mon-Thu 11 AM-4 PM) have a 2x multiplier.'
+    question: 'What happens if I need to cancel a booking?',
+    answer: 'The exact cancellation treatment depends on timing, but the system is designed to protect availability while still being workable for real production changes. If a session needs to move, contact the studio as early as possible.'
   },
   {
-    question: 'Can I transfer my credits to someone else?',
-    answer: 'Credits are tied to your account and cannot be transferred. However, you can book time for others if needed.'
+    question: 'How far ahead can I book?',
+    answer: 'That depends on the membership tier. Higher tiers can see and reserve farther into the calendar. Guest bookings are intentionally limited to a shorter window.'
+  },
+  {
+    question: 'Can I hold equipment or keep a setup overnight?',
+    answer: 'Some plans include hold windows. Those are meant for cases where a set needs to stay in place between sessions, subject to the plan limits and current schedule.'
+  },
+  {
+    question: 'What if I am not sure which plan fits?',
+    answer: 'That is what the contact page is for. Share how often you shoot, how far ahead your client work needs planning, and whether you mostly work solo or with a team. The right plan is the one that matches your real rhythm, not the biggest one.'
   }
 ]
 
-const openItem = ref<number | null>(null)
+const openItem = ref<number | null>(0)
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-950 dark:to-gray-900">
-    <UContainer class="py-20">
-      <div class="text-center">
-        <h1 class="text-4xl font-bold tracking-tight">Frequently Asked Questions</h1>
-        <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
-          Find answers to common questions about our studio and services
-        </p>
-      </div>
+  <UContainer class="py-10 sm:py-14">
+    <div class="space-y-8">
+      <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
+        <div class="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] lg:items-end">
+          <div class="space-y-5">
+            <span class="studio-kicker">FAQ</span>
+            <div class="max-w-3xl space-y-4">
+              <h1 class="studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-7xl">
+                Clear answers before you commit to the next shoot.
+              </h1>
+              <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
+                These are the questions working creatives usually ask first: how booking works, how credits behave,
+                and what changes once the studio becomes part of your regular workflow.
+              </p>
+            </div>
+          </div>
 
-      <div class="mx-auto mt-16 max-w-2xl space-y-4">
+          <div class="studio-panel p-5 sm:p-6">
+            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
+              Still deciding?
+            </div>
+            <p class="mt-4 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+              Start with memberships if you are planning recurring work. Start with guest booking if you need one date first.
+              If neither answer feels obvious yet, use the contact page and we can point you in the right direction.
+            </p>
+            <div class="mt-5 flex flex-col gap-2">
+              <UButton to="/memberships">
+                Compare memberships
+              </UButton>
+              <UButton
+                color="neutral"
+                variant="soft"
+                to="/contact"
+              >
+                Ask a direct question
+              </UButton>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="mx-auto max-w-4xl space-y-4">
         <div
-          v-for="(faq, i) in faqs"
-          :key="i"
-          class="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+          v-for="(faq, index) in faqs"
+          :key="faq.question"
+          class="studio-panel overflow-hidden"
         >
           <button
-            class="w-full px-6 py-4 text-left font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
-            @click="openItem = openItem === i ? null : i"
+            class="flex w-full items-center justify-between gap-4 px-5 py-5 text-left sm:px-6"
+            @click="openItem = openItem === index ? null : index"
           >
-            <div class="flex items-center justify-between">
-              <span>{{ faq.question }}</span>
-              <UIcon
-                :name="openItem === i ? 'i-heroicons-chevron-up' : 'i-heroicons-chevron-down'"
-                class="h-5 w-5 transition-transform"
-              />
-            </div>
+            <span class="pr-4 text-base font-semibold text-[color:var(--gruv-ink-0)] sm:text-lg">
+              {{ faq.question }}
+            </span>
+            <UIcon
+              :name="openItem === index ? 'i-heroicons-chevron-up' : 'i-heroicons-chevron-down'"
+              class="h-5 w-5 shrink-0 text-[color:var(--gruv-ink-2)] transition-transform"
+            />
           </button>
-          <div v-if="openItem === i" class="border-t border-gray-200 px-6 py-4 dark:border-gray-800">
-            <p class="text-gray-600 dark:text-gray-400">{{ faq.answer }}</p>
+
+          <div
+            v-if="openItem === index"
+            class="border-t border-[color:var(--gruv-line)] px-5 py-5 sm:px-6"
+          >
+            <p class="text-sm leading-8 text-[color:var(--gruv-ink-2)] sm:text-base">
+              {{ faq.answer }}
+            </p>
           </div>
         </div>
       </div>
-    </UContainer>
-  </div>
+    </div>
+  </UContainer>
 </template>

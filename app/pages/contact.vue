@@ -5,48 +5,118 @@ definePageMeta({
   layout: 'default'
 })
 
+type ContactField = 'name' | 'email' | 'phone' | 'subject' | 'message' | 'company'
+type FieldErrors = Record<ContactField, string>
+
 const contactSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  phone: z.string().optional(),
-  subject: z.string().min(5, 'Subject must be at least 5 characters'),
-  message: z.string().min(10, 'Message must be at least 10 characters')
+  name: z.string().trim().min(2, 'Please enter your name.'),
+  email: z.string().trim().email('Please enter a valid email address.'),
+  phone: z.string().trim().optional(),
+  subject: z.string().trim().min(5, 'Please add a short subject line.'),
+  message: z.string().trim().min(10, 'Please share a little more detail.'),
+  company: z.string().trim().optional()
 })
 
-type ContactForm = z.infer<typeof contactSchema>
+const config = useRuntimeConfig()
+const toast = useToast()
 
 const state = reactive({
   name: '',
   email: '',
   phone: '',
   subject: '',
-  message: ''
+  message: '',
+  company: ''
 })
 
+const fieldErrors = reactive<FieldErrors>({
+  name: '',
+  email: '',
+  phone: '',
+  subject: '',
+  message: '',
+  company: ''
+})
 const isLoading = ref(false)
 const submitted = ref(false)
 
-async function submitForm() {
-  try {
-    isLoading.value = true
-    const validated = contactSchema.parse(state)
+const contactDetails = computed(() => [
+  {
+    label: 'Email',
+    value: config.public.contactEmail,
+    detail: 'The fastest way to reach the studio team.'
+  },
+  {
+    label: 'Phone',
+    value: config.public.contactPhone || 'Add a phone line when you are ready.',
+    detail: 'Useful for shoot-day coordination and quick schedule questions.'
+  },
+  {
+    label: 'Location',
+    value: config.public.contactLocation,
+    detail: 'Share a clear public summary now, or keep the exact address private until booking.'
+  }
+])
 
-    // TODO: Wire up actual form submission to a server endpoint
-    console.log('Form submitted:', validated)
+function clearFieldErrors() {
+  fieldErrors.name = ''
+  fieldErrors.email = ''
+  fieldErrors.phone = ''
+  fieldErrors.subject = ''
+  fieldErrors.message = ''
+  fieldErrors.company = ''
+}
+
+function resetForm() {
+  state.name = ''
+  state.email = ''
+  state.phone = ''
+  state.subject = ''
+  state.message = ''
+  state.company = ''
+  clearFieldErrors()
+}
+
+async function submitForm() {
+  clearFieldErrors()
+
+  const parsed = contactSchema.safeParse(state)
+  if (!parsed.success) {
+    const flattened = parsed.error.flatten().fieldErrors
+    for (const [key, value] of Object.entries(flattened)) {
+      const message = value?.[0]
+      if (message) fieldErrors[key as ContactField] = message
+    }
+
+    toast.add({
+      title: 'Please review the form',
+      description: 'A few fields need attention before the message can be sent.',
+      color: 'warning'
+    })
+    return
+  }
+
+  isLoading.value = true
+
+  try {
+    await $fetch('/api/contact', {
+      method: 'POST',
+      body: parsed.data
+    })
 
     submitted.value = true
-    setTimeout(() => {
-      submitted.value = false
-      state.name = ''
-      state.email = ''
-      state.phone = ''
-      state.subject = ''
-      state.message = ''
-    }, 3000)
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      console.error('Validation errors:', error.errors)
+    resetForm()
+  } catch (error: unknown) {
+    const err = error as {
+      data?: { statusMessage?: string }
+      message?: string
     }
+
+    toast.add({
+      title: 'Message not sent',
+      description: err.data?.statusMessage ?? err.message ?? 'Please try again in a moment.',
+      color: 'error'
+    })
   } finally {
     isLoading.value = false
   }
@@ -54,78 +124,196 @@ async function submitForm() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-950 dark:to-gray-900">
-    <UContainer class="py-20">
-      <div class="text-center">
-        <h1 class="text-4xl font-bold tracking-tight">Contact Us</h1>
-        <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
-          Get in touch with our team. We'd love to hear from you.
-        </p>
-      </div>
+  <UContainer class="py-10 sm:py-14">
+    <div class="space-y-8">
+      <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
+        <div class="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)] lg:items-end">
+          <div class="space-y-5">
+            <span class="studio-kicker">Contact</span>
+            <div class="max-w-3xl space-y-4">
+              <h1 class="studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-7xl">
+                Reach out before the next shoot comes together.
+              </h1>
+              <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
+                Use this page for membership questions, booking help, studio fit checks, or anything else that helps you decide
+                whether FO Studio matches the way you work.
+              </p>
+            </div>
+          </div>
 
-      <div class="mx-auto mt-16 grid max-w-4xl gap-8 md:grid-cols-2">
-        <!-- Contact info -->
-        <div class="space-y-8">
-          <div>
-            <h3 class="font-semibold">Location</h3>
-            <p class="mt-2 text-gray-600 dark:text-gray-400">
-              123 Studio Street<br>
-              San Francisco, CA 94105
-            </p>
+          <div class="studio-panel p-5 sm:p-6">
+            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
+              Best reasons to reach out
+            </div>
+            <div class="mt-4 space-y-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+              <p>You are comparing memberships and want a quick recommendation.</p>
+              <p>You have a client date in mind and want to confirm the booking path.</p>
+              <p>You need to clarify equipment, access, or whether the room fits your production.</p>
+            </div>
           </div>
-          <div>
-            <h3 class="font-semibold">Contact Info</h3>
-            <p class="mt-2 text-gray-600 dark:text-gray-400">
-              Email: hello@fostudio.com<br>
-              Phone: (415) 555-0123
-            </p>
+        </div>
+      </section>
+
+      <div class="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div class="space-y-5">
+          <div class="studio-panel p-5 sm:p-6">
+            <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
+              Studio details
+            </div>
+
+            <div class="mt-5 space-y-4">
+              <div
+                v-for="item in contactDetails"
+                :key="item.label"
+                class="rounded-2xl border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] p-4"
+              >
+                <div class="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
+                  {{ item.label }}
+                </div>
+                <div class="mt-2 text-sm font-semibold text-[color:var(--gruv-ink-0)] sm:text-base">
+                  {{ item.value }}
+                </div>
+                <p class="mt-2 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+                  {{ item.detail }}
+                </p>
+              </div>
+            </div>
           </div>
-          <div>
-            <h3 class="font-semibold">Hours</h3>
-            <p class="mt-2 text-gray-600 dark:text-gray-400">
-              Monday - Friday: 9 AM - 6 PM<br>
-              Saturday - Sunday: By Appointment
+
+          <div class="studio-panel p-5 sm:p-6">
+            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
+              What happens after you send
+            </div>
+            <p class="mt-4 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+              Messages go to the studio inbox through the server-side contact endpoint. The reply will come back to the email you enter below,
+              so use the address you actually want us to answer.
             </p>
           </div>
         </div>
 
-        <!-- Contact form -->
-        <div class="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
-          <form v-if="!submitted" class="space-y-4" @submit.prevent="submitForm">
-            <UFormGroup label="Name">
-              <UInput v-model="state.name" placeholder="Your name" />
-            </UFormGroup>
+        <div class="studio-panel p-5 sm:p-6">
+          <div
+            v-if="submitted"
+            class="space-y-4 py-8 text-center"
+          >
+            <UIcon
+              name="i-heroicons-check-circle"
+              class="mx-auto h-12 w-12 text-success"
+            />
+            <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
+              Message sent
+            </div>
+            <p class="mx-auto max-w-xl text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+              Your note is in the queue. We will reply to the email you provided as soon as we can.
+            </p>
+            <UButton
+              color="neutral"
+              variant="soft"
+              @click="submitted = false"
+            >
+              Send another message
+            </UButton>
+          </div>
 
-            <UFormGroup label="Email">
-              <UInput v-model="state.email" type="email" placeholder="your@email.com" />
-            </UFormGroup>
+          <form
+            v-else
+            class="space-y-4"
+            @submit.prevent="submitForm"
+          >
+            <div>
+              <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
+                Send a message
+              </div>
+              <p class="mt-2 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+                Share what you are planning, what you need help with, and how best to reach you back.
+              </p>
+            </div>
 
-            <UFormGroup label="Phone (optional)">
-              <UInput v-model="state.phone" type="tel" placeholder="+1 (555) 000-0000" />
-            </UFormGroup>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <UFormField
+                label="Name"
+                :error="fieldErrors.name"
+              >
+                <UInput
+                  v-model="state.name"
+                  placeholder="Your name"
+                  class="w-full"
+                />
+              </UFormField>
 
-            <UFormGroup label="Subject">
-              <UInput v-model="state.subject" placeholder="How can we help?" />
-            </UFormGroup>
+              <UFormField
+                label="Email"
+                :error="fieldErrors.email"
+              >
+                <UInput
+                  v-model="state.email"
+                  type="email"
+                  placeholder="you@example.com"
+                  class="w-full"
+                />
+              </UFormField>
+            </div>
 
-            <UFormGroup label="Message">
-              <UTextarea v-model="state.message" placeholder="Your message..." rows="6" />
-            </UFormGroup>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <UFormField
+                label="Phone (optional)"
+                :error="fieldErrors.phone"
+              >
+                <UInput
+                  v-model="state.phone"
+                  type="tel"
+                  placeholder="(555) 000-0000"
+                  class="w-full"
+                />
+              </UFormField>
 
-            <UButton type="submit" :loading="isLoading" class="w-full">
-              Send Message
+              <UFormField
+                label="Subject"
+                :error="fieldErrors.subject"
+              >
+                <UInput
+                  v-model="state.subject"
+                  placeholder="What do you need help with?"
+                  class="w-full"
+                />
+              </UFormField>
+            </div>
+
+            <UFormField
+              label="Message"
+              :error="fieldErrors.message"
+            >
+              <UTextarea
+                v-model="state.message"
+                placeholder="Tell us about the shoot, the timeline, or the question you are working through."
+                :rows="6"
+                class="w-full"
+              />
+            </UFormField>
+
+            <div class="hidden">
+              <UFormField
+                label="Company"
+                :error="fieldErrors.company"
+              >
+                <UInput
+                  v-model="state.company"
+                  autocomplete="off"
+                  tabindex="-1"
+                />
+              </UFormField>
+            </div>
+
+            <UButton
+              type="submit"
+              :loading="isLoading"
+              block
+            >
+              Send message
             </UButton>
           </form>
-
-          <div v-else class="py-8 text-center">
-            <UIcon name="i-heroicons-check-circle" class="mx-auto h-12 w-12 text-success" />
-            <p class="mt-4 font-semibold">Thank you!</p>
-            <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              We've received your message and will get back to you soon.
-            </p>
-          </div>
         </div>
       </div>
-    </UContainer>
-  </div>
+    </div>
+  </UContainer>
 </template>

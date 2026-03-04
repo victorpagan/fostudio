@@ -10,11 +10,47 @@ export default defineNuxtConfig({
     '@nuxtjs/supabase'
   ],
 
+  components: [
+    { path: '~/components', pathPrefix: false }
+  ],
+
   devtools: {
     enabled: true
   },
 
   css: ['~/assets/css/main.css'],
+
+  runtimeConfig: {
+    contactWebhookUrl: process.env.NUXT_CONTACT_WEBHOOK_URL || '',
+    resendApiKey: process.env.NUXT_RESEND_API_KEY || '',
+    contactToEmail: process.env.NUXT_CONTACT_TO_EMAIL || '',
+    contactFromEmail: process.env.NUXT_CONTACT_FROM_EMAIL || 'FO Studio <no-reply@fostudio.local>',
+    public: {
+      contactEmail: process.env.NUXT_PUBLIC_CONTACT_EMAIL || 'hello@fostudio.com',
+      contactPhone: process.env.NUXT_PUBLIC_CONTACT_PHONE || '',
+      contactLocation: process.env.NUXT_PUBLIC_CONTACT_LOCATION || 'Studio location shared after booking confirmation'
+    }
+  },
+
+  compatibilityDate: '2024-07-11',
+
+  nitro: {
+    prerender: {
+      routes: [
+        '/'
+      ],
+      crawlLinks: true
+    }
+  },
+
+  eslint: {
+    config: {
+      stylistic: {
+        commaDangle: 'never',
+        braceStyle: '1tbs'
+      }
+    }
+  },
 
   supabase: {
     // Point the module at our local types file so useSupabaseClient() is
@@ -46,33 +82,9 @@ export default defineNuxtConfig({
         // Booking & checkout (page-level auth guards handle branching)
         '/book',
         '/checkout',
-        '/checkout/**',
+        '/checkout/**'
         // Misc
       ]
-    }
-  },
-
-  components: [
-    { path: '~/components', pathPrefix: false }
-  ],
-
-  compatibilityDate: '2024-07-11',
-
-  nitro: {
-    prerender: {
-      routes: [
-        '/'
-      ],
-      crawlLinks: true
-    }
-  },
-
-  eslint: {
-    config: {
-      stylistic: {
-        commaDangle: 'never',
-        braceStyle: '1tbs'
-      }
     }
   }
 })
