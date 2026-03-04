@@ -116,6 +116,11 @@ function formatCadence(c: string) {
   }
 }
 
+function formatPeakCredits(value: number) {
+  if (Number.isInteger(value)) return value.toString()
+  return value.toFixed(2).replace(/\.?0+$/, '')
+}
+
 async function refreshAll() {
   await Promise.all([refreshBalance(), refreshLedger()])
 }
@@ -167,8 +172,8 @@ async function refreshAll() {
                     <span class="font-medium text-default">{{ tier.booking_window_days }}d</span>
                   </li>
                   <li class="flex justify-between">
-                    <span>Peak multiplier</span>
-                    <span class="font-medium text-default">{{ tier.peak_multiplier }}×</span>
+                    <span>Peak-hour rate</span>
+                    <span class="font-medium text-default">{{ formatPeakCredits(tier.peak_multiplier) }} credits/hr</span>
                   </li>
                   <li class="flex justify-between">
                     <span>Max credit bank</span>

@@ -56,7 +56,7 @@ const membershipState = computed(() => {
   const s = (membership.value.status || '').toLowerCase()
   if (s === 'active') return 'active'
   if (s === 'pending_checkout') return 'pending_checkout'
-  if (s === 'canceled' || s === 'cancelled') return 'canceled'
+  if (s === 'canceled') return 'canceled'
   if (s === 'past_due') return 'past_due'
   return 'inactive'
 })
@@ -73,6 +73,10 @@ const tierLabel = computed(() => {
   if (!membership.value) return null
   return [membership.value.tier, membership.value.cadence].filter(Boolean).join(' · ')
 })
+
+function formatStatus(status: string | null | undefined) {
+  return status || 'none'
+}
 </script>
 
 <template>
@@ -155,7 +159,7 @@ const tierLabel = computed(() => {
                 variant="soft"
                 size="sm"
               >
-                {{ membership?.status ?? 'none' }}
+                {{ formatStatus(membership?.status) }}
               </UBadge>
             </div>
             <div class="mt-4">

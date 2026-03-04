@@ -110,6 +110,11 @@ function formatDuration(hours: number) {
   const m = Math.round((hours - h) * 60)
   return `${h}h ${m}m`
 }
+
+function formatPeakCredits(value: number) {
+  if (Number.isInteger(value)) return value.toString()
+  return value.toFixed(2).replace(/\.?0+$/, '')
+}
 </script>
 
 <template>
@@ -135,7 +140,7 @@ function formatDuration(hours: number) {
       <UDashboardToolbar>
         <template #left>
           <p class="text-sm text-dimmed">
-            Click and drag on the calendar to select a time slot. Your tier's booking window and peak pricing apply.
+            Click and drag on the calendar to select a time slot. Your tier's booking window and peak-hour credit rates apply.
           </p>
         </template>
       </UDashboardToolbar>
@@ -210,7 +215,7 @@ function formatDuration(hours: number) {
                   variant="soft"
                   size="sm"
                 >
-                  {{ preview.breakdown.isPeakWindow ? `Peak (${preview.peakMultiplier}×)` : 'Off-peak (1×)' }}
+                  {{ preview.breakdown.isPeakWindow ? `Peak (${formatPeakCredits(preview.peakMultiplier)} credits/hr)` : 'Off-peak (1 credit/hr)' }}
                 </UBadge>
               </div>
               <div class="flex justify-between items-center border-t border-default pt-2 mt-1">

@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS public.memberships (
   status                      text NOT NULL DEFAULT 'pending_checkout'
                                 CHECK (status IN (
                                   'pending_checkout','active','past_due',
-                                  'canceled','cancelled','inactive','paused'
+                                  'canceled','inactive','paused'
                                 )),
   -- Square subscription tracking
   square_subscription_id      text,
@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   end_time       timestamptz NOT NULL,
   status         text NOT NULL DEFAULT 'requested'
                    CHECK (status IN (
-                     'requested','confirmed','cancelled','canceled',
+                     'requested','confirmed','canceled',
                      'pending_payment','no_show'
                    )),
   notes          text,

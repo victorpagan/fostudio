@@ -12,7 +12,6 @@ ALTER TABLE public.bookings
       'requested'::text,
       'confirmed'::text,
       'canceled'::text,
-      'cancelled'::text,
       'completed'::text,
       'declined'::text,
       'pending_payment'::text,

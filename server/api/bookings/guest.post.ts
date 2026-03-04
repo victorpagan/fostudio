@@ -14,6 +14,7 @@
  * Guest rate is configured in system_config:
  *   key = 'guest_booking_rate_per_credit_cents'  (e.g. 3500 = $35/credit)
  *   key = 'guest_peak_multiplier'                (e.g. 2.0)
+ *   key = 'SQUARE_GUEST_BOOKING_VARIATION_ID'    (optional catalog variation id)
  *
  * 1 credit = 1 off-peak hour. Peak multiplier applies the same 15-min bucket logic.
  */
@@ -33,6 +34,13 @@ const bodySchema = z.object({
   guest_email: z.string().email(),
   notes: z.string().max(500).optional().nullable()
 })
+
+type PaymentLinkResult = {
+  paymentLink?: {
+    url?: string | null
+    orderId?: string | null
+  } | null
+}
 
 // Peak: Mon–Thu, 11:00–16:00 local — same rule as member bookings
 function isPeak(dt: DateTime) {
@@ -62,6 +70,11 @@ function computeCredits(startIso: string, endIso: string, peakMultiplier: number
   }
 
   return Math.round(credits * 100) / 100
+}
+
+function toSquareQuantity(value: number) {
+  const safe = Number.isFinite(value) && value > 0 ? value : 1
+  return safe.toFixed(2).replace(/\.?0+$/, '')
 }
 
 export default defineEventHandler(async (event) => {
@@ -126,10 +139,14 @@ export default defineEventHandler(async (event) => {
   // Pull guest rate config from system_config (falls back to sensible defaults)
   const cfg = await getServerConfigMap(event, [
     'guest_booking_rate_per_credit_cents',
-    'guest_peak_multiplier'
+    'guest_peak_multiplier',
+    'SQUARE_GUEST_BOOKING_VARIATION_ID'
   ])
   const ratePerCreditCents = Number(cfg.guest_booking_rate_per_credit_cents ?? 3500) // $35/credit default
   const peakMultiplier = Number(cfg.guest_peak_multiplier ?? 2.0)
+  const guestBookingVariationId = typeof cfg.SQUARE_GUEST_BOOKING_VARIATION_ID === 'string'
+    ? cfg.SQUARE_GUEST_BOOKING_VARIATION_ID.trim()
+    : ''
 
   const creditsNeeded = computeCredits(body.start_time, body.end_time, peakMultiplier)
   const totalCents = Math.ceil(creditsNeeded * ratePerCreditCents)
@@ -165,38 +182,70 @@ export default defineEventHandler(async (event) => {
     : `${durationHours.toFixed(1)}h`
 
   const startLabel = start.toFormat('EEE MMM d h:mm a')
+  const redirectUrl = `${origin}/checkout/booking-success?booking_id=${booking.id}`
+  const orderMetadata = {
+    booking_id: booking.id,
+    booking_type: 'guest',
+    guest_name: body.guest_name,
+    guest_email: body.guest_email,
+    start_time: body.start_time,
+    end_time: body.end_time,
+    credits_needed: String(creditsNeeded)
+  }
 
-  // Create one-time Square payment link
-  const createRes = await (square as any).checkout.paymentLinks.create({
-    idempotencyKey,
-    quickPay: {
-      name: `Studio Booking — ${startLabel} (${durationLabel})`,
-      priceMoney: {
-        amount: BigInt(totalCents),
-        currency: 'USD'
-      },
-      locationId
-    },
-    checkoutOptions: {
-      redirectUrl: `${origin}/checkout/booking-success?booking_id=${booking.id}`
-    },
-    order: {
-      locationId,
-      referenceId: booking.id,
-      metadata: {
-        booking_id: booking.id,
-        booking_type: 'guest',
-        guest_name: body.guest_name,
-        guest_email: body.guest_email,
-        start_time: body.start_time,
-        end_time: body.end_time,
-        credits_needed: String(creditsNeeded)
-      },
-      buyerEmailAddress: body.guest_email
+  let paymentMode: 'catalog_variation' | 'quick_pay' = 'quick_pay'
+  let createRes: PaymentLinkResult | null = null
+
+  if (guestBookingVariationId) {
+    try {
+      createRes = await square.checkout.paymentLinks.create({
+        idempotencyKey: randomUUID(),
+        checkoutOptions: { redirectUrl },
+        order: {
+          locationId,
+          referenceId: booking.id,
+          buyerEmailAddress: body.guest_email,
+          metadata: orderMetadata,
+          lineItems: [
+            {
+              catalogObjectId: guestBookingVariationId,
+              quantity: toSquareQuantity(creditsNeeded),
+              note: `Studio Booking — ${startLabel} (${durationLabel})`
+            }
+          ]
+        }
+      }) as PaymentLinkResult
+      paymentMode = 'catalog_variation'
+    } catch (error) {
+      console.warn(
+        '[guest-booking] catalog variation checkout failed, falling back to quickPay',
+        { bookingId: booking.id, guestBookingVariationId, error }
+      )
     }
-  })
+  }
 
-  const paymentLink = (createRes as any)?.paymentLink
+  if (!createRes) {
+    createRes = await square.checkout.paymentLinks.create({
+      idempotencyKey,
+      quickPay: {
+        name: `Studio Booking — ${startLabel} (${durationLabel})`,
+        priceMoney: {
+          amount: BigInt(totalCents),
+          currency: 'USD'
+        },
+        locationId
+      },
+      checkoutOptions: { redirectUrl },
+      order: {
+        locationId,
+        referenceId: booking.id,
+        metadata: orderMetadata,
+        buyerEmailAddress: body.guest_email
+      }
+    }) as PaymentLinkResult
+  }
+
+  const paymentLink = createRes?.paymentLink
   if (!paymentLink?.url) {
     // Clean up the pending booking if Square fails
     await supabase.from('bookings').delete().eq('id', booking.id)
@@ -215,6 +264,7 @@ export default defineEventHandler(async (event) => {
     creditsNeeded,
     totalCents,
     totalDollars,
+    paymentMode,
     checkoutUrl: paymentLink.url,
     summary: {
       start: start.toISO(),

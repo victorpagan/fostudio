@@ -118,6 +118,11 @@ function formatDuration(hours: number) {
 function formatPrice(cents: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
 }
+
+function formatPeakCredits(value: number) {
+  if (Number.isInteger(value)) return value.toString()
+  return value.toFixed(2).replace(/\.?0+$/, '')
+}
 </script>
 
 <template>
@@ -145,7 +150,7 @@ function formatPrice(cents: number) {
                   </h1>
                   <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
                     Use the public calendar to find an open slot, price it instantly, and check out securely through Square.
-                    If your shoots start repeating, you can switch to membership for better booking range and monthly credits.
+                    If your shoots start repeating, move to a membership for better booking range, monthly credits, and included equipment plus consumables.
                   </p>
                 </div>
               </div>
@@ -158,7 +163,7 @@ function formatPrice(cents: number) {
                   <div class="mt-4 space-y-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
                     <p>Guest bookings are best for single production days, client tests, or trying the room before joining.</p>
                     <p>Open slots are available up to 7 days ahead and require payment to lock in the session.</p>
-                    <p>Members get a longer planning window and a steadier per-session cost.</p>
+                    <p>Members get a longer planning window, steadier costs, and included gear plus consumables like backdrop paper.</p>
                   </div>
                 </div>
               </div>
@@ -203,7 +208,7 @@ function formatPrice(cents: number) {
                   Members get the smoother path
                 </div>
                 <p class="mt-2 max-w-2xl text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-                  Membership gives you monthly credits, a longer booking window, and a lower-friction way to keep repeat shoots moving.
+                  Membership gives you monthly credits, a longer booking window, and included equipment/backdrop consumables for repeat shoots.
                 </p>
               </div>
               <UButton to="/memberships">
@@ -302,7 +307,7 @@ function formatPrice(cents: number) {
                     variant="soft"
                     size="sm"
                   >
-                    {{ guestPreview.breakdown?.isPeakWindow ? `Peak (${guestPreview.peakMultiplier}×)` : 'Off-peak' }}
+                    {{ guestPreview.breakdown?.isPeakWindow ? `Peak (${formatPeakCredits(guestPreview.peakMultiplier)} credits/hr)` : 'Off-peak (1 credit/hr)' }}
                   </UBadge>
                 </div>
                 <div class="flex justify-between items-center border-t border-default pt-2 mt-1">

@@ -185,7 +185,7 @@ const isDirty = computed(() =>
             <div class="text-sm font-medium text-red-600 dark:text-red-400">Danger zone</div>
             <p class="text-sm text-dimmed">
               To cancel your membership or delete your account, please contact us directly.
-              Active memberships are managed through Square and must be cancelled before account deletion.
+              Active memberships are managed through Square and must be canceled before account deletion.
             </p>
             <UButton color="error" variant="soft" size="sm" disabled>
               Delete account (contact support)

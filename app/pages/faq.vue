@@ -9,12 +9,20 @@ const faqs = [
     answer: 'No. You can book as a guest for a one-off session. Membership becomes the better fit when you need repeat access, a longer booking window, and a steadier cost structure.'
   },
   {
+    question: 'What is included with memberships?',
+    answer: 'Memberships include studio equipment, backdrop paper, props, and standard consumables. The goal is to keep your production day simple: book, pay, and show up prepared to shoot.'
+  },
+  {
     question: 'How do membership credits work on quarterly and annual plans?',
     answer: 'Credits still release month by month. Even if you are billed quarterly or annually, the usable credit balance is added on a monthly schedule so it stays predictable.'
   },
   {
+    question: 'What makes the studio production-ready?',
+    answer: 'The space is built around a 25x30 ft cyclorama with 20+ ft ceilings, a makeup area, client seating/staging space, and layout flexibility for small-to-mid-size teams.'
+  },
+  {
     question: 'What is the difference between peak and off-peak time?',
-    answer: 'Off-peak time uses the base credit rate. Peak windows use a higher multiplier so the calendar stays fair during the busiest production hours.'
+    answer: 'Off-peak time uses the base rate of 1 credit per hour. Peak windows use the tier’s peak-hour credit rate (for example 2, 1.5, or 1.25 credits per hour) so the calendar stays fair during the busiest production hours.'
   },
   {
     question: 'Can I try the studio before joining a membership?',
@@ -31,6 +39,10 @@ const faqs = [
   {
     question: 'Can I hold equipment or keep a setup overnight?',
     answer: 'Some plans include hold windows. Those are meant for cases where a set needs to stay in place between sessions, subject to the plan limits and current schedule.'
+  },
+  {
+    question: 'Do you support film shooters?',
+    answer: 'Yes. Film photographers are welcome, and rush-fee waivers are available when the lab is open and there is processing capacity.'
   },
   {
     question: 'What if I am not sure which plan fits?',

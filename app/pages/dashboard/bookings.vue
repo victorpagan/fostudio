@@ -113,9 +113,9 @@ async function cancelBooking(id: string) {
       ? `${result.creditsRefunded} credit${result.creditsRefunded === 1 ? '' : 's'} refunded to your balance.`
       : result.hours_until_start < 24
         ? 'No refund — cancellation within 24h of your session.'
-        : 'Booking cancelled.'
+        : 'Booking canceled.'
 
-    toast.add({ title: 'Booking cancelled', description: msg, color: 'success' })
+    toast.add({ title: 'Booking canceled', description: msg, color: 'success' })
     await refreshUpcoming()
   } catch (e: any) {
     toast.add({ title: 'Could not cancel', description: e?.message ?? 'Error', color: 'error' })
@@ -144,9 +144,13 @@ function statusColor(status: string): 'success' | 'warning' | 'error' | 'neutral
   switch (status) {
     case 'confirmed': return 'success'
     case 'requested': return 'warning'
-    case 'cancelled': case 'canceled': return 'error'
+    case 'canceled': return 'error'
     default: return 'neutral'
   }
+}
+
+function formatStatus(status: string) {
+  return status
 }
 
 function canCancel(booking: Booking) {
@@ -165,6 +169,11 @@ function cadenceLabel(c: string) {
   if (c === 'monthly') return 'Monthly'
   if (c === 'quarterly') return 'Quarterly'
   return 'Annual'
+}
+
+function formatPeakCredits(value: number) {
+  if (Number.isInteger(value)) return value.toString()
+  return value.toFixed(2).replace(/\.?0+$/, '')
 }
 
 function goCheckout(tierId: string, cadence: string) {
@@ -217,8 +226,8 @@ function goCheckout(tierId: string, cadence: string) {
                 <div class="text-xs text-dimmed">booking</div>
               </div>
               <div class="rounded-lg border border-default p-2 text-center">
-                <div class="text-sm font-medium">{{ tier.peak_multiplier }}×</div>
-                <div class="text-xs text-dimmed">peak</div>
+                <div class="text-sm font-medium">{{ formatPeakCredits(tier.peak_multiplier) }} cr/hr</div>
+                <div class="text-xs text-dimmed">peak hour</div>
               </div>
               <div class="rounded-lg border border-default p-2 text-center">
                 <div class="text-sm font-medium">{{ tier.max_bank }}</div>
@@ -283,7 +292,7 @@ function goCheckout(tierId: string, cadence: string) {
               <div class="flex items-start justify-between gap-3 flex-wrap">
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2 flex-wrap">
-                    <UBadge :color="statusColor(booking.status)" variant="soft" size="sm">{{ booking.status }}</UBadge>
+                    <UBadge :color="statusColor(booking.status)" variant="soft" size="sm">{{ formatStatus(booking.status) }}</UBadge>
                     <span class="text-sm font-medium">{{ formatRange(booking.start_time, booking.end_time).dateStr }}</span>
                   </div>
                   <p class="mt-1 text-sm text-dimmed">
@@ -330,7 +339,7 @@ function goCheckout(tierId: string, cadence: string) {
               <div class="flex items-start gap-3">
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2 flex-wrap">
-                    <UBadge :color="statusColor(booking.status)" variant="soft" size="sm">{{ booking.status }}</UBadge>
+                    <UBadge :color="statusColor(booking.status)" variant="soft" size="sm">{{ formatStatus(booking.status) }}</UBadge>
                     <span class="text-sm font-medium">{{ formatRange(booking.start_time, booking.end_time).dateStr }}</span>
                   </div>
                   <p class="mt-1 text-sm text-dimmed">

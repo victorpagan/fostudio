@@ -13,31 +13,31 @@ const openWaitlist = ref(false)
 
 const creativeReasons = [
   {
-    title: 'Work-ready access',
-    body: 'Book with enough lead time to pitch clients, prep a set, and show up without wondering whether the room will still be available.'
+    title: '24/7 turnkey access',
+    body: 'Book your slot, get your personalized access code, and set up or tear down whenever your production day actually needs it.'
   },
   {
-    title: 'A studio that stays predictable',
-    body: 'Credits, booking windows, and member caps keep the schedule calm. You can actually plan production weeks instead of chasing openings.'
+    title: 'Built for real production',
+    body: 'A 25x30 ft cyclorama, 20+ ft ceilings, and enough room for small to mid-size teams make this space practical for paid client work.'
   },
   {
-    title: 'Built around real shooting days',
-    body: 'Portrait sessions, product tables, video tests, client reviews, and repeat setups all fit better when the workflow is simple.'
+    title: 'Fully equipped and ready',
+    body: 'Profoto gear, backdrop paper, props, and day-to-day consumables are included with memberships so you can focus on the shoot, not logistics.'
   }
 ]
 
 const process = [
   {
-    title: 'Choose your rhythm',
-    body: 'Pick the membership that matches how often you shoot, how far ahead you need to book, and how much flexibility your client work demands.'
+    title: 'Choose your plan',
+    body: 'Start with the membership that matches your real volume now. You can upgrade or downgrade as your workload changes.'
   },
   {
-    title: 'Use credits month by month',
-    body: 'Your plan releases credits monthly, even on quarterly and annual billing, so your usage feels steady and easy to track.'
+    title: 'Pick a slot and pay',
+    body: 'Choose your booking time, complete checkout, and confirm in minutes. Quarterly and annual discounts are available in the next step.'
   },
   {
-    title: 'Book with confidence',
-    body: 'Check the calendar, reserve the time you need, and get on with styling, lighting, and client prep.'
+    title: 'Show up prepared',
+    body: 'Use your code, walk into a ready studio, and get to work with the space, gear, and consumables already in place.'
   }
 ]
 
@@ -46,36 +46,36 @@ const featuredTiers: TierPreview[] = [
     id: 'creator',
     name: 'Creator',
     monthly: '$350',
-    cadenceNote: 'Best for steady personal work',
-    headline: 'Portfolio building without the scramble',
-    summary: 'Ideal for photographers and filmmakers who need dependable room to test, practice, and build stronger work on a real set.',
-    details: ['Great for off-peak shoots', 'Comfortable room for solo or paired sessions', 'A smart base plan for building consistency']
+    cadenceNote: 'Best for lighter monthly volume',
+    headline: 'A strong start for weekend and off-peak shooters',
+    summary: 'Great for occasional clients, test shoots, and creatives building consistent paid work without overcommitting.',
+    details: ['Great value on evenings, weekends, and early mornings', 'Simple path for portfolio and test sessions', 'Includes full studio equipment and consumables']
   },
   {
     id: 'pro',
     name: 'Pro',
     monthly: '$650',
     cadenceNote: 'The core working plan',
-    headline: 'Client-ready access for regular bookings',
-    summary: 'Designed for freelancers and repeat client work when you need better booking reach and enough volume to keep production moving.',
-    details: ['More room to plan weekday work', 'A better fit for repeat client bookings', 'Balanced for high-utility monthly use']
+    headline: 'Built for repeat client production',
+    summary: 'A balanced plan for active photographers and production teams who need a dependable schedule and stronger booking reach.',
+    details: ['Better planning for weekday client work', 'Priority improves compared with entry tiers', 'Includes equipment holds and useful add-ons']
   },
   {
     id: 'studio_plus',
     name: 'Studio+',
     monthly: '$950',
     cadenceNote: 'Priority for heavier production',
-    headline: 'For busy schedules and more demanding sets',
-    summary: 'Built for creative teams, production-heavy months, and the kind of workflow that needs first crack at the calendar.',
-    details: ['Longest booking horizon', 'Works well for small teams', 'The best fit for recurring production days']
+    headline: 'For busy calendars and larger set days',
+    summary: 'Designed for high-output teams who need top booking priority, stronger hold options, and easier peak-hour access.',
+    details: ['Best fit for larger teams (up to ~15)', 'Most flexible hold and priority access', 'Great for recurring commercial production']
   }
 ]
 
 const studioNotes = [
-  'A clean, controlled room that photographs well and stays easy to light.',
-  'Membership-first scheduling so your work does not depend on last-minute luck.',
-  'Equipment-friendly workflow that keeps setup and teardown more manageable.',
-  'Optional guest booking when you need a one-off session before committing.'
+  '25x30 ft cyclorama with 20+ ft ceilings for production-ready framing and lighting.',
+  'Small makeup station and client seating area for smoother on-set flow.',
+  'Props, backdrops, Profoto equipment, and standard consumables are included with memberships.',
+  'Film shooters get rush-fee waivers when the lab is open and capacity allows.'
 ]
 </script>
 
@@ -93,8 +93,8 @@ const studioNotes = [
                   A studio that moves at the pace of working creatives.
                 </h1>
                 <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
-                  FO Studio is built for photographers, videographers, art directors, and creative teams who need a dependable room to make work.
-                  Clear pricing, a readable calendar, and a smoother path from planning the set to delivering the shoot.
+                  LA Film Lab is a 24/7 turnkey studio for photographers, filmmakers, and creative teams.
+                  Book, pay, show up, and shoot in a space designed to stay production-ready.
                 </p>
               </div>
 
@@ -182,19 +182,19 @@ const studioNotes = [
                   color="neutral"
                   variant="soft"
                 >
-                  Membership-first schedule
+                  24/7 member access
                 </UBadge>
                 <UBadge
                   color="neutral"
                   variant="soft"
                 >
-                  Built for photo + video workflows
+                  25x30 cyc · 20+ ft ceilings
                 </UBadge>
                 <UBadge
                   color="neutral"
                   variant="soft"
                 >
-                  Guest booking available
+                  Equipment + consumables included
                 </UBadge>
               </div>
             </div>
@@ -208,7 +208,7 @@ const studioNotes = [
                   Less time chasing space. More time shaping the work.
                 </div>
                 <p class="mt-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-                  When the room, the schedule, and the cost structure are easy to read, the creative work gets a lot easier to protect.
+                  We treat this as a community studio for professional shooters: dependable access, clear pricing, and real production support.
                 </p>
               </div>
 
@@ -302,8 +302,8 @@ const studioNotes = [
               Choose the plan that matches the way you actually produce.
             </h2>
             <p class="mt-3 text-base leading-8 text-[color:var(--gruv-ink-2)]">
-              Every plan is structured around monthly credit flow and booking access, so the real question is not which tier sounds bigger.
-              It is which one keeps your production rhythm steady.
+              Keep the first decision simple: pick the membership that fits your immediate workload.
+              Longer-term billing discounts and full cadence options are shown in the next step.
             </p>
           </div>
 
@@ -333,7 +333,7 @@ const studioNotes = [
                   {{ tier.monthly }}
                 </div>
                 <div class="text-xs uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
-                  monthly value
+                  starting monthly
                 </div>
               </div>
             </div>
@@ -372,7 +372,7 @@ const studioNotes = [
                 Build a better shooting rhythm.
               </h2>
               <p class="mt-4 max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)]">
-                Start with the membership that fits your current pace. If your workload changes, the structure is flexible enough to grow with it.
+                Start with the plan that fits your next 30 to 60 days. Upgrade or downgrade as your production pace shifts.
               </p>
             </div>
 

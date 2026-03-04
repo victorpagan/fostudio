@@ -18,7 +18,6 @@ BEGIN
     WHERE n.nspname = 'public'
       AND t.typname = 'membership_status'
   ) THEN
-    ALTER TYPE public.membership_status ADD VALUE IF NOT EXISTS 'cancelled';
     ALTER TYPE public.membership_status ADD VALUE IF NOT EXISTS 'inactive';
     ALTER TYPE public.membership_status ADD VALUE IF NOT EXISTS 'paused';
   END IF;
@@ -105,6 +104,24 @@ CREATE INDEX IF NOT EXISTS memberships_user_id_idx ON public.memberships(user_id
 CREATE INDEX IF NOT EXISTS memberships_status_idx ON public.memberships(status);
 CREATE INDEX IF NOT EXISTS memberships_tier_idx ON public.memberships(tier);
 
+UPDATE public.memberships
+SET status = 'canceled'
+WHERE status::text = 'cancelled';
+
+ALTER TABLE public.memberships DROP CONSTRAINT IF EXISTS memberships_status_check;
+
+ALTER TABLE public.memberships
+  ADD CONSTRAINT memberships_status_check CHECK (
+    status::text = ANY (ARRAY[
+      'pending_checkout'::text,
+      'active'::text,
+      'past_due'::text,
+      'canceled'::text,
+      'inactive'::text,
+      'paused'::text
+    ])
+  );
+
 -- ---------------------------------------------------------------------------
 -- 5. credits_ledger
 -- ---------------------------------------------------------------------------
@@ -165,6 +182,25 @@ CREATE INDEX IF NOT EXISTS bookings_start_time_idx
 
 CREATE INDEX IF NOT EXISTS bookings_status_idx
   ON public.bookings(status);
+
+UPDATE public.bookings
+SET status = 'canceled'
+WHERE status = 'cancelled';
+
+ALTER TABLE public.bookings DROP CONSTRAINT IF EXISTS bookings_status_check;
+
+ALTER TABLE public.bookings
+  ADD CONSTRAINT bookings_status_check CHECK (
+    status = ANY (ARRAY[
+      'requested'::text,
+      'confirmed'::text,
+      'canceled'::text,
+      'completed'::text,
+      'declined'::text,
+      'pending_payment'::text,
+      'no_show'::text
+    ])
+  );
 
 -- ---------------------------------------------------------------------------
 -- 7. Shared trigger helper

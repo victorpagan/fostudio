@@ -84,7 +84,7 @@ const membershipState = computed(() => {
   const s = (membership.value?.status ?? '').toLowerCase()
   if (s === 'active') return 'active'
   if (s === 'pending_checkout') return 'pending_checkout'
-  if (s === 'canceled' || s === 'cancelled') return 'canceled'
+  if (s === 'canceled') return 'canceled'
   if (s === 'past_due') return 'past_due'
   if (!s) return 'none'
   return 'inactive'
@@ -136,6 +136,16 @@ function formatCadence(c: string | null) {
 function memberSince(createdAt: string | null) {
   if (!createdAt) return '—'
   return new Date(createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+}
+
+function formatStatus(status: string | null | undefined) {
+  return status || '—'
+}
+
+function formatPeakCredits(value: number | null | undefined) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '—'
+  if (Number.isInteger(value)) return value.toString()
+  return value.toFixed(2).replace(/\.?0+$/, '')
 }
 </script>
 
@@ -198,8 +208,8 @@ function memberSince(createdAt: string | null) {
                     <span class="font-medium text-default">{{ t.booking_window_days }}d</span>
                   </li>
                   <li class="flex justify-between">
-                    <span>Peak multiplier</span>
-                    <span class="font-medium text-default">{{ t.peak_multiplier }}×</span>
+                    <span>Peak-hour rate</span>
+                    <span class="font-medium text-default">{{ formatPeakCredits(t.peak_multiplier) }} credits/hr</span>
                   </li>
                   <li class="flex justify-between">
                     <span>Max credit bank</span>
@@ -287,7 +297,7 @@ function memberSince(createdAt: string | null) {
                     <div class="text-xs text-dimmed uppercase tracking-wide">Current plan</div>
                     <div class="mt-1 text-xl font-semibold">{{ tier?.display_name ?? membership?.tier ?? '—' }}</div>
                   </div>
-                  <UBadge :color="statusColor" variant="soft">{{ membership?.status }}</UBadge>
+                  <UBadge :color="statusColor" variant="soft">{{ formatStatus(membership?.status) }}</UBadge>
                 </div>
 
                 <p v-if="tier?.description" class="text-sm text-dimmed">{{ tier.description }}</p>
@@ -323,8 +333,8 @@ function memberSince(createdAt: string | null) {
                     <span>{{ tier?.booking_window_days ?? '—' }} days</span>
                   </div>
                   <div class="flex justify-between">
-                    <span class="text-dimmed">Peak multiplier</span>
-                    <span>{{ tier?.peak_multiplier ?? '—' }}×</span>
+                    <span class="text-dimmed">Peak-hour rate</span>
+                    <span>{{ formatPeakCredits(tier?.peak_multiplier) }} credits/hr</span>
                   </div>
                   <div class="flex justify-between">
                     <span class="text-dimmed">Max credit bank</span>

@@ -5,6 +5,7 @@ import type {
   EventInput
 } from '@fullcalendar/core'
 import FullCalendar from '@fullcalendar/vue3'
+import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 
@@ -113,7 +114,7 @@ const dayHeaderFormat = {
 } as const
 
 const calendarOptions = computed(() => ({
-  plugins: [timeGridPlugin, interactionPlugin],
+  plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
   initialView: 'timeGridWeek',
   selectable: canSelect.value,
   selectMirror: true,
@@ -129,10 +130,11 @@ const calendarOptions = computed(() => ({
   headerToolbar: {
     left: 'prev,next today',
     center: '',
-    right: 'timeGridWeek,timeGridDay'
+    right: 'dayGridMonth,timeGridWeek,timeGridDay'
   },
   buttonText: {
     today: 'Today',
+    dayGridMonth: 'Month',
     timeGridWeek: 'Week',
     timeGridDay: 'Day'
   },
