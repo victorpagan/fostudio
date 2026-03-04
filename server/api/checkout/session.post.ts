@@ -5,7 +5,7 @@ import type { H3Event } from 'h3'
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { resolveServerUserRole } from '~~/server/utils/auth'
-import { serverSupabaseUser, serverSupabaseClient } from '#supabase/server'
+import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 
 const bodySchema = z.object({
   tier: z.string().min(1),
@@ -14,6 +14,14 @@ const bodySchema = z.object({
 })
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+type SquarePaymentLinkResult = {
+  paymentLink?: {
+    id?: string | null
+    orderId?: string | null
+    url?: string | null
+  } | null
+}
 
 function normalizeReturnTo(value: string | undefined, fallback = '/dashboard/membership') {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return fallback
@@ -50,7 +58,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
   }
 
-  const supabase = await serverSupabaseClient(event)
+  const supabase = serverSupabaseServiceRole(event)
 
   const parsed = bodySchema.parse(await readBody(event))
   const tierId = parsed.tier
@@ -207,9 +215,9 @@ export default defineEventHandler(async (event) => {
         cadence
       }
     }
-  } as any)
+  })
 
-  const paymentLink = (createRes as any)?.paymentLink
+  const paymentLink = (createRes as SquarePaymentLinkResult)?.paymentLink
   if (!paymentLink?.url) throw createError({ statusCode: 500, statusMessage: 'Square did not return a payment link URL' })
 
   // 5) Store checkout pointers
