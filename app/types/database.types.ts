@@ -1367,7 +1367,7 @@ export type Database = {
     }
     Enums: {
       membership_status: "pending_checkout" | "active" | "past_due" | "canceled"
-      membership_tier: "creator" | "pro" | "studio_plus"
+      membership_tier: "creator" | "pro" | "studio_plus" | "test"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1499,7 +1499,7 @@ export const Constants = {
   public: {
     Enums: {
       membership_status: ["pending_checkout", "active", "past_due", "canceled"],
-      membership_tier: ["creator", "pro", "studio_plus"],
+      membership_tier: ["creator", "pro", "studio_plus", "test"],
     },
   },
 } as const
