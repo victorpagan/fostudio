@@ -22,6 +22,20 @@ const displayName = computed(() => {
   return user.value.email ?? null
 })
 
+const accountMenuItems = computed(() => [
+  [{ label: displayName.value ?? 'Account', type: 'label' }],
+  [
+    { label: 'Dashboard', icon: 'i-lucide-layout-dashboard', to: '/dashboard' },
+    { label: 'My Bookings', icon: 'i-lucide-calendar', to: '/dashboard/bookings' },
+    { label: 'Membership', icon: 'i-lucide-badge-check', to: '/dashboard/membership' },
+    { label: 'Profile', icon: 'i-lucide-user', to: '/dashboard/profile' },
+    ...(isAdmin.value
+      ? [{ label: 'Admin', icon: 'i-lucide-shield', to: '/dashboard/admin' }]
+      : [])
+  ],
+  [{ label: 'Log out', icon: 'i-lucide-log-out', onSelect: logout }]
+])
+
 async function logout() {
   await supabase.auth.signOut()
   isOpen.value = false
@@ -32,7 +46,10 @@ async function logout() {
 <template>
   <header class="sticky top-0 z-50 border-b border-gray-200/60 bg-white/75 backdrop-blur dark:border-gray-800/60 dark:bg-gray-950/75">
     <UContainer class="flex h-16 items-center justify-between">
-      <NuxtLink to="/" class="flex items-center gap-2">
+      <NuxtLink
+        to="/"
+        class="flex items-center gap-2"
+      >
         <div class="h-9 w-9 rounded-xl bg-gray-900 dark:bg-gray-100" />
         <span class="font-semibold tracking-tight">FO Studio</span>
       </NuxtLink>
@@ -55,7 +72,12 @@ async function logout() {
       <div class="flex items-center gap-2">
         <!-- Logged OUT state -->
         <template v-if="!isAuthed">
-          <UButton color="neutral" variant="soft" to="/calendar" class="hidden sm:inline-flex">
+          <UButton
+            color="neutral"
+            variant="soft"
+            to="/calendar"
+            class="hidden sm:inline-flex"
+          >
             View Availability
           </UButton>
           <UButton to="/memberships">
@@ -71,20 +93,16 @@ async function logout() {
 
         <!-- Logged IN state -->
         <template v-else>
-          <UButton color="neutral" variant="soft" to="/dashboard" class="hidden sm:inline-flex">
+          <UButton
+            color="neutral"
+            variant="soft"
+            to="/dashboard"
+            class="hidden sm:inline-flex"
+          >
             Dashboard
           </UButton>
           <UDropdownMenu
-            :items="[
-              [{ label: displayName ?? 'Account', type: 'label' }],
-              [
-                { label: 'Dashboard', icon: 'i-lucide-layout-dashboard', to: '/dashboard' },
-                { label: 'My Bookings', icon: 'i-lucide-calendar', to: '/dashboard/bookings' },
-                { label: 'Membership', icon: 'i-lucide-badge-check', to: '/dashboard/membership' },
-                { label: 'Profile', icon: 'i-lucide-user', to: '/dashboard/profile' },
-              ],
-              [{ label: 'Log out', icon: 'i-lucide-log-out', onSelect: logout }]
-            ]"
+            :items="accountMenuItems"
             :content="{ align: 'end' }"
           >
             <UButton
@@ -109,7 +127,10 @@ async function logout() {
     </UContainer>
 
     <!-- Mobile menu -->
-    <div v-if="isOpen" class="border-t border-gray-200/60 bg-white/75 backdrop-blur dark:border-gray-800/60 dark:bg-gray-950/75 md:hidden">
+    <div
+      v-if="isOpen"
+      class="border-t border-gray-200/60 bg-white/75 backdrop-blur dark:border-gray-800/60 dark:bg-gray-950/75 md:hidden"
+    >
       <UContainer class="space-y-1 py-4">
         <NuxtLink
           v-for="l in links"
@@ -128,28 +149,62 @@ async function logout() {
 
         <!-- Mobile: logged out -->
         <template v-if="!isAuthed">
-          <NuxtLink to="/login" class="block rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900" @click="isOpen = false">
+          <NuxtLink
+            to="/login"
+            class="block rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900"
+            @click="isOpen = false"
+          >
             Login
           </NuxtLink>
-          <NuxtLink to="/memberships" class="block rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900" @click="isOpen = false">
+          <NuxtLink
+            to="/memberships"
+            class="block rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900"
+            @click="isOpen = false"
+          >
             Join
           </NuxtLink>
         </template>
 
         <!-- Mobile: logged in -->
         <template v-else>
-          <p class="px-3 py-1 text-xs font-medium text-gray-400 dark:text-gray-500 truncate">{{ displayName }}</p>
-          <NuxtLink to="/dashboard" class="block rounded px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50 dark:text-white dark:hover:bg-gray-900" @click="isOpen = false">
+          <p class="px-3 py-1 text-xs font-medium text-gray-400 dark:text-gray-500 truncate">
+            {{ displayName }}
+          </p>
+          <NuxtLink
+            to="/dashboard"
+            class="block rounded px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50 dark:text-white dark:hover:bg-gray-900"
+            @click="isOpen = false"
+          >
             Dashboard
           </NuxtLink>
-          <NuxtLink to="/dashboard/bookings" class="block rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900" @click="isOpen = false">
+          <NuxtLink
+            to="/dashboard/bookings"
+            class="block rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900"
+            @click="isOpen = false"
+          >
             My Bookings
           </NuxtLink>
-          <NuxtLink to="/dashboard/membership" class="block rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900" @click="isOpen = false">
+          <NuxtLink
+            to="/dashboard/membership"
+            class="block rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900"
+            @click="isOpen = false"
+          >
             Membership
           </NuxtLink>
-          <NuxtLink to="/dashboard/profile" class="block rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900" @click="isOpen = false">
+          <NuxtLink
+            to="/dashboard/profile"
+            class="block rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900"
+            @click="isOpen = false"
+          >
             Profile
+          </NuxtLink>
+          <NuxtLink
+            v-if="isAdmin"
+            to="/dashboard/admin"
+            class="block rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900"
+            @click="isOpen = false"
+          >
+            Admin
           </NuxtLink>
           <button
             class="block w-full rounded px-3 py-2 text-left text-sm text-red-500 hover:bg-gray-50 dark:text-red-400 dark:hover:bg-gray-900"

@@ -88,7 +88,9 @@ const { data: ledger, refresh: refreshLedger } = await useAsyncData('creditLedge
 
 function formatReason(r: string) {
   switch ((r || '').toLowerCase()) {
-    case 'subscription_invoice_paid': return 'Membership credits'
+    case 'subscription_invoice_paid':
+    case 'subscription_credit_grant':
+      return 'Membership credits'
     case 'topoff': return 'Top-off'
     case 'booking_burn': return 'Booking used'
     case 'expiration': return 'Expired'

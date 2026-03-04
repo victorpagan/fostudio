@@ -640,6 +640,84 @@ export type Database = {
         }
         Relationships: []
       }
+      membership_credit_grants: {
+        Row: {
+          billing_period_end: string
+          billing_period_start: string
+          created_at: string
+          credits: number
+          due_at: string
+          grant_month_index: number
+          grant_month_start: string
+          id: string
+          invoice_id: string | null
+          last_error: string | null
+          ledger_entry_id: string | null
+          membership_id: string
+          metadata: Json | null
+          processed_at: string | null
+          processed_credits: number | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          billing_period_end: string
+          billing_period_start: string
+          created_at?: string
+          credits: number
+          due_at: string
+          grant_month_index?: number
+          grant_month_start: string
+          id?: string
+          invoice_id?: string | null
+          last_error?: string | null
+          ledger_entry_id?: string | null
+          membership_id: string
+          metadata?: Json | null
+          processed_at?: string | null
+          processed_credits?: number | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          billing_period_end?: string
+          billing_period_start?: string
+          created_at?: string
+          credits?: number
+          due_at?: string
+          grant_month_index?: number
+          grant_month_start?: string
+          id?: string
+          invoice_id?: string | null
+          last_error?: string | null
+          ledger_entry_id?: string | null
+          membership_id?: string
+          metadata?: Json | null
+          processed_at?: string | null
+          processed_credits?: number | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "membership_credit_grants_ledger_entry_id_fkey"
+            columns: ["ledger_entry_id"]
+            isOneToOne: false
+            referencedRelation: "credits_ledger"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "membership_credit_grants_membership_id_fkey"
+            columns: ["membership_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           completed: string | null
@@ -1260,7 +1338,32 @@ export type Database = {
         Args: { p_amount: number; p_order_id: string }
         Returns: undefined
       }
+      backfill_membership_credit_grants: {
+        Args: { p_membership_id?: string | null }
+        Returns: number
+      }
+      cancel_pending_membership_credit_grants: {
+        Args: { p_from?: string | null; p_membership_id: string; p_reason?: string | null }
+        Returns: number
+      }
       is_admin: { Args: never; Returns: boolean }
+      process_due_membership_credit_grants: {
+        Args: { p_limit?: number | null }
+        Returns: {
+          canceled_count: number
+          processed_count: number
+          skipped_count: number
+        }[]
+      }
+      schedule_membership_credit_grants: {
+        Args: {
+          p_invoice_id: string | null
+          p_membership_id: string
+          p_period_end: string
+          p_period_start: string
+        }
+        Returns: number
+      }
     }
     Enums: {
       membership_status: "pending_checkout" | "active" | "past_due" | "canceled"

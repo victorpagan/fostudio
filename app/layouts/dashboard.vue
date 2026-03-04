@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { NavigationMenuItem } from '@nuxt/ui'
+import type { CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui'
 
 const open = ref(false)
+const { isAdmin } = useCurrentUser()
 
-const links = [[
+const primaryLinks = computed<NavigationMenuItem[]>(() => [
   {
     label: 'Dashboard',
     icon: 'i-lucide-house',
@@ -45,18 +46,37 @@ const links = [[
     icon: 'i-lucide-user',
     to: '/dashboard/profile',
     onSelect: () => { open.value = false }
-  }
-], [{
+  },
+  ...(isAdmin.value
+    ? [{
+        label: 'Admin',
+        icon: 'i-lucide-shield',
+        to: '/dashboard/admin',
+        onSelect: () => { open.value = false }
+      }]
+    : [])
+])
+
+const supportLinks = [{
   label: 'Help & Support',
   icon: 'i-lucide-info',
   to: '/contact',
   onSelect: () => { open.value = false }
-}]] satisfies NavigationMenuItem[][]
+}] satisfies NavigationMenuItem[]
 
-const groups = computed(() => [{
+const searchItems = computed<CommandPaletteItem[]>(() =>
+  [...primaryLinks.value, ...supportLinks].map(item => ({
+    label: item.label,
+    icon: item.icon,
+    to: item.to,
+    onSelect: item.onSelect
+  }))
+)
+
+const groups = computed<CommandPaletteGroup[]>(() => [{
   id: 'links',
   label: 'Go to',
-  items: links.flat()
+  items: searchItems.value
 }])
 </script>
 
@@ -72,19 +92,28 @@ const groups = computed(() => [{
     >
       <template #header="{ collapsed }">
         <div class="px-2 py-2">
-          <NuxtLink to="/" class="flex items-center gap-2">
+          <NuxtLink
+            to="/"
+            class="flex items-center gap-2"
+          >
             <div class="h-8 w-8 rounded-xl bg-gray-900 dark:bg-gray-100" />
-            <span v-if="!collapsed" class="font-semibold tracking-tight">FO Studio</span>
+            <span
+              v-if="!collapsed"
+              class="font-semibold tracking-tight"
+            >FO Studio</span>
           </NuxtLink>
         </div>
       </template>
 
       <template #default="{ collapsed }">
-        <UDashboardSearchButton :collapsed="collapsed" class="bg-transparent ring-default" />
+        <UDashboardSearchButton
+          :collapsed="collapsed"
+          class="bg-transparent ring-default"
+        />
 
         <UNavigationMenu
           :collapsed="collapsed"
-          :items="links[0]"
+          :items="primaryLinks"
           orientation="vertical"
           tooltip
           popover
@@ -92,7 +121,7 @@ const groups = computed(() => [{
 
         <UNavigationMenu
           :collapsed="collapsed"
-          :items="links[1]"
+          :items="supportLinks"
           orientation="vertical"
           tooltip
           class="mt-auto"

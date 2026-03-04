@@ -11,7 +11,7 @@
  *   payment.completed          → confirm a pending_payment guest booking
  *   subscription.created       → upsert membership row
  *   subscription.updated       → upsert membership row
- *   invoice.payment_made       → mint monthly credits
+ *   invoice.payment_made       → schedule / release monthly credit grants
  */
 export default defineEventHandler(() => {
   throw createError({ statusCode: 404, statusMessage: 'Not used — see fohooks' })

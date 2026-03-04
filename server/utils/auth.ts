@@ -1,4 +1,5 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
+import { createError } from 'h3'
 import type { H3Event } from 'h3'
 
 type RoleCarrier = {
@@ -47,5 +48,25 @@ export async function resolveServerUserRole(event: H3Event, fallbackUser: RoleCa
   return {
     role,
     isAdmin: role === 'admin' || role === 'service'
+  }
+}
+
+export async function requireServerAdmin(event: H3Event) {
+  const user = await serverSupabaseUser(event).catch(() => null)
+
+  if (!user?.sub) {
+    throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
+  }
+
+  const { isAdmin, role } = await resolveServerUserRole(event, user)
+
+  if (!isAdmin) {
+    throw createError({ statusCode: 403, statusMessage: 'Admin access required' })
+  }
+
+  return {
+    user,
+    role,
+    supabase: serverSupabaseServiceRole(event)
   }
 }
