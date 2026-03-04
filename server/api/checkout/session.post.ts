@@ -95,6 +95,8 @@ async function createSubscriptionPaymentLink(params: {
   cadence: 'monthly' | 'quarterly' | 'annual'
   locationId: string
   planVariationId: string
+  priceCents: number
+  currency: string
   redirectUrl: string
   order?: Record<string, unknown>
 }) {
@@ -103,7 +105,11 @@ async function createSubscriptionPaymentLink(params: {
     quickPay: {
       name: `${params.displayName} (${params.cadence})`,
       locationId: params.locationId,
-      subscriptionPlanId: params.planVariationId
+      subscriptionPlanId: params.planVariationId,
+      priceMoney: {
+        amount: BigInt(params.priceCents),
+        currency: params.currency
+      }
     },
     checkoutOptions: { redirectUrl: params.redirectUrl }
   }
@@ -173,7 +179,7 @@ export default defineEventHandler(async (event) => {
   // ── 2) Lookup plan variation ─────────────────────────────────────────────
   const { data: variation, error: varErr } = await supabase
     .from('membership_plan_variations')
-    .select('provider,provider_plan_variation_id,active,visible,price_cents')
+    .select('provider,provider_plan_variation_id,active,visible,price_cents,currency')
     .eq('tier_id', tierId)
     .eq('cadence', cadence)
     .eq('provider', 'square')
@@ -183,6 +189,11 @@ export default defineEventHandler(async (event) => {
   if (!variation || !variation.active) {
     throw createError({ statusCode: 400, statusMessage: 'Plan option not available' })
   }
+
+  const planPriceCents = Number(variation.price_cents ?? 0)
+  const planCurrency = typeof variation.currency === 'string' && variation.currency.trim()
+    ? variation.currency.trim().toUpperCase()
+    : 'USD'
 
   // Hidden plan variations accessible to admins (e.g. test tier $0 plan)
   if (!variation.visible && !isAdmin) {
@@ -258,6 +269,8 @@ export default defineEventHandler(async (event) => {
         cadence,
         locationId,
         planVariationId,
+        priceCents: planPriceCents,
+        currency: planCurrency,
         redirectUrl,
         order: {
           locationId,
@@ -419,6 +432,8 @@ export default defineEventHandler(async (event) => {
       cadence,
       locationId,
       planVariationId,
+      priceCents: planPriceCents,
+      currency: planCurrency,
       redirectUrl,
       order: {
         locationId,
