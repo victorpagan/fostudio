@@ -41,7 +41,7 @@ const fields = [{
   placeholder: 'Enter your password'
 }]
 
-const providers: Array<{ label: string; icon: string; onClick: () => void }> = []
+const providers: Array<{ label: string, icon: string, onClick: () => void }> = []
 
 const schema = z.object({
   email: z.string().email('Invalid email'),
@@ -50,14 +50,24 @@ const schema = z.object({
 
 type Schema = z.output<typeof schema>
 
-// Ref to the UAuthForm so we can call submit() programmatically on Enter
-const formRef = ref()
+type AuthFormLike = {
+  $el?: Element | null
+}
+
+// Ref to the UAuthForm so we can submit the underlying native form on Enter.
+const formRef = ref<AuthFormLike | null>(null)
 
 function handleEnter(e: KeyboardEvent) {
-  // Only fire on Enter from an input (not from the submit button itself)
-  const tag = (e.target as HTMLElement)?.tagName
-  if (tag === 'INPUT') {
-    formRef.value?.$el?.querySelector('button[type="submit"]')?.click()
+  // Only fire on Enter from an input-like control and submit the native form.
+  // `requestSubmit` reliably triggers the component's submit flow.
+  const target = e.target as HTMLElement | null
+  const tag = target?.tagName
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+    const form = formRef.value?.$el?.querySelector('form')
+    if (form instanceof HTMLFormElement) {
+      e.preventDefault()
+      form.requestSubmit()
+    }
   }
 }
 
@@ -72,8 +82,9 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
 
     toast.add({ title: 'Welcome back', description: 'Signed in successfully' })
     await router.push(returnTo.value)
-  } catch (e: any) {
-    toast.add({ title: 'Login failed', description: e?.message ?? 'Unknown error', color: 'error' })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    toast.add({ title: 'Login failed', description: message, color: 'error' })
   } finally {
     loading.value = false
   }
