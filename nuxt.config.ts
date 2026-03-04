@@ -23,12 +23,12 @@ export default defineNuxtConfig({
   runtimeConfig: {
     contactWebhookUrl: process.env.NUXT_CONTACT_WEBHOOK_URL || '',
     resendApiKey: process.env.NUXT_RESEND_API_KEY || '',
-    contactToEmail: process.env.NUXT_CONTACT_TO_EMAIL || '',
+    contactToEmail: process.env.NUXT_CONTACT_TO_EMAIL || 'studio@lafilmlab.com',
     contactFromEmail: process.env.NUXT_CONTACT_FROM_EMAIL || 'FO Studio <no-reply@fostudio.local>',
     public: {
-      contactEmail: process.env.NUXT_PUBLIC_CONTACT_EMAIL || 'hello@fostudio.com',
-      contactPhone: process.env.NUXT_PUBLIC_CONTACT_PHONE || '',
-      contactLocation: process.env.NUXT_PUBLIC_CONTACT_LOCATION || 'Studio location shared after booking confirmation'
+      contactEmail: process.env.NUXT_PUBLIC_CONTACT_EMAIL || 'studio@lafilmlab.com',
+      contactPhone: process.env.NUXT_PUBLIC_CONTACT_PHONE || '(323) 999-4300',
+      contactLocation: process.env.NUXT_PUBLIC_CONTACT_LOCATION || 'LA Film Lab, 3131 N. San Fernando Rd., Los Angeles, CA 90065'
     }
   },
 

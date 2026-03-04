@@ -44,7 +44,7 @@ const contactDetails = computed(() => [
   {
     label: 'Email',
     value: config.public.contactEmail,
-    detail: 'The fastest way to reach the studio team.'
+    detail: 'The fastest way to reach the LA Film Lab studio team.'
   },
   {
     label: 'Phone',
