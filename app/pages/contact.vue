@@ -19,6 +19,9 @@ const contactSchema = z.object({
 
 const config = useRuntimeConfig()
 const toast = useToast()
+const mapQuery = 'LA Film Lab, 3131 N. San Fernando Rd., Los Angeles, CA 90065'
+const mapEmbedUrl = computed(() => `https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&t=&z=15&ie=UTF8&iwloc=&output=embed`)
+const mapDirectionsUrl = computed(() => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`)
 
 const state = reactive({
   name: '',
@@ -188,6 +191,35 @@ async function submitForm() {
               Messages go to the studio inbox through the server-side contact endpoint. The reply will come back to the email you enter below,
               so use the address you actually want us to answer.
             </p>
+          </div>
+
+          <div class="studio-panel p-3 sm:p-4">
+            <div class="overflow-hidden rounded-[1.25rem] border border-[color:var(--gruv-line)]">
+              <iframe
+                :src="mapEmbedUrl"
+                title="LA Film Lab map"
+                class="h-72 w-full"
+                loading="lazy"
+                referrerpolicy="no-referrer-when-downgrade"
+              />
+            </div>
+            <div class="px-2 pb-2 pt-4">
+              <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
+                Find the studio
+              </div>
+              <p class="mt-2 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+                Use the map for quick routing, parking planning, and client arrival coordination.
+              </p>
+              <UButton
+                class="mt-4"
+                color="neutral"
+                variant="soft"
+                :to="mapDirectionsUrl"
+                target="_blank"
+              >
+                Open in Google Maps
+              </UButton>
+            </div>
           </div>
         </div>
 
