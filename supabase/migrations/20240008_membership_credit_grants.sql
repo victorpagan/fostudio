@@ -29,6 +29,16 @@ CREATE INDEX IF NOT EXISTS credits_ledger_membership_id_idx
 -- 2. Scheduled grant rows
 -- ---------------------------------------------------------------------------
 
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+
 CREATE TABLE IF NOT EXISTS public.membership_credit_grants (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   membership_id         uuid NOT NULL REFERENCES public.memberships(id) ON DELETE CASCADE,
