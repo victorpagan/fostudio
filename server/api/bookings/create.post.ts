@@ -10,6 +10,12 @@ const schema = z.object({
 })
 
 const TZ = 'America/Los_Angeles'
+const TEST_TIER_ID = 'test'
+
+type TierRules = {
+  booking_window_days: number
+  peak_multiplier: number
+}
 
 // Peak: Mon–Thu, 11:00–16:00 local
 function isPeak(dt: DateTime) {
@@ -72,7 +78,22 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
-  if (!tierRow) throw createError({ statusCode: 400, statusMessage: 'Tier configuration missing' })
+
+  // Some pre-launch environments may have an active test membership without
+  // a seeded membership_tiers('test') row. Allow safe defaults for that tier.
+  const effectiveTier: TierRules | null = tierRow
+    ? {
+        booking_window_days: Number(tierRow.booking_window_days ?? 30),
+        peak_multiplier: Number(tierRow.peak_multiplier ?? 1.5)
+      }
+    : membership.tier === TEST_TIER_ID
+      ? {
+          booking_window_days: 30,
+          peak_multiplier: 1
+        }
+      : null
+
+  if (!effectiveTier) throw createError({ statusCode: 400, statusMessage: 'Tier configuration missing' })
 
   const start = DateTime.fromISO(body.start_time, { zone: TZ })
   const end = DateTime.fromISO(body.end_time, { zone: TZ })
@@ -81,16 +102,16 @@ export default defineEventHandler(async (event) => {
 
   // Booking window enforcement
   const now = DateTime.now().setZone(TZ)
-  const maxStart = now.plus({ days: Number(tierRow.booking_window_days ?? 30) })
+  const maxStart = now.plus({ days: effectiveTier.booking_window_days })
   if (start > maxStart) {
     throw createError({
       statusCode: 403,
-      statusMessage: `Your plan allows booking up to ${tierRow.booking_window_days} days ahead.`
+      statusMessage: `Your plan allows booking up to ${effectiveTier.booking_window_days} days ahead.`
     })
   }
 
   // Compute credits
-  const creditsNeeded = computeCredits(body.start_time, body.end_time, Number(tierRow.peak_multiplier))
+  const creditsNeeded = computeCredits(body.start_time, body.end_time, effectiveTier.peak_multiplier)
 
   // Customer id for linkage
   const { data: cust, error: custErr } = await supabase
@@ -119,7 +140,7 @@ export default defineEventHandler(async (event) => {
     if (msg.toLowerCase().includes('insufficient credits')) {
       throw createError({ statusCode: 402, statusMessage: 'Insufficient credits' })
     }
-    if ((rpcErr as any).code === '23P01') {
+    if (rpcErr.code === '23P01') {
       throw createError({ statusCode: 409, statusMessage: 'Time slot not available' })
     }
     throw createError({ statusCode: 409, statusMessage: msg })
