@@ -31,12 +31,6 @@ const returnTo = computed(() => {
 })
 
 const { user } = useCurrentUser()
-const isAuthed = computed(() => !!user.value)
-
-// Modal for unauthenticated users
-const guestModalOpen = ref(false)
-const pendingTierId = ref<string | null>(null)
-const pendingCadence = ref<Cadence | null>(null)
 
 const { data, refresh } = await useFetch<{ tiers: Tier[] }>('/api/membership/catalog', {
   default: () => ({ tiers: [] })
@@ -57,34 +51,32 @@ function formatMoney(cents: number, currency: string) {
   return currency === 'USD' ? `$${dollars}` : `${dollars} ${currency}`
 }
 
-function cadenceLabel(c: Cadence) {
-  if (c === 'monthly') return 'Monthly'
-  if (c === 'quarterly') return 'Quarterly'
-  return 'Annual'
-}
-
-function cadenceSupportText(c: Cadence) {
-  if (c === 'monthly') return 'Billed month to month for the most flexible schedule.'
-  if (c === 'quarterly') return 'Billed every three months while credits still release monthly.'
-  return 'Billed once per year with the same steady monthly credit release.'
-}
-
-function cadencePriceWindow(c: Cadence) {
-  if (c === 'monthly') return 'per month'
-  if (c === 'quarterly') return 'per quarter'
-  return 'per year'
-}
-
 function sortedOptions(tier: Tier) {
   const order: Record<Cadence, number> = { monthly: 0, quarterly: 1, annual: 2 }
   return [...tier.membership_plan_variations].sort((left, right) => order[left.cadence] - order[right.cadence])
 }
 
+function monthlyOption(tier: Tier) {
+  const options = sortedOptions(tier)
+  return options.find(option => option.cadence === 'monthly') ?? options[0] ?? null
+}
+
+function monthlyStartingLabel(tier: Tier) {
+  const option = monthlyOption(tier)
+  if (!option) return 'TBD'
+  return formatMoney(option.price_cents, option.currency)
+}
+
+function formatPeakCredits(value: number) {
+  if (Number.isInteger(value)) return value.toString()
+  return value.toFixed(2).replace(/\.?0+$/, '')
+}
+
 function tierLead(tier: Tier) {
   const notes: Record<string, string> = {
-    creator: 'A strong fit for personal work, portfolio building, test shoots, and slower-paced client growth.',
-    pro: 'The dependable middle ground for working creatives who need regular room on the calendar.',
-    studio_plus: 'The priority access plan for heavier production schedules, repeat clients, and team-led sessions.',
+    creator: 'Best for weekend warriors, newer client work, test shoots, and photographers growing a consistent booking rhythm.',
+    pro: 'Built for active shooters who need regular client days, better weekday reach, and a cleaner repeat-booking flow.',
+    studio_plus: 'For high-production teams that need priority access, peak-hour flexibility, and enough room for bigger set days.',
     test: 'Internal dry-run access for admin checkout testing.'
   }
 
@@ -93,42 +85,21 @@ function tierLead(tier: Tier) {
 
 function tierHighlights(tier: Tier) {
   const notes: Record<string, string[]> = {
-    creator: ['Good for refining your craft', 'Comfortable for solo and small-team shoots'],
-    pro: ['Made for recurring bookings', 'Better booking reach when client dates matter'],
-    studio_plus: ['Best for packed calendars', 'Useful when your set days need priority'],
+    creator: ['Great access on evenings, early mornings, and weekends', 'Good fit for solo to small-team sessions'],
+    pro: ['Better for recurring paid shoots and stronger planning windows', 'Useful when you need consistency without overbuying'],
+    studio_plus: ['Best for heavier production months and larger teams (up to ~15)', 'Designed for smoother peak-hour scheduling and equipment holds'],
     test: ['Admin-only internal flow', 'No live charge required']
   }
 
   return notes[tier.id] ?? ['Membership-first scheduling', 'Built around repeat studio use']
 }
 
-function checkoutUrl(tierId: string, cadence: Cadence) {
-  return `/checkout?tier=${encodeURIComponent(tierId)}&cadence=${encodeURIComponent(cadence)}&returnTo=${encodeURIComponent(returnTo.value)}`
+function checkoutUrl(tierId: string) {
+  return `/checkout?tier=${encodeURIComponent(tierId)}&returnTo=${encodeURIComponent(returnTo.value)}`
 }
 
-function onSelectPlan(tierId: string, cadence: Cadence) {
-  if (isAuthed.value) {
-    router.push(checkoutUrl(tierId, cadence))
-  } else {
-    // Store the intended plan and show the sign-up prompt
-    pendingTierId.value = tierId
-    pendingCadence.value = cadence
-    guestModalOpen.value = true
-  }
-}
-
-function goSignup() {
-  const dest = pendingTierId.value && pendingCadence.value
-    ? checkoutUrl(pendingTierId.value, pendingCadence.value)
-    : '/checkout'
-  router.push(`/signup?returnTo=${encodeURIComponent(dest)}`)
-}
-
-function goLogin() {
-  const dest = pendingTierId.value && pendingCadence.value
-    ? checkoutUrl(pendingTierId.value, pendingCadence.value)
-    : '/checkout'
-  router.push(`/login?returnTo=${encodeURIComponent(dest)}`)
+function onSelectTier(tierId: string) {
+  router.push(checkoutUrl(tierId))
 }
 </script>
 
@@ -143,8 +114,8 @@ function goLogin() {
               Pick the studio rhythm that fits the way you actually work.
             </h1>
             <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
-              Every plan is built for working photographers, filmmakers, and creative teams who need dependable access,
-              clearer pricing, and a booking window they can actually plan around.
+              This is a 24/7 turnkey studio built for photographers and small-to-mid crews. Book the plan that matches your volume,
+              then use the space like it was made for production days, not paperwork.
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
@@ -152,19 +123,19 @@ function goLogin() {
               color="neutral"
               variant="soft"
             >
-              Credits release monthly
+              24/7 member access
             </UBadge>
             <UBadge
               color="neutral"
               variant="soft"
             >
-              Guest booking stays available
+              Gear + consumables included
             </UBadge>
             <UBadge
               color="neutral"
               variant="soft"
             >
-              Upgrade when your production load grows
+              No startup fees
             </UBadge>
           </div>
         </div>
@@ -174,9 +145,10 @@ function goLogin() {
             What changes with membership
           </div>
           <div class="mt-4 space-y-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-            <p>You get a defined booking window, monthly studio credits, and lower-friction scheduling for repeat work.</p>
-            <p>Quarterly and annual billing do not dump credits all at once. They still land month by month, so your balance stays easier to read.</p>
-            <p>Choose the plan that matches your real booking pace now, then scale up as the work asks for it.</p>
+            <p>Every membership includes studio equipment, backdrop paper, and day-to-day consumables. Book, pay, and show up ready to shoot.</p>
+            <p>The space is 24/7 access with a 25x30 ft cyc, 20+ ft ceilings, makeup area, client seating, and props for product or fashion sessions.</p>
+            <p>You can upgrade or downgrade as your workload changes. Priority booking and equipment holds scale with the plan level.</p>
+            <p>Memberships are intentionally limited so the calendar stays usable for everyone.</p>
           </div>
         </div>
       </div>
@@ -239,10 +211,10 @@ function goLogin() {
           </div>
           <div class="plan-stat text-center">
             <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
-              {{ tier.peak_multiplier }}x
+              {{ formatPeakCredits(tier.peak_multiplier) }}
             </div>
             <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
-              peak burn
+              peak credits/hr
             </div>
           </div>
           <div class="plan-stat text-center">
@@ -255,63 +227,30 @@ function goLogin() {
           </div>
         </div>
 
-        <div class="space-y-3">
-          <div class="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
-            Choose billing cadence
+        <div class="rounded-2xl border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] p-4">
+          <div class="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
+            Starting at
           </div>
-
-          <div
-            v-for="opt in sortedOptions(tier)"
-            :key="opt.cadence"
-            class="plan-option"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="flex items-center gap-2 text-sm font-semibold text-[color:var(--gruv-ink-0)]">
-                  <span>{{ cadenceLabel(opt.cadence) }}</span>
-                  <UBadge
-                    v-if="opt.discount_label"
-                    color="neutral"
-                    variant="soft"
-                  >
-                    {{ opt.discount_label }}
-                  </UBadge>
-                </div>
-                <div class="mt-1 text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
-                  {{ opt.credits_per_month }} credits released each month
-                </div>
-              </div>
-
-              <div class="shrink-0 text-right">
-                <div class="text-xl font-semibold text-[color:var(--gruv-ink-0)]">
-                  {{ formatMoney(opt.price_cents, opt.currency) }}
-                </div>
-                <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
-                  {{ cadencePriceWindow(opt.cadence) }}
-                </div>
-              </div>
-            </div>
-
-            <p class="plan-option-copy">
-              {{ cadenceSupportText(opt.cadence) }}
-            </p>
+          <div class="mt-2 text-3xl font-semibold text-[color:var(--gruv-ink-0)]">
+            {{ monthlyStartingLabel(tier) }}/mo
           </div>
+          <p class="mt-2 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
+            Quarterly and annual savings are shown on the next step before checkout.
+          </p>
         </div>
 
         <div class="grid gap-2">
           <UButton
-            v-for="opt in sortedOptions(tier)"
-            :key="opt.cadence + '-btn'"
             block
-            @click="onSelectPlan(tier.id, opt.cadence)"
+            @click="onSelectTier(tier.id)"
           >
-            Choose {{ tier.display_name }} ({{ cadenceLabel(opt.cadence) }})
+            Choose {{ tier.display_name }}
           </UButton>
         </div>
 
         <div class="rounded-2xl border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] px-4 py-3 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
-          Includes {{ tier.holds_included }} hold window{{ tier.holds_included === 1 ? '' : 's' }}.
-          Peak-time bookings use {{ tier.peak_multiplier }}x credits when demand is highest.
+          Includes {{ tier.holds_included }} hold window{{ tier.holds_included === 1 ? '' : 's' }}, full equipment access, and consumables like backdrop paper.
+          Peak-time bookings use {{ formatPeakCredits(tier.peak_multiplier) }} credits per hour when demand is highest.
         </div>
       </article>
     </div>
@@ -322,8 +261,11 @@ function goLogin() {
           Not ready for a membership yet?
         </div>
         <p class="mt-4 max-w-2xl text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-          You can still book as a guest for one-off shoots. Membership becomes the better fit once you want repeat access,
-          a longer planning window, and a steadier cost structure.
+          You can still book as a guest for one-off shoots. Membership becomes the better fit once the shoots are recurring
+          and you want a predictable production rhythm.
+        </p>
+        <p class="mt-3 max-w-2xl text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+          Film photographers are welcome too. Rush fee waivers are available when the lab is open and capacity allows.
         </p>
       </div>
 
@@ -345,59 +287,5 @@ function goLogin() {
         </UButton>
       </div>
     </div>
-
-    <UModal v-model:open="guestModalOpen">
-      <template #content>
-        <UCard class="studio-panel">
-          <template #header>
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
-                  Create an account to continue
-                </p>
-                <p class="mt-1 text-sm text-[color:var(--gruv-ink-2)]">
-                  Memberships are tied to your account so your credits and bookings stay in one place.
-                </p>
-              </div>
-              <UButton
-                icon="i-heroicons-x-mark"
-                color="neutral"
-                variant="ghost"
-                @click="guestModalOpen = false"
-              />
-            </div>
-          </template>
-
-          <div class="space-y-3">
-            <p class="text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-              It only takes a minute to set up. Once you are in, you can manage billing, track monthly credits,
-              and move straight into checkout.
-            </p>
-            <p class="text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-              Payment is handled securely through Square. FO Studio never stores your card details directly.
-            </p>
-          </div>
-
-          <template #footer>
-            <div class="flex flex-col gap-2 sm:flex-row">
-              <UButton
-                class="flex-1"
-                @click="goSignup"
-              >
-                Create account &amp; continue
-              </UButton>
-              <UButton
-                color="neutral"
-                variant="soft"
-                class="flex-1"
-                @click="goLogin"
-              >
-                I already have an account
-              </UButton>
-            </div>
-          </template>
-        </UCard>
-      </template>
-    </UModal>
   </UContainer>
 </template>

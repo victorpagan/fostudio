@@ -13,10 +13,16 @@
 export const useCurrentUser = createSharedComposable(() => {
   const user = useSupabaseUser()
 
+  function normalizeRole(value: unknown): string | null {
+    if (typeof value !== 'string') return null
+    const normalized = value.trim().toLowerCase()
+    return normalized || null
+  }
+
   const role = computed<string | null>(() => {
     if (!user.value) return null
-    return (user.value.user_metadata?.role as string | undefined)
-      ?? (user.value.app_metadata?.role as string | undefined)
+    return normalizeRole(user.value.user_metadata?.role)
+      ?? normalizeRole(user.value.app_metadata?.role)
       ?? null
   })
 

@@ -287,6 +287,7 @@ export type Database = {
           created_at: string
           delta: number
           external_ref: string | null
+          expires_at: string | null
           id: string
           membership_id: string | null
           metadata: Json | null
@@ -297,6 +298,7 @@ export type Database = {
           created_at?: string
           delta: number
           external_ref?: string | null
+          expires_at?: string | null
           id?: string
           membership_id?: string | null
           metadata?: Json | null
@@ -307,6 +309,7 @@ export type Database = {
           created_at?: string
           delta?: number
           external_ref?: string | null
+          expires_at?: string | null
           id?: string
           membership_id?: string | null
           metadata?: Json | null
@@ -484,7 +487,7 @@ export type Database = {
           price_cents: number
           provider: string
           provider_plan_id: string | null
-          provider_plan_variation_id: string
+          provider_plan_variation_id: string | null
           sort_order: number
           tier_id: string
           visible: boolean
@@ -499,7 +502,7 @@ export type Database = {
           price_cents: number
           provider?: string
           provider_plan_id?: string | null
-          provider_plan_variation_id: string
+          provider_plan_variation_id?: string | null
           sort_order?: number
           tier_id: string
           visible?: boolean
@@ -514,7 +517,7 @@ export type Database = {
           price_cents?: number
           provider?: string
           provider_plan_id?: string | null
-          provider_plan_variation_id?: string
+          provider_plan_variation_id?: string | null
           sort_order?: number
           tier_id?: string
           visible?: boolean
@@ -576,9 +579,11 @@ export type Database = {
       }
       memberships: {
         Row: {
+          activated_at: string | null
           billing_customer_id: string | null
           billing_provider: string | null
           billing_subscription_id: string | null
+          canceled_at: string | null
           cadence: string | null
           checkout_order_template_id: string | null
           checkout_payment_link_id: string | null
@@ -597,9 +602,11 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          activated_at?: string | null
           billing_customer_id?: string | null
           billing_provider?: string | null
           billing_subscription_id?: string | null
+          canceled_at?: string | null
           cadence?: string | null
           checkout_order_template_id?: string | null
           checkout_payment_link_id?: string | null
@@ -618,9 +625,11 @@ export type Database = {
           user_id: string
         }
         Update: {
+          activated_at?: string | null
           billing_customer_id?: string | null
           billing_provider?: string | null
           billing_subscription_id?: string | null
+          canceled_at?: string | null
           cadence?: string | null
           checkout_order_template_id?: string | null
           checkout_payment_link_id?: string | null
@@ -639,6 +648,80 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      membership_checkout_sessions: {
+        Row: {
+          cadence: string
+          claimed_by_user_id: string | null
+          claimed_membership_id: string | null
+          created_at: string
+          guest_email: string | null
+          id: string
+          metadata: Json | null
+          order_template_id: string | null
+          paid_at: string | null
+          payment_link_id: string | null
+          payment_provider: string
+          plan_variation_id: string | null
+          return_to: string | null
+          square_customer_id: string | null
+          square_subscription_id: string | null
+          status: string
+          tier: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          cadence: string
+          claimed_by_user_id?: string | null
+          claimed_membership_id?: string | null
+          created_at?: string
+          guest_email?: string | null
+          id?: string
+          metadata?: Json | null
+          order_template_id?: string | null
+          paid_at?: string | null
+          payment_link_id?: string | null
+          payment_provider?: string
+          plan_variation_id?: string | null
+          return_to?: string | null
+          square_customer_id?: string | null
+          square_subscription_id?: string | null
+          status?: string
+          tier: string
+          token: string
+          updated_at?: string
+        }
+        Update: {
+          cadence?: string
+          claimed_by_user_id?: string | null
+          claimed_membership_id?: string | null
+          created_at?: string
+          guest_email?: string | null
+          id?: string
+          metadata?: Json | null
+          order_template_id?: string | null
+          paid_at?: string | null
+          payment_link_id?: string | null
+          payment_provider?: string
+          plan_variation_id?: string | null
+          return_to?: string | null
+          square_customer_id?: string | null
+          square_subscription_id?: string | null
+          status?: string
+          tier?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "membership_checkout_sessions_claimed_membership_id_fkey"
+            columns: ["claimed_membership_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       membership_credit_grants: {
         Row: {
@@ -1366,7 +1449,7 @@ export type Database = {
       }
     }
     Enums: {
-      membership_status: "pending_checkout" | "active" | "past_due" | "canceled"
+      membership_status: "pending_checkout" | "active" | "past_due" | "canceled" | "inactive" | "paused"
       membership_tier: "creator" | "pro" | "studio_plus" | "test"
     }
     CompositeTypes: {
@@ -1498,7 +1581,7 @@ export const Constants = {
   },
   public: {
     Enums: {
-      membership_status: ["pending_checkout", "active", "past_due", "canceled"],
+      membership_status: ["pending_checkout", "active", "past_due", "canceled", "inactive", "paused"],
       membership_tier: ["creator", "pro", "studio_plus", "test"],
     },
   },

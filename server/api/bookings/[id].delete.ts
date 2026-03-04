@@ -1,17 +1,19 @@
 /**
  * DELETE /api/bookings/:id
  *
- * Cancels a booking and — if cancelled > 24h before start — refunds the credits.
+ * Cancels a booking and — if canceled > 24h before start — refunds the credits.
  *
  * Rules:
  *  - Must be authenticated
  *  - Must own the booking (or be admin)
- *  - Booking must be 'confirmed' or 'requested' (not already cancelled/completed)
+ *  - Booking must be 'confirmed' or 'requested' (not already canceled/completed)
  *  - Credit refund only if start_time is more than 24h from now
  *  - Admins can cancel any booking regardless of time
  */
 import { serverSupabaseUser, serverSupabaseServiceRole, serverSupabaseClient } from '#supabase/server'
 import { DateTime } from 'luxon'
+import { isAdminRole, readUserRole } from '~~/server/utils/auth'
+import type { RoleCarrier } from '~~/server/utils/auth'
 
 const TZ = 'America/Los_Angeles'
 const REFUND_WINDOW_HOURS = 24
@@ -23,8 +25,8 @@ export default defineEventHandler(async (event) => {
   const bookingId = getRouterParam(event, 'id')
   if (!bookingId) throw createError({ statusCode: 400, statusMessage: 'Missing booking id' })
 
-  const role = (user as any).user_metadata?.role ?? (user as any).app_metadata?.role as string | undefined
-  const isAdmin = role === 'admin' || role === 'service'
+  const role = readUserRole(user as RoleCarrier)
+  const isAdmin = isAdminRole(role)
 
   // Use service role for admin, user client for member (RLS enforces ownership)
   const supabase = isAdmin
@@ -87,13 +89,13 @@ export default defineEventHandler(async (event) => {
         metadata: {
           booking_id: bookingId,
           original_burn: booking.credits_burned,
-          cancelled_at: new Date().toISOString(),
+          canceled_at: new Date().toISOString(),
           hours_before_start: Math.round(hoursUntilStart * 10) / 10
         }
       })
 
     if (refundErr) {
-      // Booking is already cancelled — log but don't fail the request
+      // Booking is already canceled — log but don't fail the request
       console.error('[cancel] credit refund failed:', refundErr)
     }
   }

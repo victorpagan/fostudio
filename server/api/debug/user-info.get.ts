@@ -1,6 +1,8 @@
 // File: server/api/debug/user-info.get.ts
 // Debug endpoint to check current user info and role
 import { serverSupabaseUser } from '#supabase/server'
+import { isAdminRole, readUserRole } from '~~/server/utils/auth'
+import type { RoleCarrier } from '~~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch((err) => {
@@ -11,9 +13,8 @@ export default defineEventHandler(async (event) => {
   if (!user) {
     return { authenticated: false, user: null }
   }
-
-  const role = (user as any)?.user_metadata?.role ?? (user as any)?.app_metadata?.role as string | undefined
-  const isAdmin = role === 'admin' || role === 'service'
+  const role = readUserRole(user as RoleCarrier)
+  const isAdmin = isAdminRole(role)
 
   return {
     authenticated: true,

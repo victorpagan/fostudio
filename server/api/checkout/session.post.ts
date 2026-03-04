@@ -10,7 +10,8 @@ import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 const bodySchema = z.object({
   tier: z.string().min(1),
   cadence: z.enum(['monthly', 'quarterly', 'annual']).optional(),
-  returnTo: z.string().min(1).optional()
+  returnTo: z.string().min(1).optional(),
+  guest_email: z.string().email().optional()
 })
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -23,9 +24,19 @@ type SquarePaymentLinkResult = {
   } | null
 }
 
+type GuestCheckoutSessionInsertResult = {
+  id: string
+  token: string
+}
+
 function normalizeReturnTo(value: string | undefined, fallback = '/dashboard/membership') {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return fallback
   return value
+}
+
+function normalizeEmail(value: string | undefined) {
+  const normalized = (value ?? '').trim().toLowerCase()
+  return normalized || null
 }
 
 async function resolvePlanVariationId(
@@ -52,18 +63,15 @@ async function resolvePlanVariationId(
 }
 
 export default defineEventHandler(async (event) => {
-  // serverSupabaseUser returns JwtPayload in @nuxtjs/supabase v2; the UUID is in `.sub`
-  const user = await serverSupabaseUser(event)
-  if (!user?.sub || !UUID_RE.test(user.sub)) {
-    throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
-  }
-
+  const user = await serverSupabaseUser(event).catch(() => null)
+  const userId = user?.sub && UUID_RE.test(user.sub) ? user.sub : null
   const supabase = serverSupabaseServiceRole(event)
 
   const parsed = bodySchema.parse(await readBody(event))
   const tierId = parsed.tier
   const cadence = parsed.cadence ?? 'monthly'
   const returnTo = normalizeReturnTo(parsed.returnTo)
+  const guestEmail = normalizeEmail(parsed.guest_email)
 
   const { isAdmin } = await resolveServerUserRole(event, user)
 
@@ -106,6 +114,10 @@ export default defineEventHandler(async (event) => {
   const isTestTier = tierId === 'test'
   let resolvedPlanVariationId: string | null = null
 
+  if (isTestTier && !userId) {
+    throw createError({ statusCode: 401, statusMessage: 'Sign in to use the admin test tier' })
+  }
+
   if (!isTestTier) {
     resolvedPlanVariationId = await resolvePlanVariationId(
       event,
@@ -122,11 +134,105 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  const { origin } = getRequestURL(event)
+
+  // ── 3a) Guest checkout (no auth required) ────────────────────────────────
+  // Guests can complete payment first, then create/sign in to claim
+  // the membership from /checkout/success.
+  if (!userId) {
+    if (!guestEmail) {
+      throw createError({ statusCode: 400, statusMessage: 'Email is required to continue checkout.' })
+    }
+
+    const checkoutToken = randomUUID()
+    const { data: checkoutSession, error: sessionErr } = await supabase
+      .from('membership_checkout_sessions')
+      .insert({
+        token: checkoutToken,
+        tier: tierId,
+        cadence,
+        status: 'pending',
+        return_to: returnTo,
+        guest_email: guestEmail,
+        payment_provider: 'square',
+        plan_variation_id: resolvedPlanVariationId
+      })
+      .select('id,token')
+      .single()
+
+    if (sessionErr || !checkoutSession) {
+      throw createError({ statusCode: 500, statusMessage: sessionErr?.message ?? 'Failed to create checkout session' })
+    }
+
+    const session = checkoutSession as GuestCheckoutSessionInsertResult
+    const square = await useSquareClient(event)
+    const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
+    const planVariationId = resolvedPlanVariationId as string
+    const redirectUrl = `${origin}/checkout/success?checkout=${encodeURIComponent(session.token)}&returnTo=${encodeURIComponent(returnTo)}`
+
+    let createRes: SquarePaymentLinkResult
+    try {
+      createRes = await square.checkout.paymentLinks.create({
+        idempotencyKey: randomUUID(),
+        quickPay: {
+          name: `${tier.display_name} (${cadence})`,
+          locationId,
+          subscriptionPlanId: planVariationId
+        },
+        checkoutOptions: { redirectUrl },
+        order: {
+          locationId,
+          referenceId: session.id,
+          metadata: {
+            checkout_session_id: session.id,
+            checkout_token: session.token,
+            tier: tierId,
+            cadence
+          },
+          buyerEmailAddress: guestEmail
+        }
+      } as never) as SquarePaymentLinkResult
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : 'Square checkout error'
+      await supabase
+        .from('membership_checkout_sessions')
+        .update({ status: 'failed', metadata: { error: errMsg } })
+        .eq('id', session.id)
+
+      throw createError({ statusCode: 502, statusMessage: 'Failed to start secure checkout' })
+    }
+
+    const paymentLink = createRes.paymentLink
+    if (!paymentLink?.url) {
+      await supabase
+        .from('membership_checkout_sessions')
+        .update({ status: 'failed', metadata: { error: 'missing_payment_link_url' } })
+        .eq('id', session.id)
+
+      throw createError({ statusCode: 500, statusMessage: 'Square did not return a payment link URL' })
+    }
+
+    const { error: saveErr } = await supabase
+      .from('membership_checkout_sessions')
+      .update({
+        payment_link_id: paymentLink.id ?? null,
+        order_template_id: paymentLink.orderId ?? null
+      })
+      .eq('id', session.id)
+
+    if (saveErr) throw createError({ statusCode: 500, statusMessage: saveErr.message })
+
+    return {
+      redirectUrl: paymentLink.url,
+      provider: 'square'
+    }
+  }
+
   // ── 3) Upsert membership row ─────────────────────────────────────────────
   const { data: membership, error: memErr } = await supabase
     .from('memberships')
     .select('*')
-    .eq('user_id', user.sub)
+    .eq('user_id', userId)
     .maybeSingle()
 
   if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
@@ -141,7 +247,7 @@ export default defineEventHandler(async (event) => {
     const { data: inserted, error: insErr } = await supabase
       .from('memberships')
       .insert({
-        user_id: user.sub,
+        user_id: userId,
         tier: tierId as never,
         cadence,
         status: 'pending_checkout' as const
@@ -164,8 +270,6 @@ export default defineEventHandler(async (event) => {
     if (updErr) throw createError({ statusCode: 500, statusMessage: updErr.message })
     membershipId = membership.id
   }
-
-  const { origin } = getRequestURL(event)
 
   // ── Test tier: skip Square entirely, immediately confirm ─────────────────
   // This lets admins exercise the full UI flow without a real charge.
@@ -209,13 +313,14 @@ export default defineEventHandler(async (event) => {
       locationId,
       referenceId: membershipId,
       metadata: {
-        user_id: user.sub,
+        user_id: userId,
         membership_id: membershipId,
         tier: tierId,
         cadence
-      }
+      },
+      buyerEmailAddress: user?.email ?? undefined
     }
-  })
+  } as never)
 
   const paymentLink = (createRes as SquarePaymentLinkResult)?.paymentLink
   if (!paymentLink?.url) throw createError({ statusCode: 500, statusMessage: 'Square did not return a payment link URL' })

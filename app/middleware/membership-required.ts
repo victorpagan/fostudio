@@ -7,9 +7,15 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const user = useSupabaseUser()
   if (!user.value) return // let auth middleware handle redirect
 
+  const normalizeRole = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null
+    const normalized = value.trim().toLowerCase()
+    return normalized || null
+  }
+
   // Admins always pass through
-  const role = (user.value.user_metadata?.role as string | undefined)
-    ?? (user.value.app_metadata?.role as string | undefined)
+  const role = normalizeRole(user.value.user_metadata?.role)
+    ?? normalizeRole(user.value.app_metadata?.role)
     ?? null
   if (role === 'admin' || role === 'service') return
 

@@ -2,20 +2,31 @@ import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { createError } from 'h3'
 import type { H3Event } from 'h3'
 
-type RoleCarrier = {
+export type RoleCarrier = {
   sub?: string | null
   app_metadata?: Record<string, unknown> | null
   user_metadata?: Record<string, unknown> | null
 }
 
+function normalizeRole(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().toLowerCase()
+  return normalized || null
+}
+
+export function isAdminRole(role: string | null | undefined): boolean {
+  const normalized = normalizeRole(role)
+  return normalized === 'admin' || normalized === 'service'
+}
+
 export function readUserRole(user: RoleCarrier | null | undefined): string | null {
   if (!user) return null
 
-  const userRole = user.user_metadata?.role
-  if (typeof userRole === 'string') return userRole
+  const userRole = normalizeRole(user.user_metadata?.role)
+  if (userRole) return userRole
 
-  const appRole = user.app_metadata?.role
-  if (typeof appRole === 'string') return appRole
+  const appRole = normalizeRole(user.app_metadata?.role)
+  if (appRole) return appRole
 
   return null
 }
@@ -25,7 +36,7 @@ export async function resolveServerUserRole(event: H3Event, fallbackUser: RoleCa
     const role = readUserRole(fallbackUser)
     return {
       role,
-      isAdmin: role === 'admin' || role === 'service'
+      isAdmin: isAdminRole(role)
     }
   }
 
@@ -37,7 +48,7 @@ export async function resolveServerUserRole(event: H3Event, fallbackUser: RoleCa
       const role = readUserRole(data.user as RoleCarrier)
       return {
         role,
-        isAdmin: role === 'admin' || role === 'service'
+        isAdmin: isAdminRole(role)
       }
     }
   } catch {
@@ -47,7 +58,7 @@ export async function resolveServerUserRole(event: H3Event, fallbackUser: RoleCa
   const role = readUserRole(fallbackUser)
   return {
     role,
-    isAdmin: role === 'admin' || role === 'service'
+    isAdmin: isAdminRole(role)
   }
 }
 

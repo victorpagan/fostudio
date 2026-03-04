@@ -1,23 +1,43 @@
 <script setup lang="ts">
-definePageMeta({ middleware: ['auth'] })
+definePageMeta({ auth: false })
 
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
-
 const route = useRoute()
+
+const checkoutToken = computed(() => {
+  const value = route.query.checkout
+  return typeof value === 'string' ? value : null
+})
+
 const returnTo = computed(() => {
   const value = route.query.returnTo
   if (typeof value === 'string' && value.startsWith('/')) return value
-  return '/dashboard'
+  return '/dashboard/membership'
 })
+
+const successPath = computed(() => {
+  const query = new URLSearchParams()
+  if (checkoutToken.value) query.set('checkout', checkoutToken.value)
+  query.set('returnTo', returnTo.value)
+  return `/checkout/success?${query.toString()}`
+})
+
+const loginTo = computed(() => `/login?returnTo=${encodeURIComponent(successPath.value)}`)
+const signupTo = computed(() => `/signup?returnTo=${encodeURIComponent(successPath.value)}`)
 const isTest = computed(() => route.query.test === '1')
 
 const status = ref<string>('pending')
-const tries = ref(0)
+const claimLoading = ref(false)
+const claimError = ref<string | null>(null)
+const claimedMembershipId = ref<string | null>(null)
+const claimComplete = ref(false)
+
 let timer: ReturnType<typeof setInterval> | null = null
 
-async function poll() {
+async function pollLegacyMembershipStatus() {
   if (!user.value) return
+
   const { data } = await supabase
     .from('memberships')
     .select('status')
@@ -27,21 +47,73 @@ async function poll() {
   status.value = data?.status ?? (isTest.value ? 'active' : 'pending')
 }
 
+async function claimCheckout() {
+  if (!checkoutToken.value || !user.value) return
+
+  claimLoading.value = true
+  claimError.value = null
+
+  try {
+    const res = await $fetch<{
+      ok: boolean
+      membershipId: string
+      membershipStatus: string
+      returnTo?: string
+    }>('/api/checkout/claim', {
+      method: 'POST',
+      body: { token: checkoutToken.value }
+    })
+
+    status.value = res.membershipStatus || 'pending_checkout'
+    claimedMembershipId.value = res.membershipId
+    claimComplete.value = true
+
+    if (status.value === 'active') {
+      await navigateTo(res.returnTo ?? returnTo.value)
+    }
+  } catch (error: unknown) {
+    const e = error as {
+      data?: { statusMessage?: string }
+      statusMessage?: string
+      message?: string
+    }
+    claimError.value = e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Could not finish account linking.'
+  } finally {
+    claimLoading.value = false
+  }
+}
+
 onMounted(async () => {
-  await poll()
+  if (checkoutToken.value) {
+    if (user.value) await claimCheckout()
+    else status.value = 'completed'
+    return
+  }
+
+  if (!user.value) {
+    await navigateTo(loginTo.value)
+    return
+  }
+
+  await pollLegacyMembershipStatus()
   if (status.value === 'active') {
     await navigateTo(returnTo.value)
     return
   }
 
   timer = setInterval(async () => {
-    tries.value++
-    await poll()
-    if (status.value === 'active' || tries.value >= 10) {
+    await pollLegacyMembershipStatus()
+    if (status.value === 'active') {
       if (timer) clearInterval(timer)
       await navigateTo(returnTo.value)
     }
   }, 2000)
+})
+
+watch(() => user.value?.sub, async (nextUserId) => {
+  if (checkoutToken.value && nextUserId && !claimLoading.value && !claimComplete.value) {
+    await claimCheckout()
+  }
 })
 
 onBeforeUnmount(() => {
@@ -56,13 +128,24 @@ onBeforeUnmount(() => {
         <div class="max-w-3xl space-y-4">
           <span class="studio-kicker">Checkout complete</span>
           <h1 class="studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-7xl">
-            {{ isTest ? 'Your test membership is active.' : 'You are in. We are finishing the setup now.' }}
+            <span v-if="checkoutToken && !user">Payment received. Finish account setup.</span>
+            <span v-else-if="isTest">Your test membership is active.</span>
+            <span v-else>You are in. We are finishing the setup now.</span>
           </h1>
           <p class="text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
-            <span v-if="isTest">No live charge was created. This flow is safe for internal checkout testing.</span>
-            <span v-else>Your billing went through. The membership record will flip fully active as soon as the webhook finishes processing.</span>
+            <span v-if="checkoutToken && !user">Create or sign in to your account so we can attach this paid membership and unlock your dashboard.</span>
+            <span v-else-if="isTest">No live charge was created. This flow is safe for internal checkout testing.</span>
+            <span v-else>Your billing went through. We are syncing your membership details now.</span>
           </p>
         </div>
+
+        <UAlert
+          v-if="claimError"
+          color="error"
+          variant="soft"
+          icon="i-lucide-circle-alert"
+          :title="claimError"
+        />
 
         <div class="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)]">
           <div class="studio-panel p-5 sm:p-6">
@@ -78,12 +161,18 @@ onBeforeUnmount(() => {
                 {{ status }}
               </UBadge>
               <span class="text-sm text-[color:var(--gruv-ink-2)]">
-                {{ status === 'active' ? 'Ready to book.' : 'Refreshing automatically.' }}
+                <span v-if="claimLoading">Linking your account now.</span>
+                <span v-else-if="status === 'active'">Ready to book.</span>
+                <span v-else-if="checkoutToken && !user">Account step required.</span>
+                <span v-else>Sync in progress.</span>
               </span>
             </div>
 
-            <p class="mt-5 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-              If activation is not complete within about a minute, it should finish as soon as the Square webhook lands.
+            <p
+              v-if="claimedMembershipId"
+              class="mt-5 text-xs leading-6 text-[color:var(--gruv-ink-2)]"
+            >
+              Membership ID: {{ claimedMembershipId }}
             </p>
           </div>
 
@@ -92,11 +181,37 @@ onBeforeUnmount(() => {
               Next stop
             </div>
             <p class="mt-4 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-              Head back to your dashboard to manage the membership, or check availability if you are ready to start planning a session.
+              Go to your dashboard to manage membership and start booking.
             </p>
 
             <div class="mt-5 flex flex-col gap-2">
-              <UButton :to="returnTo">
+              <UButton
+                v-if="checkoutToken && !user"
+                :to="signupTo"
+              >
+                Create account
+              </UButton>
+              <UButton
+                v-if="checkoutToken && !user"
+                color="neutral"
+                variant="soft"
+                :to="loginTo"
+              >
+                I already have an account
+              </UButton>
+              <UButton
+                v-if="checkoutToken && user && status !== 'active'"
+                color="neutral"
+                variant="soft"
+                :loading="claimLoading"
+                @click="claimCheckout"
+              >
+                Retry membership sync
+              </UButton>
+              <UButton
+                v-if="!(checkoutToken && !user)"
+                :to="returnTo"
+              >
                 Go to dashboard
               </UButton>
               <UButton
