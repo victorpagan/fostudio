@@ -26,11 +26,12 @@ onMounted(async () => {
   })
 })
 </script>
+
 <template>
-  <div>
+  <div class="site-shell">
     <AppHeader />
 
-    <UMain>
+    <UMain class="relative">
       <slot />
     </UMain>
 

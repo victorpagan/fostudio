@@ -51,31 +51,65 @@ onBeforeUnmount(() => {
 
 <template>
   <UContainer class="py-10 sm:py-14">
-    <div class="mx-auto max-w-3xl space-y-4">
-      <h1 class="text-3xl font-semibold tracking-tight">You’re all set</h1>
-
-      <UCard>
-        <p class="text-sm text-gray-600 dark:text-gray-300">
-          <span v-if="isTest">Test membership activated — no charge was made.</span>
-          <span v-else>Thanks — your subscription is being activated.</span>
-        </p>
-
-        <div class="mt-3 text-sm">
-          Current status:
-          <UBadge :color="status === 'active' ? 'success' : 'neutral'" variant="soft">
-            {{ status }}
-          </UBadge>
+    <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
+      <div class="mx-auto max-w-4xl space-y-6">
+        <div class="max-w-3xl space-y-4">
+          <span class="studio-kicker">Checkout complete</span>
+          <h1 class="studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-7xl">
+            {{ isTest ? 'Your test membership is active.' : 'You are in. We are finishing the setup now.' }}
+          </h1>
+          <p class="text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
+            <span v-if="isTest">No live charge was created. This flow is safe for internal checkout testing.</span>
+            <span v-else>Your billing went through. The membership record will flip fully active as soon as the webhook finishes processing.</span>
+          </p>
         </div>
 
-        <div class="mt-6 flex gap-2">
-          <UButton to="/dashboard">Go to dashboard</UButton>
-          <UButton color="neutral" variant="soft" to="/calendar">View calendar</UButton>
-        </div>
+        <div class="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)]">
+          <div class="studio-panel p-5 sm:p-6">
+            <div class="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
+              Current status
+            </div>
+            <div class="mt-3 flex items-center gap-3">
+              <UBadge
+                :color="status === 'active' ? 'success' : 'neutral'"
+                variant="soft"
+                size="lg"
+              >
+                {{ status }}
+              </UBadge>
+              <span class="text-sm text-[color:var(--gruv-ink-2)]">
+                {{ status === 'active' ? 'Ready to book.' : 'Refreshing automatically.' }}
+              </span>
+            </div>
 
-        <p class="mt-4 text-xs text-gray-500 dark:text-gray-400">
-          If activation doesn’t complete in a minute, it will once the Square webhook processes.
-        </p>
-      </UCard>
-    </div>
+            <p class="mt-5 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+              If activation is not complete within about a minute, it should finish as soon as the Square webhook lands.
+            </p>
+          </div>
+
+          <div class="studio-panel p-5 sm:p-6">
+            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
+              Next stop
+            </div>
+            <p class="mt-4 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+              Head back to your dashboard to manage the membership, or check availability if you are ready to start planning a session.
+            </p>
+
+            <div class="mt-5 flex flex-col gap-2">
+              <UButton :to="returnTo">
+                Go to dashboard
+              </UButton>
+              <UButton
+                color="neutral"
+                variant="soft"
+                to="/calendar"
+              >
+                View calendar
+              </UButton>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   </UContainer>
 </template>

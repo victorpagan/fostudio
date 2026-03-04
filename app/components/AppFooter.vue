@@ -9,10 +9,15 @@ const footerLinks = [
 </script>
 
 <template>
-  <UFooter class="border-t border-gray-200/60 py-10 dark:border-gray-800/60">
+  <UFooter class="border-t border-[color:var(--gruv-line)] py-10">
     <UContainer class="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-      <div class="text-sm text-gray-600 dark:text-gray-300">
-        © {{ year }} FO Studio Rentals
+      <div class="space-y-1">
+        <div class="text-sm text-[color:var(--gruv-ink-2)]">
+          © {{ year }} FO Studio
+        </div>
+        <div class="text-xs uppercase tracking-[0.18em] text-[color:var(--gruv-ink-2)]">
+          Studio access shaped around production rhythm
+        </div>
       </div>
 
       <div class="flex flex-wrap gap-4 text-sm">
@@ -20,7 +25,7 @@ const footerLinks = [
           v-for="l in footerLinks"
           :key="l.to"
           :to="l.to"
-          class="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+          class="text-[color:var(--gruv-ink-2)] transition-colors hover:text-[color:var(--gruv-accent)]"
         >
           {{ l.label }}
         </NuxtLink>

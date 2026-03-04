@@ -1,27 +1,360 @@
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;500;600&family=Manrope:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 @import "@nuxt/ui";
 
 @source "../../../content/**/*";
 
 @theme static {
-  --font-sans: 'Public Sans', sans-serif;
+  --font-sans: 'Manrope', sans-serif;
+}
 
-  --color-green-50: #EFFDF5;
-  --color-green-100: #D9FBE8;
-  --color-green-200: #B3F5D1;
-  --color-green-300: #75EDAE;
-  --color-green-400: #00DC82;
-  --color-green-500: #00C16A;
-  --color-green-600: #00A155;
-  --color-green-700: #007F45;
-  --color-green-800: #016538;
-  --color-green-900: #0A5331;
-  --color-green-950: #052E16;
+:root {
+  --font-display: 'Barlow Condensed', sans-serif;
+  --gruv-bg-0: #f9f5d7;
+  --gruv-bg-1: #f2e5bc;
+  --gruv-bg-2: #ebdbb2;
+  --gruv-ink-0: #282828;
+  --gruv-ink-1: #3c3836;
+  --gruv-ink-2: #665c54;
+  --gruv-line: rgba(146, 131, 116, 0.28);
+  --gruv-accent: #b57614;
+  --gruv-accent-soft: rgba(181, 118, 20, 0.14);
+  --gruv-olive: #79740e;
+  --gruv-rust: #9d0006;
+  --gruv-aqua: #076678;
+  --ui-bg: var(--gruv-bg-0);
+  --ui-bg-muted: var(--gruv-bg-1);
+  --ui-bg-elevated: rgba(249, 245, 215, 0.84);
+  --ui-bg-accented: var(--gruv-bg-2);
+  --ui-text: var(--gruv-ink-0);
+  --ui-text-dimmed: var(--gruv-ink-2);
+  --ui-border: var(--gruv-line);
+  --ui-primary: var(--gruv-accent);
+  --ui-secondary: var(--gruv-aqua);
 }
 
 .dark {
-  --ui-bg: var(--ui-color-neutral-950);
-  --ui-bg-muted: var(--ui-color-neutral-900);
-  --ui-bg-elevated: var(--ui-color-neutral-900);
-  --ui-bg-accented: var(--ui-color-neutral-800);
+  --gruv-bg-0: #1d2021;
+  --gruv-bg-1: #282828;
+  --gruv-bg-2: #32302f;
+  --gruv-ink-0: #fbf1c7;
+  --gruv-ink-1: #ebdbb2;
+  --gruv-ink-2: #bdae93;
+  --gruv-line: rgba(168, 153, 132, 0.2);
+  --gruv-accent-soft: rgba(250, 189, 47, 0.14);
+  --ui-bg: var(--gruv-bg-0);
+  --ui-bg-muted: var(--gruv-bg-1);
+  --ui-bg-elevated: rgba(40, 40, 40, 0.88);
+  --ui-bg-accented: var(--gruv-bg-2);
+}
+
+html,
+body,
+#__nuxt {
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(circle at top right, rgba(250, 189, 47, 0.11), transparent 30rem),
+    radial-gradient(circle at bottom left, rgba(69, 133, 136, 0.08), transparent 34rem),
+    linear-gradient(180deg, var(--gruv-bg-0) 0%, var(--gruv-bg-1) 100%);
+  color: var(--gruv-ink-0);
+}
+
+::selection {
+  background: var(--gruv-accent);
+  color: var(--gruv-bg-0);
+}
+
+.site-shell {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(249, 245, 215, 0.82) 0%, rgba(242, 229, 188, 0.96) 35%, rgba(249, 245, 215, 0.98) 100%);
+}
+
+.dark .site-shell {
+  background:
+    linear-gradient(180deg, rgba(29, 32, 33, 0.9) 0%, rgba(40, 40, 40, 0.96) 35%, rgba(29, 32, 33, 0.98) 100%);
+}
+
+.studio-display {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.studio-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--gruv-line);
+  border-radius: 999px;
+  padding: 0.45rem 0.8rem;
+  background: rgba(249, 245, 215, 0.72);
+  color: var(--gruv-ink-1);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dark .studio-kicker {
+  background: rgba(40, 40, 40, 0.74);
+}
+
+.studio-panel {
+  border: 1px solid var(--gruv-line);
+  border-radius: 1.5rem;
+  background:
+    linear-gradient(180deg, rgba(255, 251, 235, 0.84) 0%, rgba(249, 245, 215, 0.96) 100%);
+  box-shadow:
+    0 24px 60px rgba(50, 48, 47, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.dark .studio-panel {
+  background:
+    linear-gradient(180deg, rgba(50, 48, 47, 0.88) 0%, rgba(40, 40, 40, 0.96) 100%);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.studio-grid {
+  position: relative;
+}
+
+.studio-grid::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(146, 131, 116, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(146, 131, 116, 0.06) 1px, transparent 1px);
+  background-size: 30px 30px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.6), transparent);
+}
+
+.availability-shell {
+  overflow: hidden;
+  border: 1px solid var(--gruv-line);
+  border-radius: 1.5rem;
+  background: rgba(255, 251, 235, 0.78);
+  backdrop-filter: blur(14px);
+}
+
+.dark .availability-shell {
+  background: rgba(40, 40, 40, 0.82);
+}
+
+.availability-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--gruv-line);
+  background: rgba(242, 229, 188, 0.52);
+}
+
+.dark .availability-toolbar {
+  background: rgba(60, 56, 54, 0.38);
+}
+
+.availability-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.availability-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  background: var(--gruv-accent-soft);
+  color: var(--gruv-ink-1);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.availability-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+}
+
+.availability-shell .fc {
+  --fc-border-color: var(--gruv-line);
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: rgba(235, 219, 178, 0.42);
+  --fc-today-bg-color: rgba(250, 189, 47, 0.12);
+  --fc-now-indicator-color: var(--gruv-rust);
+  --fc-button-bg-color: var(--gruv-ink-0);
+  --fc-button-border-color: var(--gruv-ink-0);
+  --fc-button-hover-bg-color: var(--gruv-accent);
+  --fc-button-hover-border-color: var(--gruv-accent);
+  --fc-button-active-bg-color: var(--gruv-accent);
+  --fc-button-active-border-color: var(--gruv-accent);
+  --fc-event-bg-color: var(--gruv-aqua);
+  --fc-event-border-color: transparent;
+  --fc-event-text-color: var(--gruv-bg-0);
+  padding: 1rem;
+  color: var(--gruv-ink-0);
+}
+
+.availability-shell .fc .fc-toolbar {
+  margin-bottom: 1rem;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.availability-shell .fc .fc-toolbar-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 2vw, 2.3rem);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.availability-shell .fc .fc-button {
+  border-radius: 999px;
+  padding: 0.5rem 0.85rem;
+  text-transform: none;
+  box-shadow: none;
+  font-weight: 700;
+}
+
+.availability-shell .fc .fc-col-header-cell-cushion,
+.availability-shell .fc .fc-timegrid-slot-label-cushion {
+  color: var(--gruv-ink-2);
+  font-weight: 600;
+}
+
+.availability-shell .fc .fc-timegrid-axis-cushion,
+.availability-shell .fc .fc-timegrid-slot-label-cushion {
+  font-size: 0.78rem;
+}
+
+.availability-shell .fc .fc-timegrid-slot {
+  height: 3.75rem;
+}
+
+.availability-shell .fc .fc-bg-event {
+  opacity: 0.78;
+  border-radius: 0.8rem;
+}
+
+.availability-shell .fc .fc-event {
+  border-radius: 0.8rem;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.availability-shell .fc .fc-timegrid-event-harness {
+  margin-inline: 0.2rem;
+}
+
+.availability-shell .fc .fc-event-block.fc-event-booked {
+  background: rgba(102, 92, 84, 0.22);
+}
+
+.availability-shell .fc .fc-event-block.fc-event-hold {
+  background: rgba(181, 118, 20, 0.22);
+}
+
+.availability-shell .fc .fc-event.fc-event-own {
+  background:
+    linear-gradient(135deg, rgba(7, 102, 120, 0.92) 0%, rgba(181, 118, 20, 0.9) 100%);
+  border: 0;
+  box-shadow: 0 10px 22px rgba(60, 56, 54, 0.18);
+}
+
+.availability-shell .fc .fc-event-main-frame {
+  gap: 0.1rem;
+}
+
+.availability-shell .fc .fc-event-label {
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.availability-shell .fc .fc-event-time {
+  font-size: 0.68rem;
+  line-height: 1.1;
+  opacity: 0.88;
+}
+
+.availability-shell .fc .fc-day-today {
+  box-shadow: inset 0 0 0 1px rgba(181, 118, 20, 0.22);
+}
+
+.availability-shell .fc .fc-scrollgrid,
+.availability-shell .fc .fc-timegrid-slot,
+.availability-shell .fc .fc-timegrid-axis,
+.availability-shell .fc .fc-timegrid-divider {
+  border-color: var(--gruv-line);
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  height: 100%;
+  padding: 1.25rem;
+}
+
+.plan-lead {
+  font-size: 0.95rem;
+  line-height: 1.8;
+  color: var(--gruv-ink-2);
+}
+
+.plan-stat {
+  border: 1px solid var(--gruv-line);
+  border-radius: 1.1rem;
+  padding: 0.8rem;
+  background: rgba(249, 245, 215, 0.62);
+}
+
+.dark .plan-stat {
+  background: rgba(29, 32, 33, 0.38);
+}
+
+.plan-option {
+  border: 1px solid var(--gruv-line);
+  border-radius: 1.25rem;
+  padding: 0.95rem;
+  background: rgba(255, 251, 235, 0.6);
+}
+
+.dark .plan-option {
+  background: rgba(29, 32, 33, 0.34);
+}
+
+.plan-option-copy {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--gruv-ink-2);
+}
+
+@media (max-width: 768px) {
+  .availability-shell .fc {
+    padding: 0.75rem;
+  }
+
+  .availability-shell .fc .fc-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .availability-shell .fc .fc-toolbar-chunk {
+    display: flex;
+    justify-content: center;
+  }
 }
