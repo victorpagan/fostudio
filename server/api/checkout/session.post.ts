@@ -89,6 +89,13 @@ function truncateErrorMessage(message: string, max = 220): string {
   return `${collapsed.slice(0, max - 3)}...`
 }
 
+function addCadenceMonths(startIso: string, cadence: 'monthly' | 'quarterly' | 'annual') {
+  const months = cadence === 'annual' ? 12 : cadence === 'quarterly' ? 3 : 1
+  const value = new Date(startIso)
+  value.setUTCMonth(value.getUTCMonth() + months)
+  return value.toISOString()
+}
+
 async function createSubscriptionPaymentLink(params: {
   square: SquareClient
   displayName: string
@@ -179,7 +186,7 @@ export default defineEventHandler(async (event) => {
   // ── 2) Lookup plan variation ─────────────────────────────────────────────
   const { data: variation, error: varErr } = await supabase
     .from('membership_plan_variations')
-    .select('provider,provider_plan_variation_id,active,visible,price_cents,currency')
+    .select('provider,provider_plan_variation_id,active,visible,price_cents,currency,credits_per_month')
     .eq('tier_id', tierId)
     .eq('cadence', cadence)
     .eq('provider', 'square')
@@ -400,17 +407,43 @@ export default defineEventHandler(async (event) => {
   // ── Test tier: skip Square entirely, immediately confirm ─────────────────
   // This lets admins exercise the full UI flow without a real charge.
   if (isTestTier) {
+    const periodStart = new Date().toISOString()
+    const periodEnd = addCadenceMonths(periodStart, cadence)
+
     const { error: confirmErr } = await supabase
       .from('memberships')
       .update({
         status: 'active',
         checkout_provider: 'test',
+        billing_provider: 'test',
+        current_period_start: periodStart,
+        current_period_end: periodEnd,
         activated_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
       .eq('id', membershipId)
 
     if (confirmErr) throw createError({ statusCode: 500, statusMessage: confirmErr.message })
+
+    // Keep test-tier credits consistent with production grant behavior:
+    // schedule monthly grant rows and process anything due now.
+    try {
+      const { error: backfillErr } = await supabase.rpc('backfill_membership_credit_grants', {
+        p_membership_id: membershipId
+      })
+      if (backfillErr) {
+        console.error('[checkout-session] test-tier backfill failed', backfillErr)
+      } else {
+        const { error: processErr } = await supabase.rpc('process_due_membership_credit_grants', {
+          p_limit: 24
+        })
+        if (processErr) {
+          console.error('[checkout-session] test-tier grant processing failed', processErr)
+        }
+      }
+    } catch (error) {
+      console.error('[checkout-session] test-tier grant rpc unavailable', error)
+    }
 
     return {
       redirectUrl: `${origin}/checkout/success?test=1&returnTo=${encodeURIComponent(returnTo)}`,
