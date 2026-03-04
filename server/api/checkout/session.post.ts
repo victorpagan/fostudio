@@ -29,6 +29,8 @@ type GuestCheckoutSessionInsertResult = {
   token: string
 }
 
+type SquareClient = Awaited<ReturnType<typeof useSquareClient>>
+
 function normalizeReturnTo(value: string | undefined, fallback = '/dashboard/membership') {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return fallback
   return value
@@ -60,6 +62,82 @@ async function resolvePlanVariationId(
   }
 
   return null
+}
+
+function extractSquareErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim()
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    const details = (error as { errors?: unknown }).errors
+    if (Array.isArray(details) && details.length > 0) {
+      const first = details[0]
+      if (first && typeof first === 'object') {
+        const detail = (first as { detail?: unknown }).detail
+        if (typeof detail === 'string' && detail.trim()) return detail.trim()
+      }
+    }
+  }
+
+  return 'Square checkout error'
+}
+
+function truncateErrorMessage(message: string, max = 220): string {
+  const collapsed = message.replace(/\s+/g, ' ').trim()
+  if (collapsed.length <= max) return collapsed
+  return `${collapsed.slice(0, max - 3)}...`
+}
+
+async function createSubscriptionPaymentLink(params: {
+  square: SquareClient
+  displayName: string
+  cadence: 'monthly' | 'quarterly' | 'annual'
+  locationId: string
+  planVariationId: string
+  redirectUrl: string
+  order?: Record<string, unknown>
+}) {
+  const basePayload = {
+    idempotencyKey: randomUUID(),
+    quickPay: {
+      name: `${params.displayName} (${params.cadence})`,
+      locationId: params.locationId,
+      subscriptionPlanId: params.planVariationId
+    },
+    checkoutOptions: { redirectUrl: params.redirectUrl }
+  }
+
+  try {
+    const withOrderPayload = params.order
+      ? { ...basePayload, order: params.order }
+      : basePayload
+
+    const withOrder = await params.square.checkout.paymentLinks.create(
+      withOrderPayload as never
+    ) as SquarePaymentLinkResult
+
+    return {
+      result: withOrder,
+      orderFallbackUsed: false,
+      orderError: null as string | null
+    }
+  } catch (error) {
+    const orderError = extractSquareErrorMessage(error)
+    console.warn('[checkout-session] order metadata was rejected; retrying without order payload', {
+      orderError
+    })
+
+    const withoutOrder = await params.square.checkout.paymentLinks.create(
+      basePayload as never
+    ) as SquarePaymentLinkResult
+
+    return {
+      result: withoutOrder,
+      orderFallbackUsed: true,
+      orderError
+    }
+  }
 }
 
 export default defineEventHandler(async (event) => {
@@ -171,15 +249,16 @@ export default defineEventHandler(async (event) => {
     const redirectUrl = `${origin}/checkout/success?checkout=${encodeURIComponent(session.token)}&returnTo=${encodeURIComponent(returnTo)}`
 
     let createRes: SquarePaymentLinkResult
+    let orderFallbackUsed = false
+    let orderError: string | null = null
     try {
-      createRes = await square.checkout.paymentLinks.create({
-        idempotencyKey: randomUUID(),
-        quickPay: {
-          name: `${tier.display_name} (${cadence})`,
-          locationId,
-          subscriptionPlanId: planVariationId
-        },
-        checkoutOptions: { redirectUrl },
+      const created = await createSubscriptionPaymentLink({
+        square,
+        displayName: tier.display_name,
+        cadence,
+        locationId,
+        planVariationId,
+        redirectUrl,
         order: {
           locationId,
           referenceId: session.id,
@@ -191,22 +270,50 @@ export default defineEventHandler(async (event) => {
           },
           buyerEmailAddress: guestEmail
         }
-      } as never) as SquarePaymentLinkResult
+      })
+
+      createRes = created.result
+      orderFallbackUsed = created.orderFallbackUsed
+      orderError = created.orderError
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : 'Square checkout error'
+      const errMsg = truncateErrorMessage(extractSquareErrorMessage(error))
+      console.error('[checkout-session] failed to create guest subscription checkout link', {
+        tierId,
+        cadence,
+        planVariationId,
+        guestEmail,
+        errMsg
+      })
       await supabase
         .from('membership_checkout_sessions')
-        .update({ status: 'failed', metadata: { error: errMsg } })
+        .update({
+          status: 'failed',
+          metadata: {
+            error: errMsg,
+            order_fallback_used: orderFallbackUsed,
+            order_error: orderError
+          }
+        })
         .eq('id', session.id)
 
-      throw createError({ statusCode: 502, statusMessage: 'Failed to start secure checkout' })
+      throw createError({
+        statusCode: 502,
+        statusMessage: `Failed to start secure checkout: ${errMsg}`
+      })
     }
 
     const paymentLink = createRes.paymentLink
     if (!paymentLink?.url) {
       await supabase
         .from('membership_checkout_sessions')
-        .update({ status: 'failed', metadata: { error: 'missing_payment_link_url' } })
+        .update({
+          status: 'failed',
+          metadata: {
+            error: 'missing_payment_link_url',
+            order_fallback_used: orderFallbackUsed,
+            order_error: orderError
+          }
+        })
         .eq('id', session.id)
 
       throw createError({ statusCode: 500, statusMessage: 'Square did not return a payment link URL' })
@@ -216,7 +323,13 @@ export default defineEventHandler(async (event) => {
       .from('membership_checkout_sessions')
       .update({
         payment_link_id: paymentLink.id ?? null,
-        order_template_id: paymentLink.orderId ?? null
+        order_template_id: paymentLink.orderId ?? null,
+        metadata: orderFallbackUsed
+          ? {
+              order_fallback_used: true,
+              order_error: orderError
+            }
+          : null
       })
       .eq('id', session.id)
 
@@ -296,31 +409,44 @@ export default defineEventHandler(async (event) => {
   const square = await useSquareClient(event)
   const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
   const redirectUrl = `${origin}/checkout/success?returnTo=${encodeURIComponent(returnTo)}`
-  const idempotencyKey = randomUUID()
   const planVariationId = resolvedPlanVariationId as string
 
-  const createRes = await square.checkout.paymentLinks.create({
-    idempotencyKey,
-    quickPay: {
-      name: `${tier.display_name} (${cadence})`,
+  let createRes: SquarePaymentLinkResult
+  try {
+    const created = await createSubscriptionPaymentLink({
+      square,
+      displayName: tier.display_name,
+      cadence,
       locationId,
-      subscriptionPlanId: planVariationId
-    },
-    checkoutOptions: {
-      redirectUrl
-    },
-    order: {
-      locationId,
-      referenceId: membershipId,
-      metadata: {
-        user_id: userId,
-        membership_id: membershipId,
-        tier: tierId,
-        cadence
-      },
-      buyerEmailAddress: user?.email ?? undefined
-    }
-  } as never)
+      planVariationId,
+      redirectUrl,
+      order: {
+        locationId,
+        referenceId: membershipId,
+        metadata: {
+          user_id: userId,
+          membership_id: membershipId,
+          tier: tierId,
+          cadence
+        },
+        buyerEmailAddress: user?.email ?? undefined
+      }
+    })
+    createRes = created.result
+  } catch (error) {
+    const errMsg = truncateErrorMessage(extractSquareErrorMessage(error))
+    console.error('[checkout-session] failed to create member subscription checkout link', {
+      tierId,
+      cadence,
+      planVariationId,
+      userId,
+      errMsg
+    })
+    throw createError({
+      statusCode: 502,
+      statusMessage: `Failed to start secure checkout: ${errMsg}`
+    })
+  }
 
   const paymentLink = (createRes as SquarePaymentLinkResult)?.paymentLink
   if (!paymentLink?.url) throw createError({ statusCode: 500, statusMessage: 'Square did not return a payment link URL' })
