@@ -3,101 +3,164 @@ definePageMeta({
   layout: 'default'
 })
 
-const tabs = ref<'privacy' | 'terms' | 'cancellation'>('privacy')
+type PolicyTab = 'privacy' | 'terms' | 'cancellations'
+type PolicySection = {
+  title: string
+  intro: string
+  blocks: Array<{
+    heading: string
+    body: string
+  }>
+}
+
+const tabs: Array<{ key: PolicyTab, label: string }> = [
+  { key: 'privacy', label: 'Privacy' },
+  { key: 'terms', label: 'Terms' },
+  { key: 'cancellations', label: 'Cancellations' }
+]
+
+const activeTab = ref<PolicyTab>('privacy')
+
+const policyContent: Record<PolicyTab, PolicySection> = {
+  privacy: {
+    title: 'Privacy',
+    intro: 'We only collect the information needed to run bookings, manage memberships, and reply to studio inquiries. The goal is straightforward operations, not broad data collection.',
+    blocks: [
+      {
+        heading: 'What we collect',
+        body: 'This can include your name, email, phone number, booking details, membership activity, and billing-related records needed to operate the studio.'
+      },
+      {
+        heading: 'How it is used',
+        body: 'We use that information to manage reservations, keep membership access in sync, process support requests, and communicate about your bookings or account.'
+      },
+      {
+        heading: 'Payment handling',
+        body: 'Payments are processed through Square. FO Studio does not store full card details directly inside the app.'
+      },
+      {
+        heading: 'Retention and updates',
+        body: 'We keep operational records as long as they are needed for bookings, customer support, and basic business administration. Policy details may be updated as the studio workflow evolves.'
+      }
+    ]
+  },
+  terms: {
+    title: 'Terms',
+    intro: 'Using the site or booking the studio means you are using the platform as intended: to schedule, manage, and pay for legitimate studio sessions.',
+    blocks: [
+      {
+        heading: 'Booking use',
+        body: 'Bookings should reflect real planned sessions. Members and guests are responsible for the accuracy of the time they reserve and the account details they provide.'
+      },
+      {
+        heading: 'Account responsibility',
+        body: 'You are responsible for activity under your account, including bookings, membership selections, and any studio use scheduled through your login.'
+      },
+      {
+        heading: 'Membership structure',
+        body: 'Memberships provide access based on the published tier rules, including booking window, credit release schedule, and any hold-window allowances tied to the plan.'
+      },
+      {
+        heading: 'Operational changes',
+        body: 'Studio operations, pricing, and platform details may change over time. When they do, the current published terms and plan structure apply going forward.'
+      }
+    ]
+  },
+  cancellations: {
+    title: 'Cancellations',
+    intro: 'The cancellation rules exist to keep the calendar usable. The closer a cancellation is to the reserved time, the harder it is to reopen that slot for someone else.',
+    blocks: [
+      {
+        heading: 'Member bookings',
+        body: 'Member sessions canceled with enough notice should return the applicable credits. Last-minute cancellations may reduce or forfeit that return depending on the final studio policy.'
+      },
+      {
+        heading: 'Guest bookings',
+        body: 'Guest bookings canceled with enough notice should return the payment to the original payment method. Last-minute cancellations are typically more restricted.'
+      },
+      {
+        heading: 'Membership changes',
+        body: 'If you end a membership, access generally continues through the end of the paid billing period unless a different written policy is stated for your plan.'
+      },
+      {
+        heading: 'No-shows',
+        body: 'A no-show can be treated as a consumed booking because the reserved time was taken off the calendar for that session.'
+      }
+    ]
+  }
+}
+
+const currentPolicy = computed(() => policyContent[activeTab.value])
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-950 dark:to-gray-900">
-    <UContainer class="py-20">
-      <div class="text-center">
-        <h1 class="text-4xl font-bold tracking-tight">Policies</h1>
-        <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
-          Our terms, privacy policy, and cancellation policies
-        </p>
-      </div>
-
-      <div class="mx-auto mt-16 max-w-3xl">
-        <UTabs v-model="tabs" :items="[
-          { key: 'privacy', label: 'Privacy Policy' },
-          { key: 'terms', label: 'Terms of Service' },
-          { key: 'cancellation', label: 'Cancellation Policy' }
-        ]">
-          <template #default="{ item }">
-            <div class="space-y-6 py-6">
-              <!-- Privacy Policy -->
-              <div v-if="item.key === 'privacy'" class="prose dark:prose-invert max-w-none">
-                <h2>Privacy Policy</h2>
-                <p>
-                  FO Studio ("we" or "us" or "our") operates the fostudio.com website (the "Service").
-                </p>
-                <h3>Information Collection and Use</h3>
-                <p>
-                  We collect personal information when you create an account, make a booking, or contact us. This includes:
-                  names, email addresses, phone numbers, and payment information.
-                </p>
-                <h3>Data Security</h3>
-                <p>
-                  We use industry-standard SSL encryption to protect your personal information during transmission.
-                </p>
-                <h3>Changes to This Privacy Policy</h3>
-                <p>
-                  We may update our Privacy Policy from time to time. We will notify you of any changes by posting the new
-                  Privacy Policy on this page.
-                </p>
-              </div>
-
-              <!-- Terms of Service -->
-              <div v-else-if="item.key === 'terms'" class="prose dark:prose-invert max-w-none">
-                <h2>Terms of Service</h2>
-                <p>
-                  By accessing and using FO Studio, you accept and agree to be bound by the terms and provision of this agreement.
-                </p>
-                <h3>Use License</h3>
-                <p>
-                  Permission is granted to temporarily download one copy of the materials (information or software) on FO Studio's
-                  website for personal, non-commercial transitory viewing only. This is the grant of a license, not a transfer
-                  of title, and under this license you may not:
-                </p>
-                <ul>
-                  <li>Modifying or copying the materials</li>
-                  <li>Using the materials for any commercial purpose or for any public display</li>
-                  <li>Attempting to decompile or reverse engineer any software contained on the website</li>
-                  <li>Removing any copyright or other proprietary notations from the materials</li>
-                </ul>
-                <h3>Disclaimer</h3>
-                <p>
-                  The materials on FO Studio's website are provided on an 'as is' basis. FO Studio makes no warranties,
-                  expressed or implied, and hereby disclaims and negates all other warranties.
-                </p>
-              </div>
-
-              <!-- Cancellation Policy -->
-              <div v-else-if="item.key === 'cancellation'" class="prose dark:prose-invert max-w-none">
-                <h2>Cancellation Policy</h2>
-                <h3>For Members</h3>
-                <p>
-                  Members can cancel bookings up to 24 hours before the scheduled time for a full credit refund.
-                  Cancellations within 24 hours will forfeit the credits.
-                </p>
-                <h3>For Guest Bookings</h3>
-                <p>
-                  Guests can cancel up to 24 hours before the scheduled time for a full refund to the original payment method.
-                  Cancellations within 24 hours are non-refundable.
-                </p>
-                <h3>Membership Cancellation</h3>
-                <p>
-                  You can cancel your membership at any time. Your membership will remain active through the end of your current
-                  billing period. No refunds will be issued for partial months.
-                </p>
-                <h3>No-Show Policy</h3>
-                <p>
-                  If you do not show up for your booking, it will be marked as a no-show and your credits/payment will not be refunded.
-                </p>
-              </div>
+  <UContainer class="py-10 sm:py-14">
+    <div class="space-y-8">
+      <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
+        <div class="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] lg:items-end">
+          <div class="space-y-5">
+            <span class="studio-kicker">Policies</span>
+            <div class="max-w-3xl space-y-4">
+              <h1 class="studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-7xl">
+                Clear operating rules for bookings, memberships, and client-facing studio work.
+              </h1>
+              <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
+                This page is meant to answer the practical questions: how information is handled, what using the platform means,
+                and how cancellations affect access to the calendar.
+              </p>
             </div>
-          </template>
-        </UTabs>
+          </div>
+
+          <div class="studio-panel p-5 sm:p-6">
+            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
+              Keep it readable
+            </div>
+            <p class="mt-4 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+              These are operational summaries for the studio site, not a pile of template legal filler. If you need a more specific policy for your use case, contact the studio directly.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div class="flex flex-wrap gap-2">
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          class="rounded-full border px-4 py-2 text-sm font-semibold uppercase tracking-[0.14em] transition-colors"
+          :class="activeTab === tab.key
+            ? 'border-[color:var(--gruv-accent)] bg-[rgba(181,118,20,0.14)] text-[color:var(--gruv-accent)]'
+            : 'border-[color:var(--gruv-line)] bg-transparent text-[color:var(--gruv-ink-2)] hover:bg-[rgba(181,118,20,0.08)]'"
+          @click="activeTab = tab.key"
+        >
+          {{ tab.label }}
+        </button>
       </div>
-    </UContainer>
-  </div>
+
+      <section class="studio-panel p-5 sm:p-6">
+        <div class="max-w-4xl">
+          <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)] sm:text-5xl">
+            {{ currentPolicy.title }}
+          </div>
+          <p class="mt-4 text-sm leading-8 text-[color:var(--gruv-ink-2)] sm:text-base">
+            {{ currentPolicy.intro }}
+          </p>
+        </div>
+
+        <div class="mt-8 grid gap-4 lg:grid-cols-2">
+          <div
+            v-for="block in currentPolicy.blocks"
+            :key="block.heading"
+            class="rounded-[1.4rem] border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] p-5"
+          >
+            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
+              {{ block.heading }}
+            </div>
+            <p class="mt-3 text-sm leading-8 text-[color:var(--gruv-ink-2)] sm:text-base">
+              {{ block.body }}
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </UContainer>
 </template>

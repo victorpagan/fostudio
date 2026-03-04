@@ -81,147 +81,149 @@ const studioNotes = [
 
 <template>
   <div class="space-y-12 py-8 sm:space-y-16 sm:py-12">
-    <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
+    <section>
       <UContainer>
-        <div class="grid gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] lg:items-center">
-          <div class="space-y-6">
-            <span class="studio-kicker">Membership studio access</span>
+        <div class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
+          <div class="grid gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] lg:items-center">
+            <div class="space-y-6">
+              <span class="studio-kicker">Membership studio access</span>
 
-            <div class="space-y-4">
-              <h1 class="studio-display max-w-4xl text-6xl leading-[0.92] text-[color:var(--gruv-ink-0)] sm:text-8xl">
-                A studio that moves at the pace of working creatives.
-              </h1>
-              <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
-                FO Studio is built for photographers, videographers, art directors, and creative teams who need a dependable room to make work.
-                Clear pricing, a readable calendar, and a smoother path from planning the set to delivering the shoot.
-              </p>
-            </div>
+              <div class="space-y-4">
+                <h1 class="studio-display max-w-4xl text-6xl leading-[0.92] text-[color:var(--gruv-ink-0)] sm:text-8xl">
+                  A studio that moves at the pace of working creatives.
+                </h1>
+                <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
+                  FO Studio is built for photographers, videographers, art directors, and creative teams who need a dependable room to make work.
+                  Clear pricing, a readable calendar, and a smoother path from planning the set to delivering the shoot.
+                </p>
+              </div>
 
-            <div class="flex flex-wrap gap-3">
-              <UButton
-                to="/memberships"
-                size="xl"
-              >
-                Find your membership
-              </UButton>
-              <UButton
-                color="neutral"
-                variant="soft"
-                size="xl"
-                to="/calendar"
-              >
-                Check the calendar
-              </UButton>
-
-              <UModal v-model:open="openWaitlist">
+              <div class="flex flex-wrap gap-3">
+                <UButton
+                  to="/memberships"
+                  size="xl"
+                >
+                  Find your membership
+                </UButton>
                 <UButton
                   color="neutral"
-                  variant="ghost"
+                  variant="soft"
                   size="xl"
-                  @click="openWaitlist = true"
+                  to="/calendar"
                 >
-                  Join the waitlist
+                  Check the calendar
                 </UButton>
 
-                <template #content>
-                  <UCard class="studio-panel">
-                    <template #header>
-                      <div class="flex items-center justify-between gap-3">
-                        <div>
-                          <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
-                            Join the waitlist
+                <UModal v-model:open="openWaitlist">
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    size="xl"
+                    @click="openWaitlist = true"
+                  >
+                    Join the waitlist
+                  </UButton>
+
+                  <template #content>
+                    <UCard class="studio-panel">
+                      <template #header>
+                        <div class="flex items-center justify-between gap-3">
+                          <div>
+                            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
+                              Join the waitlist
+                            </div>
+                            <p class="mt-1 text-sm text-[color:var(--gruv-ink-2)]">
+                              We keep membership counts limited so booking stays usable.
+                            </p>
                           </div>
-                          <p class="mt-1 text-sm text-[color:var(--gruv-ink-2)]">
-                            We keep membership counts limited so booking stays usable.
-                          </p>
+                          <UButton
+                            icon="i-heroicons-x-mark"
+                            color="neutral"
+                            variant="ghost"
+                            @click="openWaitlist = false"
+                          />
                         </div>
-                        <UButton
-                          icon="i-heroicons-x-mark"
-                          color="neutral"
-                          variant="ghost"
-                          @click="openWaitlist = false"
+                      </template>
+
+                      <div class="space-y-3">
+                        <UInput placeholder="Email" />
+                        <UInput placeholder="Phone (optional)" />
+                        <USelect
+                          :options="[
+                            { label: 'Creator', value: 'creator' },
+                            { label: 'Pro', value: 'pro' },
+                            { label: 'Studio+', value: 'studio_plus' }
+                          ]"
+                          placeholder="Plan you are watching"
                         />
                       </div>
-                    </template>
 
-                    <div class="space-y-3">
-                      <UInput placeholder="Email" />
-                      <UInput placeholder="Phone (optional)" />
-                      <USelect
-                        :options="[
-                          { label: 'Creator', value: 'creator' },
-                          { label: 'Pro', value: 'pro' },
-                          { label: 'Studio+', value: 'studio_plus' }
-                        ]"
-                        placeholder="Plan you are watching"
-                      />
-                    </div>
+                      <template #footer>
+                        <div class="flex justify-end gap-2">
+                          <UButton
+                            color="neutral"
+                            variant="soft"
+                            @click="openWaitlist = false"
+                          >
+                            Close
+                          </UButton>
+                          <UButton @click="openWaitlist = false">
+                            Notify me
+                          </UButton>
+                        </div>
+                      </template>
+                    </UCard>
+                  </template>
+                </UModal>
+              </div>
 
-                    <template #footer>
-                      <div class="flex justify-end gap-2">
-                        <UButton
-                          color="neutral"
-                          variant="soft"
-                          @click="openWaitlist = false"
-                        >
-                          Close
-                        </UButton>
-                        <UButton @click="openWaitlist = false">
-                          Notify me
-                        </UButton>
-                      </div>
-                    </template>
-                  </UCard>
-                </template>
-              </UModal>
+              <div class="flex flex-wrap gap-2">
+                <UBadge
+                  color="neutral"
+                  variant="soft"
+                >
+                  Membership-first schedule
+                </UBadge>
+                <UBadge
+                  color="neutral"
+                  variant="soft"
+                >
+                  Built for photo + video workflows
+                </UBadge>
+                <UBadge
+                  color="neutral"
+                  variant="soft"
+                >
+                  Guest booking available
+                </UBadge>
+              </div>
             </div>
 
-            <div class="flex flex-wrap gap-2">
-              <UBadge
-                color="neutral"
-                variant="soft"
-              >
-                Membership-first schedule
-              </UBadge>
-              <UBadge
-                color="neutral"
-                variant="soft"
-              >
-                Built for photo + video workflows
-              </UBadge>
-              <UBadge
-                color="neutral"
-                variant="soft"
-              >
-                Guest booking available
-              </UBadge>
-            </div>
-          </div>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div class="studio-panel p-5 sm:col-span-2">
+                <div class="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--gruv-ink-2)]">
+                  What the studio solves
+                </div>
+                <div class="mt-3 studio-display text-4xl text-[color:var(--gruv-ink-0)]">
+                  Less time chasing space. More time shaping the work.
+                </div>
+                <p class="mt-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+                  When the room, the schedule, and the cost structure are easy to read, the creative work gets a lot easier to protect.
+                </p>
+              </div>
 
-          <div class="grid gap-4 sm:grid-cols-2">
-            <div class="studio-panel p-5 sm:col-span-2">
-              <div class="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--gruv-ink-2)]">
-                What the studio solves
+              <div
+                v-for="reason in creativeReasons"
+                :key="reason.title"
+                class="studio-panel p-5"
+              >
+                <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
+                  {{ reason.title }}
+                </div>
+                <p class="mt-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+                  {{ reason.body }}
+                </p>
               </div>
-              <div class="mt-3 studio-display text-4xl text-[color:var(--gruv-ink-0)]">
-                Less time chasing space. More time shaping the work.
-              </div>
-              <p class="mt-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-                When the room, the schedule, and the cost structure are easy to read, the creative work gets a lot easier to protect.
-              </p>
-            </div>
-
-            <div
-              v-for="reason in creativeReasons"
-              :key="reason.title"
-              class="studio-panel p-5"
-            >
-              <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
-                {{ reason.title }}
-              </div>
-              <p class="mt-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-                {{ reason.body }}
-              </p>
             </div>
           </div>
         </div>
