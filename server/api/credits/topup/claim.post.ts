@@ -19,6 +19,15 @@ type TopupSessionRow = {
   metadata?: Record<string, unknown> | null
 }
 
+function asNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
 function readString(source: Record<string, unknown> | null | undefined, ...keys: string[]) {
   if (!source) return null
   for (const key of keys) {
@@ -26,6 +35,33 @@ function readString(source: Record<string, unknown> | null | undefined, ...keys:
     if (typeof value === 'string' && value.trim()) return value.trim()
   }
   return null
+}
+
+async function readBalance(supabase: any, userId: string) {
+  const { data, error } = await supabase
+    .from('credit_balance')
+    .select('balance')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (!error) return asNumber(data?.balance) ?? 0
+
+  // Fallback for environments where the view is out of sync.
+  const { data: ledgerRows, error: ledgerErr } = await supabase
+    .from('credits_ledger')
+    .select('delta,expires_at')
+    .eq('user_id', userId)
+
+  if (ledgerErr) throw createError({ statusCode: 500, statusMessage: ledgerErr.message })
+
+  const nowMs = Date.now()
+  let sum = 0
+  for (const row of ledgerRows ?? []) {
+    const expiresAt = row?.expires_at ? Date.parse(String(row.expires_at)) : null
+    if (expiresAt !== null && !Number.isNaN(expiresAt) && expiresAt <= nowMs) continue
+    sum += asNumber(row?.delta) ?? 0
+  }
+  return sum
 }
 
 export default defineEventHandler(async (event) => {
@@ -48,7 +84,13 @@ export default defineEventHandler(async (event) => {
 
   const topup = data as TopupSessionRow
   if (topup.status === 'processed') {
-    return { ok: true, status: 'processed' as const }
+    const newBalance = await readBalance(supabase, user.sub)
+    return {
+      ok: true,
+      status: 'processed' as const,
+      creditsAdded: asNumber(topup.credits) ?? null,
+      newBalance
+    }
   }
   if (topup.status === 'failed' || topup.status === 'expired') {
     return {
@@ -97,6 +139,8 @@ export default defineEventHandler(async (event) => {
 
   let ledgerEntryId = existingLedger?.id ?? null
   if (!ledgerEntryId) {
+    const optionLabel = readString(topup.metadata, 'option_label', 'optionLabel')
+    const optionKey = readString(topup.metadata, 'option_key', 'optionKey')
     const { data: insertedLedger, error: ledgerErr } = await supabase
       .from('credits_ledger')
       .insert({
@@ -108,7 +152,9 @@ export default defineEventHandler(async (event) => {
         metadata: {
           source: 'dashboard_topup',
           topup_session_id: topup.id,
-          amount_cents: topup.amount_cents
+          amount_cents: topup.amount_cents,
+          option_label: optionLabel,
+          option_key: optionKey
         }
       })
       .select('id')
@@ -133,16 +179,12 @@ export default defineEventHandler(async (event) => {
 
   if (updateErr) throw createError({ statusCode: 500, statusMessage: updateErr.message })
 
-  const { data: balanceRow } = await supabase
-    .from('credit_balance')
-    .select('balance')
-    .eq('user_id', user.sub)
-    .maybeSingle()
+  const newBalance = await readBalance(supabase, user.sub)
 
   return {
     ok: true,
     status: 'processed' as const,
-    creditsAdded: topup.credits,
-    newBalance: balanceRow?.balance ?? null
+    creditsAdded: asNumber(topup.credits) ?? null,
+    newBalance
   }
 })

@@ -35,10 +35,11 @@ type PlanVariation = {
 
 type LedgerRow = {
   id: string
-  delta: number
+  delta: number | string
   reason: string
   external_ref: string | null
   created_at: string
+  metadata?: Record<string, unknown> | null
 }
 
 type CreditTopupOption = {
@@ -130,14 +131,14 @@ const { data: balance, refresh: refreshBalance } = await useAsyncData('dash:memb
     .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
-  return data?.balance ?? 0
+  return asNumber(data?.balance)
 }, { watch: [user, membershipState] })
 
 const { data: ledger, refresh: refreshLedger } = await useAsyncData('dash:membership:credits:ledger', async () => {
   if (!user.value || !hasActiveMembership.value) return []
   const { data, error } = await supabase
     .from('credits_ledger')
-    .select('id,delta,reason,external_ref,created_at')
+    .select('id,delta,reason,external_ref,created_at,metadata')
     .eq('user_id', user.value.sub)
     .order('created_at', { ascending: false })
     .limit(25)
@@ -179,8 +180,27 @@ function formatLedgerReason(reason: string) {
   }
 }
 
-function formatDelta(value: number) {
-  return value > 0 ? `+${value}` : `${value}`
+function asNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return 0
+}
+
+function formatDelta(value: number | string) {
+  const n = asNumber(value)
+  return n > 0 ? `+${n}` : `${n}`
+}
+
+function formatLedgerTitle(row: LedgerRow) {
+  const reason = (row.reason || '').toLowerCase()
+  if (reason === 'topoff') {
+    const label = row.metadata?.option_label
+    if (typeof label === 'string' && label.trim()) return label.trim()
+  }
+  return formatLedgerReason(row.reason)
 }
 
 // ── Formatting helpers ─────────────────────────────────────────────────────
@@ -813,7 +833,7 @@ onMounted(async () => {
                 >
                   <div class="min-w-0">
                     <div class="text-sm font-medium truncate">
-                      {{ formatLedgerReason(row.reason) }}
+                      {{ formatLedgerTitle(row) }}
                     </div>
                     <div class="mt-1 text-xs text-dimmed">
                       {{ new Date(row.created_at).toLocaleString() }}
@@ -822,7 +842,7 @@ onMounted(async () => {
                   </div>
                   <div
                     class="text-sm font-semibold shrink-0"
-                    :class="row.delta >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+                    :class="asNumber(row.delta) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
                   >
                     {{ formatDelta(row.delta) }}
                   </div>
