@@ -21,6 +21,7 @@ const toast = useToast()
 const selectedId = ref<string | null>(null)
 const saving = ref(false)
 const syncing = ref(false)
+const removing = ref(false)
 
 const form = reactive({
   id: '' as string,
@@ -167,6 +168,31 @@ async function syncSquare() {
     syncing.value = false
   }
 }
+
+async function removeFromSquare() {
+  if (!form.id) {
+    toast.add({ title: 'Select a credit option first', color: 'warning' })
+    return
+  }
+
+  removing.value = true
+  try {
+    await $fetch('/api/admin/credits/options.remove-square', {
+      method: 'POST',
+      body: { id: form.id }
+    })
+    toast.add({ title: 'Removed from Square' })
+    await refresh()
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not remove from Square',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    removing.value = false
+  }
+}
 </script>
 
 <template>
@@ -267,12 +293,27 @@ async function syncSquare() {
               <UCheckbox v-model="form.active" label="Active" />
             </div>
 
+            <div
+              v-if="selectedId"
+              class="mt-3 text-xs text-dimmed"
+            >
+              Square link:
+              {{
+                options.find(option => option.id === selectedId)?.square_item_id
+                  ? 'Connected'
+                  : 'Not connected'
+              }}
+            </div>
+
             <div class="mt-4 flex flex-wrap gap-2">
               <UButton :loading="saving" @click="saveOption">
                 Save option
               </UButton>
               <UButton color="neutral" variant="soft" :loading="syncing" @click="syncSquare">
                 Sync Square item
+              </UButton>
+              <UButton color="error" variant="soft" :loading="removing" @click="removeFromSquare">
+                Remove from Square
               </UButton>
             </div>
           </UCard>

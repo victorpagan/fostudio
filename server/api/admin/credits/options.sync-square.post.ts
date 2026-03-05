@@ -48,6 +48,8 @@ export default defineEventHandler(async (event) => {
           itemData: {
             name: option.label,
             descriptionHtml: option.description ?? undefined,
+            isTaxable: false,
+            taxIds: [],
             productType: 'REGULAR',
             variations: [
               {
@@ -97,6 +99,22 @@ export default defineEventHandler(async (event) => {
               amount: BigInt(Number(option.base_price_cents)),
               currency: 'USD'
             }
+          }
+        }
+      } as never)
+
+      await square.catalog.object.upsert({
+        idempotencyKey: randomUUID(),
+        object: {
+          id: squareItemId,
+          type: 'ITEM',
+          presentAtAllLocations: true,
+          itemData: {
+            name: option.label,
+            descriptionHtml: option.description ?? undefined,
+            isTaxable: false,
+            taxIds: [],
+            productType: 'REGULAR'
           }
         }
       } as never)
