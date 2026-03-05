@@ -33,9 +33,7 @@ export default defineEventHandler(async (event) => {
         discount_label,
         active,
         visible,
-        sort_order,
-        created_at,
-        updated_at
+        sort_order
       )
     `)
     .order('sort_order', { ascending: true })
