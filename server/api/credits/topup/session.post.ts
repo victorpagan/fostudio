@@ -100,21 +100,7 @@ export default defineEventHandler(async (event) => {
           currency: 'USD'
         }
       },
-      checkoutOptions: { redirectUrl },
-      order: {
-        locationId,
-        referenceId: topupSession.id,
-        buyerEmailAddress: user.email ?? undefined,
-        metadata: {
-          kind: 'credit_topup',
-          topup_session_id: topupSession.id,
-          topup_token: topupSession.token,
-          user_id: user.sub,
-          credits: String(mappedOption.credits),
-          amount_cents: String(effectivePriceCents),
-          option_key: mappedOption.key
-        }
-      }
+      checkoutOptions: { redirectUrl }
     } as never) as SquarePaymentLinkResult
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Square checkout error'
