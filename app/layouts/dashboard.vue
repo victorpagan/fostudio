@@ -2,7 +2,55 @@
 import type { CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui'
 
 const open = ref(false)
+const route = useRoute()
 const { isAdmin } = useCurrentUser()
+
+const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
+  ? [
+      {
+        label: 'Overview',
+        icon: 'i-lucide-layout-dashboard',
+        to: '/dashboard/admin',
+        onSelect: () => { open.value = false }
+      },
+      {
+        label: 'Ops Tools',
+        icon: 'i-lucide-wrench',
+        to: '/dashboard/admin/tools',
+        onSelect: () => { open.value = false }
+      },
+      {
+        label: 'Subscriptions',
+        icon: 'i-lucide-badge-check',
+        to: '/dashboard/admin/subscriptions',
+        onSelect: () => { open.value = false }
+      },
+      {
+        label: 'Credits',
+        icon: 'i-lucide-wallet-cards',
+        to: '/dashboard/admin/credits',
+        onSelect: () => { open.value = false }
+      },
+      {
+        label: 'Promo Codes',
+        icon: 'i-lucide-ticket-percent',
+        to: '/dashboard/admin/promos',
+        onSelect: () => { open.value = false }
+      },
+      {
+        label: 'Members',
+        icon: 'i-lucide-users',
+        to: '/dashboard/admin/members',
+        onSelect: () => { open.value = false }
+      },
+      {
+        label: 'Bookings & Calendar',
+        icon: 'i-lucide-calendar-range',
+        to: '/dashboard/admin/bookings',
+        onSelect: () => { open.value = false }
+      }
+    ]
+  : []))
 
 const primaryLinks = computed<NavigationMenuItem[]>(() => [
   {
@@ -35,11 +83,12 @@ const primaryLinks = computed<NavigationMenuItem[]>(() => [
     to: '/dashboard/profile',
     onSelect: () => { open.value = false }
   },
-  ...(isAdmin.value
+  ...(adminLinks.value.length
     ? [{
         label: 'Admin',
         icon: 'i-lucide-shield',
-        to: '/dashboard/admin',
+        children: adminLinks.value,
+        defaultOpen: route.path.startsWith('/dashboard/admin'),
         onSelect: () => { open.value = false }
       }]
     : [])
@@ -52,14 +101,16 @@ const supportLinks = [{
   onSelect: () => { open.value = false }
 }] satisfies NavigationMenuItem[]
 
-const searchItems = computed<CommandPaletteItem[]>(() =>
-  [...primaryLinks.value, ...supportLinks].map(item => ({
+const searchItems = computed<CommandPaletteItem[]>(() => {
+  const all = [...primaryLinks.value, ...adminLinks.value, ...supportLinks]
+    .filter(item => typeof item.to === 'string')
+  return all.map(item => ({
     label: item.label,
     icon: item.icon,
     to: item.to,
     onSelect: item.onSelect
   }))
-)
+})
 
 const groups = computed<CommandPaletteGroup[]>(() => [{
   id: 'links',

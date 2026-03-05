@@ -157,6 +157,7 @@ export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
   const userId = user?.sub && UUID_RE.test(user.sub) ? user.sub : null
   const supabase = serverSupabaseServiceRole(event)
+  const db = supabase as any
 
   const parsed = bodySchema.parse(await readBody(event))
   const tierId = parsed.tier
@@ -167,7 +168,7 @@ export default defineEventHandler(async (event) => {
   const { isAdmin } = await resolveServerUserRole(event, user)
 
   // ── 1) Validate tier exists and is accessible ──────────────────────────
-  const { data: tier, error: tierErr } = await supabase
+  const { data: tier, error: tierErr } = await db
     .from('membership_tiers')
     .select('id,display_name,active,visible,direct_access_only')
     .eq('id', tierId)

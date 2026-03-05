@@ -98,7 +98,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const planTempId = `#${body.tierId}_plan_${randomUUID().slice(0, 8)}`
-  const initialPhase = enabledCadences[0]
+  const initialPhase = enabledCadences[0]!
 
   const subscriptionPlanObject = {
     id: planTempId,

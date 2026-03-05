@@ -21,6 +21,13 @@ type CalendarEvent = EventInput & {
   }
 }
 
+type PeakWindow = {
+  timezone: string
+  daysLabel: string
+  windowLabel: string
+  multiplier: number | null
+}
+
 const props = defineProps<{
   endpoint: string // '/api/calendar/public' or '/api/calendar/member'
 }>()
@@ -35,12 +42,14 @@ const visibleTitle = ref('This week')
 const visibleRange = ref('Loading schedule')
 const lastRefreshedAt = ref<string | null>(null)
 const bookingWindowDays = ref<number | null>(null)
+const peakWindow = ref<PeakWindow | null>(null)
 const instance = getCurrentInstance()
 
 type CalendarResponse = {
   from?: string
   to?: string
   bookingWindowDays?: number
+  peakWindow?: PeakWindow | null
   events: CalendarEvent[]
 }
 
@@ -61,6 +70,7 @@ async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
     const res = await $fetch<CalendarResponse>(props.endpoint, { query: q })
     events.value = res.events ?? []
     bookingWindowDays.value = res.bookingWindowDays ?? null
+    peakWindow.value = res.peakWindow ?? null
     lastRefreshedAt.value = new Date().toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit'
@@ -86,12 +96,13 @@ function eventClassNames(arg: { event: { display: string, extendedProps: Calenda
   const classes = ['fc-event-block']
   const type = arg.event.extendedProps?.type
 
-  if (arg.event.display === 'background') {
-    classes.push(type === 'hold' ? 'fc-event-hold' : 'fc-event-booked')
-  }
+  if (type === 'hold') classes.push('fc-event-hold')
+  if (type === 'booking') classes.push('fc-event-booked')
 
   if (arg.event.extendedProps?.isOwn) {
     classes.push('fc-event-own')
+  } else if (type === 'booking') {
+    classes.push('fc-event-member')
   }
 
   return classes
@@ -112,6 +123,16 @@ const dayHeaderFormat = {
   month: 'short',
   day: 'numeric'
 } as const
+
+const peakChip = computed(() => {
+  if (!peakWindow.value) return null
+  const base = `${peakWindow.value.daysLabel} ${peakWindow.value.windowLabel}`
+  if (peakWindow.value.multiplier === null) return `Peak hours ${base}`
+  const multiplier = Number.isInteger(peakWindow.value.multiplier)
+    ? peakWindow.value.multiplier.toString()
+    : peakWindow.value.multiplier.toFixed(2).replace(/\.?0+$/, '')
+  return `Peak ${base} · ${multiplier} credits/hr`
+})
 
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
@@ -189,6 +210,12 @@ onMounted(() => loadEvents())
           class="availability-chip"
         >
           {{ ownBookingCount }} of yours on the board
+        </div>
+        <div
+          v-if="peakChip"
+          class="availability-chip"
+        >
+          {{ peakChip }}
         </div>
         <div
           v-if="loading"

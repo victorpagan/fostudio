@@ -215,6 +215,18 @@ body {
   color: var(--gruv-ink-0);
 }
 
+.dark .availability-shell .fc {
+  --fc-button-bg-color: var(--gruv-bg-1);
+  --fc-button-border-color: var(--gruv-line);
+  --fc-button-text-color: var(--gruv-fg);
+  --fc-button-hover-bg-color: var(--gruv-bg-2);
+  --fc-button-hover-border-color: var(--gruv-line);
+  --fc-button-hover-text-color: var(--gruv-fg);
+  --fc-button-active-bg-color: var(--gruv-accent);
+  --fc-button-active-border-color: var(--gruv-accent);
+  --fc-button-active-text-color: var(--gruv-ink-0);
+}
+
 .availability-shell .fc .fc-toolbar {
   margin-bottom: 1rem;
   gap: 0.75rem;
@@ -283,6 +295,12 @@ body {
 
 .availability-shell .fc .fc-event-block.fc-event-hold {
   background: rgba(181, 118, 20, 0.22);
+}
+
+.availability-shell .fc .fc-event.fc-event-member {
+  background: rgba(102, 92, 84, 0.82);
+  color: var(--gruv-bg-0);
+  border: 0;
 }
 
 .availability-shell .fc .fc-event.fc-event-own {

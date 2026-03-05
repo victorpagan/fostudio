@@ -3,10 +3,11 @@ import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
-import { findTopupBundle } from '~~/server/utils/credits/topup'
+import { getCreditOptionEffectivePriceCents, mapCreditOption } from '~~/server/utils/credits/topup'
+import type { CreditPricingOptionRow } from '~~/server/utils/credits/topup'
 
 const bodySchema = z.object({
-  bundle: z.enum(['single', 'bundle_3', 'bundle_5', 'bundle_10'])
+  optionKey: z.string().min(1)
 })
 
 type SquarePaymentLinkResult = {
@@ -22,10 +23,24 @@ export default defineEventHandler(async (event) => {
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
 
   const body = bodySchema.parse(await readBody(event))
-  const bundle = findTopupBundle(body.bundle)
-  if (!bundle) throw createError({ statusCode: 400, statusMessage: 'Invalid credit bundle' })
 
   const supabase = serverSupabaseServiceRole(event)
+  const db = supabase as any
+
+  const { data: rawOption, error: optionErr } = await db
+    .from('credit_pricing_options')
+    .select('id,key,label,description,credits,base_price_cents,sale_price_cents,sale_starts_at,sale_ends_at,active,sort_order,square_item_id,square_variation_id')
+    .eq('key', body.optionKey)
+    .eq('active', true)
+    .maybeSingle()
+
+  if (optionErr) throw createError({ statusCode: 500, statusMessage: optionErr.message })
+  if (!rawOption) throw createError({ statusCode: 400, statusMessage: 'Invalid credit option' })
+
+  const option = rawOption as CreditPricingOptionRow
+  const effectivePriceCents = getCreditOptionEffectivePriceCents(option)
+  const mappedOption = mapCreditOption(option)
+
   const { data: membership, error: membershipErr } = await supabase
     .from('memberships')
     .select('id,status')
@@ -41,20 +56,24 @@ export default defineEventHandler(async (event) => {
   }
 
   const token = randomUUID()
-  const { data: topupSession, error: topupErr } = await supabase
+  const { data: topupSession, error: topupErr } = await db
     .from('credit_topup_sessions')
     .insert({
       token,
       user_id: user.sub,
       membership_id: membership.id,
-      credits: bundle.credits,
-      amount_cents: bundle.amountCents,
+      credits: mappedOption.credits,
+      amount_cents: effectivePriceCents,
       currency: 'USD',
       status: 'pending',
       payment_provider: 'square',
       metadata: {
-        bundle_id: bundle.id,
-        bundle_label: bundle.label
+        option_id: mappedOption.id,
+        option_key: mappedOption.key,
+        option_label: mappedOption.label,
+        base_price_cents: mappedOption.basePriceCents,
+        effective_price_cents: effectivePriceCents,
+        sale_active: mappedOption.saleActive
       }
     })
     .select('id,token')
@@ -74,10 +93,10 @@ export default defineEventHandler(async (event) => {
     createRes = await square.checkout.paymentLinks.create({
       idempotencyKey: randomUUID(),
       quickPay: {
-        name: `Studio Credit Top-Up (${bundle.credits} credits)`,
+        name: `Studio Credit Top-Up (${mappedOption.credits} credits)`,
         locationId,
         priceMoney: {
-          amount: BigInt(bundle.amountCents),
+          amount: BigInt(effectivePriceCents),
           currency: 'USD'
         }
       },
@@ -91,14 +110,15 @@ export default defineEventHandler(async (event) => {
           topup_session_id: topupSession.id,
           topup_token: topupSession.token,
           user_id: user.sub,
-          credits: String(bundle.credits),
-          amount_cents: String(bundle.amountCents)
+          credits: String(mappedOption.credits),
+          amount_cents: String(effectivePriceCents),
+          option_key: mappedOption.key
         }
       }
     } as never) as SquarePaymentLinkResult
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Square checkout error'
-    await supabase
+    await db
       .from('credit_topup_sessions')
       .update({ status: 'failed', metadata: { error: message } })
       .eq('id', topupSession.id)
@@ -108,7 +128,7 @@ export default defineEventHandler(async (event) => {
 
   const paymentLink = createRes.paymentLink
   if (!paymentLink?.url) {
-    await supabase
+    await db
       .from('credit_topup_sessions')
       .update({ status: 'failed', metadata: { error: 'missing_payment_link_url' } })
       .eq('id', topupSession.id)
@@ -116,7 +136,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: 'Square did not return a payment link URL' })
   }
 
-  const { error: saveErr } = await supabase
+  const { error: saveErr } = await db
     .from('credit_topup_sessions')
     .update({
       payment_link_id: paymentLink.id ?? null,

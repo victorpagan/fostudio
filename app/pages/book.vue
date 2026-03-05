@@ -217,12 +217,10 @@ function formatPeakCredits(value: number) {
             </div>
           </div>
 
-          <div class="studio-panel p-3 sm:p-4">
-            <AvailabilityCalendar
-              endpoint="/api/calendar/public"
-              @select="onSelect"
-            />
-          </div>
+          <AvailabilityCalendar
+            endpoint="/api/calendar/public"
+            @select="onSelect"
+          />
 
           <p class="text-center text-xs leading-6 text-[color:var(--gruv-ink-2)]">
             Blocked times are already booked. Select any open slot to continue.

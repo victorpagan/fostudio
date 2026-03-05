@@ -148,13 +148,11 @@ function formatPeakCredits(value: number) {
 
     <template #body>
       <div class="p-4">
-        <UCard :ui="{ body: 'p-0 sm:p-0' }">
-          <AvailabilityCalendar
-            :key="calendarKey"
-            endpoint="/api/calendar/member"
-            @select="onSelect"
-          />
-        </UCard>
+        <AvailabilityCalendar
+          :key="calendarKey"
+          endpoint="/api/calendar/member"
+          @select="onSelect"
+        />
       </div>
     </template>
   </UDashboardPanel>

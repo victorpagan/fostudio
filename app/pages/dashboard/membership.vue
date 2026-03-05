@@ -41,11 +41,21 @@ type LedgerRow = {
   created_at: string
 }
 
-type CreditTopupBundle = {
-  id: 'single' | 'bundle_3' | 'bundle_5' | 'bundle_10'
+type CreditTopupOption = {
+  id: string
+  key: string
   label: string
+  description: string | null
   credits: number
-  amountCents: number
+  basePriceCents: number
+  effectivePriceCents: number
+  salePriceCents: number | null
+  saleActive: boolean
+  saleStartsAt: string | null
+  saleEndsAt: string | null
+  sortOrder: number
+  squareItemId: string | null
+  squareVariationId: string | null
 }
 
 type CatalogTier = {
@@ -59,13 +69,6 @@ type CatalogTier = {
   adminOnly?: boolean
   membership_plan_variations: PlanVariation[]
 }
-
-const creditTopupBundles: CreditTopupBundle[] = [
-  { id: 'single', label: '1 credit', credits: 1, amountCents: 4000 },
-  { id: 'bundle_3', label: '3 credits', credits: 3, amountCents: 12000 },
-  { id: 'bundle_5', label: '5 credits', credits: 5, amountCents: 19000 },
-  { id: 'bundle_10', label: '10 credits', credits: 10, amountCents: 36000 }
-]
 
 // ── Current membership ─────────────────────────────────────────────────────
 const { data: membership, refresh } = await useAsyncData('dash:membership', async () => {
@@ -148,6 +151,12 @@ const { data: tierCatalog } = await useAsyncData('dash:tierCatalog', async () =>
   return res?.tiers ?? []
 }, { watch: [showCatalog] })
 
+const { data: topupOptions, refresh: refreshTopupOptions } = await useAsyncData('dash:membership:topup-options', async () => {
+  if (!user.value || !hasActiveMembership.value) return []
+  const res = await $fetch<{ options: CreditTopupOption[] }>('/api/credits/topup/options')
+  return res?.options ?? []
+}, { watch: [user, membershipState] })
+
 function goCheckout(tierId: string, cadence: string) {
   router.push(`/checkout?tier=${tierId}&cadence=${cadence}&returnTo=/dashboard/membership`)
 }
@@ -194,9 +203,20 @@ function formatPrice(cents: number | null, currency = 'USD') {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100)
 }
 
-function formatBundleUnit(bundle: CreditTopupBundle) {
-  const perCredit = bundle.amountCents / bundle.credits
+function formatOptionUnit(option: CreditTopupOption) {
+  const perCredit = option.effectivePriceCents / option.credits
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(perCredit / 100)
+}
+
+function formatSaleWindow(start: string | null, end: string | null) {
+  const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
+  const from = start ? new Date(start).toLocaleDateString('en-US', options) : null
+  const to = end ? new Date(end).toLocaleDateString('en-US', options) : null
+
+  if (from && to) return `${from} to ${to}`
+  if (from) return `Starts ${from}`
+  if (to) return `Ends ${to}`
+  return null
 }
 
 function formatCadence(c: string | null) {
@@ -223,7 +243,7 @@ function formatPeakCredits(value: number | null | undefined) {
   return value.toFixed(2).replace(/\.?0+$/, '')
 }
 
-const topupLoadingId = ref<CreditTopupBundle['id'] | null>(null)
+const topupLoadingKey = ref<string | null>(null)
 const topupClaiming = ref(false)
 
 async function refreshAll() {
@@ -232,16 +252,17 @@ async function refreshAll() {
     refreshTier(),
     refreshVariations(),
     refreshBalance(),
-    refreshLedger()
+    refreshLedger(),
+    refreshTopupOptions()
   ])
 }
 
-async function startTopup(bundleId: CreditTopupBundle['id']) {
-  topupLoadingId.value = bundleId
+async function startTopup(optionKey: string) {
+  topupLoadingKey.value = optionKey
   try {
     const res = await $fetch<{ redirectUrl: string }>('/api/credits/topup/session', {
       method: 'POST',
-      body: { bundle: bundleId }
+      body: { optionKey }
     })
     window.location.href = res.redirectUrl
   } catch (error: unknown) {
@@ -252,7 +273,7 @@ async function startTopup(bundleId: CreditTopupBundle['id']) {
       color: 'error'
     })
   } finally {
-    topupLoadingId.value = null
+    topupLoadingKey.value = null
   }
 }
 
@@ -679,32 +700,59 @@ onMounted(async () => {
 
                 <div class="grid gap-2 sm:grid-cols-2">
                   <div
-                    v-for="bundle in creditTopupBundles"
-                    :key="bundle.id"
+                    v-for="option in topupOptions ?? []"
+                    :key="option.key"
                     class="rounded-xl border border-default p-3"
                   >
                     <div class="flex items-center justify-between">
                       <div class="font-medium">
-                        {{ bundle.label }}
+                        {{ option.label }}
                       </div>
                       <div class="text-sm text-dimmed">
-                        {{ formatBundleUnit(bundle) }}/credit
+                        {{ formatOptionUnit(option) }}/credit
                       </div>
                     </div>
-                    <div class="mt-1 text-lg font-semibold">
-                      {{ formatPrice(bundle.amountCents) }}
+                    <div class="mt-1 text-lg font-semibold flex items-center gap-2">
+                      <span>{{ formatPrice(option.effectivePriceCents) }}</span>
+                      <span
+                        v-if="option.saleActive && option.salePriceCents !== null"
+                        class="text-sm text-dimmed line-through"
+                      >
+                        {{ formatPrice(option.basePriceCents) }}
+                      </span>
+                    </div>
+                    <div
+                      v-if="option.description"
+                      class="mt-1 text-xs text-dimmed"
+                    >
+                      {{ option.description }}
+                    </div>
+                    <div
+                      v-if="option.saleActive"
+                      class="mt-1 text-xs text-success"
+                    >
+                      Sale active
+                      <span v-if="formatSaleWindow(option.saleStartsAt, option.saleEndsAt)">
+                        · {{ formatSaleWindow(option.saleStartsAt, option.saleEndsAt) }}
+                      </span>
                     </div>
                     <UButton
                       class="mt-3"
                       size="xs"
                       block
-                      :loading="topupLoadingId === bundle.id"
-                      :disabled="topupLoadingId !== null || topupClaiming"
-                      @click="startTopup(bundle.id)"
+                      :loading="topupLoadingKey === option.key"
+                      :disabled="topupLoadingKey !== null || topupClaiming"
+                      @click="startTopup(option.key)"
                     >
-                      Buy {{ bundle.credits }} credit{{ bundle.credits === 1 ? '' : 's' }}
+                      Buy {{ option.credits }} credit{{ option.credits === 1 ? '' : 's' }}
                     </UButton>
                   </div>
+                </div>
+                <div
+                  v-if="hasActiveMembership && !(topupOptions?.length)"
+                  class="text-xs text-dimmed"
+                >
+                  No credit top-up options are active right now.
                 </div>
               </div>
             </UCard>

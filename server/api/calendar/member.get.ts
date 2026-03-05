@@ -6,6 +6,14 @@ const qSchema = z.object({
   to: z.string().optional()
 })
 
+function durationHours(startIso: string, endIso: string) {
+  const start = new Date(startIso).getTime()
+  const end = new Date(endIso).getTime()
+  const hours = Math.max(0, (end - start) / 3600000)
+  const rounded = Math.round(hours * 100) / 100
+  return Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(2).replace(/\.?0+$/, '')
+}
+
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
   if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
@@ -27,7 +35,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: tierRow, error: tierErr } = await supabase
     .from('membership_tiers')
-    .select('booking_window_days')
+    .select('booking_window_days,peak_multiplier')
     .eq('id', membership.tier)
     .maybeSingle()
 
@@ -66,15 +74,17 @@ export default defineEventHandler(async (event) => {
 
   // Shape events for FullCalendar — distinguish own bookings from others
   const events = [
-    ...(bookings ?? []).map((b) => {
+    ...(bookings ?? []).map(b => {
       const isOwn = b.user_id === user.sub
       return {
         id: `b_${b.id}`,
         start: b.start_time,
         end: b.end_time,
-        title: isOwn ? `Your booking${b.credits_burned ? ` (${b.credits_burned} cr)` : ''}` : 'Booked',
-        display: isOwn ? 'auto' : 'background',
-        color: isOwn ? '#6366f1' : undefined, // indigo for own, default background for others
+        title: isOwn
+          ? `Your booking${b.credits_burned ? ` (${b.credits_burned} cr)` : ''}`
+          : `Member booked · ${durationHours(b.start_time, b.end_time)}h`,
+        display: 'auto',
+        color: isOwn ? '#6366f1' : '#64748b',
         extendedProps: {
           type: 'booking',
           isOwn,
@@ -98,6 +108,12 @@ export default defineEventHandler(async (event) => {
     from: from.toISOString(),
     to: to.toISOString(),
     bookingWindowDays: windowDays,
+    peakWindow: {
+      timezone: 'America/Los_Angeles',
+      daysLabel: 'Mon-Thu',
+      windowLabel: '11 AM-4 PM',
+      multiplier: Number(tierRow?.peak_multiplier ?? 1.5)
+    },
     events
   }
 })

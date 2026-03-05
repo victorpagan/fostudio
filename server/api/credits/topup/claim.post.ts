@@ -33,8 +33,9 @@ export default defineEventHandler(async (event) => {
 
   const body = bodySchema.parse(await readBody(event))
   const supabase = serverSupabaseServiceRole(event)
+  const db = supabase as any
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('credit_topup_sessions')
     .select('*')
     .eq('token', body.token)
@@ -103,7 +104,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const nowIso = new Date().toISOString()
-  const { error: updateErr } = await supabase
+  const { error: updateErr } = await db
     .from('credit_topup_sessions')
     .update({
       status: 'processed',

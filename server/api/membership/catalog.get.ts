@@ -38,8 +38,9 @@ export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
   const { isAdmin } = await resolveServerUserRole(event, user)
   const supabase = serverSupabaseServiceRole(event)
+  const db = supabase as any
 
-  let query = supabase
+  let query = db
     .from('membership_tiers')
     .select(`
       id,
@@ -67,12 +68,13 @@ export default defineEventHandler(async (event) => {
       )
     `)
     .eq('active', true)
-    .eq('direct_access_only', false)
     .order('sort_order', { ascending: true })
 
   // Non-admins only see public tiers
   if (!isAdmin) {
-    query = query.eq('visible', true)
+    query = query
+      .eq('visible', true)
+      .eq('direct_access_only', false)
   }
 
   const { data, error } = await query
