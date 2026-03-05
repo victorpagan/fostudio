@@ -15,7 +15,7 @@ const actions = [[
 ]] satisfies DropdownMenuItem[][]
 
 // Membership
-const { data: membership, refresh: refreshMembership } = await useAsyncData('dash:home:membership', async () => {
+const { data: membership } = await useAsyncData('dash:home:membership', async () => {
   if (!user.value) return null
   const { data, error } = await supabase
     .from('memberships')
@@ -27,7 +27,7 @@ const { data: membership, refresh: refreshMembership } = await useAsyncData('das
 })
 
 // Real credit balance from the credit_balance view
-const { data: creditBalance, refresh: refreshBalance } = await useAsyncData('dash:home:credits', async () => {
+const { data: creditBalance } = await useAsyncData('dash:home:credits', async () => {
   if (!user.value) return null
   const { data, error } = await supabase
     .from('credit_balance')
@@ -82,22 +82,43 @@ function formatStatus(status: string | null | undefined) {
 <template>
   <UDashboardPanel id="home">
     <template #header>
-      <UDashboardNavbar title="Dashboard" :ui="{ right: 'gap-3' }">
+      <UDashboardNavbar
+        title="Dashboard"
+        :ui="{ right: 'gap-3' }"
+      >
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
 
         <template #right>
-          <UTooltip text="Notifications" :shortcuts="['N']">
-            <UButton color="neutral" variant="ghost" square @click="isNotificationsSlideoverOpen = true">
-              <UChip color="error" inset>
-                <UIcon name="i-lucide-bell" class="size-5 shrink-0" />
+          <UTooltip
+            text="Notifications"
+            :shortcuts="['N']"
+          >
+            <UButton
+              color="neutral"
+              variant="ghost"
+              square
+              @click="isNotificationsSlideoverOpen = true"
+            >
+              <UChip
+                color="error"
+                inset
+              >
+                <UIcon
+                  name="i-lucide-bell"
+                  class="size-5 shrink-0"
+                />
               </UChip>
             </UButton>
           </UTooltip>
 
           <UDropdownMenu :items="actions">
-            <UButton icon="i-lucide-plus" size="md" class="rounded-full" />
+            <UButton
+              icon="i-lucide-plus"
+              size="md"
+              class="rounded-full"
+            />
           </UDropdownMenu>
         </template>
       </UDashboardNavbar>
@@ -122,7 +143,12 @@ function formatStatus(status: string | null | undefined) {
               description="Choose a plan (or finish checkout) to access booking and credits."
             >
               <template #actions>
-                <UButton size="sm" :to="membershipCta.to">{{ membershipCta.label }}</UButton>
+                <UButton
+                  size="sm"
+                  :to="membershipCta.to"
+                >
+                  {{ membershipCta.label }}
+                </UButton>
               </template>
             </UAlert>
             <!-- Active member welcome -->
@@ -134,7 +160,12 @@ function formatStatus(status: string | null | undefined) {
               :description="tierLabel ? `Plan: ${tierLabel}` : 'Welcome back!'"
             >
               <template #actions>
-                <UButton size="sm" to="/dashboard/book">Book studio</UButton>
+                <UButton
+                  size="sm"
+                  to="/dashboard/book"
+                >
+                  Book studio
+                </UButton>
               </template>
             </UAlert>
           </div>
@@ -148,10 +179,15 @@ function formatStatus(status: string | null | undefined) {
         <div class="grid gap-4 sm:grid-cols-3">
           <!-- Membership card -->
           <UCard>
-            <div class="text-xs text-dimmed uppercase tracking-wide">Membership</div>
+            <div class="text-xs text-dimmed uppercase tracking-wide">
+              Membership
+            </div>
             <div class="mt-2 text-lg font-semibold truncate">
               <span v-if="membership">{{ membership.tier }}</span>
-              <span v-else class="text-dimmed">None</span>
+              <span
+                v-else
+                class="text-dimmed"
+              >None</span>
             </div>
             <div class="mt-1.5">
               <UBadge
@@ -163,7 +199,12 @@ function formatStatus(status: string | null | undefined) {
               </UBadge>
             </div>
             <div class="mt-4">
-              <UButton size="sm" color="neutral" variant="soft" :to="membershipCta.to">
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="soft"
+                :to="membershipCta.to"
+              >
                 {{ membershipCta.label }}
               </UButton>
             </div>
@@ -171,23 +212,41 @@ function formatStatus(status: string | null | undefined) {
 
           <!-- Credits card -->
           <UCard>
-            <div class="text-xs text-dimmed uppercase tracking-wide">Credits</div>
+            <div class="text-xs text-dimmed uppercase tracking-wide">
+              Credits
+            </div>
             <div class="mt-2 text-4xl font-semibold tabular-nums">
               <span v-if="creditBalance !== null">{{ creditBalance }}</span>
-              <span v-else class="text-dimmed text-2xl">—</span>
+              <span
+                v-else
+                class="text-dimmed text-2xl"
+              >—</span>
             </div>
             <div class="mt-1.5 text-xs text-dimmed">
-              <template v-if="creditBalance === null">Credits appear once your first invoice is paid.</template>
-              <template v-else>Available studio hours (off-peak)</template>
+              <template v-if="creditBalance === null">
+                Credits appear once your first invoice is paid.
+              </template>
+              <template v-else>
+                Available studio hours (off-peak)
+              </template>
             </div>
             <div class="mt-4">
-              <UButton size="sm" color="neutral" variant="soft" to="/dashboard/credits">View history</UButton>
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="soft"
+                to="/dashboard/membership#credits"
+              >
+                View credits
+              </UButton>
             </div>
           </UCard>
 
           <!-- Upcoming bookings card -->
           <UCard>
-            <div class="text-xs text-dimmed uppercase tracking-wide">Upcoming</div>
+            <div class="text-xs text-dimmed uppercase tracking-wide">
+              Upcoming
+            </div>
             <div class="mt-2 text-4xl font-semibold tabular-nums">
               {{ upcomingCount ?? 0 }}
             </div>
@@ -195,8 +254,21 @@ function formatStatus(status: string | null | undefined) {
               {{ upcomingCount === 1 ? 'upcoming booking' : 'upcoming bookings' }}
             </div>
             <div class="mt-4 flex flex-col gap-2">
-              <UButton :disabled="needsMembership" to="/dashboard/book" size="sm">Book studio</UButton>
-              <UButton color="neutral" variant="soft" to="/dashboard/bookings" size="sm">My bookings</UButton>
+              <UButton
+                :disabled="needsMembership"
+                to="/dashboard/book"
+                size="sm"
+              >
+                Book studio
+              </UButton>
+              <UButton
+                color="neutral"
+                variant="soft"
+                to="/dashboard/bookings"
+                size="sm"
+              >
+                My bookings
+              </UButton>
             </div>
           </UCard>
         </div>
@@ -204,7 +276,9 @@ function formatStatus(status: string | null | undefined) {
         <!-- Quick actions row -->
         <div class="grid gap-3 sm:grid-cols-2">
           <UCard>
-            <div class="text-xs text-dimmed uppercase tracking-wide mb-3">Quick actions</div>
+            <div class="text-xs text-dimmed uppercase tracking-wide mb-3">
+              Quick actions
+            </div>
             <div class="flex flex-col gap-2">
               <UButton
                 :disabled="needsMembership"
@@ -226,17 +300,19 @@ function formatStatus(status: string | null | undefined) {
               <UButton
                 color="neutral"
                 variant="soft"
-                to="/dashboard/credits"
+                to="/dashboard/membership#credits"
                 icon="i-lucide-coins"
                 class="justify-start"
               >
-                Credit history
+                Credit activity
               </UButton>
             </div>
           </UCard>
 
           <UCard>
-            <div class="text-xs text-dimmed uppercase tracking-wide mb-3">Account</div>
+            <div class="text-xs text-dimmed uppercase tracking-wide mb-3">
+              Account
+            </div>
             <div class="flex flex-col gap-2">
               <UButton
                 color="neutral"

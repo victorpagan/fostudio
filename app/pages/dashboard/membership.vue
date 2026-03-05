@@ -4,6 +4,8 @@ definePageMeta({ middleware: ['auth'] })
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const router = useRouter()
+const route = useRoute()
+const toast = useToast()
 
 type MembershipRow = {
   id: string
@@ -31,6 +33,21 @@ type PlanVariation = {
   discount_label: string | null
 }
 
+type LedgerRow = {
+  id: string
+  delta: number
+  reason: string
+  external_ref: string | null
+  created_at: string
+}
+
+type CreditTopupBundle = {
+  id: 'single' | 'bundle_3' | 'bundle_5' | 'bundle_10'
+  label: string
+  credits: number
+  amountCents: number
+}
+
 type CatalogTier = {
   id: string
   display_name: string
@@ -42,6 +59,13 @@ type CatalogTier = {
   adminOnly?: boolean
   membership_plan_variations: PlanVariation[]
 }
+
+const creditTopupBundles: CreditTopupBundle[] = [
+  { id: 'single', label: '1 credit', credits: 1, amountCents: 4000 },
+  { id: 'bundle_3', label: '3 credits', credits: 3, amountCents: 12000 },
+  { id: 'bundle_5', label: '5 credits', credits: 5, amountCents: 19000 },
+  { id: 'bundle_10', label: '10 credits', credits: 10, amountCents: 36000 }
+]
 
 // ── Current membership ─────────────────────────────────────────────────────
 const { data: membership, refresh } = await useAsyncData('dash:membership', async () => {
@@ -55,7 +79,7 @@ const { data: membership, refresh } = await useAsyncData('dash:membership', asyn
   return data as MembershipRow | null
 })
 
-const { data: tier } = await useAsyncData('dash:tier', async () => {
+const { data: tier, refresh: refreshTier } = await useAsyncData('dash:tier', async () => {
   if (!membership.value?.tier) return null
   const { data, error } = await supabase
     .from('membership_tiers')
@@ -66,7 +90,7 @@ const { data: tier } = await useAsyncData('dash:tier', async () => {
   return data as TierRow | null
 }, { watch: [membership] })
 
-const { data: variations } = await useAsyncData('dash:variations', async () => {
+const { data: variations, refresh: refreshVariations } = await useAsyncData('dash:variations', async () => {
   if (!membership.value?.tier) return []
   const { data, error } = await supabase
     .from('membership_plan_variations')
@@ -93,6 +117,30 @@ const membershipState = computed(() => {
 const showCatalog = computed(() =>
   membershipState.value === 'none' || membershipState.value === 'inactive' || membershipState.value === 'canceled'
 )
+const hasActiveMembership = computed(() => membershipState.value === 'active')
+
+const { data: balance, refresh: refreshBalance } = await useAsyncData('dash:membership:credits:balance', async () => {
+  if (!user.value || !hasActiveMembership.value) return null
+  const { data, error } = await supabase
+    .from('credit_balance')
+    .select('balance')
+    .eq('user_id', user.value.sub)
+    .maybeSingle()
+  if (error) throw error
+  return data?.balance ?? 0
+}, { watch: [user, membershipState] })
+
+const { data: ledger, refresh: refreshLedger } = await useAsyncData('dash:membership:credits:ledger', async () => {
+  if (!user.value || !hasActiveMembership.value) return []
+  const { data, error } = await supabase
+    .from('credits_ledger')
+    .select('id,delta,reason,external_ref,created_at')
+    .eq('user_id', user.value.sub)
+    .order('created_at', { ascending: false })
+    .limit(25)
+  if (error) throw error
+  return (data ?? []) as LedgerRow[]
+}, { watch: [user, membershipState] })
 
 const { data: tierCatalog } = await useAsyncData('dash:tierCatalog', async () => {
   if (!showCatalog.value) return []
@@ -102,6 +150,28 @@ const { data: tierCatalog } = await useAsyncData('dash:tierCatalog', async () =>
 
 function goCheckout(tierId: string, cadence: string) {
   router.push(`/checkout?tier=${tierId}&cadence=${cadence}&returnTo=/dashboard/membership`)
+}
+
+function formatLedgerReason(reason: string) {
+  switch ((reason || '').toLowerCase()) {
+    case 'subscription_invoice_paid':
+    case 'subscription_credit_grant':
+      return 'Membership credits'
+    case 'booking_burn':
+      return 'Booking used'
+    case 'topoff':
+      return 'Credit top-up'
+    case 'expiration':
+      return 'Expired credits'
+    case 'refund':
+      return 'Refund'
+    default:
+      return reason
+  }
+}
+
+function formatDelta(value: number) {
+  return value > 0 ? `+${value}` : `${value}`
 }
 
 // ── Formatting helpers ─────────────────────────────────────────────────────
@@ -122,6 +192,11 @@ const currentVariation = computed(() =>
 function formatPrice(cents: number | null, currency = 'USD') {
   if (cents === null) return '—'
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100)
+}
+
+function formatBundleUnit(bundle: CreditTopupBundle) {
+  const perCredit = bundle.amountCents / bundle.credits
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(perCredit / 100)
 }
 
 function formatCadence(c: string | null) {
@@ -147,31 +222,121 @@ function formatPeakCredits(value: number | null | undefined) {
   if (Number.isInteger(value)) return value.toString()
   return value.toFixed(2).replace(/\.?0+$/, '')
 }
+
+const topupLoadingId = ref<CreditTopupBundle['id'] | null>(null)
+const topupClaiming = ref(false)
+
+async function refreshAll() {
+  await Promise.all([
+    refresh(),
+    refreshTier(),
+    refreshVariations(),
+    refreshBalance(),
+    refreshLedger()
+  ])
+}
+
+async function startTopup(bundleId: CreditTopupBundle['id']) {
+  topupLoadingId.value = bundleId
+  try {
+    const res = await $fetch<{ redirectUrl: string }>('/api/credits/topup/session', {
+      method: 'POST',
+      body: { bundle: bundleId }
+    })
+    window.location.href = res.redirectUrl
+  } catch (error: unknown) {
+    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+    toast.add({
+      title: 'Could not start top-up',
+      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error',
+      color: 'error'
+    })
+  } finally {
+    topupLoadingId.value = null
+  }
+}
+
+async function claimTopupFromRoute() {
+  const topupToken = typeof route.query.topup === 'string' ? route.query.topup : null
+  if (!topupToken || topupClaiming.value) return
+
+  topupClaiming.value = true
+  try {
+    const res = await $fetch<{ status: 'processed', creditsAdded?: number, newBalance?: number | null }>('/api/credits/topup/claim', {
+      method: 'POST',
+      body: { token: topupToken }
+    })
+
+    const added = typeof res.creditsAdded === 'number' ? `${res.creditsAdded} credits added.` : 'Credits updated.'
+    const balanceLine = res.newBalance !== null && res.newBalance !== undefined ? ` New balance: ${res.newBalance}.` : ''
+    toast.add({
+      title: 'Top-up complete',
+      description: `${added}${balanceLine}`,
+      color: 'success'
+    })
+
+    await refreshAll()
+  } catch (error: unknown) {
+    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+    toast.add({
+      title: 'Top-up pending',
+      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Payment confirmation is still syncing.',
+      color: 'warning'
+    })
+  } finally {
+    topupClaiming.value = false
+    if (route.query.topup) {
+      const nextQuery = { ...route.query }
+      delete nextQuery.topup
+      router.replace({ query: nextQuery })
+    }
+  }
+}
+
+onMounted(async () => {
+  await claimTopupFromRoute()
+})
 </script>
 
 <template>
   <UDashboardPanel id="membership">
     <template #header>
-      <UDashboardNavbar title="Membership" :ui="{ right: 'gap-3' }">
+      <UDashboardNavbar
+        title="Membership"
+        :ui="{ right: 'gap-3' }"
+      >
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
         <template #right>
-          <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-refresh-cw" @click="() => refresh()" />
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-refresh-cw"
+            @click="refreshAll"
+          />
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
       <div class="p-4 space-y-4">
-
         <!-- ── No membership: inline tier picker ──────────────────────── -->
         <template v-if="membershipState === 'none' || (showCatalog && tierCatalog?.length)">
-          <UCard v-if="membershipState === 'none'" class="mb-2">
+          <UCard
+            v-if="membershipState === 'none'"
+            class="mb-2"
+          >
             <div class="flex items-center gap-3">
-              <UIcon name="i-lucide-badge-x" class="size-8 text-dimmed shrink-0" />
+              <UIcon
+                name="i-lucide-badge-x"
+                class="size-8 text-dimmed shrink-0"
+              />
               <div>
-                <h2 class="font-semibold">No membership yet</h2>
+                <h2 class="font-semibold">
+                  No membership yet
+                </h2>
                 <p class="mt-0.5 text-sm text-dimmed">
                   Choose a plan below to get started. Credits are minted when your first invoice is paid.
                 </p>
@@ -190,7 +355,10 @@ function formatPeakCredits(value: number | null | undefined) {
           />
 
           <!-- Tier cards -->
-          <div v-if="tierCatalog?.length" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div
+            v-if="tierCatalog?.length"
+            class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          >
             <UCard
               v-for="t in tierCatalog"
               :key="t.id"
@@ -198,10 +366,25 @@ function formatPeakCredits(value: number | null | undefined) {
             >
               <div class="flex-1 space-y-3">
                 <div class="flex items-center gap-2">
-                <div class="font-semibold text-base">{{ t.display_name }}</div>
-                <UBadge v-if="t.adminOnly" color="warning" variant="soft" size="xs" icon="i-lucide-flask-conical">Admin only</UBadge>
-              </div>
-                <p v-if="t.description" class="text-sm text-dimmed">{{ t.description }}</p>
+                  <div class="font-semibold text-base">
+                    {{ t.display_name }}
+                  </div>
+                  <UBadge
+                    v-if="t.adminOnly"
+                    color="warning"
+                    variant="soft"
+                    size="xs"
+                    icon="i-lucide-flask-conical"
+                  >
+                    Admin only
+                  </UBadge>
+                </div>
+                <p
+                  v-if="t.description"
+                  class="text-sm text-dimmed"
+                >
+                  {{ t.description }}
+                </p>
                 <ul class="text-sm space-y-1.5 text-dimmed">
                   <li class="flex justify-between">
                     <span>Booking window</span>
@@ -217,7 +400,11 @@ function formatPeakCredits(value: number | null | undefined) {
                   </li>
                   <li class="flex justify-between">
                     <span>Equipment holds</span>
-                    <UBadge :color="t.holds_included ? 'success' : 'neutral'" variant="soft" size="xs">
+                    <UBadge
+                      :color="t.holds_included ? 'success' : 'neutral'"
+                      variant="soft"
+                      size="xs"
+                    >
                       {{ t.holds_included ? 'Included' : 'Extra' }}
                     </UBadge>
                   </li>
@@ -233,11 +420,20 @@ function formatPeakCredits(value: number | null | undefined) {
                   <div class="text-sm">
                     <span class="font-medium">{{ formatCadence(plan.cadence) }}</span>
                     <span class="text-dimmed"> · {{ plan.credits_per_month }} cr/mo</span>
-                    <UBadge v-if="plan.discount_label" color="success" variant="soft" size="xs" class="ml-1">
+                    <UBadge
+                      v-if="plan.discount_label"
+                      color="success"
+                      variant="soft"
+                      size="xs"
+                      class="ml-1"
+                    >
                       {{ plan.discount_label }}
                     </UBadge>
                   </div>
-                  <UButton size="xs" @click="goCheckout(t.id, plan.cadence)">
+                  <UButton
+                    size="xs"
+                    @click="goCheckout(t.id, plan.cadence)"
+                  >
                     {{ formatPrice(plan.price_cents) }}/mo
                   </UButton>
                 </div>
@@ -245,8 +441,14 @@ function formatPeakCredits(value: number | null | undefined) {
             </UCard>
           </div>
 
-          <div v-else-if="showCatalog" class="flex items-center justify-center py-10">
-            <UIcon name="i-lucide-loader-circle" class="size-6 animate-spin text-dimmed" />
+          <div
+            v-else-if="showCatalog"
+            class="flex items-center justify-center py-10"
+          >
+            <UIcon
+              name="i-lucide-loader-circle"
+              class="size-6 animate-spin text-dimmed"
+            />
           </div>
         </template>
 
@@ -260,8 +462,13 @@ function formatPeakCredits(value: number | null | undefined) {
           />
           <UCard>
             <div class="text-center py-6">
-              <UIcon name="i-lucide-clock" class="size-10 text-warning mx-auto mb-3" />
-              <h2 class="font-semibold">Awaiting payment</h2>
+              <UIcon
+                name="i-lucide-clock"
+                class="size-10 text-warning mx-auto mb-3"
+              />
+              <h2 class="font-semibold">
+                Awaiting payment
+              </h2>
               <p class="mt-2 text-sm text-dimmed max-w-xs mx-auto">
                 Complete checkout to activate your membership.
               </p>
@@ -269,7 +476,11 @@ function formatPeakCredits(value: number | null | undefined) {
                 <UButton @click="goCheckout(membership?.tier ?? 'creator', membership?.cadence ?? 'monthly')">
                   Retry checkout
                 </UButton>
-                <UButton color="neutral" variant="soft" @click="() => refresh()">
+                <UButton
+                  color="neutral"
+                  variant="soft"
+                  @click="() => refresh()"
+                >
                   Refresh status
                 </UButton>
               </div>
@@ -294,13 +505,27 @@ function formatPeakCredits(value: number | null | undefined) {
               <div class="space-y-3">
                 <div class="flex items-start justify-between gap-2">
                   <div>
-                    <div class="text-xs text-dimmed uppercase tracking-wide">Current plan</div>
-                    <div class="mt-1 text-xl font-semibold">{{ tier?.display_name ?? membership?.tier ?? '—' }}</div>
+                    <div class="text-xs text-dimmed uppercase tracking-wide">
+                      Current plan
+                    </div>
+                    <div class="mt-1 text-xl font-semibold">
+                      {{ tier?.display_name ?? membership?.tier ?? '—' }}
+                    </div>
                   </div>
-                  <UBadge :color="statusColor" variant="soft">{{ formatStatus(membership?.status) }}</UBadge>
+                  <UBadge
+                    :color="statusColor"
+                    variant="soft"
+                  >
+                    {{ formatStatus(membership?.status) }}
+                  </UBadge>
                 </div>
 
-                <p v-if="tier?.description" class="text-sm text-dimmed">{{ tier.description }}</p>
+                <p
+                  v-if="tier?.description"
+                  class="text-sm text-dimmed"
+                >
+                  {{ tier.description }}
+                </p>
 
                 <div class="pt-2 border-t border-default space-y-2 text-sm">
                   <div class="flex justify-between">
@@ -326,7 +551,9 @@ function formatPeakCredits(value: number | null | undefined) {
             <!-- Tier features -->
             <UCard>
               <div class="space-y-3">
-                <div class="text-xs text-dimmed uppercase tracking-wide">Plan features</div>
+                <div class="text-xs text-dimmed uppercase tracking-wide">
+                  Plan features
+                </div>
                 <div class="space-y-2 text-sm">
                   <div class="flex justify-between">
                     <span class="text-dimmed">Booking window</span>
@@ -358,7 +585,9 @@ function formatPeakCredits(value: number | null | undefined) {
           <!-- Other cadence options for this tier -->
           <UCard v-if="(variations?.length ?? 0) > 1">
             <div class="space-y-3">
-              <div class="text-sm font-medium">Other billing options for {{ tier?.display_name }}</div>
+              <div class="text-sm font-medium">
+                Other billing options for {{ tier?.display_name }}
+              </div>
               <div class="grid gap-2 sm:grid-cols-3">
                 <div
                   v-for="v in variations"
@@ -368,10 +597,26 @@ function formatPeakCredits(value: number | null | undefined) {
                 >
                   <div class="font-medium flex items-center gap-1">
                     {{ formatCadence(v.cadence) }}
-                    <UBadge v-if="v.cadence === membership?.cadence" color="primary" size="xs" variant="soft">Current</UBadge>
-                    <UBadge v-if="v.discount_label" color="success" size="xs" variant="soft">{{ v.discount_label }}</UBadge>
+                    <UBadge
+                      v-if="v.cadence === membership?.cadence"
+                      color="primary"
+                      size="xs"
+                      variant="soft"
+                    >
+                      Current
+                    </UBadge>
+                    <UBadge
+                      v-if="v.discount_label"
+                      color="success"
+                      size="xs"
+                      variant="soft"
+                    >
+                      {{ v.discount_label }}
+                    </UBadge>
                   </div>
-                  <div class="text-dimmed mt-1">{{ formatPrice(v.price_cents) }}/mo · {{ v.credits_per_month }} cr/mo</div>
+                  <div class="text-dimmed mt-1">
+                    {{ formatPrice(v.price_cents) }}/mo · {{ v.credits_per_month }} cr/mo
+                  </div>
                 </div>
               </div>
             </div>
@@ -379,12 +624,24 @@ function formatPeakCredits(value: number | null | undefined) {
 
           <!-- Actions -->
           <UCard>
-            <div class="text-sm font-medium mb-3">Manage membership</div>
+            <div class="text-sm font-medium mb-3">
+              Manage membership
+            </div>
             <div class="flex flex-wrap gap-2">
-              <UButton color="neutral" variant="soft" icon="i-lucide-arrow-up-circle" @click="goCheckout(membership?.tier ?? 'creator', membership?.cadence ?? 'monthly')">
+              <UButton
+                color="neutral"
+                variant="soft"
+                icon="i-lucide-arrow-up-circle"
+                @click="goCheckout(membership?.tier ?? 'creator', membership?.cadence ?? 'monthly')"
+              >
                 Change plan
               </UButton>
-              <UButton color="neutral" variant="ghost" icon="i-lucide-external-link" target="_blank">
+              <UButton
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-external-link"
+                target="_blank"
+              >
                 Manage billing (Square)
               </UButton>
             </div>
@@ -392,8 +649,114 @@ function formatPeakCredits(value: number | null | undefined) {
               Billing is managed via Square. Contact us to cancel or change your plan. Cancellations take effect at the end of your billing cycle.
             </p>
           </UCard>
-        </template>
 
+          <!-- Credits + ledger + top-up bundles -->
+          <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <UCard id="credits">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                  <div>
+                    <div class="text-xs text-dimmed uppercase tracking-wide">
+                      Credits
+                    </div>
+                    <div class="mt-1 text-3xl font-semibold">
+                      {{ balance ?? 0 }}
+                    </div>
+                  </div>
+                  <UButton
+                    size="sm"
+                    color="neutral"
+                    variant="soft"
+                    to="/dashboard/book"
+                  >
+                    Book studio
+                  </UButton>
+                </div>
+
+                <p class="text-sm text-dimmed">
+                  Need extra credit capacity this month? Purchase top-ups instantly.
+                </p>
+
+                <div class="grid gap-2 sm:grid-cols-2">
+                  <div
+                    v-for="bundle in creditTopupBundles"
+                    :key="bundle.id"
+                    class="rounded-xl border border-default p-3"
+                  >
+                    <div class="flex items-center justify-between">
+                      <div class="font-medium">
+                        {{ bundle.label }}
+                      </div>
+                      <div class="text-sm text-dimmed">
+                        {{ formatBundleUnit(bundle) }}/credit
+                      </div>
+                    </div>
+                    <div class="mt-1 text-lg font-semibold">
+                      {{ formatPrice(bundle.amountCents) }}
+                    </div>
+                    <UButton
+                      class="mt-3"
+                      size="xs"
+                      block
+                      :loading="topupLoadingId === bundle.id"
+                      :disabled="topupLoadingId !== null || topupClaiming"
+                      @click="startTopup(bundle.id)"
+                    >
+                      Buy {{ bundle.credits }} credit{{ bundle.credits === 1 ? '' : 's' }}
+                    </UButton>
+                  </div>
+                </div>
+              </div>
+            </UCard>
+
+            <UCard>
+              <div class="flex items-center justify-between gap-2">
+                <div>
+                  <div class="text-xs text-dimmed uppercase tracking-wide">
+                    Recent credit activity
+                  </div>
+                  <div class="mt-1 text-sm text-dimmed">
+                    Newest first
+                  </div>
+                </div>
+              </div>
+
+              <div
+                v-if="!ledger?.length"
+                class="mt-4 text-sm text-dimmed"
+              >
+                No credit activity yet.
+              </div>
+
+              <div
+                v-else
+                class="mt-3 divide-y divide-default"
+              >
+                <div
+                  v-for="row in ledger"
+                  :key="row.id"
+                  class="py-3 flex items-start justify-between gap-4"
+                >
+                  <div class="min-w-0">
+                    <div class="text-sm font-medium truncate">
+                      {{ formatLedgerReason(row.reason) }}
+                    </div>
+                    <div class="mt-1 text-xs text-dimmed">
+                      {{ new Date(row.created_at).toLocaleString() }}
+                      <span v-if="row.external_ref"> · ref: {{ row.external_ref }}</span>
+                    </div>
+                  </div>
+                  <div
+                    class="text-sm font-semibold shrink-0"
+                    :class="row.delta >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+                  >
+                    {{ formatDelta(row.delta) }}
+                  </div>
+                </div>
+              </div>
+            </UCard>
+          </div>
+        </template>
       </div>
     </template>
   </UDashboardPanel>

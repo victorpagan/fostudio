@@ -10,8 +10,8 @@ const router = useRouter()
 const colorMode = useColorMode()
 const appConfig = useAppConfig()
 
-const colors = ['error','orange','warning','yellow','lime','success','emerald','teal','cyan','sky','blue','indigo','violet','purple','fuchsia','pink','rose']
-const neutrals = ['slate','neutral','zinc','neutral','stone']
+const colors = ['error', 'orange', 'warning', 'yellow', 'lime', 'success', 'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose']
+const neutrals = ['slate', 'neutral', 'zinc', 'neutral', 'stone']
 
 const { data: customer } = await useAsyncData('userMenuCustomer', async () => {
   if (!user.value) return null
@@ -50,7 +50,7 @@ const items = computed<DropdownMenuItem[][]>(() => ([
     icon: 'i-lucide-user',
     to: '/dashboard/profile'
   }, {
-    label: 'Membership',
+    label: 'Membership & Credits',
     icon: 'i-lucide-badge-check',
     to: '/dashboard/membership'
   }],

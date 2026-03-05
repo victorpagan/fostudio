@@ -27,7 +27,7 @@ const accountMenuItems = computed(() => [
   [
     { label: 'Dashboard', icon: 'i-lucide-layout-dashboard', to: '/dashboard' },
     { label: 'My Bookings', icon: 'i-lucide-calendar', to: '/dashboard/bookings' },
-    { label: 'Membership', icon: 'i-lucide-badge-check', to: '/dashboard/membership' },
+    { label: 'Membership & Credits', icon: 'i-lucide-badge-check', to: '/dashboard/membership' },
     { label: 'Profile', icon: 'i-lucide-user', to: '/dashboard/profile' },
     ...(isAdmin.value
       ? [{ label: 'Admin', icon: 'i-lucide-shield', to: '/dashboard/admin' }]
@@ -196,7 +196,7 @@ async function logout() {
             class="block rounded px-3 py-2 text-sm text-[color:var(--gruv-ink-2)] hover:bg-[rgba(181,118,20,0.08)]"
             @click="isOpen = false"
           >
-            Membership
+            Membership &amp; Credits
           </NuxtLink>
           <NuxtLink
             to="/dashboard/profile"

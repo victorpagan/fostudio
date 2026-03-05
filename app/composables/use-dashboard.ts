@@ -10,7 +10,7 @@ const _useDashboard = () => {
     'g-b': () => router.push('/book'),
     'g-c': () => router.push('/calendar'),
     'g-m': () => router.push('/dashboard/membership'),
-    'g-k': () => router.push('/dashboard/credits'),
+    'g-k': () => router.push('/dashboard/membership#credits'),
     'n': () => (isNotificationsSlideoverOpen.value = !isNotificationsSlideoverOpen.value)
   })
 
