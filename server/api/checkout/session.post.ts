@@ -107,6 +107,7 @@ async function createSubscriptionPaymentLink(params: {
   currency: string
   redirectUrl: string
   order?: Record<string, unknown>
+  prePopulatedData?: Record<string, unknown>
 }) {
   const basePayload = {
     idempotencyKey: randomUUID(),
@@ -119,7 +120,8 @@ async function createSubscriptionPaymentLink(params: {
         currency: params.currency
       }
     },
-    checkoutOptions: { redirectUrl: params.redirectUrl }
+    checkoutOptions: { redirectUrl: params.redirectUrl },
+    prePopulatedData: params.prePopulatedData
   }
 
   try {
@@ -272,6 +274,13 @@ export default defineEventHandler(async (event) => {
     const planVariationId = resolvedPlanVariationId as string
     const redirectUrl = `${origin}/checkout/success?checkout=${encodeURIComponent(session.token)}&returnTo=${encodeURIComponent(returnTo)}`
     const guestSquareCustomerId = await ensureSquareCustomerForGuest(event, { email: guestEmail })
+    const { data: guestCustomer } = await supabase
+      .from('customers')
+      .select('email,phone')
+      .ilike('email', guestEmail)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
     let createRes: SquarePaymentLinkResult
     let orderFallbackUsed = false
@@ -286,6 +295,10 @@ export default defineEventHandler(async (event) => {
         priceCents: planPriceCents,
         currency: planCurrency,
         redirectUrl,
+        prePopulatedData: {
+          buyerEmail: guestCustomer?.email ?? guestEmail,
+          buyerPhoneNumber: guestCustomer?.phone ?? undefined
+        },
         order: {
           locationId,
           referenceId: session.id,
@@ -469,6 +482,11 @@ export default defineEventHandler(async (event) => {
     userId,
     email: user?.email ?? null
   })
+  const { data: memberCustomer } = await supabase
+    .from('customers')
+    .select('email,phone')
+    .eq('user_id', userId)
+    .maybeSingle()
 
   let createRes: SquarePaymentLinkResult
   try {
@@ -481,6 +499,10 @@ export default defineEventHandler(async (event) => {
       priceCents: planPriceCents,
       currency: planCurrency,
       redirectUrl,
+      prePopulatedData: {
+        buyerEmail: memberCustomer?.email ?? user?.email ?? undefined,
+        buyerPhoneNumber: memberCustomer?.phone ?? undefined
+      },
       order: {
         locationId,
         referenceId: membershipId,

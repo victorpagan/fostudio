@@ -92,6 +92,11 @@ export default defineEventHandler(async (event) => {
     userId: user.sub,
     email: user.email ?? null
   })
+  const { data: customerRow } = await supabase
+    .from('customers')
+    .select('email,phone')
+    .eq('user_id', user.sub)
+    .maybeSingle()
 
   let createRes: SquarePaymentLinkResult
   try {
@@ -99,6 +104,10 @@ export default defineEventHandler(async (event) => {
       createRes = await square.checkout.paymentLinks.create({
         idempotencyKey: randomUUID(),
         checkoutOptions: { redirectUrl },
+        prePopulatedData: {
+          buyerEmail: customerRow?.email ?? user.email ?? undefined,
+          buyerPhoneNumber: customerRow?.phone ?? undefined
+        },
         order: {
           locationId,
           referenceId: topupSession.id,
@@ -129,7 +138,11 @@ export default defineEventHandler(async (event) => {
             currency: 'USD'
           }
         },
-        checkoutOptions: { redirectUrl }
+        checkoutOptions: { redirectUrl },
+        prePopulatedData: {
+          buyerEmail: customerRow?.email ?? user.email ?? undefined,
+          buyerPhoneNumber: customerRow?.phone ?? undefined
+        }
       } as never) as SquarePaymentLinkResult
     }
   } catch (error) {

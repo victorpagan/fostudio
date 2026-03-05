@@ -172,6 +172,13 @@ export default defineEventHandler(async (event) => {
     firstName: guestFirstName,
     lastName: guestLastName
   })
+  const { data: guestCustomer } = await supabase
+    .from('customers')
+    .select('email,phone')
+    .ilike('email', body.guest_email)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
   // Insert pending booking with guest info in dedicated columns
   const { data: booking, error: bookingErr } = await supabase
@@ -217,6 +224,10 @@ export default defineEventHandler(async (event) => {
       createRes = await square.checkout.paymentLinks.create({
         idempotencyKey: randomUUID(),
         checkoutOptions: { redirectUrl },
+        prePopulatedData: {
+          buyerEmail: guestCustomer?.email ?? body.guest_email,
+          buyerPhoneNumber: guestCustomer?.phone ?? undefined
+        },
         order: {
           locationId,
           referenceId: booking.id,
@@ -253,6 +264,10 @@ export default defineEventHandler(async (event) => {
         locationId
       },
       checkoutOptions: { redirectUrl },
+      prePopulatedData: {
+        buyerEmail: guestCustomer?.email ?? body.guest_email,
+        buyerPhoneNumber: guestCustomer?.phone ?? undefined
+      },
       order: {
         locationId,
         referenceId: booking.id,
