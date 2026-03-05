@@ -21,6 +21,13 @@ const toast = useToast()
 const selectedId = ref<string | null>(null)
 const savingAndSyncing = ref(false)
 const deleting = ref(false)
+const reconcilingTopups = ref(false)
+const savingCreditPolicy = ref(false)
+
+const creditPolicy = reactive({
+  creditExpiryDays: 90,
+  creditRolloverMaxMultiplier: 2
+})
 
 const form = reactive({
   id: '' as string,
@@ -39,6 +46,13 @@ const form = reactive({
 const { data: optionRows, refresh, pending } = await useAsyncData('admin:credits:options', async () => {
   const res = await $fetch<{ options: CreditOption[] }>('/api/admin/credits/options')
   return res.options
+})
+
+const { refresh: refreshCreditPolicy } = await useAsyncData('admin:credits:settings', async () => {
+  const res = await $fetch<{ settings: { creditExpiryDays: number, creditRolloverMaxMultiplier: number } }>('/api/admin/credits/settings')
+  creditPolicy.creditExpiryDays = Number(res.settings.creditExpiryDays ?? 90)
+  creditPolicy.creditRolloverMaxMultiplier = Number(res.settings.creditRolloverMaxMultiplier ?? 2)
+  return res.settings
 })
 
 const options = computed(() => optionRows.value ?? [])
@@ -180,6 +194,56 @@ async function deleteOption() {
     deleting.value = false
   }
 }
+
+async function reconcilePendingTopups() {
+  reconcilingTopups.value = true
+  try {
+    const res = await $fetch<{
+      scanned: number
+      processed: number
+      stillPending: number
+      failed: number
+    }>('/api/admin/credits/topups.reconcile', {
+      method: 'POST',
+      body: {}
+    })
+    toast.add({
+      title: 'Top-up reconciliation complete',
+      description: `Scanned ${res.scanned}. Processed ${res.processed}, still pending ${res.stillPending}, failed ${res.failed}.`
+    })
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not reconcile top-ups',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    reconcilingTopups.value = false
+  }
+}
+
+async function saveCreditPolicy() {
+  savingCreditPolicy.value = true
+  try {
+    await $fetch('/api/admin/credits/settings.upsert', {
+      method: 'POST',
+      body: {
+        creditExpiryDays: creditPolicy.creditExpiryDays,
+        creditRolloverMaxMultiplier: creditPolicy.creditRolloverMaxMultiplier
+      }
+    })
+    toast.add({ title: 'Credit policy saved' })
+    await refreshCreditPolicy()
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not save credit policy',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    savingCreditPolicy.value = false
+  }
+}
 </script>
 
 <template>
@@ -205,6 +269,48 @@ async function deleteOption() {
           title="Credits catalog management"
           description="Configure top-up options, run timed discounts, and sync each option to a Square catalog item."
         />
+
+        <UCard>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="font-medium">Top-up reconciliation</div>
+              <div class="text-sm text-dimmed">
+                Claims any completed Square top-up sessions still marked pending.
+              </div>
+            </div>
+            <UButton
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-rotate-cw"
+              :loading="reconcilingTopups"
+              @click="reconcilePendingTopups"
+            >
+              Reconcile pending top-ups
+            </UButton>
+          </div>
+        </UCard>
+
+        <UCard>
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <div class="font-medium">Credit lifecycle settings</div>
+              <div class="text-sm text-dimmed">
+                Configure expiration and maximum rollover cap used by monthly grant processing.
+              </div>
+            </div>
+            <UButton :loading="savingCreditPolicy" @click="saveCreditPolicy">
+              Save policy
+            </UButton>
+          </div>
+          <div class="mt-4 grid gap-3 md:grid-cols-2">
+            <UFormField label="Credit expiration (days)">
+              <UInput v-model.number="creditPolicy.creditExpiryDays" type="number" min="0" />
+            </UFormField>
+            <UFormField label="Rollover max multiplier">
+              <UInput v-model.number="creditPolicy.creditRolloverMaxMultiplier" type="number" step="0.25" min="0.5" />
+            </UFormField>
+          </div>
+        </UCard>
 
         <div class="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
           <UCard>

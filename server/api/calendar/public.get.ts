@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { serverSupabaseClient } from '#supabase/server'
+import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -17,6 +18,7 @@ function durationHours(startIso: string, endIso: string) {
 export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient(event)
   const q = qSchema.parse(getQuery(event))
+  const peakWindowConfig = await loadPeakWindowConfig(event)
 
   const now = new Date()
   const from = q.from ? new Date(q.from) : now
@@ -41,6 +43,16 @@ export default defineEventHandler(async (event) => {
 
   if (holdsErr) throw createError({ statusCode: 500, statusMessage: holdsErr.message })
 
+  const { data: blocks, error: blocksErr } = await supabase
+    .from('calendar_blocks')
+    .select('id,start_time,end_time,reason')
+    .eq('active', true)
+    .lt('start_time', to.toISOString())
+    .gt('end_time', from.toISOString())
+    .order('start_time', { ascending: true })
+
+  if (blocksErr) throw createError({ statusCode: 500, statusMessage: blocksErr.message })
+
   const events = [
     ...(bookings ?? []).map(b => ({
       id: `b_${b.id}`,
@@ -59,18 +71,22 @@ export default defineEventHandler(async (event) => {
       display: 'background',
       color: '#f59e0b', // amber
       extendedProps: { type: 'hold' }
+    })),
+    ...(blocks ?? []).map(block => ({
+      id: `x_${block.id}`,
+      start: block.start_time,
+      end: block.end_time,
+      title: block.reason || 'Studio block',
+      display: 'background',
+      color: '#dc2626',
+      extendedProps: { type: 'hold' }
     }))
   ]
 
   return {
     from: from.toISOString(),
     to: to.toISOString(),
-    peakWindow: {
-      timezone: 'America/Los_Angeles',
-      daysLabel: 'Mon-Thu',
-      windowLabel: '11 AM-4 PM',
-      multiplier: null
-    },
+    peakWindow: toPeakWindowPayload(peakWindowConfig, null),
     events
   }
 })

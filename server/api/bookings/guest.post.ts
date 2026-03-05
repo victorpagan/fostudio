@@ -24,8 +24,7 @@ import { randomUUID } from 'node:crypto'
 import { serverSupabaseClient } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig, getServerConfigMap } from '~~/server/utils/config/secret'
-
-const TZ = 'America/Los_Angeles'
+import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
 
 const bodySchema = z.object({
   start_time: z.string(),
@@ -42,17 +41,10 @@ type PaymentLinkResult = {
   } | null
 }
 
-// Peak: Mon–Thu, 11:00–16:00 local — same rule as member bookings
-function isPeak(dt: DateTime) {
-  const weekday = dt.weekday // 1=Mon … 7=Sun
-  const hour = dt.hour + dt.minute / 60
-  return weekday >= 1 && weekday <= 4 && hour >= 11 && hour < 16
-}
-
 // Credits in 15-min buckets with the guest peak multiplier
-function computeCredits(startIso: string, endIso: string, peakMultiplier: number) {
-  const start = DateTime.fromISO(startIso, { zone: TZ })
-  const end = DateTime.fromISO(endIso, { zone: TZ })
+function computeCredits(startIso: string, endIso: string, peakMultiplier: number, peakWindow: Awaited<ReturnType<typeof loadPeakWindowConfig>>) {
+  const start = DateTime.fromISO(startIso, { zone: STUDIO_TZ })
+  const end = DateTime.fromISO(endIso, { zone: STUDIO_TZ })
   if (!start.isValid || !end.isValid) throw new Error('Invalid datetime')
   if (!(start < end)) throw new Error('Invalid time range')
 
@@ -64,7 +56,7 @@ function computeCredits(startIso: string, endIso: string, peakMultiplier: number
     const next = cursor.plus({ minutes: stepMinutes })
     const bucketEnd = next < end ? next : end
     const minutes = bucketEnd.diff(cursor, 'minutes').minutes
-    const rate = isPeak(cursor) ? peakMultiplier : 1.0
+    const rate = isPeakByConfig(cursor, peakWindow) ? peakMultiplier : 1.0
     credits += (minutes / 60) * rate
     cursor = bucketEnd
   }
@@ -80,9 +72,10 @@ function toSquareQuantity(value: number) {
 export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient(event)
   const body = bodySchema.parse(await readBody(event))
+  const peakWindow = await loadPeakWindowConfig(event)
 
-  const start = DateTime.fromISO(body.start_time, { zone: TZ })
-  const end = DateTime.fromISO(body.end_time, { zone: TZ })
+  const start = DateTime.fromISO(body.start_time, { zone: STUDIO_TZ })
+  const end = DateTime.fromISO(body.end_time, { zone: STUDIO_TZ })
 
   if (!start.isValid || !end.isValid) {
     throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
@@ -98,15 +91,22 @@ export default defineEventHandler(async (event) => {
   }
 
   // Don't allow bookings in the past
-  const now = DateTime.now().setZone(TZ)
+  const now = DateTime.now().setZone(STUDIO_TZ)
   if (start < now) {
     throw createError({ statusCode: 400, statusMessage: 'Cannot book in the past' })
   }
 
-  // Guest booking window: max 7 days ahead (keeps calendar manageable)
-  const maxAhead = now.plus({ days: 7 })
+  // Guest booking window (configurable)
+  const cfg = await getServerConfigMap(event, [
+    'guest_booking_rate_per_credit_cents',
+    'guest_peak_multiplier',
+    'guest_booking_window_days',
+    'SQUARE_GUEST_BOOKING_VARIATION_ID'
+  ])
+  const guestWindowDays = Number(cfg.guest_booking_window_days ?? 7)
+  const maxAhead = now.plus({ days: guestWindowDays })
   if (start > maxAhead) {
-    throw createError({ statusCode: 400, statusMessage: 'Guest bookings can only be made up to 7 days ahead' })
+    throw createError({ statusCode: 400, statusMessage: `Guest bookings can only be made up to ${guestWindowDays} days ahead` })
   }
 
   // Check for conflicts (confirmed bookings or holds overlapping requested window)
@@ -136,19 +136,26 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: 'That time slot is not available (hold conflict)' })
   }
 
-  // Pull guest rate config from system_config (falls back to sensible defaults)
-  const cfg = await getServerConfigMap(event, [
-    'guest_booking_rate_per_credit_cents',
-    'guest_peak_multiplier',
-    'SQUARE_GUEST_BOOKING_VARIATION_ID'
-  ])
+  const { data: blockConflicts, error: blockErr } = await supabase
+    .from('calendar_blocks')
+    .select('id')
+    .eq('active', true)
+    .lt('start_time', end.toUTC().toISO())
+    .gt('end_time', start.toUTC().toISO())
+    .limit(1)
+
+  if (blockErr) throw createError({ statusCode: 500, statusMessage: blockErr.message })
+  if (blockConflicts && blockConflicts.length > 0) {
+    throw createError({ statusCode: 409, statusMessage: 'That time slot is blocked by studio admin' })
+  }
+
   const ratePerCreditCents = Number(cfg.guest_booking_rate_per_credit_cents ?? 3500) // $35/credit default
   const peakMultiplier = Number(cfg.guest_peak_multiplier ?? 2.0)
   const guestBookingVariationId = typeof cfg.SQUARE_GUEST_BOOKING_VARIATION_ID === 'string'
     ? cfg.SQUARE_GUEST_BOOKING_VARIATION_ID.trim()
     : ''
 
-  const creditsNeeded = computeCredits(body.start_time, body.end_time, peakMultiplier)
+  const creditsNeeded = computeCredits(body.start_time, body.end_time, peakMultiplier, peakWindow)
   const totalCents = Math.ceil(creditsNeeded * ratePerCreditCents)
   const totalDollars = totalCents / 100
 

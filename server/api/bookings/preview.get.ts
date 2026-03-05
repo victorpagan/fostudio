@@ -14,8 +14,7 @@ import { z } from 'zod'
 import { DateTime } from 'luxon'
 import { serverSupabaseUser, serverSupabaseClient } from '#supabase/server'
 import { getServerConfigMap } from '~~/server/utils/config/secret'
-
-const TZ = 'America/Los_Angeles'
+import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
 
 const qSchema = z.object({
   start: z.string(),
@@ -23,15 +22,9 @@ const qSchema = z.object({
   mode: z.enum(['member', 'guest']).optional()
 })
 
-function isPeak(dt: DateTime) {
-  const weekday = dt.weekday
-  const hour = dt.hour + dt.minute / 60
-  return weekday >= 1 && weekday <= 4 && hour >= 11 && hour < 16
-}
-
-function computeCredits(startIso: string, endIso: string, peakMultiplier: number) {
-  const start = DateTime.fromISO(startIso, { zone: TZ })
-  const end = DateTime.fromISO(endIso, { zone: TZ })
+function computeCredits(startIso: string, endIso: string, peakMultiplier: number, peakWindow: Awaited<ReturnType<typeof loadPeakWindowConfig>>) {
+  const start = DateTime.fromISO(startIso, { zone: STUDIO_TZ })
+  const end = DateTime.fromISO(endIso, { zone: STUDIO_TZ })
   if (!start.isValid || !end.isValid) throw new Error('Invalid datetime')
   if (!(start < end)) throw new Error('End must be after start')
 
@@ -43,7 +36,7 @@ function computeCredits(startIso: string, endIso: string, peakMultiplier: number
     const next = cursor.plus({ minutes: stepMinutes })
     const bucketEnd = next < end ? next : end
     const minutes = bucketEnd.diff(cursor, 'minutes').minutes
-    const rate = isPeak(cursor) ? peakMultiplier : 1.0
+    const rate = isPeakByConfig(cursor, peakWindow) ? peakMultiplier : 1.0
     credits += (minutes / 60) * rate
     cursor = bucketEnd
   }
@@ -53,9 +46,10 @@ function computeCredits(startIso: string, endIso: string, peakMultiplier: number
 
 export default defineEventHandler(async (event) => {
   const q = qSchema.parse(getQuery(event))
+  const peakWindow = await loadPeakWindowConfig(event)
 
-  const start = DateTime.fromISO(q.start, { zone: TZ })
-  const end = DateTime.fromISO(q.end, { zone: TZ })
+  const start = DateTime.fromISO(q.start, { zone: STUDIO_TZ })
+  const end = DateTime.fromISO(q.end, { zone: STUDIO_TZ })
 
   if (!start.isValid || !end.isValid) {
     throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
@@ -108,7 +102,7 @@ export default defineEventHandler(async (event) => {
     ratePerCreditCents = Number(cfg.guest_booking_rate_per_credit_cents ?? 3500)
   }
 
-  const creditsNeeded = computeCredits(q.start, q.end, peakMultiplier!)
+  const creditsNeeded = computeCredits(q.start, q.end, peakMultiplier!, peakWindow)
   const totalCents = ratePerCreditCents !== null ? Math.ceil(creditsNeeded * ratePerCreditCents) : null
 
   return {
@@ -125,7 +119,7 @@ export default defineEventHandler(async (event) => {
     ratePerCreditCents,
     // Breakdown info for display
     breakdown: {
-      isPeakWindow: isPeak(start) || isPeak(end.minus({ minutes: 1 })),
+      isPeakWindow: isPeakByConfig(start, peakWindow) || isPeakByConfig(end.minus({ minutes: 1 }), peakWindow),
       offPeakHours: durationHours, // simplified — full breakdown could be computed
     }
   }

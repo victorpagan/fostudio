@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
 import { serverSupabaseUser, serverSupabaseClient } from '#supabase/server'
+import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
 
 const schema = z.object({
   start_time: z.string(),
@@ -9,7 +10,6 @@ const schema = z.object({
   request_hold: z.boolean().optional().default(false)
 })
 
-const TZ = 'America/Los_Angeles'
 const TEST_TIER_ID = 'test'
 
 type TierRules = {
@@ -17,18 +17,10 @@ type TierRules = {
   peak_multiplier: number
 }
 
-// Peak: Mon–Thu, 11:00–16:00 local
-function isPeak(dt: DateTime) {
-  const weekday = dt.weekday // 1=Mon ... 7=Sun
-  const hour = dt.hour + dt.minute / 60
-  const inWeekday = weekday >= 1 && weekday <= 4
-  return inWeekday && hour >= 11 && hour < 16
-}
-
 // Credits: baseline 1 credit/hour off-peak; peak multiplier applies per 15-min bucket
-function computeCredits(startIso: string, endIso: string, peakMultiplier: number) {
-  const start = DateTime.fromISO(startIso, { zone: TZ })
-  const end = DateTime.fromISO(endIso, { zone: TZ })
+function computeCredits(startIso: string, endIso: string, peakMultiplier: number, peakWindow: Awaited<ReturnType<typeof loadPeakWindowConfig>>) {
+  const start = DateTime.fromISO(startIso, { zone: STUDIO_TZ })
+  const end = DateTime.fromISO(endIso, { zone: STUDIO_TZ })
   if (!start.isValid || !end.isValid) throw new Error('Invalid datetime')
   if (!(start < end)) throw new Error('Invalid time range')
 
@@ -41,7 +33,7 @@ function computeCredits(startIso: string, endIso: string, peakMultiplier: number
     const bucketEnd = next < end ? next : end
     const minutes = bucketEnd.diff(cursor, 'minutes').minutes
 
-    const rate = isPeak(cursor) ? peakMultiplier : 1.0
+    const rate = isPeakByConfig(cursor, peakWindow) ? peakMultiplier : 1.0
     credits += (minutes / 60) * rate
 
     cursor = bucketEnd
@@ -95,13 +87,13 @@ export default defineEventHandler(async (event) => {
 
   if (!effectiveTier) throw createError({ statusCode: 400, statusMessage: 'Tier configuration missing' })
 
-  const start = DateTime.fromISO(body.start_time, { zone: TZ })
-  const end = DateTime.fromISO(body.end_time, { zone: TZ })
+  const start = DateTime.fromISO(body.start_time, { zone: STUDIO_TZ })
+  const end = DateTime.fromISO(body.end_time, { zone: STUDIO_TZ })
   if (!start.isValid || !end.isValid) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
   if (!(start < end)) throw createError({ statusCode: 400, statusMessage: 'Invalid time range' })
 
   // Booking window enforcement
-  const now = DateTime.now().setZone(TZ)
+  const now = DateTime.now().setZone(STUDIO_TZ)
   const maxStart = now.plus({ days: effectiveTier.booking_window_days })
   if (start > maxStart) {
     throw createError({
@@ -111,7 +103,20 @@ export default defineEventHandler(async (event) => {
   }
 
   // Compute credits
-  const creditsNeeded = computeCredits(body.start_time, body.end_time, effectiveTier.peak_multiplier)
+  const creditsNeeded = computeCredits(body.start_time, body.end_time, effectiveTier.peak_multiplier, peakWindow)
+
+  const { data: blockConflicts, error: blockErr } = await supabase
+    .from('calendar_blocks')
+    .select('id')
+    .eq('active', true)
+    .lt('start_time', end.toUTC().toISO())
+    .gt('end_time', start.toUTC().toISO())
+    .limit(1)
+
+  if (blockErr) throw createError({ statusCode: 500, statusMessage: blockErr.message })
+  if (blockConflicts && blockConflicts.length > 0) {
+    throw createError({ statusCode: 409, statusMessage: 'Time slot is blocked by studio admin' })
+  }
 
   // Customer id for linkage
   const { data: cust, error: custErr } = await supabase
@@ -155,3 +160,4 @@ export default defineEventHandler(async (event) => {
     hold_id: result?.[0]?.hold_id ?? null
   }
 })
+  const peakWindow = await loadPeakWindowConfig(event)

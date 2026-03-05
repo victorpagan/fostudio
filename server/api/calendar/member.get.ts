@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -20,6 +21,7 @@ export default defineEventHandler(async (event) => {
 
   const supabase = await serverSupabaseClient(event)
   const q = qSchema.parse(getQuery(event))
+  const peakWindowConfig = await loadPeakWindowConfig(event)
 
   // Fetch membership + tier so we can enforce booking window
   const { data: membership, error: memErr } = await supabase
@@ -72,6 +74,16 @@ export default defineEventHandler(async (event) => {
 
   if (holdsErr) throw createError({ statusCode: 500, statusMessage: holdsErr.message })
 
+  const { data: blocks, error: blocksErr } = await supabase
+    .from('calendar_blocks')
+    .select('id,start_time,end_time,reason')
+    .eq('active', true)
+    .lt('start_time', to.toISOString())
+    .gt('end_time', from.toISOString())
+    .order('start_time', { ascending: true })
+
+  if (blocksErr) throw createError({ statusCode: 500, statusMessage: blocksErr.message })
+
   // Shape events for FullCalendar — distinguish own bookings from others
   const events = [
     ...(bookings ?? []).map(b => {
@@ -101,6 +113,15 @@ export default defineEventHandler(async (event) => {
       display: 'background',
       color: '#f59e0b', // amber for holds
       extendedProps: { type: 'hold' }
+    })),
+    ...(blocks ?? []).map((block) => ({
+      id: `x_${block.id}`,
+      start: block.start_time,
+      end: block.end_time,
+      title: block.reason || 'Studio block',
+      display: 'background',
+      color: '#dc2626',
+      extendedProps: { type: 'hold' }
     }))
   ]
 
@@ -108,12 +129,7 @@ export default defineEventHandler(async (event) => {
     from: from.toISOString(),
     to: to.toISOString(),
     bookingWindowDays: windowDays,
-    peakWindow: {
-      timezone: 'America/Los_Angeles',
-      daysLabel: 'Mon-Thu',
-      windowLabel: '11 AM-4 PM',
-      multiplier: Number(tierRow?.peak_multiplier ?? 1.5)
-    },
+    peakWindow: toPeakWindowPayload(peakWindowConfig, Number(tierRow?.peak_multiplier ?? 1.5)),
     events
   }
 })

@@ -158,6 +158,11 @@ const { data: topupOptions, refresh: refreshTopupOptions } = await useAsyncData(
   return res?.options ?? []
 }, { watch: [user, membershipState] })
 
+watch([user, hasActiveMembership], async ([currentUser, active]) => {
+  if (!currentUser || !active) return
+  await refreshTopupOptions()
+}, { immediate: true })
+
 function goCheckout(tierId: string, cadence: string) {
   router.push(`/checkout?tier=${tierId}&cadence=${cadence}&returnTo=/dashboard/membership`)
 }
@@ -299,7 +304,7 @@ async function startTopup(optionKey: string) {
 
 async function claimTopupFromRoute() {
   const topupToken = typeof route.query.topup === 'string' ? route.query.topup : null
-  if (!topupToken || topupClaiming.value) return
+  if (topupClaiming.value) return
 
   topupClaiming.value = true
   let shouldClearTopupQuery = false
@@ -311,45 +316,53 @@ async function claimTopupFromRoute() {
       message?: string
     }>('/api/credits/topup/claim', {
       method: 'POST',
-      body: { token: topupToken }
+      body: topupToken ? { token: topupToken } : {}
     })
 
     if (res.status === 'pending') {
-      toast.add({
-        title: 'Top-up pending',
-        description: res.message ?? 'Payment confirmation is still syncing. Refresh in a moment.',
-        color: 'warning'
-      })
+      if (topupToken) {
+        toast.add({
+          title: 'Top-up pending',
+          description: res.message ?? 'Payment confirmation is still syncing. Refresh in a moment.',
+          color: 'warning'
+        })
+      }
       return
     }
 
     if (res.status === 'failed') {
-      toast.add({
-        title: 'Top-up failed',
-        description: res.message ?? 'This top-up session is no longer valid. Please start a new purchase.',
-        color: 'error'
-      })
-      shouldClearTopupQuery = true
+      if (topupToken) {
+        toast.add({
+          title: 'Top-up failed',
+          description: res.message ?? 'This top-up session is no longer valid. Please start a new purchase.',
+          color: 'error'
+        })
+        shouldClearTopupQuery = true
+      }
       return
     }
 
-    const added = typeof res.creditsAdded === 'number' ? `${res.creditsAdded} credits added.` : 'Credits updated.'
-    const balanceLine = res.newBalance !== null && res.newBalance !== undefined ? ` New balance: ${res.newBalance}.` : ''
-    toast.add({
-      title: 'Top-up complete',
-      description: `${added}${balanceLine}`,
-      color: 'success'
-    })
+    if ((res.creditsAdded ?? 0) > 0) {
+      const added = typeof res.creditsAdded === 'number' ? `${res.creditsAdded} credits added.` : 'Credits updated.'
+      const balanceLine = res.newBalance !== null && res.newBalance !== undefined ? ` New balance: ${res.newBalance}.` : ''
+      toast.add({
+        title: 'Top-up complete',
+        description: `${added}${balanceLine}`,
+        color: 'success'
+      })
+    }
 
-    shouldClearTopupQuery = true
+    if (topupToken) shouldClearTopupQuery = true
     await refreshAll()
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
-    toast.add({
-      title: 'Top-up pending',
-      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Payment confirmation is still syncing.',
-      color: 'warning'
-    })
+    if (topupToken) {
+      toast.add({
+        title: 'Top-up pending',
+        description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Payment confirmation is still syncing.',
+        color: 'warning'
+      })
+    }
   } finally {
     topupClaiming.value = false
     if (shouldClearTopupQuery && route.query.topup) {
