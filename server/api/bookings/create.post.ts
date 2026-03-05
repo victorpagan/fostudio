@@ -49,6 +49,7 @@ export default defineEventHandler(async (event) => {
 
   const supabase = await serverSupabaseClient(event)
   const body = schema.parse(await readBody(event))
+  const peakWindow = await loadPeakWindowConfig(event)
 
   // Membership active + tier id
   const { data: membership, error: memErr } = await supabase
@@ -160,4 +161,3 @@ export default defineEventHandler(async (event) => {
     hold_id: result?.[0]?.hold_id ?? null
   }
 })
-  const peakWindow = await loadPeakWindowConfig(event)
