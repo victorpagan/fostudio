@@ -144,6 +144,16 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  if (session.status === 'failed' || session.status === 'expired') {
+    return {
+      ok: false,
+      pending: false,
+      membershipStatus: 'pending_checkout',
+      returnTo,
+      message: 'This checkout session is no longer valid. Please start checkout again.'
+    }
+  }
+
   const square = await useSquareClient(event)
 
   let orderId = session.order_template_id
@@ -154,7 +164,13 @@ export default defineEventHandler(async (event) => {
   }
 
   if (!orderId) {
-    throw createError({ statusCode: 409, statusMessage: 'Payment details are still syncing. Try again in a moment.' })
+    return {
+      ok: false,
+      pending: true,
+      membershipStatus: 'pending_checkout',
+      returnTo,
+      message: 'Payment details are still syncing. Try again in a moment.'
+    }
   }
 
   const orderRes = await square.orders.get({ orderId } as never)
@@ -162,12 +178,24 @@ export default defineEventHandler(async (event) => {
   const orderState = readString(order, 'state')?.toUpperCase()
 
   if (orderState !== 'COMPLETED') {
-    throw createError({ statusCode: 409, statusMessage: 'Payment is not completed yet. Please refresh in a moment.' })
+    return {
+      ok: false,
+      pending: true,
+      membershipStatus: 'pending_checkout',
+      returnTo,
+      message: 'Payment is not completed yet. Please refresh in a moment.'
+    }
   }
 
   const squareCustomerId = readString(order, 'customerId', 'customer_id') ?? session.square_customer_id
   if (!squareCustomerId) {
-    throw createError({ statusCode: 409, statusMessage: 'Payment completed, but customer sync is still in progress. Please try again shortly.' })
+    return {
+      ok: false,
+      pending: true,
+      membershipStatus: 'pending_checkout',
+      returnTo,
+      message: 'Payment completed, but customer sync is still in progress. Please try again shortly.'
+    }
   }
 
   const accountEmail = (session.guest_email ?? user.email ?? '').trim().toLowerCase() || null

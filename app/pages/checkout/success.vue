@@ -30,10 +30,19 @@ const isTest = computed(() => route.query.test === '1')
 const status = ref<string>('pending')
 const claimLoading = ref(false)
 const claimError = ref<string | null>(null)
+const claimHint = ref<string | null>(null)
 const claimedMembershipId = ref<string | null>(null)
 const claimComplete = ref(false)
 
 let timer: ReturnType<typeof setInterval> | null = null
+let claimRetryTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleClaimRetry() {
+  if (claimRetryTimer) clearTimeout(claimRetryTimer)
+  claimRetryTimer = setTimeout(() => {
+    void claimCheckout()
+  }, 2500)
+}
 
 async function pollLegacyMembershipStatus() {
   if (!user.value) return
@@ -56,7 +65,9 @@ async function claimCheckout() {
   try {
     const res = await $fetch<{
       ok: boolean
-      membershipId: string
+      pending?: boolean
+      message?: string
+      membershipId?: string
       membershipStatus: string
       returnTo?: string
     }>('/api/checkout/claim', {
@@ -65,7 +76,22 @@ async function claimCheckout() {
     })
 
     status.value = res.membershipStatus || 'pending_checkout'
-    claimedMembershipId.value = res.membershipId
+    claimHint.value = res.message ?? null
+
+    if (!res.ok && res.pending) {
+      claimComplete.value = false
+      claimError.value = null
+      scheduleClaimRetry()
+      return
+    }
+
+    if (!res.ok) {
+      claimError.value = res.message ?? 'Could not finish account linking.'
+      claimComplete.value = false
+      return
+    }
+
+    claimedMembershipId.value = res.membershipId ?? null
     claimComplete.value = true
 
     if (status.value === 'active') {
@@ -118,6 +144,7 @@ watch(() => user.value?.sub, async (nextUserId) => {
 
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
+  if (claimRetryTimer) clearTimeout(claimRetryTimer)
 })
 </script>
 
@@ -145,6 +172,13 @@ onBeforeUnmount(() => {
           variant="soft"
           icon="i-lucide-circle-alert"
           :title="claimError"
+        />
+        <UAlert
+          v-else-if="claimHint"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-loader-circle"
+          :title="claimHint"
         />
 
         <div class="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)]">
