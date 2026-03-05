@@ -19,9 +19,8 @@ type CreditOption = {
 
 const toast = useToast()
 const selectedId = ref<string | null>(null)
-const saving = ref(false)
-const syncing = ref(false)
-const removing = ref(false)
+const savingAndSyncing = ref(false)
+const deleting = ref(false)
 
 const form = reactive({
   id: '' as string,
@@ -111,10 +110,10 @@ watch(options, (next) => {
   if (!stillExists) loadOption(next[0]!.id)
 }, { immediate: true })
 
-async function saveOption() {
-  saving.value = true
+async function saveAndSyncSquare() {
+  savingAndSyncing.value = true
   try {
-    await $fetch('/api/admin/credits/options.upsert', {
+    const upsertRes = await $fetch<{ option: { id: string } }>('/api/admin/credits/options.upsert', {
       method: 'POST',
       body: {
         id: form.id || undefined,
@@ -130,67 +129,55 @@ async function saveOption() {
         sortOrder: form.sortOrder
       }
     })
-    toast.add({ title: 'Credit option saved' })
-    await refresh()
-    if (selectedId.value) loadOption(selectedId.value)
-  } catch (error: unknown) {
-    toast.add({
-      title: 'Could not save credit option',
-      description: readErrorMessage(error),
-      color: 'error'
-    })
-  } finally {
-    saving.value = false
-  }
-}
 
-async function syncSquare() {
-  if (!form.id) {
-    toast.add({ title: 'Save this option first', color: 'warning' })
-    return
-  }
+    const optionId = upsertRes.option.id
+    form.id = optionId
+    selectedId.value = optionId
 
-  syncing.value = true
-  try {
     await $fetch('/api/admin/credits/options.sync-square', {
       method: 'POST',
-      body: { id: form.id }
+      body: { id: optionId }
     })
-    toast.add({ title: 'Square item synced' })
+    toast.add({ title: 'Saved and synced to Square' })
     await refresh()
+    loadOption(optionId)
   } catch (error: unknown) {
     toast.add({
-      title: 'Could not sync to Square',
+      title: 'Could not save and sync',
       description: readErrorMessage(error),
       color: 'error'
     })
   } finally {
-    syncing.value = false
+    savingAndSyncing.value = false
   }
 }
 
-async function removeFromSquare() {
+async function deleteOption() {
   if (!form.id) {
     toast.add({ title: 'Select a credit option first', color: 'warning' })
     return
   }
 
-  removing.value = true
+  const confirmed = window.confirm('Delete this credit option? This will remove the linked Square item and delete the option from the database.')
+  if (!confirmed) return
+
+  deleting.value = true
   try {
-    await $fetch('/api/admin/credits/options.remove-square', {
+    await $fetch('/api/admin/credits/options.delete', {
       method: 'POST',
       body: { id: form.id }
     })
-    toast.add({ title: 'Removed from Square' })
+    toast.add({ title: 'Credit option deleted' })
+    resetForm()
     await refresh()
   } catch (error: unknown) {
     toast.add({
-      title: 'Could not remove from Square',
+      title: 'Could not delete option',
       description: readErrorMessage(error),
       color: 'error'
     })
   } finally {
-    removing.value = false
+    deleting.value = false
   }
 }
 </script>
@@ -306,14 +293,11 @@ async function removeFromSquare() {
             </div>
 
             <div class="mt-4 flex flex-wrap gap-2">
-              <UButton :loading="saving" @click="saveOption">
-                Save option
+              <UButton :loading="savingAndSyncing" @click="saveAndSyncSquare">
+                Save + Sync Square
               </UButton>
-              <UButton color="neutral" variant="soft" :loading="syncing" @click="syncSquare">
-                Sync Square item
-              </UButton>
-              <UButton color="error" variant="soft" :loading="removing" @click="removeFromSquare">
-                Remove from Square
+              <UButton color="error" variant="soft" :loading="deleting" @click="deleteOption">
+                Delete option
               </UButton>
             </div>
           </UCard>

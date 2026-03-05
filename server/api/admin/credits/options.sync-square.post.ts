@@ -10,7 +10,15 @@ const bodySchema = z.object({
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
   const db = supabase as any
-  const body = bodySchema.parse(await readBody(event))
+  const parsed = bodySchema.safeParse(await readBody(event))
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0]
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Invalid request: ${firstIssue?.message ?? 'invalid payload'}`
+    })
+  }
+  const body = parsed.data
 
   const { data: option, error: optionErr } = await db
     .from('credit_pricing_options')

@@ -19,7 +19,16 @@ const bodySchema = z.object({
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
   const db = supabase as any
-  const body = bodySchema.parse(await readBody(event))
+  const parsed = bodySchema.safeParse(await readBody(event))
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0]
+    const path = firstIssue?.path?.join('.') || 'request'
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Invalid ${path}: ${firstIssue?.message ?? 'invalid value'}`
+    })
+  }
+  const body = parsed.data
 
   if (body.salePriceCents !== null && body.salePriceCents !== undefined && body.salePriceCents > body.basePriceCents) {
     throw createError({ statusCode: 400, statusMessage: 'Sale price must be less than or equal to base price.' })
