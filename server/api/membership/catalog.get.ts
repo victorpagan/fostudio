@@ -27,6 +27,7 @@ type CatalogTierRow = {
   holds_included: number
   active: boolean
   visible: boolean
+  direct_access_only: boolean
   sort_order: number | null
   membership_plan_variations: CatalogVariationRow[] | null
 }
@@ -50,6 +51,7 @@ export default defineEventHandler(async (event) => {
       holds_included,
       active,
       visible,
+      direct_access_only,
       sort_order,
       membership_plan_variations:membership_plan_variations (
         cadence,
@@ -65,6 +67,7 @@ export default defineEventHandler(async (event) => {
       )
     `)
     .eq('active', true)
+    .eq('direct_access_only', false)
     .order('sort_order', { ascending: true })
 
   // Non-admins only see public tiers

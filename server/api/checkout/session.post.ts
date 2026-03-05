@@ -169,13 +169,17 @@ export default defineEventHandler(async (event) => {
   // ── 1) Validate tier exists and is accessible ──────────────────────────
   const { data: tier, error: tierErr } = await supabase
     .from('membership_tiers')
-    .select('id,display_name,active,visible')
+    .select('id,display_name,active,visible,direct_access_only')
     .eq('id', tierId)
     .maybeSingle()
 
   if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
   if (!tier || !tier.active) {
     throw createError({ statusCode: 400, statusMessage: 'Invalid membership tier' })
+  }
+
+  if (tier.direct_access_only && !isAdmin) {
+    throw createError({ statusCode: 403, statusMessage: 'Access denied' })
   }
 
   // Hidden tiers (e.g. 'test') are admin-only

@@ -74,11 +74,47 @@ type ProcessGrantsResult = {
   canceled_count: number
 }
 
+type CreatedTierResult = {
+  tierId: string
+  squarePlanId: string
+  directAccessOnly: boolean
+  checkoutLinks: Array<{
+    cadence: 'monthly' | 'quarterly' | 'annual'
+    url: string
+  }>
+  variationIds: Array<{
+    cadence: 'monthly' | 'quarterly' | 'annual'
+    providerPlanVariationId: string
+  }>
+}
+
 const toast = useToast()
 const data = ref<AdminOpsResponse | null>(null)
 const pending = ref(false)
 const processing = ref(false)
 const backfilling = ref(false)
+const creatingTier = ref(false)
+const createdTier = ref<CreatedTierResult | null>(null)
+
+const tierForm = reactive({
+  tierId: '',
+  displayName: '',
+  description: '',
+  bookingWindowDays: 30,
+  peakMultiplier: 1,
+  maxBank: 100,
+  maxSlots: null as number | null,
+  holdsIncluded: 0,
+  sortOrder: 100,
+  active: true,
+  visible: true,
+  directAccessOnly: false,
+  cadences: {
+    monthly: { enabled: true, creditsPerMonth: 12, priceCents: 40000, discountLabel: '' },
+    quarterly: { enabled: true, creditsPerMonth: 12, priceCents: 114000, discountLabel: 'Save 5%' },
+    annual: { enabled: true, creditsPerMonth: 12, priceCents: 432000, discountLabel: 'Save 10%' }
+  }
+})
 
 onMounted(() => {
   void loadOps()
@@ -137,6 +173,68 @@ async function backfillSchedules() {
     })
   } finally {
     backfilling.value = false
+  }
+}
+
+async function createSubscriptionTier() {
+  creatingTier.value = true
+  createdTier.value = null
+
+  try {
+    const payload = {
+      tierId: tierForm.tierId.trim().toLowerCase(),
+      displayName: tierForm.displayName.trim(),
+      description: tierForm.description.trim() || null,
+      bookingWindowDays: Number(tierForm.bookingWindowDays),
+      peakMultiplier: Number(tierForm.peakMultiplier),
+      maxBank: Number(tierForm.maxBank),
+      maxSlots: tierForm.maxSlots === null ? null : Number(tierForm.maxSlots),
+      holdsIncluded: Number(tierForm.holdsIncluded),
+      sortOrder: Number(tierForm.sortOrder),
+      active: tierForm.active,
+      visible: tierForm.visible,
+      directAccessOnly: tierForm.directAccessOnly,
+      cadences: {
+        monthly: {
+          enabled: tierForm.cadences.monthly.enabled,
+          creditsPerMonth: Number(tierForm.cadences.monthly.creditsPerMonth),
+          priceCents: Number(tierForm.cadences.monthly.priceCents),
+          discountLabel: tierForm.cadences.monthly.discountLabel.trim() || null
+        },
+        quarterly: {
+          enabled: tierForm.cadences.quarterly.enabled,
+          creditsPerMonth: Number(tierForm.cadences.quarterly.creditsPerMonth),
+          priceCents: Number(tierForm.cadences.quarterly.priceCents),
+          discountLabel: tierForm.cadences.quarterly.discountLabel.trim() || null
+        },
+        annual: {
+          enabled: tierForm.cadences.annual.enabled,
+          creditsPerMonth: Number(tierForm.cadences.annual.creditsPerMonth),
+          priceCents: Number(tierForm.cadences.annual.priceCents),
+          discountLabel: tierForm.cadences.annual.discountLabel.trim() || null
+        }
+      }
+    }
+
+    const res = await $fetch<CreatedTierResult>('/api/admin/membership/tier-create', {
+      method: 'POST',
+      body: payload
+    })
+
+    createdTier.value = res
+
+    toast.add({
+      title: 'Tier created',
+      description: `Tier "${res.tierId}" was created and synced to Square plan ${res.squarePlanId}.`
+    })
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not create subscription tier',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    creatingTier.value = false
   }
 }
 
@@ -281,6 +379,198 @@ function readErrorMessage(error: unknown) {
               >
                 Backfill current periods
               </UButton>
+            </div>
+          </div>
+        </UCard>
+
+        <UCard>
+          <template #header>
+            <div class="font-medium">
+              Subscription tier creator
+            </div>
+          </template>
+
+          <p class="mb-4 text-sm text-dimmed">
+            Creates or updates a membership tier in this app and creates active Square subscription plan variations in one step.
+          </p>
+
+          <div class="grid gap-3 md:grid-cols-2">
+            <UFormField label="Tier id (snake_case)">
+              <UInput
+                v-model="tierForm.tierId"
+                placeholder="creator_plus"
+              />
+            </UFormField>
+            <UFormField label="Display name">
+              <UInput
+                v-model="tierForm.displayName"
+                placeholder="Creator+"
+              />
+            </UFormField>
+            <UFormField
+              label="Description"
+              class="md:col-span-2"
+            >
+              <UInput
+                v-model="tierForm.description"
+                placeholder="Plan description shown in admin contexts"
+              />
+            </UFormField>
+            <UFormField label="Booking window (days)">
+              <UInput
+                v-model.number="tierForm.bookingWindowDays"
+                type="number"
+                min="1"
+              />
+            </UFormField>
+            <UFormField label="Peak credits/hour">
+              <UInput
+                v-model.number="tierForm.peakMultiplier"
+                type="number"
+                min="1"
+                step="0.25"
+              />
+            </UFormField>
+            <UFormField label="Max bank">
+              <UInput
+                v-model.number="tierForm.maxBank"
+                type="number"
+                min="0"
+              />
+            </UFormField>
+            <UFormField label="Holds included">
+              <UInput
+                v-model.number="tierForm.holdsIncluded"
+                type="number"
+                min="0"
+              />
+            </UFormField>
+          </div>
+
+          <div class="mt-4 grid gap-3 md:grid-cols-3">
+            <div class="rounded-lg border border-default p-3">
+              <div class="mb-2 text-sm font-medium">
+                Monthly
+              </div>
+              <UCheckbox
+                v-model="tierForm.cadences.monthly.enabled"
+                label="Enable"
+              />
+              <div class="mt-2 space-y-2">
+                <UInput
+                  v-model.number="tierForm.cadences.monthly.creditsPerMonth"
+                  type="number"
+                  min="0"
+                  placeholder="Credits / month"
+                />
+                <UInput
+                  v-model.number="tierForm.cadences.monthly.priceCents"
+                  type="number"
+                  min="0"
+                  placeholder="Price cents (e.g. 40000)"
+                />
+                <UInput
+                  v-model="tierForm.cadences.monthly.discountLabel"
+                  placeholder="Discount label"
+                />
+              </div>
+            </div>
+
+            <div class="rounded-lg border border-default p-3">
+              <div class="mb-2 text-sm font-medium">
+                Quarterly
+              </div>
+              <UCheckbox
+                v-model="tierForm.cadences.quarterly.enabled"
+                label="Enable"
+              />
+              <div class="mt-2 space-y-2">
+                <UInput
+                  v-model.number="tierForm.cadences.quarterly.creditsPerMonth"
+                  type="number"
+                  min="0"
+                  placeholder="Credits / month"
+                />
+                <UInput
+                  v-model.number="tierForm.cadences.quarterly.priceCents"
+                  type="number"
+                  min="0"
+                  placeholder="Price cents (e.g. 114000)"
+                />
+                <UInput
+                  v-model="tierForm.cadences.quarterly.discountLabel"
+                  placeholder="Discount label"
+                />
+              </div>
+            </div>
+
+            <div class="rounded-lg border border-default p-3">
+              <div class="mb-2 text-sm font-medium">
+                Annual
+              </div>
+              <UCheckbox
+                v-model="tierForm.cadences.annual.enabled"
+                label="Enable"
+              />
+              <div class="mt-2 space-y-2">
+                <UInput
+                  v-model.number="tierForm.cadences.annual.creditsPerMonth"
+                  type="number"
+                  min="0"
+                  placeholder="Credits / month"
+                />
+                <UInput
+                  v-model.number="tierForm.cadences.annual.priceCents"
+                  type="number"
+                  min="0"
+                  placeholder="Price cents (e.g. 432000)"
+                />
+                <UInput
+                  v-model="tierForm.cadences.annual.discountLabel"
+                  placeholder="Discount label"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 flex flex-wrap gap-4">
+            <UCheckbox
+              v-model="tierForm.active"
+              label="Active"
+            />
+            <UCheckbox
+              v-model="tierForm.visible"
+              label="Visible in membership catalog"
+            />
+            <UCheckbox
+              v-model="tierForm.directAccessOnly"
+              label="Direct access only (hidden, admin link flow)"
+            />
+          </div>
+
+          <div class="mt-4">
+            <UButton
+              :loading="creatingTier"
+              @click="createSubscriptionTier"
+            >
+              Create tier + Square subscriptions
+            </UButton>
+          </div>
+
+          <div
+            v-if="createdTier"
+            class="mt-4 rounded-lg border border-default p-3 text-sm"
+          >
+            <div class="font-medium">
+              Created {{ createdTier.tierId }} · Square plan {{ createdTier.squarePlanId }}
+            </div>
+            <div class="mt-2 space-y-1 text-dimmed">
+              <div
+                v-for="link in createdTier.checkoutLinks"
+                :key="link.cadence"
+              >
+                {{ link.cadence }}: {{ link.url }}
+              </div>
             </div>
           </div>
         </UCard>
