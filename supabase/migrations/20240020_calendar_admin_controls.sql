@@ -28,11 +28,21 @@ CREATE INDEX IF NOT EXISTS calendar_blocks_start_time_idx
 CREATE INDEX IF NOT EXISTS calendar_blocks_active_idx
   ON public.calendar_blocks(active);
 
-CREATE UNIQUE INDEX IF NOT EXISTS calendar_blocks_no_overlap_idx
-  ON public.calendar_blocks USING GIST (
-    tstzrange(start_time, end_time, '[)')
-  )
-  WHERE active;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'calendar_blocks_no_overlap_excl'
+  ) THEN
+    ALTER TABLE public.calendar_blocks
+      ADD CONSTRAINT calendar_blocks_no_overlap_excl
+      EXCLUDE USING GIST (
+        tstzrange(start_time, end_time, '[)') WITH &&
+      )
+      WHERE (active);
+  END IF;
+END $$;
 
 DO $$
 BEGIN

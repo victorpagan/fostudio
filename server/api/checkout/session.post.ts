@@ -5,6 +5,7 @@ import type { H3Event } from 'h3'
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { resolveServerUserRole } from '~~/server/utils/auth'
+import { ensureSquareCustomerForGuest, ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 
 const bodySchema = z.object({
@@ -270,6 +271,7 @@ export default defineEventHandler(async (event) => {
     const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
     const planVariationId = resolvedPlanVariationId as string
     const redirectUrl = `${origin}/checkout/success?checkout=${encodeURIComponent(session.token)}&returnTo=${encodeURIComponent(returnTo)}`
+    const guestSquareCustomerId = await ensureSquareCustomerForGuest(event, { email: guestEmail })
 
     let createRes: SquarePaymentLinkResult
     let orderFallbackUsed = false
@@ -293,7 +295,8 @@ export default defineEventHandler(async (event) => {
             tier: tierId,
             cadence
           },
-          buyerEmailAddress: guestEmail
+          buyerEmailAddress: guestEmail,
+          customerId: guestSquareCustomerId ?? undefined
         }
       })
 
@@ -349,6 +352,7 @@ export default defineEventHandler(async (event) => {
       .update({
         payment_link_id: paymentLink.id ?? null,
         order_template_id: paymentLink.orderId ?? null,
+        square_customer_id: guestSquareCustomerId ?? null,
         metadata: orderFallbackUsed
           ? {
               order_fallback_used: true,
@@ -461,6 +465,10 @@ export default defineEventHandler(async (event) => {
   const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
   const redirectUrl = `${origin}/checkout/success?returnTo=${encodeURIComponent(returnTo)}`
   const planVariationId = resolvedPlanVariationId as string
+  const squareCustomerId = await ensureSquareCustomerForUser(event, {
+    userId,
+    email: user?.email ?? null
+  })
 
   let createRes: SquarePaymentLinkResult
   try {
@@ -482,7 +490,8 @@ export default defineEventHandler(async (event) => {
           tier: tierId,
           cadence
         },
-        buyerEmailAddress: user?.email ?? undefined
+        buyerEmailAddress: user?.email ?? undefined,
+        customerId: squareCustomerId ?? undefined
       }
     })
     createRes = created.result
@@ -511,7 +520,9 @@ export default defineEventHandler(async (event) => {
       checkout_provider: 'square',
       checkout_payment_link_id: paymentLink.id ?? null,
       checkout_order_template_id: paymentLink.orderId ?? null,
-      square_plan_variation_id: planVariationId
+      square_plan_variation_id: planVariationId,
+      square_customer_id: squareCustomerId ?? null,
+      billing_customer_id: squareCustomerId ?? null
     })
     .eq('id', membershipId)
 

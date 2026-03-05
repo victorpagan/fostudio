@@ -25,6 +25,7 @@ import { serverSupabaseClient } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig, getServerConfigMap } from '~~/server/utils/config/secret'
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
+import { ensureSquareCustomerForGuest } from '~~/server/utils/square/customer'
 
 const bodySchema = z.object({
   start_time: z.string(),
@@ -163,6 +164,14 @@ export default defineEventHandler(async (event) => {
   const square = await useSquareClient(event)
   const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
   const { origin } = getRequestURL(event)
+  const nameParts = body.guest_name.trim().split(/\s+/).filter(Boolean)
+  const guestFirstName = nameParts[0] ?? null
+  const guestLastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null
+  const guestSquareCustomerId = await ensureSquareCustomerForGuest(event, {
+    email: body.guest_email,
+    firstName: guestFirstName,
+    lastName: guestLastName
+  })
 
   // Insert pending booking with guest info in dedicated columns
   const { data: booking, error: bookingErr } = await supabase
@@ -211,6 +220,7 @@ export default defineEventHandler(async (event) => {
         order: {
           locationId,
           referenceId: booking.id,
+          customerId: guestSquareCustomerId ?? undefined,
           buyerEmailAddress: body.guest_email,
           metadata: orderMetadata,
           lineItems: [
@@ -246,6 +256,7 @@ export default defineEventHandler(async (event) => {
       order: {
         locationId,
         referenceId: booking.id,
+        customerId: guestSquareCustomerId ?? undefined,
         metadata: orderMetadata,
         buyerEmailAddress: body.guest_email
       }
