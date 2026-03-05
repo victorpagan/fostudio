@@ -5,6 +5,7 @@ import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { getCreditOptionEffectivePriceCents, mapCreditOption } from '~~/server/utils/credits/topup'
 import type { CreditPricingOptionRow } from '~~/server/utils/credits/topup'
+import { ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
 
 const bodySchema = z.object({
   optionKey: z.string().min(1)
@@ -87,21 +88,50 @@ export default defineEventHandler(async (event) => {
   const redirectUrl = `${origin}/dashboard/membership?topup=${encodeURIComponent(topupSession.token)}`
   const square = await useSquareClient(event)
   const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
+  const squareCustomerId = await ensureSquareCustomerForUser(event, {
+    userId: user.sub,
+    email: user.email ?? null
+  })
 
   let createRes: SquarePaymentLinkResult
   try {
-    createRes = await square.checkout.paymentLinks.create({
-      idempotencyKey: randomUUID(),
-      quickPay: {
-        name: `Studio Credit Top-Up (${mappedOption.credits} credits)`,
-        locationId,
-        priceMoney: {
-          amount: BigInt(effectivePriceCents),
-          currency: 'USD'
+    if (mappedOption.squareVariationId) {
+      createRes = await square.checkout.paymentLinks.create({
+        idempotencyKey: randomUUID(),
+        checkoutOptions: { redirectUrl },
+        order: {
+          locationId,
+          referenceId: topupSession.id,
+          customerId: squareCustomerId ?? undefined,
+          buyerEmailAddress: user.email ?? undefined,
+          metadata: {
+            topup_session_id: topupSession.id,
+            option_key: mappedOption.key,
+            option_label: mappedOption.label
+          },
+          lineItems: [
+            {
+              catalogObjectId: mappedOption.squareVariationId,
+              quantity: '1',
+              note: `Credit top-up (${mappedOption.credits} credits)`
+            }
+          ]
         }
-      },
-      checkoutOptions: { redirectUrl }
-    } as never) as SquarePaymentLinkResult
+      } as never) as SquarePaymentLinkResult
+    } else {
+      createRes = await square.checkout.paymentLinks.create({
+        idempotencyKey: randomUUID(),
+        quickPay: {
+          name: `Studio Credit Top-Up (${mappedOption.credits} credits)`,
+          locationId,
+          priceMoney: {
+            amount: BigInt(effectivePriceCents),
+            currency: 'USD'
+          }
+        },
+        checkoutOptions: { redirectUrl }
+      } as never) as SquarePaymentLinkResult
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Square checkout error'
     await db
