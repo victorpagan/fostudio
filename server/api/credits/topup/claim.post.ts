@@ -16,6 +16,7 @@ type TopupSessionRow = {
   payment_link_id: string | null
   order_template_id: string | null
   ledger_entry_id: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 function readString(source: Record<string, unknown> | null | undefined, ...keys: string[]) {
@@ -49,6 +50,13 @@ export default defineEventHandler(async (event) => {
   if (topup.status === 'processed') {
     return { ok: true, status: 'processed' as const }
   }
+  if (topup.status === 'failed' || topup.status === 'expired') {
+    return {
+      ok: false,
+      status: 'failed' as const,
+      message: 'This top-up session is no longer valid. Please start a new purchase.'
+    }
+  }
 
   let orderId = topup.order_template_id
   const square = await useSquareClient(event)
@@ -60,14 +68,23 @@ export default defineEventHandler(async (event) => {
   }
 
   if (!orderId) {
-    throw createError({ statusCode: 409, statusMessage: 'Payment details are still syncing. Please retry in a moment.' })
+    return {
+      ok: false,
+      status: 'pending' as const,
+      message: 'Payment details are still syncing. Please retry in a moment.'
+    }
   }
 
   const orderRes = await square.orders.get({ orderId } as never)
   const order = (orderRes as { order?: Record<string, unknown> | null }).order ?? null
   const orderState = readString(order, 'state')?.toUpperCase()
   if (orderState !== 'COMPLETED') {
-    throw createError({ statusCode: 409, statusMessage: 'Top-up payment is not completed yet.' })
+    return {
+      ok: false,
+      status: 'pending' as const,
+      message: 'Top-up payment is not completed yet.',
+      orderState: orderState ?? null
+    }
   }
 
   const { data: existingLedger } = topup.ledger_entry_id

@@ -282,11 +282,36 @@ async function claimTopupFromRoute() {
   if (!topupToken || topupClaiming.value) return
 
   topupClaiming.value = true
+  let shouldClearTopupQuery = false
   try {
-    const res = await $fetch<{ status: 'processed', creditsAdded?: number, newBalance?: number | null }>('/api/credits/topup/claim', {
+    const res = await $fetch<{
+      status: 'processed' | 'pending' | 'failed'
+      creditsAdded?: number
+      newBalance?: number | null
+      message?: string
+    }>('/api/credits/topup/claim', {
       method: 'POST',
       body: { token: topupToken }
     })
+
+    if (res.status === 'pending') {
+      toast.add({
+        title: 'Top-up pending',
+        description: res.message ?? 'Payment confirmation is still syncing. Refresh in a moment.',
+        color: 'warning'
+      })
+      return
+    }
+
+    if (res.status === 'failed') {
+      toast.add({
+        title: 'Top-up failed',
+        description: res.message ?? 'This top-up session is no longer valid. Please start a new purchase.',
+        color: 'error'
+      })
+      shouldClearTopupQuery = true
+      return
+    }
 
     const added = typeof res.creditsAdded === 'number' ? `${res.creditsAdded} credits added.` : 'Credits updated.'
     const balanceLine = res.newBalance !== null && res.newBalance !== undefined ? ` New balance: ${res.newBalance}.` : ''
@@ -296,6 +321,7 @@ async function claimTopupFromRoute() {
       color: 'success'
     })
 
+    shouldClearTopupQuery = true
     await refreshAll()
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
@@ -306,7 +332,7 @@ async function claimTopupFromRoute() {
     })
   } finally {
     topupClaiming.value = false
-    if (route.query.topup) {
+    if (shouldClearTopupQuery && route.query.topup) {
       const nextQuery = { ...route.query }
       delete nextQuery.topup
       router.replace({ query: nextQuery })
