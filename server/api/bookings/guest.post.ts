@@ -26,6 +26,7 @@ import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig, getServerConfigMap } from '~~/server/utils/config/secret'
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { ensureSquareCustomerForGuest } from '~~/server/utils/square/customer'
+import { toSquareBuyerPhone } from '~~/server/utils/square/checkoutPrefill'
 
 const bodySchema = z.object({
   start_time: z.string(),
@@ -226,7 +227,7 @@ export default defineEventHandler(async (event) => {
         checkoutOptions: { redirectUrl },
         prePopulatedData: {
           buyerEmail: guestCustomer?.email ?? body.guest_email,
-          buyerPhoneNumber: guestCustomer?.phone ?? undefined
+          buyerPhoneNumber: toSquareBuyerPhone(guestCustomer?.phone)
         },
         order: {
           locationId,
@@ -266,7 +267,7 @@ export default defineEventHandler(async (event) => {
       checkoutOptions: { redirectUrl },
       prePopulatedData: {
         buyerEmail: guestCustomer?.email ?? body.guest_email,
-        buyerPhoneNumber: guestCustomer?.phone ?? undefined
+        buyerPhoneNumber: toSquareBuyerPhone(guestCustomer?.phone)
       },
       order: {
         locationId,

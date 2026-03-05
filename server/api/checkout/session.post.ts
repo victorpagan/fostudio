@@ -6,6 +6,7 @@ import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { resolveServerUserRole } from '~~/server/utils/auth'
 import { ensureSquareCustomerForGuest, ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
+import { toSquareBuyerPhone } from '~~/server/utils/square/checkoutPrefill'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 
 const bodySchema = z.object({
@@ -297,7 +298,7 @@ export default defineEventHandler(async (event) => {
         redirectUrl,
         prePopulatedData: {
           buyerEmail: guestCustomer?.email ?? guestEmail,
-          buyerPhoneNumber: guestCustomer?.phone ?? undefined
+          buyerPhoneNumber: toSquareBuyerPhone(guestCustomer?.phone)
         },
         order: {
           locationId,
@@ -501,7 +502,7 @@ export default defineEventHandler(async (event) => {
       redirectUrl,
       prePopulatedData: {
         buyerEmail: memberCustomer?.email ?? user?.email ?? undefined,
-        buyerPhoneNumber: memberCustomer?.phone ?? undefined
+        buyerPhoneNumber: toSquareBuyerPhone(memberCustomer?.phone)
       },
       order: {
         locationId,

@@ -6,6 +6,7 @@ import { getServerConfig } from '~~/server/utils/config/secret'
 import { getCreditOptionEffectivePriceCents, mapCreditOption } from '~~/server/utils/credits/topup'
 import type { CreditPricingOptionRow } from '~~/server/utils/credits/topup'
 import { ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
+import { toSquareBuyerPhone } from '~~/server/utils/square/checkoutPrefill'
 
 const bodySchema = z.object({
   optionKey: z.string().min(1)
@@ -106,7 +107,7 @@ export default defineEventHandler(async (event) => {
         checkoutOptions: { redirectUrl },
         prePopulatedData: {
           buyerEmail: customerRow?.email ?? user.email ?? undefined,
-          buyerPhoneNumber: customerRow?.phone ?? undefined
+          buyerPhoneNumber: toSquareBuyerPhone(customerRow?.phone)
         },
         order: {
           locationId,
@@ -141,7 +142,7 @@ export default defineEventHandler(async (event) => {
         checkoutOptions: { redirectUrl },
         prePopulatedData: {
           buyerEmail: customerRow?.email ?? user.email ?? undefined,
-          buyerPhoneNumber: customerRow?.phone ?? undefined
+          buyerPhoneNumber: toSquareBuyerPhone(customerRow?.phone)
         }
       } as never) as SquarePaymentLinkResult
     }
