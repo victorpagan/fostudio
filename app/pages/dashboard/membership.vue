@@ -167,6 +167,10 @@ function goCheckout(tierId: string, cadence: string) {
   router.push(`/checkout?tier=${tierId}&cadence=${cadence}&returnTo=/dashboard/membership`)
 }
 
+function goMembershipSelector() {
+  router.push('/memberships?returnTo=/dashboard/membership')
+}
+
 function formatLedgerReason(reason: string) {
   switch ((reason || '').toLowerCase()) {
     case 'subscription_invoice_paid':
@@ -811,6 +815,15 @@ onUnmounted(() => {
                   <div class="text-dimmed mt-1">
                     {{ formatPrice(v.price_cents) }}/mo · {{ v.credits_per_month }} cr/mo
                   </div>
+                  <UButton
+                    v-if="v.cadence !== membership?.cadence"
+                    size="xs"
+                    class="mt-2"
+                    variant="soft"
+                    @click="goCheckout(membership?.tier ?? 'creator', v.cadence)"
+                  >
+                    Switch to {{ formatCadence(v.cadence) }}
+                  </UButton>
                 </div>
               </div>
             </div>
@@ -825,16 +838,16 @@ onUnmounted(() => {
               <UButton
                 color="neutral"
                 variant="soft"
-                icon="i-lucide-arrow-up-circle"
-                @click="goCheckout(membership?.tier ?? 'creator', membership?.cadence ?? 'monthly')"
+                icon="i-lucide-list-checks"
+                @click="goMembershipSelector"
               >
-                Change plan
+                Browse memberships
               </UButton>
               <UButton
                 color="neutral"
                 variant="ghost"
                 icon="i-lucide-external-link"
-                target="_blank"
+                to="/contact?topic=billing"
               >
                 Manage billing (Square)
               </UButton>
