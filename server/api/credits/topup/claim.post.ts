@@ -19,6 +19,14 @@ type TopupSessionRow = {
   metadata?: Record<string, unknown> | null
 }
 
+type ClaimDebug = {
+  topupSessionId: string
+  topupStatus: string
+  orderId: string | null
+  orderState: string | null
+  hasLedgerEntry: boolean
+}
+
 function asNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string' && value.trim() !== '') {
@@ -74,6 +82,14 @@ export default defineEventHandler(async (event) => {
 
   const square = await useSquareClient(event)
   const processSession = async (topup: TopupSessionRow) => {
+    const baseDebug: ClaimDebug = {
+      topupSessionId: topup.id,
+      topupStatus: topup.status,
+      orderId: topup.order_template_id,
+      orderState: null,
+      hasLedgerEntry: Boolean(topup.ledger_entry_id)
+    }
+
     if (topup.status === 'processed') {
       const newBalance = await readBalance(supabase, user.sub)
       return {
@@ -81,7 +97,8 @@ export default defineEventHandler(async (event) => {
         status: 'processed' as const,
         creditsAdded: asNumber(topup.credits) ?? null,
         newBalance,
-        sessionId: topup.id
+        sessionId: topup.id,
+        debug: baseDebug
       }
     }
 
@@ -90,7 +107,8 @@ export default defineEventHandler(async (event) => {
         ok: false,
         status: 'failed' as const,
         message: 'This top-up session is no longer valid. Please start a new purchase.',
-        sessionId: topup.id
+        sessionId: topup.id,
+        debug: baseDebug
       }
     }
 
@@ -99,27 +117,55 @@ export default defineEventHandler(async (event) => {
       const linkRes = await square.checkout.paymentLinks.get({ id: topup.payment_link_id } as never)
       const paymentLink = (linkRes as { paymentLink?: Record<string, unknown> | null }).paymentLink ?? null
       orderId = readString(paymentLink, 'orderId', 'order_id')
+      baseDebug.orderId = orderId
     }
 
     if (!orderId) {
+      await db
+        .from('credit_topup_sessions')
+        .update({
+          metadata: {
+            ...(topup.metadata ?? {}),
+            last_claim_status: 'pending_missing_order_id',
+            last_claim_at: new Date().toISOString()
+          }
+        })
+        .eq('id', topup.id)
+
       return {
         ok: false,
         status: 'pending' as const,
         message: 'Payment details are still syncing. Please retry in a moment.',
-        sessionId: topup.id
+        sessionId: topup.id,
+        debug: baseDebug
       }
     }
 
     const orderRes = await square.orders.get({ orderId } as never)
     const order = (orderRes as { order?: Record<string, unknown> | null }).order ?? null
     const orderState = readString(order, 'state')?.toUpperCase()
+    baseDebug.orderState = orderState ?? null
     if (orderState !== 'COMPLETED') {
+      await db
+        .from('credit_topup_sessions')
+        .update({
+          metadata: {
+            ...(topup.metadata ?? {}),
+            last_claim_status: 'pending_order_not_completed',
+            last_claim_order_state: orderState ?? null,
+            last_claim_order_id: orderId,
+            last_claim_at: new Date().toISOString()
+          }
+        })
+        .eq('id', topup.id)
+
       return {
         ok: false,
         status: 'pending' as const,
         message: 'Top-up payment is not completed yet.',
         orderState: orderState ?? null,
-        sessionId: topup.id
+        sessionId: topup.id,
+        debug: baseDebug
       }
     }
 
@@ -132,6 +178,7 @@ export default defineEventHandler(async (event) => {
       : { data: null as { id: string } | null }
 
     let ledgerEntryId = existingLedger?.id ?? null
+    baseDebug.hasLedgerEntry = Boolean(ledgerEntryId)
     if (!ledgerEntryId) {
       const optionLabel = readString(topup.metadata, 'option_label', 'optionLabel')
       const optionKey = readString(topup.metadata, 'option_key', 'optionKey')
@@ -155,9 +202,22 @@ export default defineEventHandler(async (event) => {
         .single()
 
       if (ledgerErr || !insertedLedger) {
+        await db
+          .from('credit_topup_sessions')
+          .update({
+            metadata: {
+              ...(topup.metadata ?? {}),
+              last_claim_status: 'failed_ledger_insert',
+              last_claim_error: ledgerErr?.message ?? 'failed_to_mint_credits',
+              last_claim_order_id: orderId,
+              last_claim_at: new Date().toISOString()
+            }
+          })
+          .eq('id', topup.id)
         throw createError({ statusCode: 500, statusMessage: ledgerErr?.message ?? 'Failed to mint credits' })
       }
       ledgerEntryId = insertedLedger.id
+      baseDebug.hasLedgerEntry = true
     }
 
     const nowIso = new Date().toISOString()
@@ -179,7 +239,8 @@ export default defineEventHandler(async (event) => {
       status: 'processed' as const,
       creditsAdded: asNumber(topup.credits) ?? null,
       newBalance,
-      sessionId: topup.id
+      sessionId: topup.id,
+      debug: baseDebug
     }
   }
 
@@ -212,7 +273,14 @@ export default defineEventHandler(async (event) => {
       status: 'processed' as const,
       creditsAdded: 0,
       newBalance: await readBalance(supabase, user.sub),
-      message: 'No pending top-ups found.'
+      message: 'No pending top-ups found.',
+      debug: {
+        topupSessionId: 'none',
+        topupStatus: 'none',
+        orderId: null,
+        orderState: null,
+        hasLedgerEntry: false
+      } as ClaimDebug
     }
   }
 
@@ -224,6 +292,13 @@ export default defineEventHandler(async (event) => {
   return {
     ok: false,
     status: 'pending' as const,
-    message: 'Pending top-up found, but payment has not settled yet.'
+    message: 'Pending top-up found, but payment has not settled yet.',
+    debug: {
+      topupSessionId: 'unknown',
+      topupStatus: 'pending',
+      orderId: null,
+      orderState: null,
+      hasLedgerEntry: false
+    } as ClaimDebug
   }
 })
