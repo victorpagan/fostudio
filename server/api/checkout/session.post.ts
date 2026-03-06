@@ -277,7 +277,7 @@ export default defineEventHandler(async (event) => {
     const guestSquareCustomerId = await ensureSquareCustomerForGuest(event, { email: guestEmail })
     const { data: guestCustomer } = await supabase
       .from('customers')
-      .select('email,phone')
+      .select('email,phone,first_name,last_name')
       .ilike('email', guestEmail)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -298,7 +298,11 @@ export default defineEventHandler(async (event) => {
         redirectUrl,
         prePopulatedData: {
           buyerEmail: guestCustomer?.email ?? guestEmail,
-          buyerPhoneNumber: toSquareBuyerPhone(guestCustomer?.phone)
+          buyerPhoneNumber: toSquareBuyerPhone(guestCustomer?.phone),
+          buyerAddress: {
+            firstName: guestCustomer?.first_name ?? undefined,
+            lastName: guestCustomer?.last_name ?? undefined
+          }
         },
         order: {
           locationId,
@@ -485,7 +489,7 @@ export default defineEventHandler(async (event) => {
   })
   const { data: memberCustomer } = await supabase
     .from('customers')
-    .select('email,phone')
+    .select('email,phone,first_name,last_name')
     .eq('user_id', userId)
     .maybeSingle()
 
@@ -502,7 +506,11 @@ export default defineEventHandler(async (event) => {
       redirectUrl,
       prePopulatedData: {
         buyerEmail: memberCustomer?.email ?? user?.email ?? undefined,
-        buyerPhoneNumber: toSquareBuyerPhone(memberCustomer?.phone)
+        buyerPhoneNumber: toSquareBuyerPhone(memberCustomer?.phone),
+        buyerAddress: {
+          firstName: memberCustomer?.first_name ?? undefined,
+          lastName: memberCustomer?.last_name ?? undefined
+        }
       },
       order: {
         locationId,

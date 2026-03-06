@@ -175,7 +175,7 @@ export default defineEventHandler(async (event) => {
   })
   const { data: guestCustomer } = await supabase
     .from('customers')
-    .select('email,phone')
+    .select('email,phone,first_name,last_name')
     .ilike('email', body.guest_email)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -227,7 +227,11 @@ export default defineEventHandler(async (event) => {
         checkoutOptions: { redirectUrl },
         prePopulatedData: {
           buyerEmail: guestCustomer?.email ?? body.guest_email,
-          buyerPhoneNumber: toSquareBuyerPhone(guestCustomer?.phone)
+          buyerPhoneNumber: toSquareBuyerPhone(guestCustomer?.phone),
+          buyerAddress: {
+            firstName: guestCustomer?.first_name ?? guestFirstName ?? undefined,
+            lastName: guestCustomer?.last_name ?? guestLastName ?? undefined
+          }
         },
         order: {
           locationId,
@@ -267,7 +271,11 @@ export default defineEventHandler(async (event) => {
       checkoutOptions: { redirectUrl },
       prePopulatedData: {
         buyerEmail: guestCustomer?.email ?? body.guest_email,
-        buyerPhoneNumber: toSquareBuyerPhone(guestCustomer?.phone)
+        buyerPhoneNumber: toSquareBuyerPhone(guestCustomer?.phone),
+        buyerAddress: {
+          firstName: guestCustomer?.first_name ?? guestFirstName ?? undefined,
+          lastName: guestCustomer?.last_name ?? guestLastName ?? undefined
+        }
       },
       order: {
         locationId,

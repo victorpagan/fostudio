@@ -95,7 +95,7 @@ export default defineEventHandler(async (event) => {
   })
   const { data: customerRow } = await supabase
     .from('customers')
-    .select('email,phone')
+    .select('email,phone,first_name,last_name')
     .eq('user_id', user.sub)
     .maybeSingle()
 
@@ -107,7 +107,11 @@ export default defineEventHandler(async (event) => {
         checkoutOptions: { redirectUrl },
         prePopulatedData: {
           buyerEmail: customerRow?.email ?? user.email ?? undefined,
-          buyerPhoneNumber: toSquareBuyerPhone(customerRow?.phone)
+          buyerPhoneNumber: toSquareBuyerPhone(customerRow?.phone),
+          buyerAddress: {
+            firstName: customerRow?.first_name ?? undefined,
+            lastName: customerRow?.last_name ?? undefined
+          }
         },
         order: {
           locationId,
@@ -142,7 +146,11 @@ export default defineEventHandler(async (event) => {
         checkoutOptions: { redirectUrl },
         prePopulatedData: {
           buyerEmail: customerRow?.email ?? user.email ?? undefined,
-          buyerPhoneNumber: toSquareBuyerPhone(customerRow?.phone)
+          buyerPhoneNumber: toSquareBuyerPhone(customerRow?.phone),
+          buyerAddress: {
+            firstName: customerRow?.first_name ?? undefined,
+            lastName: customerRow?.last_name ?? undefined
+          }
         }
       } as never) as SquarePaymentLinkResult
     }
