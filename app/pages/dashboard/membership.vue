@@ -370,7 +370,17 @@ async function startTopup(optionKey: string) {
 }
 
 async function claimTopupFromRoute() {
-  const topupToken = typeof route.query.topup === 'string' ? route.query.topup : null
+  const readQueryString = (value: unknown) => {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (Array.isArray(value)) {
+      const first = value.find(item => typeof item === 'string' && item.trim())
+      if (typeof first === 'string' && first.trim()) return first.trim()
+    }
+    return null
+  }
+
+  const topupToken = readQueryString(route.query.topup)
+  const topupOrderId = readQueryString(route.query.orderId) ?? readQueryString(route.query.order_id)
   if (topupClaiming.value) return
 
   topupClaiming.value = true
@@ -391,9 +401,12 @@ async function claimTopupFromRoute() {
         creditsAdded?: number
         newBalance?: number | null
         message?: string
+        debug?: Record<string, unknown>
       }>('/api/credits/topup/claim', {
         method: 'POST',
-        body: topupToken ? { token: topupToken } : {}
+        body: topupToken
+          ? { token: topupToken, orderId: topupOrderId ?? undefined }
+          : {}
       })
 
       if (res.status !== 'pending') break
@@ -454,6 +467,8 @@ async function claimTopupFromRoute() {
     if (shouldClearTopupQuery && route.query.topup) {
       const nextQuery = { ...route.query }
       delete nextQuery.topup
+      delete nextQuery.orderId
+      delete nextQuery.order_id
       router.replace({ query: nextQuery })
     }
   }
@@ -463,6 +478,13 @@ onMounted(async () => {
   topupProgressReady.value = true
   await claimTopupFromRoute()
 })
+
+watch(
+  () => [route.query.topup, route.query.orderId, route.query.order_id],
+  () => {
+    if (import.meta.client) void claimTopupFromRoute()
+  }
+)
 
 onUnmounted(() => {
   clearTopupOptionsLoadTimers()

@@ -4,7 +4,8 @@ import { useSquareClient } from '~~/server/utils/square'
 import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
 
 const bodySchema = z.object({
-  token: z.string().uuid().optional()
+  token: z.string().uuid().optional(),
+  orderId: z.string().min(1).optional()
 })
 
 type TopupSessionRow = {
@@ -85,7 +86,7 @@ export default defineEventHandler(async (event) => {
   const db = supabase as any
 
   const square = await useSquareClient(event)
-  const processSession = async (topup: TopupSessionRow) => {
+  const processSession = async (topup: TopupSessionRow, hintedOrderId?: string | null) => {
     const baseDebug: ClaimDebug = {
       topupSessionId: topup.id,
       topupStatus: topup.status,
@@ -118,7 +119,7 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    let orderId = topup.order_template_id
+    let orderId = topup.order_template_id ?? hintedOrderId ?? null
     if (!orderId && topup.payment_link_id) {
       const linkRes = await square.checkout.paymentLinks.get({ id: topup.payment_link_id } as never)
       const paymentLink = (linkRes as { paymentLink?: Record<string, unknown> | null }).paymentLink ?? null
@@ -266,7 +267,7 @@ export default defineEventHandler(async (event) => {
 
     if (error) throw createError({ statusCode: 500, statusMessage: error.message })
     if (!data) throw createError({ statusCode: 404, statusMessage: 'Top-up session not found' })
-    return processSession(data as TopupSessionRow)
+    return processSession(data as TopupSessionRow, body.orderId ?? null)
   }
 
   const { data: pendingRows, error: pendingErr } = await db
@@ -298,10 +299,14 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  let firstPendingResult: Record<string, unknown> | null = null
   for (const row of pendingRows as TopupSessionRow[]) {
-    const result = await processSession(row)
+    const result = await processSession(row, body.orderId ?? null)
     if (result.status === 'processed') return result
+    if (!firstPendingResult && result.status === 'pending') firstPendingResult = result as unknown as Record<string, unknown>
   }
+
+  if (firstPendingResult) return firstPendingResult
 
   return {
     ok: false,
