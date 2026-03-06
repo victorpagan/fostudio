@@ -35,55 +35,68 @@ export async function resolveOrderPaymentState(params: {
   const order = (orderRes as { order?: Record<string, unknown> | null }).order ?? null
   const orderState = readString(order, 'state')?.toUpperCase() ?? null
   const orderCustomerId = readString(order, 'customerId', 'customer_id')
+  const orderLocationId = readString(order, 'locationId', 'location_id')
 
   const beginTime = params.beginTime
     ? DateTime.fromISO(params.beginTime).minus({ days: 1 }).toUTC().toISO()
     : DateTime.utc().minus({ days: 30 }).toISO()
 
-  const pageable = await square.payments.list({
-    beginTime,
-    sortOrder: 'DESC',
-    sortField: 'CREATED_AT',
-    limit: 100
-  } as never)
+  const scanPayments = async (locationId?: string | null) => {
+    const pageable = await square.payments.list({
+      beginTime,
+      sortOrder: 'DESC',
+      sortField: 'CREATED_AT',
+      limit: 100,
+      locationId: locationId ?? undefined
+    } as never)
 
-  let scanned = 0
-  let paymentStatus: string | null = null
-  let paymentId: string | null = null
-  let paymentCustomerId: string | null = null
+    let scanned = 0
+    let paymentStatus: string | null = null
+    let paymentId: string | null = null
+    let paymentCustomerId: string | null = null
 
-  for await (const item of pageable as AsyncIterable<Record<string, unknown>>) {
-    scanned += 1
-    if (scanned > maxPaymentsToScan) break
+    for await (const item of pageable as AsyncIterable<Record<string, unknown>>) {
+      scanned += 1
+      if (scanned > maxPaymentsToScan) break
 
-    const paymentOrderId = readString(item, 'orderId', 'order_id')
-    if (paymentOrderId !== orderId) continue
+      const paymentOrderId = readString(item, 'orderId', 'order_id')
+      if (paymentOrderId !== orderId) continue
 
-    const status = readString(item, 'status')?.toUpperCase() ?? null
-    paymentStatus = paymentStatus ?? status
-    paymentId = paymentId ?? readString(item, 'id')
-    paymentCustomerId = paymentCustomerId ?? readString(item, 'customerId', 'customer_id')
+      const status = readString(item, 'status')?.toUpperCase() ?? null
+      paymentStatus = paymentStatus ?? status
+      paymentId = paymentId ?? readString(item, 'id')
+      paymentCustomerId = paymentCustomerId ?? readString(item, 'customerId', 'customer_id')
 
-    if (status === 'COMPLETED') {
-      return {
-        orderState,
-        orderCustomerId,
-        orderId,
-        completed: true,
-        paymentId: readString(item, 'id') ?? paymentId,
-        paymentStatus: status,
-        paymentCustomerId: readString(item, 'customerId', 'customer_id') ?? paymentCustomerId
-      } as OrderPaymentState
+      if (status === 'COMPLETED') {
+        return {
+          orderState,
+          orderCustomerId,
+          orderId,
+          completed: true,
+          paymentId: readString(item, 'id') ?? paymentId,
+          paymentStatus: status,
+          paymentCustomerId: readString(item, 'customerId', 'customer_id') ?? paymentCustomerId
+        } as OrderPaymentState
+      }
     }
+
+    return {
+      orderState,
+      orderCustomerId,
+      orderId,
+      completed: orderState === 'COMPLETED',
+      paymentId,
+      paymentStatus,
+      paymentCustomerId
+    } as OrderPaymentState
   }
 
-  return {
-    orderState,
-    orderCustomerId,
-    orderId,
-    completed: orderState === 'COMPLETED',
-    paymentId,
-    paymentStatus,
-    paymentCustomerId
-  } as OrderPaymentState
+  const locationScoped = await scanPayments(orderLocationId)
+  if (locationScoped.completed || locationScoped.paymentId || !orderLocationId) {
+    return locationScoped
+  }
+
+  // Fallback scan with no location filter. Some setups settle payments on a location
+  // different from the order's location or can lag in location-scoped visibility.
+  return scanPayments(null)
 }

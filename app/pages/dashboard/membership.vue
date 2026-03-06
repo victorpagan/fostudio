@@ -409,6 +409,8 @@ async function claimTopupFromRoute() {
           : {}
       })
 
+
+        console.log('asdf', res)
       if (res.status !== 'pending') break
       attempt += 1
       if (attempt < maxAttempts) {
@@ -476,6 +478,7 @@ async function claimTopupFromRoute() {
 
 onMounted(async () => {
   topupProgressReady.value = true
+  await router.isReady()
   await claimTopupFromRoute()
 })
 
@@ -483,7 +486,8 @@ watch(
   () => [route.query.topup, route.query.orderId, route.query.order_id],
   () => {
     if (import.meta.client) void claimTopupFromRoute()
-  }
+  },
+  { immediate: true }
 )
 
 onUnmounted(() => {
