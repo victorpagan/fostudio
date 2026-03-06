@@ -272,6 +272,7 @@ const topupLoadingKey = ref<string | null>(null)
 const topupClaiming = ref(false)
 const topupOptionsTimedOut = ref(false)
 const topupOptionsProgress = ref(0)
+const topupProgressReady = ref(false)
 const TOPUP_OPTIONS_TIMEOUT_MS = 5000
 
 let topupOptionsTimeoutHandle: ReturnType<typeof setTimeout> | null = null
@@ -375,15 +376,34 @@ async function claimTopupFromRoute() {
   topupClaiming.value = true
   let shouldClearTopupQuery = false
   try {
-    const res = await $fetch<{
+    const maxAttempts = topupToken ? 7 : 1
+    let attempt = 0
+    let res: {
       status: 'processed' | 'pending' | 'failed'
       creditsAdded?: number
       newBalance?: number | null
       message?: string
-    }>('/api/credits/topup/claim', {
-      method: 'POST',
-      body: topupToken ? { token: topupToken } : {}
-    })
+    } | null = null
+
+    while (attempt < maxAttempts) {
+      res = await $fetch<{
+        status: 'processed' | 'pending' | 'failed'
+        creditsAdded?: number
+        newBalance?: number | null
+        message?: string
+      }>('/api/credits/topup/claim', {
+        method: 'POST',
+        body: topupToken ? { token: topupToken } : {}
+      })
+
+      if (res.status !== 'pending') break
+      attempt += 1
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1500))
+      }
+    }
+
+    if (!res) return
 
     if (res.status === 'pending') {
       if (topupToken) {
@@ -440,6 +460,7 @@ async function claimTopupFromRoute() {
 }
 
 onMounted(async () => {
+  topupProgressReady.value = true
   await claimTopupFromRoute()
 })
 
@@ -828,7 +849,7 @@ onUnmounted(() => {
                 </p>
 
                 <div
-                  v-if="hasActiveMembership && topupOptionsPending && !topupOptionsTimedOut"
+                  v-if="topupProgressReady && hasActiveMembership && topupOptionsPending && !topupOptionsTimedOut"
                   class="space-y-2"
                 >
                   <div class="h-2 w-full overflow-hidden rounded bg-elevated">
