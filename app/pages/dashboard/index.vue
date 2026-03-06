@@ -64,8 +64,8 @@ const membershipState = computed(() => {
 const needsMembership = computed(() => membershipState.value !== 'active' && !isAdmin.value)
 
 const membershipCta = computed(() => {
-  if (membershipState.value === 'pending_checkout') return { label: 'Finish checkout', to: '/memberships' }
-  if (['none', 'canceled', 'past_due', 'inactive'].includes(membershipState.value)) return { label: 'Buy membership', to: '/memberships' }
+  if (membershipState.value === 'pending_checkout') return { label: 'Finish checkout', to: '/dashboard/memberships' }
+  if (['none', 'canceled', 'past_due', 'inactive'].includes(membershipState.value)) return { label: 'Buy membership', to: '/dashboard/memberships' }
   return { label: 'Manage membership', to: '/dashboard/membership' }
 })
 

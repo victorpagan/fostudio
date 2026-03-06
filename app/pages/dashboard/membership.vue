@@ -191,7 +191,7 @@ function goCheckout(tierId: string, cadence: string) {
 }
 
 function goMembershipSelector() {
-  router.push('/memberships?returnTo=/dashboard/membership&mode=switch')
+  router.push('/dashboard/memberships')
 }
 
 function formatLedgerReason(reason: string) {
