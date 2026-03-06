@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
   let query = supabase
     .from('credit_topup_sessions')
     .select('*')
-    .eq('status', 'pending')
+    .in('status', ['pending', 'expired'])
     .order('created_at', { ascending: false })
     .limit(body.limit)
 

@@ -22,6 +22,10 @@ type TopupSessionRow = {
   metadata?: Record<string, unknown> | null
 }
 
+function normalizeSessionStatus(status: string | null | undefined) {
+  return (status ?? '').toLowerCase().trim()
+}
+
 type ClaimDebug = {
   topupSessionId: string
   topupStatus: string
@@ -97,7 +101,9 @@ export default defineEventHandler(async (event) => {
       hasLedgerEntry: Boolean(topup.ledger_entry_id)
     }
 
-    if (topup.status === 'processed') {
+    const sessionStatus = normalizeSessionStatus(topup.status)
+
+    if (sessionStatus === 'processed') {
       const newBalance = await readBalance(supabase, user.sub)
       return {
         ok: true,
@@ -109,7 +115,7 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    if (topup.status === 'failed' || topup.status === 'expired') {
+    if (sessionStatus === 'failed') {
       return {
         ok: false,
         status: 'failed' as const,
@@ -158,9 +164,11 @@ export default defineEventHandler(async (event) => {
     baseDebug.paymentStatus = paymentState.paymentStatus
 
     if (!paymentState.completed) {
+      const nextStatus = sessionStatus === 'expired' ? 'expired' : 'pending'
       await db
         .from('credit_topup_sessions')
         .update({
+          status: nextStatus,
           metadata: {
             ...(topup.metadata ?? {}),
             last_claim_status: 'pending_order_not_completed',
@@ -274,7 +282,7 @@ export default defineEventHandler(async (event) => {
     .from('credit_topup_sessions')
     .select('*')
     .eq('user_id', user.sub)
-    .eq('status', 'pending')
+    .in('status', ['pending', 'expired'])
     .order('created_at', { ascending: false })
     .limit(10)
 

@@ -3,7 +3,10 @@ import type { CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from
 
 const open = ref(false)
 const route = useRoute()
+const router = useRouter()
 const { isAdmin } = useCurrentUser()
+const topupRecoveryRunning = useState<boolean>('topup-recovery-running', () => false)
+const lastTopupRecoveryAt = useState<number>('topup-recovery-last-at', () => 0)
 
 const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
   ? [
@@ -117,6 +120,67 @@ const groups = computed<CommandPaletteGroup[]>(() => [{
   label: 'Go to',
   items: searchItems.value
 }])
+
+function readQueryString(value: unknown) {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (Array.isArray(value)) {
+    const first = value.find(item => typeof item === 'string' && item.trim())
+    if (typeof first === 'string' && first.trim()) return first.trim()
+  }
+  return null
+}
+
+async function recoverPendingTopups() {
+  if (import.meta.server || topupRecoveryRunning.value) return
+  if (!route.path.startsWith('/dashboard')) return
+  if (route.path.startsWith('/dashboard/membership')) return
+
+  const topupToken = readQueryString(route.query.topup)
+  const orderId = readQueryString(route.query.orderId) ?? readQueryString(route.query.order_id)
+
+  if (!topupToken && Date.now() - lastTopupRecoveryAt.value < 20_000) return
+
+  topupRecoveryRunning.value = true
+  lastTopupRecoveryAt.value = Date.now()
+
+  let shouldClearTopupQuery = false
+  try {
+    const res = await $fetch<{ status?: string }>('/api/credits/topup/claim', {
+      method: 'POST',
+      body: topupToken
+        ? { token: topupToken, orderId: orderId ?? undefined }
+        : {}
+    })
+
+    const status = (res?.status ?? '').toLowerCase()
+    if (topupToken && (status === 'processed' || status === 'failed')) {
+      shouldClearTopupQuery = true
+    }
+  } catch {
+    // Silent by design for global background recovery checks.
+  } finally {
+    topupRecoveryRunning.value = false
+    if (shouldClearTopupQuery && route.query.topup) {
+      const nextQuery = { ...route.query }
+      delete nextQuery.topup
+      delete nextQuery.orderId
+      delete nextQuery.order_id
+      await router.replace({ query: nextQuery })
+    }
+  }
+}
+
+onMounted(() => {
+  void recoverPendingTopups()
+})
+
+watch(
+  () => route.fullPath,
+  () => {
+    if (import.meta.client) void recoverPendingTopups()
+  },
+  { immediate: true }
+)
 </script>
 
 <template>

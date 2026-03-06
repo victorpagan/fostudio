@@ -408,9 +408,6 @@ async function claimTopupFromRoute() {
           ? { token: topupToken, orderId: topupOrderId ?? undefined }
           : {}
       })
-
-
-        console.log('asdf', res)
       if (res.status !== 'pending') break
       attempt += 1
       if (attempt < maxAttempts) {
