@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
+import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
 
 const bodySchema = z.object({
   token: z.string().uuid().optional()
@@ -16,6 +17,7 @@ type TopupSessionRow = {
   payment_link_id: string | null
   order_template_id: string | null
   ledger_entry_id: string | null
+  created_at?: string | null
   metadata?: Record<string, unknown> | null
 }
 
@@ -24,6 +26,8 @@ type ClaimDebug = {
   topupStatus: string
   orderId: string | null
   orderState: string | null
+  paymentId: string | null
+  paymentStatus: string | null
   hasLedgerEntry: boolean
 }
 
@@ -87,6 +91,8 @@ export default defineEventHandler(async (event) => {
       topupStatus: topup.status,
       orderId: topup.order_template_id,
       orderState: null,
+      paymentId: null,
+      paymentStatus: null,
       hasLedgerEntry: Boolean(topup.ledger_entry_id)
     }
 
@@ -141,18 +147,24 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    const orderRes = await square.orders.get({ orderId } as never)
-    const order = (orderRes as { order?: Record<string, unknown> | null }).order ?? null
-    const orderState = readString(order, 'state')?.toUpperCase()
-    baseDebug.orderState = orderState ?? null
-    if (orderState !== 'COMPLETED') {
+    const paymentState = await resolveOrderPaymentState({
+      square,
+      orderId,
+      beginTime: topup.created_at ?? null
+    })
+    baseDebug.orderState = paymentState.orderState
+    baseDebug.paymentId = paymentState.paymentId
+    baseDebug.paymentStatus = paymentState.paymentStatus
+
+    if (!paymentState.completed) {
       await db
         .from('credit_topup_sessions')
         .update({
           metadata: {
             ...(topup.metadata ?? {}),
             last_claim_status: 'pending_order_not_completed',
-            last_claim_order_state: orderState ?? null,
+            last_claim_order_state: paymentState.orderState,
+            last_claim_payment_status: paymentState.paymentStatus,
             last_claim_order_id: orderId,
             last_claim_at: new Date().toISOString()
           }
@@ -163,7 +175,7 @@ export default defineEventHandler(async (event) => {
         ok: false,
         status: 'pending' as const,
         message: 'Top-up payment is not completed yet.',
-        orderState: orderState ?? null,
+        orderState: paymentState.orderState ?? null,
         sessionId: topup.id,
         debug: baseDebug
       }
@@ -279,6 +291,8 @@ export default defineEventHandler(async (event) => {
         topupStatus: 'none',
         orderId: null,
         orderState: null,
+        paymentId: null,
+        paymentStatus: null,
         hasLedgerEntry: false
       } as ClaimDebug
     }
@@ -298,6 +312,8 @@ export default defineEventHandler(async (event) => {
       topupStatus: 'pending',
       orderId: null,
       orderState: null,
+      paymentId: null,
+      paymentStatus: null,
       hasLedgerEntry: false
     } as ClaimDebug
   }

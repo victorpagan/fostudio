@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { useSquareClient } from '~~/server/utils/square'
+import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
 
 const bodySchema = z.object({
   userId: z.string().uuid().optional(),
@@ -17,6 +18,7 @@ type TopupSessionRow = {
   payment_link_id: string | null
   order_template_id: string | null
   ledger_entry_id: string | null
+  created_at?: string | null
   metadata?: Record<string, unknown> | null
 }
 
@@ -64,10 +66,12 @@ export default defineEventHandler(async (event) => {
         continue
       }
 
-      const orderRes = await square.orders.get({ orderId } as never)
-      const order = (orderRes as { order?: Record<string, unknown> | null }).order ?? null
-      const orderState = readString(order, 'state')?.toUpperCase()
-      if (orderState !== 'COMPLETED') {
+      const paymentState = await resolveOrderPaymentState({
+        square,
+        orderId,
+        beginTime: row.created_at ?? null
+      })
+      if (!paymentState.completed) {
         stillPending += 1
         continue
       }

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { resolveMembershipBillingPeriod } from '~~/server/utils/square/billingPeriod'
+import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
 
 const bodySchema = z.object({
   token: z.string().uuid()
@@ -23,6 +24,7 @@ type CheckoutSessionRow = {
   square_customer_id: string | null
   square_subscription_id: string | null
   paid_at: string | null
+  created_at?: string | null
   claimed_by_user_id: string | null
   claimed_membership_id: string | null
 }
@@ -173,28 +175,36 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const orderRes = await square.orders.get({ orderId } as never)
-  const order = (orderRes as { order?: Record<string, unknown> | null }).order ?? null
-  const orderState = readString(order, 'state')?.toUpperCase()
+  const paymentState = await resolveOrderPaymentState({
+    square,
+    orderId,
+    beginTime: session.created_at ?? null
+  })
 
-  if (orderState !== 'COMPLETED') {
+  if (!paymentState.completed) {
     return {
       ok: false,
       pending: true,
       membershipStatus: 'pending_checkout',
       returnTo,
-      message: 'Payment is not completed yet. Please refresh in a moment.'
+      message: 'Payment is not completed yet. Please refresh in a moment.',
+      orderState: paymentState.orderState,
+      paymentStatus: paymentState.paymentStatus
     }
   }
 
-  const squareCustomerId = readString(order, 'customerId', 'customer_id') ?? session.square_customer_id
+  const squareCustomerId = paymentState.paymentCustomerId
+    ?? paymentState.orderCustomerId
+    ?? session.square_customer_id
   if (!squareCustomerId) {
     return {
       ok: false,
       pending: true,
       membershipStatus: 'pending_checkout',
       returnTo,
-      message: 'Payment completed, but customer sync is still in progress. Please try again shortly.'
+      message: 'Payment completed, but customer sync is still in progress. Please try again shortly.',
+      orderState: paymentState.orderState,
+      paymentStatus: paymentState.paymentStatus
     }
   }
 
