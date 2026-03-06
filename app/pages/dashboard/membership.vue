@@ -152,7 +152,7 @@ const { data: tierCatalog } = await useAsyncData('dash:tierCatalog', async () =>
   return res?.tiers ?? []
 }, { watch: [showCatalog] })
 
-const { data: topupOptions, refresh: refreshTopupOptions } = await useAsyncData('dash:membership:topup-options', async () => {
+const { data: topupOptions, refresh: refreshTopupOptions, pending: topupOptionsPending } = await useAsyncData('dash:membership:topup-options', async () => {
   if (!user.value || !hasActiveMembership.value) return []
   const res = await $fetch<{ options: CreditTopupOption[] }>('/api/credits/topup/options')
   return res?.options ?? []
@@ -270,6 +270,70 @@ function formatPeakCredits(value: number | null | undefined) {
 
 const topupLoadingKey = ref<string | null>(null)
 const topupClaiming = ref(false)
+const topupOptionsTimedOut = ref(false)
+const topupOptionsProgress = ref(0)
+const TOPUP_OPTIONS_TIMEOUT_MS = 5000
+
+let topupOptionsTimeoutHandle: ReturnType<typeof setTimeout> | null = null
+let topupOptionsProgressHandle: ReturnType<typeof setInterval> | null = null
+
+function clearTopupOptionsLoadTimers() {
+  if (topupOptionsTimeoutHandle) {
+    clearTimeout(topupOptionsTimeoutHandle)
+    topupOptionsTimeoutHandle = null
+  }
+  if (topupOptionsProgressHandle) {
+    clearInterval(topupOptionsProgressHandle)
+    topupOptionsProgressHandle = null
+  }
+}
+
+function startTopupOptionsLoadTimers() {
+  clearTopupOptionsLoadTimers()
+  topupOptionsTimedOut.value = false
+  topupOptionsProgress.value = 8
+
+  topupOptionsProgressHandle = setInterval(() => {
+    topupOptionsProgress.value = Math.min(topupOptionsProgress.value + 6, 92)
+  }, 220)
+
+  topupOptionsTimeoutHandle = setTimeout(() => {
+    topupOptionsTimedOut.value = true
+    topupOptionsProgress.value = 100
+    if (topupOptionsProgressHandle) {
+      clearInterval(topupOptionsProgressHandle)
+      topupOptionsProgressHandle = null
+    }
+  }, TOPUP_OPTIONS_TIMEOUT_MS)
+}
+
+watch([hasActiveMembership, topupOptionsPending], ([active, pending]) => {
+  if (!active) {
+    clearTopupOptionsLoadTimers()
+    topupOptionsTimedOut.value = false
+    topupOptionsProgress.value = 0
+    return
+  }
+
+  if (pending) {
+    startTopupOptionsLoadTimers()
+    return
+  }
+
+  clearTopupOptionsLoadTimers()
+  if ((topupOptions.value?.length ?? 0) > 0) {
+    topupOptionsTimedOut.value = false
+    topupOptionsProgress.value = 100
+  }
+}, { immediate: true })
+
+watch(topupOptions, (options) => {
+  if ((options?.length ?? 0) > 0) {
+    clearTopupOptionsLoadTimers()
+    topupOptionsTimedOut.value = false
+    topupOptionsProgress.value = 100
+  }
+})
 
 async function refreshAll() {
   await Promise.all([
@@ -375,6 +439,10 @@ async function claimTopupFromRoute() {
 
 onMounted(async () => {
   await claimTopupFromRoute()
+})
+
+onUnmounted(() => {
+  clearTopupOptionsLoadTimers()
 })
 </script>
 
@@ -757,7 +825,25 @@ onMounted(async () => {
                   Need extra credit capacity this month? Purchase top-ups instantly.
                 </p>
 
-                <div class="grid gap-2 sm:grid-cols-2">
+                <div
+                  v-if="hasActiveMembership && topupOptionsPending && !topupOptionsTimedOut"
+                  class="space-y-2"
+                >
+                  <div class="h-2 w-full overflow-hidden rounded bg-elevated">
+                    <div
+                      class="h-full bg-primary transition-[width] duration-200"
+                      :style="{ width: `${topupOptionsProgress}%` }"
+                    />
+                  </div>
+                  <div class="text-xs text-dimmed">
+                    Loading available top-up options…
+                  </div>
+                </div>
+
+                <div
+                  v-if="topupOptions?.length"
+                  class="grid gap-2 sm:grid-cols-2"
+                >
                   <div
                     v-for="option in topupOptions ?? []"
                     :key="option.key"
@@ -808,7 +894,7 @@ onMounted(async () => {
                   </div>
                 </div>
                 <div
-                  v-if="hasActiveMembership && !(topupOptions?.length)"
+                  v-if="hasActiveMembership && !(topupOptions?.length) && (!topupOptionsPending || topupOptionsTimedOut)"
                   class="text-xs text-dimmed"
                 >
                   No credit top-up options are active right now.
