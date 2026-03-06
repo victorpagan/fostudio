@@ -278,6 +278,7 @@ let topupOptionsTimeoutHandle: ReturnType<typeof setTimeout> | null = null
 let topupOptionsProgressHandle: ReturnType<typeof setInterval> | null = null
 
 function clearTopupOptionsLoadTimers() {
+  if (import.meta.server) return
   if (topupOptionsTimeoutHandle) {
     clearTimeout(topupOptionsTimeoutHandle)
     topupOptionsTimeoutHandle = null
@@ -289,6 +290,7 @@ function clearTopupOptionsLoadTimers() {
 }
 
 function startTopupOptionsLoadTimers() {
+  if (import.meta.server) return
   clearTopupOptionsLoadTimers()
   topupOptionsTimedOut.value = false
   topupOptionsProgress.value = 8
