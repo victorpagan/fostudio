@@ -17,6 +17,10 @@ const faqs = [
     answer: 'Credits still release month by month. Even if you are billed quarterly or annually, the usable credit balance is added on a monthly schedule so it stays predictable.'
   },
   {
+    question: 'When does a membership upgrade or downgrade take effect?',
+    answer: 'Plan changes are scheduled to your next billing cycle. We do not apply prorated mid-cycle membership changes. Your current plan stays active until the cycle rolls over.'
+  },
+  {
     question: 'What makes the studio production-ready?',
     answer: 'The space is built around a 25x30 ft cyclorama with 20+ ft ceilings, a makeup area, client seating/staging space, and layout flexibility for small-to-mid-size teams.'
   },

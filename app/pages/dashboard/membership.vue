@@ -13,6 +13,7 @@ type MembershipRow = {
   cadence: string | null
   status: string | null
   created_at: string | null
+  current_period_end: string | null
   square_plan_variation_id: string | null
 }
 
@@ -71,12 +72,30 @@ type CatalogTier = {
   membership_plan_variations: PlanVariation[]
 }
 
+type SubscriptionState = {
+  hasManagedSubscription: boolean
+  currentPeriodEnd: string | null
+  pendingSwap: {
+    actionId: string | null
+    effectiveDate: string | null
+    target: {
+      tier: string | null
+      cadence: string | null
+      displayName: string | null
+    } | null
+  } | null
+  pendingCancel: {
+    actionId: string | null
+    effectiveDate: string | null
+  } | null
+}
+
 // ── Current membership ─────────────────────────────────────────────────────
 const { data: membership, refresh } = await useAsyncData('dash:membership', async () => {
   if (!user.value) return null
   const { data, error } = await supabase
     .from('memberships')
-    .select('id, tier, cadence, status, created_at, square_plan_variation_id')
+    .select('id, tier, cadence, status, created_at, current_period_end, square_plan_variation_id')
     .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
@@ -147,10 +166,14 @@ const { data: ledger, refresh: refreshLedger } = await useAsyncData('dash:member
 }, { watch: [user, membershipState] })
 
 const { data: tierCatalog } = await useAsyncData('dash:tierCatalog', async () => {
-  if (!showCatalog.value) return []
   const res = await $fetch<{ tiers: CatalogTier[] }>('/api/membership/catalog')
   return res?.tiers ?? []
-}, { watch: [showCatalog] })
+}, { watch: [user] })
+
+const { data: subscriptionState, refresh: refreshSubscriptionState } = await useAsyncData('dash:membership:subscription-state', async () => {
+  if (!user.value || !hasActiveMembership.value) return null
+  return await $fetch<SubscriptionState>('/api/membership/subscription-state')
+}, { watch: [user, membershipState] })
 
 const { data: topupOptions, refresh: refreshTopupOptions, pending: topupOptionsPending } = await useAsyncData('dash:membership:topup-options', async () => {
   if (!user.value || !hasActiveMembership.value) return []
@@ -168,7 +191,7 @@ function goCheckout(tierId: string, cadence: string) {
 }
 
 function goMembershipSelector() {
-  router.push('/memberships?returnTo=/dashboard/membership')
+  router.push('/memberships?returnTo=/dashboard/membership&mode=switch')
 }
 
 function formatLedgerReason(reason: string) {
@@ -266,6 +289,13 @@ function formatStatus(status: string | null | undefined) {
   return status || '—'
 }
 
+function formatDateLabel(value: string | null | undefined) {
+  if (!value) return null
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return null
+  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 function formatPeakCredits(value: number | null | undefined) {
   if (typeof value !== 'number' || Number.isNaN(value)) return '—'
   if (Number.isInteger(value)) return value.toString()
@@ -273,6 +303,8 @@ function formatPeakCredits(value: number | null | undefined) {
 }
 
 const topupLoadingKey = ref<string | null>(null)
+const membershipCancelLoading = ref(false)
+const membershipUndoCancelLoading = ref(false)
 const topupClaiming = ref(false)
 const topupOptionsTimedOut = ref(false)
 const topupOptionsProgress = ref(0)
@@ -347,10 +379,87 @@ async function refreshAll() {
     refresh(),
     refreshTier(),
     refreshVariations(),
+    refreshSubscriptionState(),
     refreshBalance(),
     refreshLedger(),
     refreshTopupOptions()
   ])
+}
+
+async function schedulePlanChange(tierId: string, cadence: string) {
+  try {
+    const res = await $fetch<{
+      effectiveDate: string | null
+      target: { displayName: string, cadence: string }
+      message: string
+    }>('/api/membership/change-plan', {
+      method: 'POST',
+      body: { tier: tierId, cadence }
+    })
+    const effective = formatDateLabel(res.effectiveDate) ?? 'your next billing cycle'
+    toast.add({
+      title: 'Plan change scheduled',
+      description: `${res.target.displayName} (${formatCadence(res.target.cadence)}) starts ${effective}.`,
+      color: 'success'
+    })
+    await refreshAll()
+  } catch (error: unknown) {
+    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+    toast.add({
+      title: 'Could not schedule plan change',
+      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error',
+      color: 'error'
+    })
+  }
+}
+
+async function cancelMembershipAtPeriodEnd() {
+  if (membershipCancelLoading.value) return
+  membershipCancelLoading.value = true
+  try {
+    const res = await $fetch<{ effectiveDate: string | null }>('/api/membership/cancel', {
+      method: 'POST'
+    })
+    const effective = formatDateLabel(res.effectiveDate) ?? 'the end of your current billing cycle'
+    toast.add({
+      title: 'Cancellation scheduled',
+      description: `Your membership remains active until ${effective}.`,
+      color: 'warning'
+    })
+    await refreshAll()
+  } catch (error: unknown) {
+    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+    toast.add({
+      title: 'Could not schedule cancellation',
+      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error',
+      color: 'error'
+    })
+  } finally {
+    membershipCancelLoading.value = false
+  }
+}
+
+async function undoMembershipCancellation() {
+  if (membershipUndoCancelLoading.value) return
+  membershipUndoCancelLoading.value = true
+  try {
+    await $fetch('/api/membership/cancel-undo', { method: 'POST' })
+    toast.add({
+      title: 'Cancellation removed',
+      description: 'Your membership will continue as normal.',
+      color: 'success'
+    })
+    await refreshAll()
+  } catch (error: unknown) {
+    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+    toast.add({
+      title: 'Could not remove cancellation',
+      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error',
+      color: 'error'
+    })
+  } finally {
+    membershipUndoCancelLoading.value = false
+  }
 }
 
 async function startTopup(optionKey: string) {
@@ -696,6 +805,22 @@ onUnmounted(() => {
             :title="membershipState === 'past_due' ? 'Payment past due' : 'Membership inactive'"
             description="Please update your payment method or contact support."
           />
+          <UAlert
+            v-if="subscriptionState?.pendingSwap"
+            color="info"
+            variant="soft"
+            icon="i-lucide-calendar-sync"
+            :title="`Plan change scheduled${subscriptionState?.pendingSwap?.target?.displayName ? `: ${subscriptionState.pendingSwap.target.displayName}` : ''}`"
+            :description="`This change takes effect on ${formatDateLabel(subscriptionState.pendingSwap.effectiveDate) ?? 'your next billing cycle'}.`"
+          />
+          <UAlert
+            v-if="subscriptionState?.pendingCancel"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-calendar-x"
+            :title="'Cancellation scheduled'"
+            :description="`Your membership remains active through ${formatDateLabel(subscriptionState.pendingCancel.effectiveDate) ?? 'the current billing cycle end'}.`"
+          />
 
           <!-- Plan summary -->
           <div class="grid gap-4 md:grid-cols-2">
@@ -786,6 +911,9 @@ onUnmounted(() => {
               <div class="text-sm font-medium">
                 Other billing options for {{ tier?.display_name }}
               </div>
+              <p class="text-xs text-dimmed">
+                Membership changes are scheduled for your next billing cycle. No prorated mid-cycle membership changes.
+              </p>
               <div class="grid gap-2 sm:grid-cols-3">
                 <div
                   v-for="v in variations"
@@ -820,9 +948,10 @@ onUnmounted(() => {
                     size="xs"
                     class="mt-2"
                     variant="soft"
-                    @click="goCheckout(membership?.tier ?? 'creator', v.cadence)"
+                    :disabled="Boolean(subscriptionState?.pendingCancel)"
+                    @click="schedulePlanChange(membership?.tier ?? 'creator', v.cadence)"
                   >
-                    Switch to {{ formatCadence(v.cadence) }}
+                    Schedule {{ formatCadence(v.cadence) }}
                   </UButton>
                 </div>
               </div>
@@ -834,6 +963,9 @@ onUnmounted(() => {
             <div class="text-sm font-medium mb-3">
               Manage membership
             </div>
+            <p class="mb-3 text-xs text-dimmed">
+              Upgrades and downgrades take effect on the next billing cycle.
+            </p>
             <div class="flex flex-wrap gap-2">
               <UButton
                 color="neutral"
@@ -846,14 +978,26 @@ onUnmounted(() => {
               <UButton
                 color="neutral"
                 variant="ghost"
-                icon="i-lucide-external-link"
-                to="/contact?topic=billing"
+                icon="i-lucide-rotate-ccw"
+                :loading="membershipUndoCancelLoading"
+                :disabled="!subscriptionState?.pendingCancel || membershipCancelLoading || membershipUndoCancelLoading"
+                @click="undoMembershipCancellation"
               >
-                Manage billing (Square)
+                Undo cancel
+              </UButton>
+              <UButton
+                color="warning"
+                variant="soft"
+                icon="i-lucide-calendar-x"
+                :loading="membershipCancelLoading"
+                :disabled="Boolean(subscriptionState?.pendingCancel) || membershipCancelLoading || membershipUndoCancelLoading"
+                @click="cancelMembershipAtPeriodEnd"
+              >
+                Cancel at period end
               </UButton>
             </div>
             <p class="mt-3 text-xs text-dimmed">
-              Billing is managed via Square. Contact us to cancel or change your plan. Cancellations take effect at the end of your billing cycle.
+              Plan and cancellation actions are synchronized with Square. If your subscription status looks out of sync, refresh this page or contact support.
             </p>
           </UCard>
 

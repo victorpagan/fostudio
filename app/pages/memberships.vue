@@ -29,6 +29,10 @@ const returnTo = computed(() => {
   if (typeof value === 'string' && value.startsWith('/')) return value
   return '/dashboard'
 })
+const isPlanSwitchMode = computed(() => {
+  const mode = route.query.mode
+  return typeof mode === 'string' && mode.toLowerCase() === 'switch'
+})
 
 const { user } = useCurrentUser()
 
@@ -95,7 +99,8 @@ function tierHighlights(tier: Tier) {
 }
 
 function checkoutUrl(tierId: string) {
-  return `/checkout?tier=${encodeURIComponent(tierId)}&returnTo=${encodeURIComponent(returnTo.value)}`
+  const base = `/checkout?tier=${encodeURIComponent(tierId)}&returnTo=${encodeURIComponent(returnTo.value)}`
+  return isPlanSwitchMode.value ? `${base}&mode=switch` : base
 }
 
 function onSelectTier(tierId: string) {
@@ -109,6 +114,14 @@ function onSelectTier(tierId: string) {
       <div class="grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)] lg:items-end">
         <div class="space-y-5">
           <span class="studio-kicker">Memberships</span>
+          <UBadge
+            v-if="isPlanSwitchMode"
+            color="warning"
+            variant="soft"
+            class="w-fit"
+          >
+            Change mode: next billing cycle
+          </UBadge>
           <div class="max-w-3xl space-y-4">
             <h1 class="studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-7xl">
               Pick the studio rhythm that fits the way you actually work.
@@ -149,6 +162,9 @@ function onSelectTier(tierId: string) {
             <p>The space is 24/7 access with a 25x30 ft cyc, 20+ ft ceilings, makeup area, client seating, and props for product or fashion sessions.</p>
             <p>You can upgrade or downgrade as your workload changes. Priority booking and equipment holds scale with the plan level.</p>
             <p>Memberships are intentionally limited so the calendar stays usable for everyone.</p>
+            <p v-if="isPlanSwitchMode">
+              When changing an active membership, the new plan takes effect on your next billing cycle. Mid-cycle prorated membership changes are not applied.
+            </p>
           </div>
         </div>
       </div>
@@ -244,7 +260,7 @@ function onSelectTier(tierId: string) {
             block
             @click="onSelectTier(tier.id)"
           >
-            Choose {{ tier.display_name }}
+            {{ isPlanSwitchMode ? `Change to ${tier.display_name}` : `Choose ${tier.display_name}` }}
           </UButton>
         </div>
 

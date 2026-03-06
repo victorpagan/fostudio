@@ -18,6 +18,7 @@ type Tier = {
 const route = useRoute()
 const router = useRouter()
 const user = useSupabaseUser()
+const toast = useToast()
 const loading = ref(false)
 const errorMsg = ref<string | null>(null)
 const selectedCadence = ref<Cadence>('monthly')
@@ -38,6 +39,11 @@ const queryCadence = computed<Cadence | null>(() => {
   const queryValue = (route.query.cadence as string | undefined)?.toLowerCase()
   if (queryValue === 'monthly' || queryValue === 'quarterly' || queryValue === 'annual') return queryValue
   return null
+})
+const isPlanSwitchMode = computed(() => {
+  const mode = route.query.mode
+  if (typeof mode !== 'string') return false
+  return mode.toLowerCase() === 'switch'
 })
 
 const returnTo = computed(() => {
@@ -84,6 +90,41 @@ async function beginCheckout() {
     if (!selectedTier.value || !selectedPlan.value) {
       errorMsg.value = 'This membership option is not available right now.'
       loading.value = false
+      return
+    }
+
+    if (isPlanSwitchMode.value) {
+      if (!user.value) {
+        errorMsg.value = 'Sign in to schedule a membership change.'
+        loading.value = false
+        return
+      }
+
+      const res = await $fetch<{
+        ok: boolean
+        effectiveDate: string | null
+        target: {
+          displayName: string
+          cadence: Cadence
+        }
+        message: string
+      }>('/api/membership/change-plan', {
+        method: 'POST',
+        body: {
+          tier: selectedTier.value.id,
+          cadence: selectedPlan.value.cadence
+        }
+      })
+
+      const effective = res.effectiveDate
+        ? new Date(res.effectiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : 'the next billing cycle'
+      toast.add({
+        title: 'Plan change scheduled',
+        description: `${res.target.displayName} (${formatCadence(res.target.cadence)}) will start ${effective}.`,
+        color: 'success'
+      })
+      await router.push(returnTo.value)
       return
     }
 
@@ -170,7 +211,7 @@ function savingsVsMonthlyCents(option: PlanOption) {
     <div class="mx-auto max-w-3xl space-y-4">
       <div class="flex items-center gap-3">
         <h1 class="text-3xl font-semibold tracking-tight">
-          Finalize your membership
+          {{ isPlanSwitchMode ? 'Schedule plan change' : 'Finalize your membership' }}
         </h1>
         <UBadge
           v-if="isTestTier"
@@ -189,6 +230,23 @@ function savingsVsMonthlyCents(option: PlanOption) {
         variant="soft"
         icon="i-lucide-circle-alert"
         :title="errorMsg"
+      />
+
+      <UAlert
+        v-if="isPlanSwitchMode"
+        color="neutral"
+        variant="soft"
+        icon="i-lucide-calendar-clock"
+        title="Changes apply at the next billing cycle"
+        description="Upgrades and downgrades are scheduled to your next billing renewal date. We do not apply prorated mid-cycle membership changes."
+      />
+      <UAlert
+        v-if="isPlanSwitchMode && !user"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-log-in"
+        title="Sign in required"
+        :description="`Sign in before scheduling membership changes.`"
       />
 
       <UCard>
@@ -237,7 +295,7 @@ function savingsVsMonthlyCents(option: PlanOption) {
           </div>
 
           <div
-            v-if="!user"
+            v-if="!isPlanSwitchMode && !user"
             class="rounded-xl border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] p-3 space-y-2"
           >
             <div class="text-sm font-medium">
@@ -328,19 +386,27 @@ function savingsVsMonthlyCents(option: PlanOption) {
           />
 
           <div
-            v-else
+            v-else-if="!isPlanSwitchMode"
             class="mt-3 text-sm text-dimmed"
           >
             You’ll be redirected to Square’s secure checkout to complete payment. After payment, you’ll create or sign in to your account to finish activation.
+          </div>
+          <div
+            v-else
+            class="mt-3 text-sm text-dimmed"
+          >
+            Confirming here schedules your plan change with Square for your next billing cycle.
           </div>
 
           <div class="mt-4 flex gap-2">
             <UButton
               :loading="loading"
-              :disabled="loading || !selectedPlan || (!user && !guestEmail.trim())"
+              :disabled="loading || !selectedPlan || (!user && isPlanSwitchMode) || (!isPlanSwitchMode && !user && !guestEmail.trim())"
               @click="beginCheckout"
             >
-              {{ isTestTier ? 'Activate test membership' : 'Continue to secure checkout' }}
+              {{ isPlanSwitchMode
+                ? 'Schedule plan change'
+                : (isTestTier ? 'Activate test membership' : 'Continue to secure checkout') }}
             </UButton>
             <UButton
               color="neutral"
