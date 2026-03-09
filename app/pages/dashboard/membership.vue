@@ -921,13 +921,15 @@ async function claimHoldTopupFromRoute() {
 
 onMounted(async () => {
   dashboardHydrated.value = true
-  await ensureTopupOptionsLoaded({ force: true, attempts: 4 })
   await router.isReady()
+  await refreshAll()
+  await ensureTopupOptionsLoaded({ force: true, attempts: 4 })
   await claimTopupFromRoute()
   await claimHoldTopupFromRoute()
 })
 
 onActivated(() => {
+  void refreshAll()
   void ensureTopupOptionsLoaded({ force: true, attempts: 3 })
 })
 
