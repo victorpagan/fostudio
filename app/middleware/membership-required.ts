@@ -35,7 +35,21 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   const status = (data?.status ?? '').toLowerCase()
 
-  if (status !== 'active') {
+  if (status === 'active') return
+
+  const { data: balanceRow, error: balanceErr } = await supabase
+    .from('credit_balance')
+    .select('balance')
+    .eq('user_id', user.value.sub)
+    .maybeSingle()
+
+  if (balanceErr) {
+    console.error('[membership-required] credit_balance error:', balanceErr.message)
+    return navigateTo(`/memberships?returnTo=${encodeURIComponent(to.fullPath)}&reason=error`)
+  }
+
+  const remainingCredits = Number(balanceRow?.balance ?? 0)
+  if (remainingCredits <= 0) {
     return navigateTo(`/memberships?returnTo=${encodeURIComponent(to.fullPath)}`)
   }
 })

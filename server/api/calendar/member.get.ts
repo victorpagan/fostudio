@@ -40,14 +40,26 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
-  if (!membership || (membership.status || '').toLowerCase() !== 'active') {
+
+  const { data: balanceRow, error: balanceErr } = await supabase
+    .from('credit_balance')
+    .select('balance')
+    .eq('user_id', user.sub)
+    .maybeSingle()
+
+  if (balanceErr) throw createError({ statusCode: 500, statusMessage: balanceErr.message })
+  const remainingCredits = Number(balanceRow?.balance ?? 0)
+
+  const hasActiveMembership = (membership?.status || '').toLowerCase() === 'active'
+  const canBookFromCredits = remainingCredits > 0
+  if (!hasActiveMembership && !canBookFromCredits) {
     throw createError({ statusCode: 403, statusMessage: 'Membership required' })
   }
 
   const { data: tierRow, error: tierErr } = await supabase
     .from('membership_tiers')
     .select('booking_window_days,peak_multiplier')
-    .eq('id', membership.tier)
+    .eq('id', membership?.tier ?? '')
     .maybeSingle()
 
   if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })

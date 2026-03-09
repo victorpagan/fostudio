@@ -82,7 +82,17 @@ export default defineEventHandler(async (event) => {
       .eq('user_id', user.sub)
       .maybeSingle()
 
-    if (!membership || membership.status !== 'active') {
+    const { data: balanceRow } = await supabase
+      .from('credit_balance')
+      .select('balance')
+      .eq('user_id', user.sub)
+      .maybeSingle()
+    const remainingCredits = Number(balanceRow?.balance ?? 0)
+
+    const hasActiveMembership = (membership?.status ?? '').toLowerCase() === 'active'
+    const canBookFromCredits = remainingCredits > 0
+
+    if (!membership || (!hasActiveMembership && !canBookFromCredits)) {
       // Fall back to guest pricing if no active membership
       mode = 'guest'
     } else {

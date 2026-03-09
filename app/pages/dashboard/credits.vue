@@ -62,7 +62,7 @@ const { data: membership } = await useAsyncData('dash:credits:membership', async
 const hasActiveMembership = computed(() => (membership.value?.status ?? '').toLowerCase() === 'active')
 
 const { data: balance, refresh: refreshBalance } = await useAsyncData('dash:credits:balance', async () => {
-  if (!user.value || !hasActiveMembership.value) return 0
+  if (!user.value) return 0
   const { data, error } = await supabase
     .from('credit_balance')
     .select('balance')
@@ -73,7 +73,7 @@ const { data: balance, refresh: refreshBalance } = await useAsyncData('dash:cred
 }, { watch: [user, hasActiveMembership] })
 
 const { data: ledger, refresh: refreshLedger } = await useAsyncData('dash:credits:ledger', async () => {
-  if (!user.value || !hasActiveMembership.value) return []
+  if (!user.value) return []
   const { data, error } = await supabase
     .from('credits_ledger')
     .select('id,delta,reason,external_ref,created_at,metadata')
@@ -85,13 +85,13 @@ const { data: ledger, refresh: refreshLedger } = await useAsyncData('dash:credit
 }, { watch: [user, hasActiveMembership] })
 
 const { data: topupOptions, refresh: refreshTopupOptions, pending: topupOptionsPending } = await useAsyncData('dash:credits:topups', async () => {
-  if (!user.value || !hasActiveMembership.value) return []
+  if (!user.value) return []
   const res = await $fetch<{ options: CreditTopupOption[] }>('/api/credits/topup/options')
   return res?.options ?? []
 }, { watch: [user, hasActiveMembership] })
 
 const { data: creditSummary, refresh: refreshCreditSummary } = await useAsyncData('dash:credits:summary', async () => {
-  if (!user.value || !hasActiveMembership.value) return null
+  if (!user.value) return null
   const res = await $fetch<{ summary: CreditSummary | null }>('/api/credits/summary')
   return res.summary
 }, { watch: [user, hasActiveMembership] })
@@ -353,10 +353,10 @@ watch(
             variant="soft"
             icon="i-lucide-badge-x"
             title="No active membership"
-            description="Credit top-ups are available while your membership is active."
+            description="You can still use unexpired credits, but top-up purchases are locked until membership is active."
           />
 
-          <template v-else>
+          <template>
             <UCard>
               <div class="space-y-3">
                 <div class="flex items-center justify-between gap-2">
@@ -460,10 +460,10 @@ watch(
                 </div>
 
                 <div
-                  v-else-if="!canBuyTopoff"
+                  v-else-if="!canBuyTopoff || !hasActiveMembership"
                   class="text-sm text-dimmed"
                 >
-                  Top-off purchases are currently unavailable for this account state.
+                  Top-off purchases are currently unavailable without an active membership.
                 </div>
 
                 <div

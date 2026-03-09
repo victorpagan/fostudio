@@ -23,30 +23,40 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
 
-  if (!membership || (membership.status ?? '').toLowerCase() !== 'active') {
-    return { summary: null }
+  const hasActiveMembership = Boolean(membership && (membership.status ?? '').toLowerCase() === 'active')
+
+  if (hasActiveMembership) {
+    try {
+      await db.rpc('process_due_membership_credit_grants', {
+        p_limit: 24
+      })
+    } catch (error) {
+      console.error('[credits-summary] grant refresh failed', error)
+    }
   }
 
-  try {
-    await db.rpc('process_due_membership_credit_grants', {
-      p_limit: 24
-    })
-  } catch (error) {
-    console.error('[credits-summary] grant refresh failed', error)
-  }
+  let tierRow: { max_bank?: number, credit_expiry_days?: number, topoff_credit_expiry_days?: number } | null = null
+  let tierErr: { message: string } | null = null
 
-  let { data: tierRow, error: tierErr } = await db
-    .from('membership_tiers')
-    .select('max_bank,credit_expiry_days,topoff_credit_expiry_days')
-    .eq('id', membership.tier)
-    .maybeSingle()
-
-  if (tierErr && isSchemaMissingColumnError(tierErr.message)) {
-    const fallback = await db
+  if (membership?.tier) {
+    const tierRes = await db
       .from('membership_tiers')
-      .select('max_bank')
+      .select('max_bank,credit_expiry_days,topoff_credit_expiry_days')
       .eq('id', membership.tier)
       .maybeSingle()
+
+    tierRow = tierRes.data
+    tierErr = tierRes.error
+  }
+
+  if (tierErr && isSchemaMissingColumnError(tierErr.message)) {
+    const fallback = membership?.tier
+      ? await db
+          .from('membership_tiers')
+          .select('max_bank')
+          .eq('id', membership.tier)
+          .maybeSingle()
+      : { data: null, error: null }
     tierRow = fallback.data
     tierErr = fallback.error
   }
@@ -61,7 +71,7 @@ export default defineEventHandler(async (event) => {
 
   const summary = computeCreditBucketSummary(ledgerRows ?? [])
   const maxBank = Number(tierRow?.max_bank ?? 0)
-  const canBuyTopoff = true
+  const canBuyTopoff = hasActiveMembership
   const overCap = maxBank > 0 && summary.bankBalance > maxBank
   const atCap = maxBank > 0 && summary.bankBalance >= maxBank
 

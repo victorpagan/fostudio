@@ -27,7 +27,20 @@ const { data: bookingPolicy } = await useAsyncData('book:policy', async () => {
   return await $fetch<BookingPolicy>('/api/bookings/policy')
 })
 const { data: holdSummary, refresh: refreshHoldSummary } = await useAsyncData('book:hold-summary', async () => {
-  return await $fetch<HoldSummary>('/api/holds/summary')
+  try {
+    return await $fetch<HoldSummary>('/api/holds/summary')
+  } catch {
+    return {
+      holdsIncluded: 0,
+      activeHolds: 0,
+      holdsUsedThisCycle: 0,
+      cycleStartIso: null,
+      cycleEndIso: null,
+      paidHoldBalance: 0,
+      includedHoldsRemaining: 0,
+      canRequestHoldNow: false
+    } as HoldSummary
+  }
 })
 const memberRescheduleNoticeHours = computed(() => Number(bookingPolicy.value?.memberRescheduleNoticeHours ?? 24))
 const holdCreditCost = computed(() => Number(bookingPolicy.value?.holdCreditCost ?? 2))

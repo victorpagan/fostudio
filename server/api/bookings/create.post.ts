@@ -63,7 +63,7 @@ export default defineEventHandler(async (event) => {
   if (holdCreditCostErr) throw createError({ statusCode: 500, statusMessage: holdCreditCostErr.message })
   const holdCreditCost = Math.max(0, Number(holdCreditCostRow?.value ?? 2))
 
-  // Membership active + tier id
+  // Membership + tier id
   const { data: membership, error: memErr } = await supabase
     .from('memberships')
     .select('status,tier,current_period_start,current_period_end')
@@ -71,7 +71,20 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
-  if (!membership || (membership.status || '').toLowerCase() !== 'active') {
+  if (!membership) {
+    throw createError({ statusCode: 403, statusMessage: 'Membership required' })
+  }
+
+  const { data: balanceRow, error: balanceErr } = await supabase
+    .from('credit_balance')
+    .select('balance')
+    .eq('user_id', user.sub)
+    .maybeSingle()
+  if (balanceErr) throw createError({ statusCode: 500, statusMessage: balanceErr.message })
+
+  const remainingCredits = Number(balanceRow?.balance ?? 0)
+  const hasActiveMembership = (membership.status || '').toLowerCase() === 'active'
+  if (!hasActiveMembership && remainingCredits <= 0) {
     throw createError({ statusCode: 403, statusMessage: 'Membership required' })
   }
 
