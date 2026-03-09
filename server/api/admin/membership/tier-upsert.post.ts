@@ -117,7 +117,7 @@ function normalizeTierItemObject(
     itemData: {
       ...itemData,
       name: itemData.name ?? `${displayName} membership`,
-      productType: 'DIGITAL_PRODUCT',
+      productType: 'REGULAR',
       isTaxable: false,
       variations: updatedVariations
     }
