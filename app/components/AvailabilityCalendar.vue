@@ -198,7 +198,10 @@ const calendarOptions = computed(() => ({
   timeZone: 'America/Los_Angeles',
   selectable: canSelect.value,
   validRange: memberValidRange.value,
-  selectOverlap: false,
+  selectOverlap: (event: { display: string, classNames?: string[] }) => {
+    // Allow selecting over visual-only peak shading; keep real booking/hold overlaps blocked.
+    return event.display === 'background' && (event.classNames ?? []).includes('fc-peak-window')
+  },
   selectAllow: (selectionInfo: { start: Date, end: Date }) => {
     if (!isMemberFeed.value || !bookingWindowDays.value) return true
     const maxStart = new Date(Date.now() + bookingWindowDays.value * 24 * 60 * 60 * 1000)
