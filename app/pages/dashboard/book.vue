@@ -6,6 +6,7 @@ const router = useRouter()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const { isAdmin } = useCurrentUser()
+const currentUserId = computed(() => user.value?.sub ?? user.value?.id ?? null)
 type BookingPolicy = {
   memberRescheduleNoticeHours: number
   holdCreditCost: number
@@ -115,13 +116,13 @@ const creditBalance = ref<number>(0)
 const calendarKey = ref(0)
 
 async function refreshCreditBalance() {
-  if (!user.value?.id) return
+  if (!currentUserId.value) return
   balanceLoading.value = true
   try {
     const { data, error } = await supabase
       .from('credit_balance')
       .select('balance')
-      .eq('user_id', user.value.id)
+      .eq('user_id', currentUserId.value)
       .maybeSingle()
 
     if (error) throw error
