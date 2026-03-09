@@ -3,6 +3,8 @@ import { DateTime } from 'luxon'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { isAdminRole, readUserRole } from '~~/server/utils/auth'
 import type { RoleCarrier } from '~~/server/utils/auth'
+import { computeOvernightHoldWindow } from '~~/server/utils/booking/holds'
+import { loadPeakWindowConfig } from '~~/server/utils/booking/peak'
 
 const bodySchema = z.object({
   start_time: z.string().datetime(),
@@ -23,6 +25,7 @@ export default defineEventHandler(async (event) => {
   const role = readUserRole(user as RoleCarrier)
   const isAdmin = isAdminRole(role)
   const supabase = serverSupabaseServiceRole(event)
+  const peakWindow = await loadPeakWindowConfig(event)
 
   const nextStart = DateTime.fromISO(body.start_time)
   const nextEnd = DateTime.fromISO(body.end_time)
@@ -74,6 +77,17 @@ export default defineEventHandler(async (event) => {
 
   const startIso = nextStart.toUTC().toISO()
   const endIso = nextEnd.toUTC().toISO()
+  if (!startIso || !endIso) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
+  }
+
+  const { data: linkedHolds, error: linkedHoldsErr } = await supabase
+    .from('booking_holds')
+    .select('id')
+    .eq('booking_id', bookingId)
+
+  if (linkedHoldsErr) throw createError({ statusCode: 500, statusMessage: linkedHoldsErr.message })
+  const hasLinkedHold = (linkedHolds?.length ?? 0) > 0
 
   const { data: bookingConflicts, error: bookingConflictErr } = await supabase
     .from('bookings')
@@ -92,6 +106,7 @@ export default defineEventHandler(async (event) => {
   const { data: holdConflicts, error: holdErr } = await supabase
     .from('booking_holds')
     .select('id')
+    .neq('booking_id', bookingId)
     .lt('hold_start', endIso)
     .gt('hold_end', startIso)
     .limit(1)
@@ -114,6 +129,45 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: 'Requested time conflicts with a studio block' })
   }
 
+  let nextHoldStartIso: string | null = null
+  let nextHoldEndIso: string | null = null
+  if (hasLinkedHold) {
+    const holdWindow = computeOvernightHoldWindow(nextEnd, peakWindow.startHour)
+    nextHoldStartIso = holdWindow.holdStartIso
+    nextHoldEndIso = holdWindow.holdEndIso
+
+    if (!nextHoldStartIso || !nextHoldEndIso) {
+      throw createError({ statusCode: 400, statusMessage: 'Invalid hold window' })
+    }
+
+    const { data: holdBookingConflicts, error: holdBookingErr } = await supabase
+      .from('bookings')
+      .select('id')
+      .neq('id', bookingId)
+      .in('status', ['confirmed', 'requested', 'pending_payment'])
+      .lt('start_time', nextHoldEndIso)
+      .gt('end_time', nextHoldStartIso)
+      .limit(1)
+
+    if (holdBookingErr) throw createError({ statusCode: 500, statusMessage: holdBookingErr.message })
+    if (holdBookingConflicts && holdBookingConflicts.length > 0) {
+      throw createError({ statusCode: 409, statusMessage: 'Rescheduled hold conflicts with another booking' })
+    }
+
+    const { data: holdWindowConflicts, error: holdWindowErr } = await supabase
+      .from('booking_holds')
+      .select('id')
+      .neq('booking_id', bookingId)
+      .lt('hold_start', nextHoldEndIso)
+      .gt('hold_end', nextHoldStartIso)
+      .limit(1)
+
+    if (holdWindowErr) throw createError({ statusCode: 500, statusMessage: holdWindowErr.message })
+    if (holdWindowConflicts && holdWindowConflicts.length > 0) {
+      throw createError({ statusCode: 409, statusMessage: 'Rescheduled hold conflicts with an existing hold' })
+    }
+  }
+
   const { data: updated, error: updateErr } = await supabase
     .from('bookings')
     .update({
@@ -127,5 +181,18 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (updateErr) throw createError({ statusCode: 500, statusMessage: updateErr.message })
-  return { booking: updated }
+
+  if (hasLinkedHold && nextHoldStartIso && nextHoldEndIso) {
+    const { error: holdUpdateErr } = await supabase
+      .from('booking_holds')
+      .update({
+        hold_start: nextHoldStartIso,
+        hold_end: nextHoldEndIso
+      })
+      .eq('booking_id', bookingId)
+
+    if (holdUpdateErr) throw createError({ statusCode: 500, statusMessage: holdUpdateErr.message })
+  }
+
+  return { booking: updated, holdUpdated: hasLinkedHold }
 })

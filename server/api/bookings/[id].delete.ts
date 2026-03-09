@@ -66,6 +66,13 @@ export default defineEventHandler(async (event) => {
 
   // 5. Cancel the booking (service role needed for ledger insert)
   const serviceSupabase = serverSupabaseServiceRole(event)
+  const { data: linkedHolds, error: holdFetchErr } = await serviceSupabase
+    .from('booking_holds')
+    .select('id')
+    .eq('booking_id', bookingId)
+
+  if (holdFetchErr) throw createError({ statusCode: 500, statusMessage: holdFetchErr.message })
+  const holdsRemoved = linkedHolds?.length ?? 0
 
   const { error: cancelErr } = await serviceSupabase
     .from('bookings')
@@ -76,6 +83,14 @@ export default defineEventHandler(async (event) => {
     .eq('id', bookingId)
 
   if (cancelErr) throw createError({ statusCode: 500, statusMessage: cancelErr.message })
+
+  if (holdsRemoved > 0) {
+    const { error: holdDeleteErr } = await serviceSupabase
+      .from('booking_holds')
+      .delete()
+      .eq('booking_id', bookingId)
+    if (holdDeleteErr) throw createError({ statusCode: 500, statusMessage: holdDeleteErr.message })
+  }
 
   // 6. Refund credits if eligible
   if (creditsToRefund > 0) {
@@ -104,6 +119,7 @@ export default defineEventHandler(async (event) => {
     ok: true,
     bookingId,
     status: 'canceled',
+    holdsRemoved,
     creditsRefunded: creditsToRefund,
     eligible_for_refund: eligibleForRefund,
     hours_until_start: Math.round(hoursUntilStart * 10) / 10

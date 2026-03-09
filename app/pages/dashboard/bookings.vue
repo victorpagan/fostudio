@@ -20,6 +20,12 @@ type Booking = {
   notes: string | null
   credits_burned: number | null
   created_at: string
+  booking_holds?: {
+    id: string
+    hold_start: string
+    hold_end: string
+    hold_type: string
+  }[] | null
 }
 
 type PlanOption = {
@@ -69,7 +75,7 @@ const { data: upcoming, refresh: refreshUpcoming } = await useAsyncData('booking
   if (!user.value || !hasMembership.value) return []
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, start_time, end_time, status, notes, credits_burned, created_at')
+    .select('id, start_time, end_time, status, notes, credits_burned, created_at, booking_holds(id,hold_start,hold_end,hold_type)')
     .eq('user_id', user.value.sub)
     .gte('start_time', nowIso.value)
     .in('status', ['confirmed', 'requested'])
@@ -83,7 +89,7 @@ const { data: past, refresh: refreshPast } = await useAsyncData('bookings:past',
   if (!user.value || !hasMembership.value) return []
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, start_time, end_time, status, notes, credits_burned, created_at')
+    .select('id, start_time, end_time, status, notes, credits_burned, created_at, booking_holds(id,hold_start,hold_end,hold_type)')
     .eq('user_id', user.value.sub)
     .lt('start_time', nowIso.value)
     .order('start_time', { ascending: false })
@@ -114,6 +120,7 @@ async function refreshAll() {
 }
 
 const cancellingId = ref<string | null>(null)
+const holdCancellingId = ref<string | null>(null)
 const cancelConfirmOpen = ref(false)
 const cancelTarget = ref<Booking | null>(null)
 const reschedulingId = ref<string | null>(null)
@@ -151,13 +158,42 @@ async function cancelBooking(id: string) {
   }
 }
 
+async function cancelBookingHold(id: string) {
+  holdCancellingId.value = id
+  try {
+    const result = await $fetch<{
+      ok: boolean
+      holdsRemoved: number
+      holdReturned: number
+      eligible_for_hold_return: boolean
+      hours_until_start: number | null
+      message?: string
+    }>(`/api/bookings/${id}/hold`, { method: 'DELETE' })
+
+    const msg = result.holdReturned > 0
+      ? `${result.holdReturned} hold token${result.holdReturned === 1 ? '' : 's'} returned.`
+      : result.message ?? 'Hold removed.'
+
+    toast.add({ title: 'Hold updated', description: msg, color: 'success' })
+    await refreshUpcoming()
+    if (cancelTarget.value?.id === id && !cancellingId.value) {
+      closeCancelConfirm()
+    }
+  } catch (error: unknown) {
+    const maybe = error as { data?: { statusMessage?: string }, message?: string }
+    toast.add({ title: 'Could not cancel hold', description: maybe.data?.statusMessage ?? maybe.message ?? 'Error', color: 'error' })
+  } finally {
+    holdCancellingId.value = null
+  }
+}
+
 function openCancelConfirm(booking: Booking) {
   cancelTarget.value = booking
   cancelConfirmOpen.value = true
 }
 
 function closeCancelConfirm() {
-  if (cancellingId.value) return
+  if (cancellingId.value || holdCancellingId.value) return
   cancelConfirmOpen.value = false
   cancelTarget.value = null
 }
@@ -245,6 +281,23 @@ function formatStatus(status: string) {
 
 function canCancel(booking: Booking) {
   return booking.status === 'confirmed' && new Date(booking.start_time).getTime() > new Date(nowIso.value).getTime()
+}
+
+function hasHold(booking: Booking) {
+  return (booking.booking_holds?.length ?? 0) > 0
+}
+
+function canCancelHoldOnly(booking: Booking) {
+  const status = String(booking.status ?? '').toLowerCase()
+  if (!['confirmed', 'requested', 'pending_payment'].includes(status)) return false
+  if (!hasHold(booking)) return false
+  return new Date(booking.start_time).getTime() > new Date(nowIso.value).getTime()
+}
+
+function holdRangeLabel(booking: Booking) {
+  const hold = booking.booking_holds?.[0]
+  if (!hold) return null
+  return formatRange(hold.hold_start, hold.hold_end)
 }
 
 function isRefundEligible(booking: Booking) {
@@ -610,6 +663,15 @@ watch(
                       <span v-if="booking.credits_burned"> · {{ booking.credits_burned }} credits</span>
                     </p>
                     <p
+                      v-if="hasHold(booking)"
+                      class="mt-1 text-xs text-amber-600 dark:text-amber-400"
+                    >
+                      Overnight hold attached
+                      <span v-if="holdRangeLabel(booking)">
+                        · {{ holdRangeLabel(booking)?.timeStr }}
+                      </span>
+                    </p>
+                    <p
                       v-if="booking.notes"
                       class="mt-1.5 text-xs text-dimmed italic truncate max-w-sm"
                     >
@@ -630,6 +692,20 @@ watch(
                         @click="openReschedule(booking)"
                       >
                         Reschedule
+                      </UButton>
+                    </UTooltip>
+                    <UTooltip
+                      v-if="canCancelHoldOnly(booking)"
+                      :text="isRefundEligible(booking) ? 'Cancel hold only · hold token can be returned' : 'Cancel hold only · no hold return (< 24h)'"
+                    >
+                      <UButton
+                        size="sm"
+                        color="warning"
+                        variant="soft"
+                        :loading="holdCancellingId === booking.id"
+                        @click="cancelBookingHold(booking.id)"
+                      >
+                        Cancel hold
                       </UButton>
                     </UTooltip>
                     <UTooltip
@@ -826,6 +902,13 @@ watch(
               icon="i-lucide-info"
               :description="isRefundEligible(cancelTarget) ? 'Cancellation is outside 24h, credits are expected to be refunded.' : 'Cancellation is inside 24h, credits are typically not refunded.'"
             />
+            <UAlert
+              v-if="hasHold(cancelTarget)"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-package"
+              :description="isRefundEligible(cancelTarget) ? 'A hold is attached. You can cancel just the hold and return a hold token, or cancel the full booking.' : 'A hold is attached. Within 24h, hold tokens are forfeited when a hold is canceled.'"
+            />
           </div>
 
           <template #footer>
@@ -833,14 +916,25 @@ watch(
               <UButton
                 color="neutral"
                 variant="soft"
-                :disabled="Boolean(cancellingId)"
+                :disabled="Boolean(cancellingId) || Boolean(holdCancellingId)"
                 @click="closeCancelConfirm"
               >
                 Keep booking
               </UButton>
               <UButton
+                v-if="cancelTarget && canCancelHoldOnly(cancelTarget)"
+                color="warning"
+                variant="soft"
+                :loading="Boolean(holdCancellingId)"
+                :disabled="Boolean(cancellingId)"
+                @click="cancelBookingHold(cancelTarget.id)"
+              >
+                Cancel hold only
+              </UButton>
+              <UButton
                 color="error"
                 :loading="Boolean(cancellingId)"
+                :disabled="Boolean(holdCancellingId)"
                 @click="confirmCancel"
               >
                 Confirm cancel
