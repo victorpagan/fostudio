@@ -284,7 +284,28 @@ export default defineEventHandler(async (event) => {
 
   if (customerBySquare) {
     if (customerBySquare.user_id && customerBySquare.user_id !== user.sub) {
-      throw createError({ statusCode: 409, statusMessage: 'This membership payment is already linked to another account.' })
+      const customerEmail = normalizeEmail(customerBySquare.email)
+      const canAttemptTransfer = Boolean(accountEmail && customerEmail && accountEmail === customerEmail)
+
+      if (!canAttemptTransfer) {
+        throw createError({ statusCode: 409, statusMessage: 'This membership payment is already linked to another account.' })
+      }
+
+      const { data: conflictingMembership, error: conflictingMembershipErr } = await supabase
+        .from('memberships')
+        .select('id,status')
+        .eq('user_id', customerBySquare.user_id)
+        .in('status', ['active', 'past_due', 'pending_checkout'])
+        .limit(1)
+        .maybeSingle()
+
+      if (conflictingMembershipErr) {
+        throw createError({ statusCode: 500, statusMessage: conflictingMembershipErr.message })
+      }
+
+      if (conflictingMembership) {
+        throw createError({ statusCode: 409, statusMessage: 'This membership payment is already linked to another account.' })
+      }
     }
 
     const customerPatch: Record<string, unknown> = { user_id: user.sub }
