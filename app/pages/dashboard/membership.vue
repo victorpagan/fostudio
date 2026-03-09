@@ -144,7 +144,23 @@ const { data: tier, refresh: refreshTier } = await useAsyncData('dash:tier', asy
     .eq('id', membership.value.tier)
     .maybeSingle()
   if (error) throw error
-  return data as TierRow | null
+
+  if (data) return data as TierRow
+
+  // Fallback to API catalog view if direct table read does not return the row
+  // (for example, visibility/RLS differences or transient sync timing).
+  const res = await $fetch<{ tiers: CatalogTier[] }>('/api/membership/catalog')
+  const catalogTier = (res.tiers ?? []).find(row => row.id === membership.value?.tier) ?? null
+  if (!catalogTier) return null
+
+  return {
+    display_name: catalogTier.display_name,
+    description: catalogTier.description ?? null,
+    booking_window_days: catalogTier.booking_window_days,
+    peak_multiplier: catalogTier.peak_multiplier,
+    max_bank: catalogTier.max_bank,
+    holds_included: catalogTier.holds_included
+  } as TierRow
 }, { watch: [membership] })
 
 const { data: variations, refresh: refreshVariations } = await useAsyncData('dash:variations', async () => {
@@ -157,7 +173,13 @@ const { data: variations, refresh: refreshVariations } = await useAsyncData('das
     .eq('active', true)
     .order('sort_order', { ascending: true })
   if (error) throw error
-  return (data ?? []) as PlanVariation[]
+
+  if ((data ?? []).length > 0) return (data ?? []) as PlanVariation[]
+
+  const res = await $fetch<{ tiers: CatalogTier[] }>('/api/membership/catalog')
+  const catalogTier = (res.tiers ?? []).find(row => row.id === membership.value?.tier) ?? null
+  if (!catalogTier) return []
+  return (catalogTier.membership_plan_variations ?? []) as PlanVariation[]
 }, { watch: [membership] })
 
 function getDiscountLabel(label?: string | null) {
