@@ -48,14 +48,11 @@ const { data: promoRows, refresh, pending } = await useAsyncData('admin:promos',
 })
 
 const promos = computed(() => promoRows.value ?? [])
-const { data: tierRows } = await useAsyncData('admin:promo:tiers', async () => {
+const { data: tierRows, pending: tiersPending, error: tiersError } = await useAsyncData('admin:promo:tiers', async () => {
   const res = await $fetch<{ tiers: TierOption[] }>('/api/admin/membership/tiers')
   return res.tiers ?? []
 })
-const tierItems = computed(() => (tierRows.value ?? []).map(tier => ({
-  label: tier.display_name,
-  value: tier.id
-})))
+const tierOptions = computed(() => tierRows.value ?? [])
 
 function readErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Unknown error'
@@ -290,15 +287,44 @@ function formatPromoAppliesTo(promo: PromoCode) {
                 label="Membership tiers"
                 class="md:col-span-2"
               >
-                <USelectMenu
-                  v-model="form.appliesTierIds"
-                  multiple
-                  class="w-full"
-                  :items="tierItems"
-                  placeholder="All membership tiers"
-                  value-key="value"
-                  label-key="label"
-                />
+                <div class="rounded-lg border border-default p-3">
+                  <div
+                    v-if="tiersPending"
+                    class="text-xs text-dimmed"
+                  >
+                    Loading tiers...
+                  </div>
+                  <div
+                    v-else-if="tiersError"
+                    class="text-xs text-error"
+                  >
+                    Could not load tiers.
+                  </div>
+                  <div
+                    v-else-if="!tierOptions.length"
+                    class="text-xs text-dimmed"
+                  >
+                    No tiers found.
+                  </div>
+                  <div
+                    v-else
+                    class="grid gap-2 md:grid-cols-2"
+                  >
+                    <UCheckbox
+                      v-for="tier in tierOptions"
+                      :key="tier.id"
+                      :model-value="form.appliesTierIds.includes(tier.id)"
+                      :label="tier.display_name"
+                      @update:model-value="(checked) => {
+                        if (checked) {
+                          if (!form.appliesTierIds.includes(tier.id)) form.appliesTierIds.push(tier.id)
+                        } else {
+                          form.appliesTierIds = form.appliesTierIds.filter(id => id !== tier.id)
+                        }
+                      }"
+                    />
+                  </div>
+                </div>
               </UFormField>
               <UFormField label="Description" class="md:col-span-2">
                 <UInput v-model="form.description" placeholder="Spring campaign promo" />
