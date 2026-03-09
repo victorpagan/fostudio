@@ -23,6 +23,19 @@ function normPhone(phone?: string | null) {
   return p.length ? p : null
 }
 
+async function canTransferCustomerOwnership(supa: any, fromUserId: string) {
+  const { data, error } = await supa
+    .from('memberships')
+    .select('id,status')
+    .eq('user_id', fromUserId)
+    .in('status', ['active', 'past_due', 'pending_checkout'])
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw createError({ statusCode: 500, statusMessage: `Membership ownership check failed: ${error.message}` })
+  return !data
+}
+
 async function searchSquareCustomerId(event: H3Event, email: string | null, phone: string | null) {
   const square = await useSquareClient(event)
 
@@ -129,7 +142,10 @@ export default defineEventHandler(async (event) => {
       const candidate = rows?.[0]
       if (candidate) {
         if (candidate.user_id && candidate.user_id !== user.sub) {
-          throw createError({ statusCode: 409, statusMessage: 'This email is already linked to another account.' })
+          const transferable = await canTransferCustomerOwnership(supa, candidate.user_id)
+          if (!transferable) {
+            throw createError({ statusCode: 409, statusMessage: 'This email is already linked to another account.' })
+          }
         }
         customerRow = candidate
       }
@@ -149,7 +165,10 @@ export default defineEventHandler(async (event) => {
       const candidate = rows?.[0]
       if (candidate) {
         if (candidate.user_id && candidate.user_id !== user.sub) {
-          throw createError({ statusCode: 409, statusMessage: 'This phone is already linked to another account.' })
+          const transferable = await canTransferCustomerOwnership(supa, candidate.user_id)
+          if (!transferable) {
+            throw createError({ statusCode: 409, statusMessage: 'This phone is already linked to another account.' })
+          }
         }
         customerRow = candidate
       }
@@ -175,7 +194,7 @@ export default defineEventHandler(async (event) => {
     customerRow = inserted
   } else {
     // 4) Ensure user_id is linked
-    if (!customerRow.user_id) {
+    if (!customerRow.user_id || customerRow.user_id !== user.sub) {
       const { error: linkErr } = await supa
         .from('customers')
         .update({ user_id: user.sub })
