@@ -237,7 +237,6 @@ export default defineEventHandler(async (event) => {
           locationId,
           referenceId: booking.id,
           customerId: guestSquareCustomerId ?? undefined,
-          buyerEmailAddress: body.guest_email,
           metadata: orderMetadata,
           lineItems: [
             {
@@ -281,8 +280,7 @@ export default defineEventHandler(async (event) => {
         locationId,
         referenceId: booking.id,
         customerId: guestSquareCustomerId ?? undefined,
-        metadata: orderMetadata,
-        buyerEmailAddress: body.guest_email
+        metadata: orderMetadata
       }
     }) as PaymentLinkResult
   }

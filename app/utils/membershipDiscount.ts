@@ -18,7 +18,7 @@ export function parseDiscountLabel(label: string | null | undefined): DiscountLa
   if (!raw) return { type: 'none', amount: '', rawLabel: '' }
 
   const percentMatch = raw.match(/(-?\d+(?:\.\d+)?)\s*%/)
-  if (percentMatch) {
+  if (percentMatch?.[1]) {
     return {
       type: 'percent',
       amount: percentMatch[1],
@@ -27,7 +27,7 @@ export function parseDiscountLabel(label: string | null | undefined): DiscountLa
   }
 
   const dollarMatch = raw.match(/\$\s*(-?\d+(?:\.\d+)?)/)
-  if (dollarMatch) {
+  if (dollarMatch?.[1]) {
     return {
       type: 'dollar',
       amount: dollarMatch[1],

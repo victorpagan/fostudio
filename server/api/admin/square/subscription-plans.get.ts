@@ -11,12 +11,15 @@ type SquareCatalogObject = {
   subscriptionPlanData?: {
     name?: string
     eligibleItemIds?: unknown
+    eligible_item_ids?: unknown
     subscriptionPlanVariations?: Array<{ id?: string }>
     subscription_plan_variations?: Array<{ id?: string }>
   }
   subscription_plan_data?: {
     name?: string
+    eligibleItemIds?: unknown
     eligible_item_ids?: unknown
+    subscriptionPlanVariations?: Array<{ id?: string }>
     subscription_plan_variations?: Array<{ id?: string }>
   }
 }
@@ -77,7 +80,7 @@ export default defineEventHandler(async (event) => {
     .map((object) => {
       const planData = object.subscriptionPlanData ?? object.subscription_plan_data
       const variationEntries = planData?.subscriptionPlanVariations ?? planData?.subscription_plan_variations ?? []
-      const variationIds = toStringArray(variationEntries.map(row => row?.id ?? ''))
+      const variationIds = toStringArray(variationEntries.map((row: { id?: string } | undefined) => row?.id ?? ''))
       const eligibleItemIds = toStringArray(planData?.eligibleItemIds ?? planData?.eligible_item_ids ?? [])
       return {
         id: object.id ?? '',

@@ -92,15 +92,15 @@ function parseDiscountLabel(label: string | null | undefined): DiscountShape | n
   if (!raw) return null
 
   const percentMatch = raw.match(/(-?\d+(?:\.\d+)?)\s*%/)
-  if (percentMatch) return { type: 'percent', amount: percentMatch[1] }
+  if (percentMatch?.[1]) return { type: 'percent', amount: percentMatch[1] }
 
   const percentWordMatch = raw.match(/(-?\d+(?:\.\d+)?)\s*(?:percent|pct|off)?$/i)
-  if (percentWordMatch && !raw.includes('$')) {
+  if (percentWordMatch?.[1] && !raw.includes('$')) {
     return { type: 'percent', amount: percentWordMatch[1] }
   }
 
   const dollarMatch = raw.match(/\$\s*(-?\d+(?:\.\d+)?)/)
-  if (dollarMatch) {
+  if (dollarMatch?.[1]) {
     return { type: 'dollar', amount: dollarMatch[1] }
   }
 
@@ -310,7 +310,7 @@ export default defineEventHandler(async (event) => {
         payload
       }
     })
-    .filter((item): item is { cadence: Cadence, payload: ReturnType<typeof buildDiscountObjectsPayload> } => Boolean(item))
+    .filter((item): item is { cadence: Cadence, payload: NonNullable<ReturnType<typeof buildDiscountObjectsPayload>> } => Boolean(item))
 
   for (const { cadence, payload } of discountPayloads) {
     const discountRes = await square.catalog.object.upsert({

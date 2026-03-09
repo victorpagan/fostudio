@@ -162,6 +162,39 @@ export type Database = {
           },
         ]
       }
+      calendar_blocks: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          end_time: string
+          id: string
+          reason: string | null
+          start_time: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          end_time: string
+          id?: string
+          reason?: string | null
+          start_time: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          end_time?: string
+          id?: string
+          reason?: string | null
+          start_time?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       cart_items: {
         Row: {
           cart_id: string | null
@@ -326,6 +359,78 @@ export type Database = {
           },
         ]
       }
+      credit_topup_sessions: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          credits: number
+          currency: string
+          id: string
+          ledger_entry_id: string | null
+          membership_id: string | null
+          metadata: Json | null
+          order_template_id: string | null
+          paid_at: string | null
+          payment_link_id: string | null
+          payment_provider: string
+          status: string
+          token: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount_cents: number
+          created_at?: string
+          credits: number
+          currency?: string
+          id?: string
+          ledger_entry_id?: string | null
+          membership_id?: string | null
+          metadata?: Json | null
+          order_template_id?: string | null
+          paid_at?: string | null
+          payment_link_id?: string | null
+          payment_provider?: string
+          status?: string
+          token: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string
+          credits?: number
+          currency?: string
+          id?: string
+          ledger_entry_id?: string | null
+          membership_id?: string | null
+          metadata?: Json | null
+          order_template_id?: string | null
+          paid_at?: string | null
+          payment_link_id?: string | null
+          payment_provider?: string
+          status?: string
+          token?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_topup_sessions_ledger_entry_id_fkey"
+            columns: ["ledger_entry_id"]
+            isOneToOne: false
+            referencedRelation: "credits_ledger"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credit_topup_sessions_membership_id_fkey"
+            columns: ["membership_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customers: {
         Row: {
           address: Json | null
@@ -417,6 +522,111 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hold_ledger: {
+        Row: {
+          created_at: string
+          delta: number
+          expires_at: string | null
+          external_ref: string | null
+          id: string
+          metadata: Json | null
+          reason: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          delta: number
+          expires_at?: string | null
+          external_ref?: string | null
+          id?: string
+          metadata?: Json | null
+          reason: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          delta?: number
+          expires_at?: string | null
+          external_ref?: string | null
+          id?: string
+          metadata?: Json | null
+          reason?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      hold_topup_sessions: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          currency: string
+          holds: number
+          id: string
+          ledger_entry_id: string | null
+          membership_id: string | null
+          metadata: Json | null
+          order_template_id: string | null
+          paid_at: string | null
+          payment_link_id: string | null
+          payment_provider: string
+          status: string
+          token: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount_cents: number
+          created_at?: string
+          currency?: string
+          holds: number
+          id?: string
+          ledger_entry_id?: string | null
+          membership_id?: string | null
+          metadata?: Json | null
+          order_template_id?: string | null
+          paid_at?: string | null
+          payment_link_id?: string | null
+          payment_provider?: string
+          status?: string
+          token: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string
+          currency?: string
+          holds?: number
+          id?: string
+          ledger_entry_id?: string | null
+          membership_id?: string | null
+          metadata?: Json | null
+          order_template_id?: string | null
+          paid_at?: string | null
+          payment_link_id?: string | null
+          payment_provider?: string
+          status?: string
+          token?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hold_topup_sessions_ledger_entry_id_fkey"
+            columns: ["ledger_entry_id"]
+            isOneToOne: false
+            referencedRelation: "hold_ledger"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hold_topup_sessions_membership_id_fkey"
+            columns: ["membership_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
             referencedColumns: ["id"]
           },
         ]
@@ -632,6 +842,62 @@ export type Database = {
           visible?: boolean
         }
         Relationships: []
+      }
+      membership_waitlist: {
+        Row: {
+          cadence: string | null
+          claimed_at: string | null
+          created_at: string
+          email: string
+          id: string
+          invited_at: string | null
+          is_priority_member: boolean
+          metadata: Json | null
+          phone: string | null
+          status: string
+          tier_id: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          cadence?: string | null
+          claimed_at?: string | null
+          created_at?: string
+          email: string
+          id?: string
+          invited_at?: string | null
+          is_priority_member?: boolean
+          metadata?: Json | null
+          phone?: string | null
+          status?: string
+          tier_id: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          cadence?: string | null
+          claimed_at?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          invited_at?: string | null
+          is_priority_member?: boolean
+          metadata?: Json | null
+          phone?: string | null
+          status?: string
+          tier_id?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "membership_waitlist_tier_id_fkey"
+            columns: ["tier_id"]
+            isOneToOne: false
+            referencedRelation: "membership_tiers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       memberships: {
         Row: {
@@ -1339,6 +1605,13 @@ export type Database = {
         Relationships: []
       }
       credit_balance: {
+        Row: {
+          balance: number | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      hold_balance: {
         Row: {
           balance: number | null
           user_id: string | null

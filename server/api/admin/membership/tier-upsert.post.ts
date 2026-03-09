@@ -73,7 +73,7 @@ function extractPlanEligibleItemIds(squareObject: unknown) {
   if (!squareObject || typeof squareObject !== 'object') return [] as string[]
   const objectValue = squareObject as {
     type?: string
-    subscriptionPlanData?: { eligibleItemIds?: unknown }
+    subscriptionPlanData?: { eligibleItemIds?: unknown, eligible_item_ids?: unknown }
     subscription_plan_data?: { eligibleItemIds?: unknown, eligible_item_ids?: unknown }
   }
   if (objectValue.type !== 'SUBSCRIPTION_PLAN') return []

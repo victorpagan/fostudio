@@ -60,7 +60,8 @@ function extractSquareErrorMessage(error: unknown) {
   return 'Square update failed'
 }
 
-function isSchemaMissingColumnError(message: string) {
+function isSchemaMissingColumnError(message?: string | null) {
+  if (!message) return false
   return /column .* does not exist/i.test(message) || /relation .* does not exist/i.test(message)
 }
 
@@ -79,7 +80,7 @@ function extractSquarePlanItemIds(squareObject: unknown) {
   if (!squareObject || typeof squareObject !== 'object') return [] as string[]
   const objectValue = squareObject as {
     type?: string
-    subscriptionPlanData?: { eligibleItemIds?: unknown }
+    subscriptionPlanData?: { eligibleItemIds?: unknown, eligible_item_ids?: unknown }
     subscription_plan_data?: { eligibleItemIds?: unknown, eligible_item_ids?: unknown }
   }
   if (objectValue.type !== 'SUBSCRIPTION_PLAN') return []
@@ -113,14 +114,13 @@ function extractSquareVariationPlanId(squareObject: unknown) {
   if (!squareObject || typeof squareObject !== 'object') return ''
   const objectValue = squareObject as {
     type?: string
-    subscriptionPlanVariationData?: { subscriptionPlanId?: unknown }
-    subscription_plan_variation_data?: { subscription_plan_id?: unknown }
+    subscriptionPlanVariationData?: { subscriptionPlanId?: unknown, subscription_plan_id?: unknown }
+    subscription_plan_variation_data?: { subscriptionPlanId?: unknown, subscription_plan_id?: unknown }
   }
   if (objectValue.type !== 'SUBSCRIPTION_PLAN_VARIATION') return ''
 
   const variationData = objectValue.subscriptionPlanVariationData ?? objectValue.subscription_plan_variation_data
-  const value = (variationData as { subscriptionPlanId?: unknown } | { subscription_plan_id?: unknown } | undefined)?.subscriptionPlanId
-    ?? (variationData as { subscription_plan_id?: unknown })?.subscription_plan_id
+  const value = variationData?.subscriptionPlanId ?? variationData?.subscription_plan_id
   return typeof value === 'string' ? value.trim() : ''
 }
 

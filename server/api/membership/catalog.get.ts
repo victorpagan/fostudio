@@ -44,6 +44,7 @@ export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
   const { isAdmin } = await resolveServerUserRole(event, user)
   const supabase = serverSupabaseServiceRole(event)
+  const db = supabase as any
 
   const selectWithDirectAccess = `
     id,
@@ -99,7 +100,7 @@ export default defineEventHandler(async (event) => {
   `
 
   const runQuery = async (includeDirectAccessOnly: boolean) => {
-    const query = supabase
+    const query = db
       .from('membership_tiers')
       .select(includeDirectAccessOnly ? selectWithDirectAccess : selectLegacy)
       .eq('active', true)
@@ -124,7 +125,7 @@ export default defineEventHandler(async (event) => {
       const directAccessOnly = Boolean(tier.direct_access_only)
       return tierVisible && !directAccessOnly
     })
-  const capMap = await getTierCapMap(supabase as any, baseTiers.map(tier => tier.id))
+  const capMap = await getTierCapMap(db, baseTiers.map(tier => tier.id))
 
   const tiers = baseTiers
     .map(t => ({

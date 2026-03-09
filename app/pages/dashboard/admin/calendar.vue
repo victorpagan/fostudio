@@ -431,7 +431,7 @@ async function cancelBookingFromHold(hold: AdminHold) {
                 Review and modify overnight holds linked to bookings.
               </div>
             </div>
-            <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-refresh-cw" @click="refreshHolds">
+            <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-refresh-cw" @click="() => refreshHolds()">
               Refresh holds
             </UButton>
           </div>
