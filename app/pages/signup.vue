@@ -76,6 +76,12 @@ const { data: checkoutSessionInfo } = await useAsyncData('signup:checkout-sessio
       tierDisplayName: string
       credits: number
       bookingWindowDays: number
+      contact?: {
+        email?: string | null
+        phone?: string | null
+        firstName?: string | null
+        lastName?: string | null
+      } | null
     }
   }>('/api/checkout/session-info', {
     query: { token: checkoutTokenFromReturnTo.value }
@@ -94,6 +100,7 @@ const tier = computed<TierId | null>(() => {
 
 const cadence = computed<Cadence | null>(() => checkoutSessionInfo.value?.cadence ?? selectedPlan.value.cadence ?? null)
 const hasPlanContext = computed(() => Boolean(tier.value && cadence.value))
+const isCheckoutLinkedSignup = computed(() => Boolean(checkoutTokenFromReturnTo.value && checkoutSessionInfo.value))
 
 const tierInfo = computed(() => {
   if (!tier.value) {
@@ -133,6 +140,15 @@ const form = reactive({
 const loading = ref(false)
 const errorMsg = ref<string | null>(null)
 const successMsg = ref<string | null>(null)
+
+watchEffect(() => {
+  const contact = checkoutSessionInfo.value?.contact
+  if (!contact) return
+  if (!form.email && contact.email) form.email = contact.email
+  if (!form.phone && contact.phone) form.phone = contact.phone
+  if (!form.firstName && contact.firstName) form.firstName = contact.firstName
+  if (!form.lastName && contact.lastName) form.lastName = contact.lastName
+})
 
 watchEffect(() => {
   // If already logged in, send them onward
@@ -268,13 +284,30 @@ async function handleSignup() {
           <UAlert v-if="errorMsg" color="error" variant="soft" :title="errorMsg" />
           <UAlert v-if="successMsg" color="success" variant="soft" :title="successMsg" />
 
-          <div class="grid gap-3 sm:grid-cols-2">
+          <div
+            v-if="isCheckoutLinkedSignup"
+            class="rounded-xl border border-gray-200/60 p-3 text-sm dark:border-gray-800/60"
+          >
+            <div class="font-medium">
+              Contact details from checkout
+            </div>
+            <div class="mt-2 space-y-1 text-gray-600 dark:text-gray-300">
+              <div><span class="text-gray-500 dark:text-gray-400">Email:</span> {{ form.email || 'Not provided' }}</div>
+              <div><span class="text-gray-500 dark:text-gray-400">Name:</span> {{ [form.firstName, form.lastName].filter(Boolean).join(' ') || 'Not provided' }}</div>
+              <div><span class="text-gray-500 dark:text-gray-400">Phone:</span> {{ form.phone || 'Not provided' }}</div>
+            </div>
+          </div>
+
+          <div
+            v-else
+            class="grid gap-3 sm:grid-cols-2"
+          >
             <UInput v-model="form.firstName" placeholder="First name" />
             <UInput v-model="form.lastName" placeholder="Last name" />
           </div>
 
-          <UInput v-model="form.phone" placeholder="Phone (optional)" />
-          <UInput v-model="form.email" type="email" placeholder="Email" />
+          <UInput v-if="!isCheckoutLinkedSignup" v-model="form.phone" placeholder="Phone (optional)" />
+          <UInput v-if="!isCheckoutLinkedSignup" v-model="form.email" type="email" placeholder="Email" />
           <UInput v-model="form.password" type="password" placeholder="Password" />
 
           <div class="text-xs text-gray-500 dark:text-gray-400">

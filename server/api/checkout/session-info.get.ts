@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: session, error: sessionErr } = await supabase
     .from('membership_checkout_sessions')
-    .select('token,tier,cadence,status,guest_email,created_at')
+    .select('token,tier,cadence,status,guest_email,created_at,square_customer_id')
     .eq('token', query.token)
     .maybeSingle()
 
@@ -35,17 +35,41 @@ export default defineEventHandler(async (event) => {
 
   if (variationErr) throw createError({ statusCode: 500, statusMessage: variationErr.message })
 
+  const guestEmail = (session.guest_email ?? '').trim().toLowerCase() || null
+  let customerQuery = supabase
+    .from('customers')
+    .select('email,phone,first_name,last_name')
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  if (session.square_customer_id) {
+    customerQuery = customerQuery.eq('square_customer_id', session.square_customer_id)
+  } else if (guestEmail) {
+    customerQuery = customerQuery.ilike('email', guestEmail)
+  } else {
+    customerQuery = customerQuery.eq('id', '__none__')
+  }
+
+  const { data: customer, error: customerErr } = await customerQuery.maybeSingle()
+  if (customerErr) throw createError({ statusCode: 500, statusMessage: customerErr.message })
+
   return {
     session: {
       token: session.token,
       tier: session.tier,
       cadence: session.cadence,
       status: session.status,
-      guestEmail: session.guest_email ?? null,
+      guestEmail,
       createdAt: session.created_at ?? null,
       tierDisplayName: tier?.display_name ?? session.tier,
       bookingWindowDays: Number(tier?.booking_window_days ?? 0),
-      credits: Number(variation?.credits_per_month ?? 0)
+      credits: Number(variation?.credits_per_month ?? 0),
+      contact: {
+        email: customer?.email ?? guestEmail ?? null,
+        phone: customer?.phone ?? null,
+        firstName: customer?.first_name ?? null,
+        lastName: customer?.last_name ?? null
+      }
     }
   }
 })
