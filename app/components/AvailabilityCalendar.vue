@@ -277,9 +277,9 @@ onMounted(() => loadEvents())
         </div>
         <div
           v-if="peakChip"
-          class="availability-chip"
+          class="availability-chip availability-chip-peak"
         >
-          <span class="availability-dot bg-[color:var(--gruv-rust)]" />
+          <span class="availability-dot bg-[color:var(--gruv-accent)]" />
           {{ peakChip }}
         </div>
         <div

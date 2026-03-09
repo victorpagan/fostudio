@@ -187,6 +187,12 @@ body {
   font-weight: 600;
 }
 
+.availability-chip-peak {
+  background: rgba(211, 134, 34, 0.16);
+  border: 1px solid rgba(211, 134, 34, 0.24);
+  color: var(--gruv-ink-1);
+}
+
 .availability-dot {
   width: 0.5rem;
   height: 0.5rem;
@@ -279,12 +285,29 @@ body {
 }
 
 .availability-shell .fc .fc-bg-event.fc-peak-window {
-  background: rgba(211, 134, 34, 0.16);
+  background:
+    linear-gradient(180deg, rgba(211, 134, 34, 0.2), rgba(211, 134, 34, 0.18)),
+    repeating-linear-gradient(
+      135deg,
+      rgba(211, 134, 34, 0.06) 0,
+      rgba(211, 134, 34, 0.06) 6px,
+      transparent 6px,
+      transparent 12px
+    );
   opacity: 1;
+  border-radius: 0;
 }
 
 .dark .availability-shell .fc .fc-bg-event.fc-peak-window {
-  background: rgba(250, 189, 47, 0.16);
+  background:
+    linear-gradient(180deg, rgba(250, 189, 47, 0.18), rgba(250, 189, 47, 0.16)),
+    repeating-linear-gradient(
+      135deg,
+      rgba(250, 189, 47, 0.08) 0,
+      rgba(250, 189, 47, 0.08) 6px,
+      transparent 6px,
+      transparent 12px
+    );
 }
 
 .availability-shell .fc .fc-event {
