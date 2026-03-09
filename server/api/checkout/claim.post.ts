@@ -28,6 +28,7 @@ type CheckoutSessionRow = {
   created_at?: string | null
   claimed_by_user_id: string | null
   claimed_membership_id: string | null
+  metadata: Record<string, unknown> | null
 }
 
 type MembershipStatus = 'active' | 'pending_checkout' | 'past_due' | 'canceled'
@@ -72,6 +73,43 @@ function mapSquareStatus(rawStatus: string | null): MembershipStatus {
   if (status === 'CANCELED' || status === 'CANCELLED') return 'canceled'
   if (status === 'PENDING') return 'pending_checkout'
   return 'past_due'
+}
+
+function readPromoId(metadata: Record<string, unknown> | null | undefined) {
+  const raw = metadata?.promo_id
+  if (typeof raw !== 'string') return null
+  const value = raw.trim()
+  return value || null
+}
+
+type PromoRedemptionRow = {
+  id: string
+  redemptions_count: number
+  max_redemptions: number | null
+}
+
+async function markPromoRedemption(supabase: any, promoId: string) {
+  const { data: promoRaw, error: promoErr } = await supabase
+    .from('promo_codes')
+    .select('id,redemptions_count,max_redemptions')
+    .eq('id', promoId)
+    .maybeSingle()
+
+  if (promoErr || !promoRaw) return
+  const promo = promoRaw as PromoRedemptionRow
+  const currentCount = Number(promo.redemptions_count ?? 0)
+  const maxRedemptions = typeof promo.max_redemptions === 'number' ? promo.max_redemptions : null
+  if (maxRedemptions !== null && currentCount >= maxRedemptions) return
+
+  const { error: updateErr } = await supabase
+    .from('promo_codes')
+    .update({ redemptions_count: currentCount + 1 })
+    .eq('id', promoId)
+    .eq('redemptions_count', currentCount)
+
+  if (updateErr) {
+    console.warn('[checkout-claim] failed to mark promo redemption', updateErr.message)
+  }
 }
 
 async function findLatestSubscription(
@@ -430,7 +468,22 @@ export default defineEventHandler(async (event) => {
         console.warn('[checkout-claim] failed to mark waitlist rows as claimed (email)', claimEmailErr.message)
       }
     }
+
+    const promoId = readPromoId(session.metadata)
+    if (promoId) {
+      await markPromoRedemption(supabase, promoId)
+    }
   }
+
+  const checkoutMetadata = (() => {
+    const base = (session.metadata && typeof session.metadata === 'object')
+      ? { ...session.metadata }
+      : {}
+    if (claimedMembership.status === 'active' && readPromoId(session.metadata)) {
+      base.promo_redeemed_at = nowIso
+    }
+    return Object.keys(base).length ? base : null
+  })()
 
   const { error: sessionUpdateErr } = await supabase
     .from('membership_checkout_sessions')
@@ -441,7 +494,8 @@ export default defineEventHandler(async (event) => {
       square_customer_id: squareCustomerId,
       square_subscription_id: subscriptionId ?? session.square_subscription_id,
       paid_at: session.paid_at ?? nowIso,
-      order_template_id: orderId
+      order_template_id: orderId,
+      metadata: checkoutMetadata as any
     })
     .eq('id', session.id)
 

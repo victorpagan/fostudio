@@ -13,6 +13,14 @@ type PromoCode = {
   ends_at: string | null
   max_redemptions: number | null
   redemptions_count: number
+  metadata?: {
+    applies_tier_ids?: string[]
+  } | null
+}
+
+type TierOption = {
+  id: string
+  display_name: string
 }
 
 const toast = useToast()
@@ -27,6 +35,7 @@ const form = reactive({
   discountType: 'percent' as 'percent' | 'fixed_cents',
   discountValue: 10,
   appliesTo: 'all' as 'all' | 'membership' | 'credits',
+  appliesTierIds: [] as string[],
   active: true,
   startsAt: null as string | null,
   endsAt: null as string | null,
@@ -39,6 +48,14 @@ const { data: promoRows, refresh, pending } = await useAsyncData('admin:promos',
 })
 
 const promos = computed(() => promoRows.value ?? [])
+const { data: tierRows } = await useAsyncData('admin:promo:tiers', async () => {
+  const res = await $fetch<{ tiers: TierOption[] }>('/api/admin/membership/tiers')
+  return res.tiers ?? []
+})
+const tierItems = computed(() => (tierRows.value ?? []).map(tier => ({
+  label: tier.display_name,
+  value: tier.id
+})))
 
 function readErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Unknown error'
@@ -73,6 +90,7 @@ function resetForm() {
   form.discountType = 'percent'
   form.discountValue = 10
   form.appliesTo = 'all'
+  form.appliesTierIds = []
   form.active = true
   form.startsAt = null
   form.endsAt = null
@@ -91,6 +109,9 @@ function loadPromo(promoId: string) {
     ? Number(promo.discount_value) / 100
     : Number(promo.discount_value)
   form.appliesTo = promo.applies_to
+  form.appliesTierIds = Array.isArray(promo.metadata?.applies_tier_ids)
+    ? promo.metadata!.applies_tier_ids!.map(id => String(id))
+    : []
   form.active = promo.active
   form.startsAt = promo.starts_at
   form.endsAt = promo.ends_at
@@ -119,6 +140,7 @@ async function savePromo() {
         discountType: form.discountType,
         discountValue: form.discountValue,
         appliesTo: form.appliesTo,
+        appliesTierIds: form.appliesTierIds,
         active: form.active,
         startsAt: form.startsAt,
         endsAt: form.endsAt,
@@ -160,6 +182,15 @@ async function deletePromo(id: string) {
 function formatPromoValue(promo: PromoCode) {
   if (promo.discount_type === 'percent') return `${promo.discount_value}%`
   return `$${(promo.discount_value / 100).toFixed(2)}`
+}
+
+function formatPromoAppliesTo(promo: PromoCode) {
+  if (promo.applies_to !== 'membership') return `Applies to ${promo.applies_to}`
+  const tierIds = Array.isArray(promo.metadata?.applies_tier_ids) ? promo.metadata!.applies_tier_ids! : []
+  if (!tierIds.length) return 'Applies to all memberships'
+  const tierMap = new Map((tierRows.value ?? []).map(tier => [tier.id, tier.display_name]))
+  const labels = tierIds.map(id => tierMap.get(id) ?? id)
+  return `Memberships: ${labels.join(', ')}`
 }
 </script>
 
@@ -220,7 +251,7 @@ function formatPromoValue(promo: PromoCode) {
                       color="neutral"
                       class="max-w-full whitespace-normal"
                     >
-                      Applies to {{ promo.applies_to }}
+                      {{ formatPromoAppliesTo(promo) }}
                     </UBadge>
                   </div>
                 </button>
@@ -252,6 +283,21 @@ function formatPromoValue(promo: PromoCode) {
                     { label: 'Membership', value: 'membership' },
                     { label: 'Credits', value: 'credits' }
                   ]"
+                />
+              </UFormField>
+              <UFormField
+                v-if="form.appliesTo === 'membership'"
+                label="Membership tiers"
+                class="md:col-span-2"
+              >
+                <USelectMenu
+                  v-model="form.appliesTierIds"
+                  multiple
+                  class="w-full"
+                  :items="tierItems"
+                  placeholder="All membership tiers"
+                  value-key="value"
+                  label-key="label"
                 />
               </UFormField>
               <UFormField label="Description" class="md:col-span-2">

@@ -8,6 +8,7 @@ const bodySchema = z.object({
   discountType: z.enum(['percent', 'fixed_cents']),
   discountValue: z.number().positive(),
   appliesTo: z.enum(['all', 'membership', 'credits']).default('all'),
+  appliesTierIds: z.array(z.string().min(1)).optional().default([]),
   active: z.boolean().default(true),
   startsAt: z.string().datetime().optional().nullable(),
   endsAt: z.string().datetime().optional().nullable(),
@@ -38,6 +39,9 @@ export default defineEventHandler(async (event) => {
     discount_type: body.discountType,
     discount_value: normalizedDiscountValue,
     applies_to: body.appliesTo,
+    metadata: {
+      applies_tier_ids: body.appliesTierIds
+    },
     active: body.active,
     starts_at: body.startsAt ?? null,
     ends_at: body.endsAt ?? null,

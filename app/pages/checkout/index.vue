@@ -30,6 +30,7 @@ const toast = useToast()
 const loading = ref(false)
 const waitlistSubmitting = ref(false)
 const errorMsg = ref<string | null>(null)
+const promoCode = ref('')
 const selectedCadence = ref<Cadence>('monthly')
 const guestEmail = ref('')
 
@@ -124,7 +125,8 @@ async function beginCheckout() {
         tier: selectedTier.value!.id,
         cadence: selectedPlan.value!.cadence,
         returnTo: returnTo.value,
-        guest_email: guestEmailForCheckout || undefined
+        guest_email: guestEmailForCheckout || undefined,
+        promo_code: promoCode.value.trim() || undefined
       }
     })
 
@@ -557,7 +559,19 @@ async function submitWaitlist() {
             You’ll be redirected to Square’s secure checkout to complete payment. After payment, you’ll create or sign in to your account to finish activation.
           </div>
           <div
-            v-else
+            v-if="!isTestTier && !isPlanSwitchMode"
+            class="mt-3"
+          >
+            <UFormField label="Promo code (optional)">
+              <UInput
+                v-model="promoCode"
+                placeholder="SPRING20"
+                autocomplete="off"
+              />
+            </UFormField>
+          </div>
+          <div
+            v-if="isPlanSwitchMode"
             class="mt-3 text-sm text-dimmed"
           >
             Confirming here schedules your plan change with Square for your next billing cycle.

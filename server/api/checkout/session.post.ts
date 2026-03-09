@@ -13,7 +13,8 @@ const bodySchema = z.object({
   tier: z.string().min(1),
   cadence: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'annual']).optional(),
   returnTo: z.string().min(1).optional(),
-  guest_email: z.string().email().optional()
+  guest_email: z.string().email().optional(),
+  promo_code: z.string().min(2).max(64).optional()
 })
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -32,6 +33,26 @@ type GuestCheckoutSessionInsertResult = {
 }
 
 type SquareClient = Awaited<ReturnType<typeof useSquareClient>>
+type PromoRow = {
+  id: string
+  code: string
+  discount_type: 'percent' | 'fixed_cents'
+  discount_value: number | string
+  applies_to: 'all' | 'membership' | 'credits'
+  active: boolean
+  starts_at: string | null
+  ends_at: string | null
+  max_redemptions: number | null
+  redemptions_count: number
+  metadata: Record<string, unknown> | null
+}
+
+type PromoPricing = {
+  code: string
+  promoId: string
+  discountCents: number
+  effectivePriceCents: number
+}
 
 function normalizeReturnTo(value: string | undefined, fallback = '/dashboard/membership') {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return fallback
@@ -41,6 +62,17 @@ function normalizeReturnTo(value: string | undefined, fallback = '/dashboard/mem
 function normalizeEmail(value: string | undefined) {
   const normalized = (value ?? '').trim().toLowerCase()
   return normalized || null
+}
+
+function normalizePromoCode(value: string | undefined) {
+  const normalized = (value ?? '').trim().toUpperCase()
+  return normalized || null
+}
+
+function readPromoTierScope(metadata: Record<string, unknown> | null | undefined) {
+  const raw = metadata?.applies_tier_ids
+  if (!Array.isArray(raw)) return [] as string[]
+  return raw.map(entry => String(entry ?? '').trim()).filter(Boolean)
 }
 
 function extractSquareErrorMessage(error: unknown): string {
@@ -66,6 +98,71 @@ function truncateErrorMessage(message: string, max = 220): string {
   const collapsed = message.replace(/\s+/g, ' ').trim()
   if (collapsed.length <= max) return collapsed
   return `${collapsed.slice(0, max - 3)}...`
+}
+
+async function resolveMembershipPromoPricing(params: {
+  supabase: any
+  promoCode: string | null
+  tierId: string
+  basePriceCents: number
+}) {
+  if (!params.promoCode) return null
+
+  const { data: promoRaw, error } = await params.supabase
+    .from('promo_codes')
+    .select('*')
+    .eq('code', params.promoCode)
+    .maybeSingle()
+
+  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+  if (!promoRaw) throw createError({ statusCode: 400, statusMessage: 'Invalid promo code.' })
+
+  const promo = promoRaw as PromoRow
+  if (!promo.active) throw createError({ statusCode: 400, statusMessage: 'Promo code is inactive.' })
+  if (promo.applies_to !== 'all' && promo.applies_to !== 'membership') {
+    throw createError({ statusCode: 400, statusMessage: 'Promo code is not valid for memberships.' })
+  }
+
+  const now = Date.now()
+  const startsAt = promo.starts_at ? Date.parse(promo.starts_at) : Number.NaN
+  const endsAt = promo.ends_at ? Date.parse(promo.ends_at) : Number.NaN
+  if (Number.isFinite(startsAt) && now < startsAt) throw createError({ statusCode: 400, statusMessage: 'Promo code is not active yet.' })
+  if (Number.isFinite(endsAt) && now >= endsAt) throw createError({ statusCode: 400, statusMessage: 'Promo code has expired.' })
+
+  const tierScope = readPromoTierScope(promo.metadata)
+  if (tierScope.length > 0 && !tierScope.includes(params.tierId)) {
+    throw createError({ statusCode: 400, statusMessage: 'Promo code does not apply to this membership tier.' })
+  }
+
+  const maxRedemptions = typeof promo.max_redemptions === 'number' ? promo.max_redemptions : null
+  if (maxRedemptions !== null && Number(promo.redemptions_count ?? 0) >= maxRedemptions) {
+    throw createError({ statusCode: 400, statusMessage: 'Promo code redemption limit reached.' })
+  }
+
+  const discountValue = Number(promo.discount_value ?? 0)
+  if (!Number.isFinite(discountValue) || discountValue <= 0) {
+    throw createError({ statusCode: 400, statusMessage: 'Promo code discount value is invalid.' })
+  }
+
+  let discountCents = 0
+  if (promo.discount_type === 'percent') {
+    discountCents = Math.round(params.basePriceCents * Math.min(100, Math.max(0, discountValue)) / 100)
+  } else {
+    discountCents = Math.round(discountValue)
+  }
+
+  discountCents = Math.max(0, Math.min(params.basePriceCents, discountCents))
+  const effectivePriceCents = Math.max(0, params.basePriceCents - discountCents)
+  if (effectivePriceCents > 0 && effectivePriceCents < 100) {
+    throw createError({ statusCode: 400, statusMessage: 'Promo reduces price below Square minimum ($1.00).' })
+  }
+
+  return {
+    code: promo.code,
+    promoId: promo.id,
+    discountCents,
+    effectivePriceCents
+  } as PromoPricing
 }
 
 function addCadenceInterval(startIso: string, cadence: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual') {
@@ -154,6 +251,7 @@ export default defineEventHandler(async (event) => {
   const cadence = parsed.cadence ?? 'monthly'
   const returnTo = normalizeReturnTo(parsed.returnTo)
   const guestEmail = normalizeEmail(parsed.guest_email)
+  const promoCode = normalizePromoCode(parsed.promo_code)
 
   const { isAdmin } = await resolveServerUserRole(event, user)
 
@@ -209,6 +307,13 @@ export default defineEventHandler(async (event) => {
   const planCurrency = typeof variation.currency === 'string' && variation.currency.trim()
     ? variation.currency.trim().toUpperCase()
     : 'USD'
+  const promoPricing = await resolveMembershipPromoPricing({
+    supabase,
+    promoCode,
+    tierId,
+    basePriceCents: planPriceCents
+  })
+  const effectivePlanPriceCents = promoPricing?.effectivePriceCents ?? planPriceCents
 
   // Hidden plan variations accessible to admins (e.g. test tier $0 plan)
   if (!variation.visible && !isAdmin) {
@@ -254,7 +359,16 @@ export default defineEventHandler(async (event) => {
         return_to: returnTo,
         guest_email: guestEmail,
         payment_provider: 'square',
-        plan_variation_id: resolvedPlanVariationId
+        plan_variation_id: resolvedPlanVariationId,
+        metadata: promoPricing
+          ? {
+              promo_code: promoPricing.code,
+              promo_id: promoPricing.promoId,
+              promo_discount_cents: promoPricing.discountCents,
+              base_price_cents: planPriceCents,
+              effective_price_cents: effectivePlanPriceCents
+            }
+          : null
       })
       .select('id,token')
       .single()
@@ -287,7 +401,7 @@ export default defineEventHandler(async (event) => {
         cadence,
         locationId,
         planVariationId,
-        priceCents: planPriceCents,
+        priceCents: effectivePlanPriceCents,
         currency: planCurrency,
         redirectUrl,
         prePopulatedData: {
@@ -448,7 +562,16 @@ export default defineEventHandler(async (event) => {
         payment_provider: 'square',
         plan_variation_id: resolvedPlanVariationId,
         claimed_by_user_id: userId,
-        claimed_membership_id: membershipId
+        claimed_membership_id: membershipId,
+        metadata: promoPricing
+          ? {
+              promo_code: promoPricing.code,
+              promo_id: promoPricing.promoId,
+              promo_discount_cents: promoPricing.discountCents,
+              base_price_cents: planPriceCents,
+              effective_price_cents: effectivePlanPriceCents
+            }
+          : null
       })
       .select('id,token')
       .single()
@@ -534,7 +657,7 @@ export default defineEventHandler(async (event) => {
       cadence,
       locationId,
       planVariationId,
-      priceCents: planPriceCents,
+      priceCents: effectivePlanPriceCents,
       currency: planCurrency,
       redirectUrl,
       prePopulatedData: {
