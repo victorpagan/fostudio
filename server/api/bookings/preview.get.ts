@@ -105,6 +105,13 @@ export default defineEventHandler(async (event) => {
       peakMultiplier = Number(tier?.peak_multiplier ?? 1.5)
       tierName = tier?.display_name ?? null
     }
+
+    if (!hasActiveMembership && canBookFromCredits && !membership?.tier) {
+      // Legacy credits-only account without a membership row/tier.
+      peakMultiplier = 1.5
+      tierName = 'Credits-only access'
+      mode = 'member'
+    }
   }
 
   if (mode === 'guest') {

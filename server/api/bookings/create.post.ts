@@ -63,7 +63,7 @@ export default defineEventHandler(async (event) => {
   if (holdCreditCostErr) throw createError({ statusCode: 500, statusMessage: holdCreditCostErr.message })
   const holdCreditCost = Math.max(0, Number(holdCreditCostRow?.value ?? 2))
 
-  // Membership + tier id
+  // Membership + tier id (membership can be missing for legacy/admin accounts with credits)
   const { data: membership, error: memErr } = await supabase
     .from('memberships')
     .select('status,tier,current_period_start,current_period_end')
@@ -71,10 +71,6 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
-  if (!membership) {
-    throw createError({ statusCode: 403, statusMessage: 'Membership required' })
-  }
-
   const { data: balanceRow, error: balanceErr } = await supabase
     .from('credit_balance')
     .select('balance')
@@ -83,7 +79,7 @@ export default defineEventHandler(async (event) => {
   if (balanceErr) throw createError({ statusCode: 500, statusMessage: balanceErr.message })
 
   const remainingCredits = Number(balanceRow?.balance ?? 0)
-  const hasActiveMembership = (membership.status || '').toLowerCase() === 'active'
+  const hasActiveMembership = (membership?.status || '').toLowerCase() === 'active'
   if (!hasActiveMembership && remainingCredits <= 0) {
     throw createError({ statusCode: 403, statusMessage: 'Membership required' })
   }
@@ -92,7 +88,7 @@ export default defineEventHandler(async (event) => {
   const { data: tierRow, error: tierErr } = await supabase
     .from('membership_tiers')
     .select('booking_window_days, peak_multiplier, holds_included')
-    .eq('id', membership.tier)
+    .eq('id', membership?.tier ?? '')
     .maybeSingle()
 
   if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
@@ -105,12 +101,18 @@ export default defineEventHandler(async (event) => {
         peak_multiplier: Number(tierRow.peak_multiplier ?? 1.5),
         holds_included: Number(tierRow.holds_included ?? 0)
       }
-    : membership.tier === TEST_TIER_ID
+    : membership?.tier === TEST_TIER_ID
       ? {
           booking_window_days: 30,
           peak_multiplier: 1,
           holds_included: 1
         }
+      : !membership && remainingCredits > 0
+        ? {
+            booking_window_days: 30,
+            peak_multiplier: 1.5,
+            holds_included: 0
+          }
       : null
 
   if (!effectiveTier) throw createError({ statusCode: 400, statusMessage: 'Tier configuration missing' })
@@ -178,9 +180,13 @@ export default defineEventHandler(async (event) => {
   let consumePaidHold = false
   let holdCreditCharge = 0
   if (body.request_hold) {
+    if (!hasActiveMembership) {
+      throw createError({ statusCode: 403, statusMessage: 'Overnight holds require an active membership' })
+    }
+
     const holdCycle = resolveHoldCycleWindow({
-      periodStartIso: membership.current_period_start ?? null,
-      periodEndIso: membership.current_period_end ?? null
+      periodStartIso: membership?.current_period_start ?? null,
+      periodEndIso: membership?.current_period_end ?? null
     })
     if (!holdCycle.startIso || !holdCycle.endIso) {
       throw createError({ statusCode: 500, statusMessage: 'Could not resolve hold cycle window' })
@@ -274,18 +280,30 @@ export default defineEventHandler(async (event) => {
   if (custErr) throw createError({ statusCode: 500, statusMessage: custErr.message })
   if (!cust?.id) throw createError({ statusCode: 400, statusMessage: 'Customer profile missing' })
 
-  // Call atomic RPC (booking + burn + hold)
-  const { data: result, error: rpcErr } = await supabase.rpc('create_confirmed_booking_with_burn', {
-    p_user_id: user.sub,
-    p_customer_id: cust.id,
-    p_start_time: startIso,
-    p_end_time: endIso,
-    p_notes: (body.notes ?? '') as string,
-    p_request_hold: body.request_hold ?? false,
-    p_credits_needed: creditsNeeded,
-    p_consume_paid_hold: consumePaidHold,
-    p_hold_credit_cost: holdCreditCharge
-  })
+  const rpcName = membership ? 'create_confirmed_booking_with_burn' : 'create_confirmed_booking_with_burn_no_membership'
+  const rpcBody = membership
+    ? {
+        p_user_id: user.sub,
+        p_customer_id: cust.id,
+        p_start_time: startIso,
+        p_end_time: endIso,
+        p_notes: (body.notes ?? '') as string,
+        p_request_hold: body.request_hold ?? false,
+        p_credits_needed: creditsNeeded,
+        p_consume_paid_hold: consumePaidHold,
+        p_hold_credit_cost: holdCreditCharge
+      }
+    : {
+        p_user_id: user.sub,
+        p_customer_id: cust.id,
+        p_start_time: startIso,
+        p_end_time: endIso,
+        p_notes: (body.notes ?? '') as string,
+        p_credits_needed: creditsNeeded
+      }
+
+  // Call atomic RPC (booking + burn + optional hold)
+  const { data: result, error: rpcErr } = await supabase.rpc(rpcName as any, rpcBody as any)
 
   if (rpcErr) {
     // Constraint overlap or insufficient credits or hold overlap errors surface here
@@ -314,6 +332,6 @@ export default defineEventHandler(async (event) => {
     burned: result?.[0]?.credits_burned ?? null,
     newBalance: result?.[0]?.new_balance ?? null,
     booking_id: result?.[0]?.booking_id ?? null,
-    hold_id: result?.[0]?.hold_id ?? null
+    hold_id: membership ? (result?.[0]?.hold_id ?? null) : null
   }
 })
