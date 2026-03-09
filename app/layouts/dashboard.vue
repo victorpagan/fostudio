@@ -72,6 +72,7 @@ const primaryLinks = computed<NavigationMenuItem[]>(() => [
     label: 'Dashboard',
     icon: 'i-lucide-house',
     to: '/dashboard',
+    exact: true,
     onSelect: () => { open.value = false }
   },
   {
