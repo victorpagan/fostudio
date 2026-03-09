@@ -1,7 +1,7 @@
-import type {H3Event} from "h3";
+import type { H3Event } from 'h3'
 
 export type TierId = 'creator' | 'pro' | 'studio_plus'
-export type Cadence = 'monthly' | 'quarterly' | 'annual'
+export type Cadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
 export type ProviderName = 'square' | 'stripe'
 
 export type CreateCheckoutSessionInput = {

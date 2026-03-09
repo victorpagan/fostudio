@@ -5,19 +5,45 @@ import { useSquareClient } from '~~/server/utils/square'
 
 const bodySchema = z.object({
   tierId: z.string().min(1),
-  cadence: z.enum(['monthly', 'quarterly', 'annual'])
+  cadence: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'annual'])
 })
 
-function cadenceToSquare(cadence: 'monthly' | 'quarterly' | 'annual') {
+function cadenceToSquare(cadence: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual') {
+  if (cadence === 'daily') return 'DAILY'
+  if (cadence === 'weekly') return 'WEEKLY'
   if (cadence === 'quarterly') return 'QUARTERLY'
   if (cadence === 'annual') return 'ANNUAL'
   return 'MONTHLY'
 }
 
-function cadenceLabel(cadence: 'monthly' | 'quarterly' | 'annual') {
+function cadenceLabel(cadence: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual') {
+  if (cadence === 'daily') return 'Daily'
+  if (cadence === 'weekly') return 'Weekly'
   if (cadence === 'quarterly') return 'Quarterly'
   if (cadence === 'annual') return 'Annual'
   return 'Monthly'
+}
+
+function parseSquareErrorDetailFromMessage(message: string) {
+  const bodyIndex = message.indexOf('Body:')
+  if (bodyIndex >= 0) {
+    const rawBody = message.slice(bodyIndex + 5).trim()
+    try {
+      const parsed = JSON.parse(rawBody) as { errors?: Array<{ detail?: string }> }
+      const detail = parsed.errors?.[0]?.detail
+      if (typeof detail === 'string' && detail.trim()) return detail.trim()
+    } catch {
+      // ignore parse errors and fall through to regex extraction
+    }
+  }
+
+  const detailMatch = message.match(/"detail"\s*:\s*"([^"]+)"/)
+  if (detailMatch?.[1]) return detailMatch[1]
+  return null
+}
+
+function isImmutablePhaseError(message: string) {
+  return message.toLowerCase().includes('phases should not be added, removed, or replaced')
 }
 
 export default defineEventHandler(async (event) => {
@@ -50,6 +76,14 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const priceCents = Number(variation.price_cents ?? 0)
+  if (priceCents !== 0 && priceCents < 100) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `${cadenceLabel(body.cadence)} price must be at least 100 cents ($1.00), or exactly 0 for a free plan.`
+    })
+  }
+
   const square = await useSquareClient(event)
 
   const payload = {
@@ -64,9 +98,12 @@ export default defineEventHandler(async (event) => {
         phases: [
           {
             cadence: cadenceToSquare(body.cadence),
-            recurringPriceMoney: {
-              amount: BigInt(Number(variation.price_cents ?? 0)),
-              currency: (variation.currency || 'USD').toUpperCase()
+            pricing: {
+              type: 'STATIC' as const,
+              priceMoney: {
+                amount: BigInt(priceCents),
+                currency: (variation.currency || 'USD').toUpperCase()
+              }
             }
           }
         ]
@@ -77,7 +114,15 @@ export default defineEventHandler(async (event) => {
   try {
     await square.catalog.object.upsert(payload as never)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Square update failed'
+    const message = error instanceof Error
+      ? parseSquareErrorDetailFromMessage(error.message) ?? error.message
+      : 'Square update failed'
+    if (isImmutablePhaseError(message)) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `${cadenceLabel(body.cadence)} variation is already locked in Square and cannot have phases replaced. Create a fresh Square variation for this cadence, or edit pricing in Square directly.`
+      })
+    }
     throw createError({ statusCode: 502, statusMessage: message })
   }
 

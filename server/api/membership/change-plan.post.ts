@@ -2,17 +2,15 @@ import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { resolveServerUserRole } from '~~/server/utils/auth'
 import { useSquareClient } from '~~/server/utils/square'
-import { getServerConfig } from '~~/server/utils/config/secret'
 import {
   findPendingCancelAction,
   findPendingSwapAction,
-  normalizeSquareActionType,
-  toRecordArray
+  normalizeSquareActionType
 } from '~~/server/utils/square/subscriptionActions'
 
 const bodySchema = z.object({
   tier: z.string().min(1),
-  cadence: z.enum(['monthly', 'quarterly', 'annual'])
+  cadence: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'annual'])
 })
 
 type MembershipRow = {
@@ -21,7 +19,10 @@ type MembershipRow = {
   cadence: string | null
   status: string | null
   billing_provider: string | null
+  billing_customer_id: string | null
   billing_subscription_id: string | null
+  square_customer_id: string | null
+  square_subscription_id: string | null
   square_plan_variation_id: string | null
 }
 
@@ -29,21 +30,52 @@ function normalizeStatus(value: string | null | undefined) {
   return (value ?? '').trim().toLowerCase()
 }
 
-async function resolvePlanVariationId(event: Parameters<typeof getServerConfig>[0], tierId: string, cadence: 'monthly' | 'quarterly' | 'annual', providerPlanVariationId: string | null | undefined) {
-  const directValue = providerPlanVariationId?.trim()
-  if (directValue) return directValue
-
-  const configKey = `SQUARE_PLAN_VARIATION_${tierId.toUpperCase()}_${cadence.toUpperCase()}`
-  try {
-    const configuredValue = await getServerConfig(event, configKey)
-    if (typeof configuredValue === 'string' && configuredValue.trim()) {
-      return configuredValue.trim()
-    }
-  } catch {
-    // fall through
+function readString(source: Record<string, unknown> | null | undefined, ...keys: string[]) {
+  if (!source) return null
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
   }
-
   return null
+}
+
+function toRecordArray(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value.filter(item => item && typeof item === 'object') as Record<string, unknown>[]
+}
+
+async function findManagedSquareSubscriptionId(
+  square: Awaited<ReturnType<typeof useSquareClient>>,
+  customerId: string,
+  currentPlanVariationId: string | null
+) {
+  const filter: Record<string, unknown> = { customerIds: [customerId] }
+  if (currentPlanVariationId) filter.planVariationIds = [currentPlanVariationId]
+
+  const searchRes = await square.subscriptions.search({
+    query: {
+      filter,
+      sort: { sortOrder: 'DESC', sortField: 'CREATED_AT' }
+    },
+    limit: 20
+  } as never)
+
+  const subscriptions = toRecordArray((searchRes as { subscriptions?: unknown }).subscriptions)
+  if (!subscriptions.length) return null
+
+  const activeFirst = subscriptions.sort((left, right) => {
+    const leftStatus = (readString(left, 'status') ?? '').toUpperCase()
+    const rightStatus = (readString(right, 'status') ?? '').toUpperCase()
+    const leftActive = leftStatus === 'ACTIVE' ? 1 : 0
+    const rightActive = rightStatus === 'ACTIVE' ? 1 : 0
+    if (rightActive !== leftActive) return rightActive - leftActive
+
+    const leftCreated = Date.parse(readString(left, 'createdAt', 'created_at') ?? '')
+    const rightCreated = Date.parse(readString(right, 'createdAt', 'created_at') ?? '')
+    return (Number.isNaN(rightCreated) ? 0 : rightCreated) - (Number.isNaN(leftCreated) ? 0 : leftCreated)
+  })
+
+  return readString(activeFirst[0] ?? null, 'id')
 }
 
 export default defineEventHandler(async (event) => {
@@ -57,7 +89,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: membershipRaw, error: membershipErr } = await supabase
     .from('memberships')
-    .select('id,tier,cadence,status,billing_provider,billing_subscription_id,square_plan_variation_id')
+    .select('id,tier,cadence,status,billing_provider,billing_customer_id,billing_subscription_id,square_customer_id,square_subscription_id,square_plan_variation_id')
     .eq('user_id', user.sub)
     .maybeSingle()
 
@@ -70,9 +102,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: 'Membership must be active to change plans.' })
   }
 
-  if ((membership.billing_provider ?? '').toLowerCase() !== 'square' || !membership.billing_subscription_id) {
-    throw createError({ statusCode: 409, statusMessage: 'This membership is not linked to a managed Square subscription.' })
-  }
+  const billingProvider = (membership.billing_provider ?? '').toLowerCase()
+  const currentPlanVariationId = membership.square_plan_variation_id?.trim() || null
+  const customerId = membership.billing_customer_id?.trim() || membership.square_customer_id?.trim() || null
+  let subscriptionId = membership.billing_subscription_id?.trim() || membership.square_subscription_id?.trim() || null
 
   const { data: targetTier, error: targetTierErr } = await supabase
     .from('membership_tiers')
@@ -104,15 +137,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Access denied for this billing option.' })
   }
 
-  const targetPlanVariationId = await resolvePlanVariationId(
-    event,
-    body.tier,
-    body.cadence,
-    targetVariation.provider_plan_variation_id
-  )
+  const targetPlanVariationId = targetVariation.provider_plan_variation_id?.trim() || null
 
   if (!targetPlanVariationId) {
-    throw createError({ statusCode: 503, statusMessage: 'This plan is not configured for subscription changes yet.' })
+    throw createError({ statusCode: 503, statusMessage: 'This plan is not linked to a Square variation yet. Contact support.' })
   }
 
   const sameTier = (membership.tier ?? '') === body.tier
@@ -123,8 +151,42 @@ export default defineEventHandler(async (event) => {
   }
 
   const square = await useSquareClient(event)
+  if (!subscriptionId && customerId) {
+    try {
+      subscriptionId = await findManagedSquareSubscriptionId(square, customerId, currentPlanVariationId)
+      if (subscriptionId) {
+        const patch: Record<string, unknown> = {
+          billing_provider: 'square',
+          billing_subscription_id: subscriptionId
+        }
+        if (!membership.billing_customer_id && membership.square_customer_id) {
+          patch.billing_customer_id = membership.square_customer_id
+        }
+        const { error: linkPatchErr } = await supabase
+          .from('memberships')
+          .update(patch)
+          .eq('id', membership.id)
+        if (linkPatchErr) {
+          console.warn('[membership/change-plan] failed to persist recovered Square linkage', {
+            membershipId: membership.id,
+            message: linkPatchErr.message
+          })
+        }
+      }
+    } catch (recoveryError) {
+      console.warn('[membership/change-plan] failed to recover Square subscription id', {
+        membershipId: membership.id,
+        message: recoveryError instanceof Error ? recoveryError.message : String(recoveryError)
+      })
+    }
+  }
+
+  if ((billingProvider && billingProvider !== 'square') || !subscriptionId) {
+    throw createError({ statusCode: 409, statusMessage: 'This membership is not linked to a managed Square subscription.' })
+  }
+
   const currentRes = await square.subscriptions.get({
-    subscriptionId: membership.billing_subscription_id,
+    subscriptionId,
     include: 'actions'
   } as never)
   const currentSubscription = (currentRes as { subscription?: Record<string, unknown> | null }).subscription ?? null
@@ -146,18 +208,18 @@ export default defineEventHandler(async (event) => {
     const actionId = typeof action.id === 'string' ? action.id : null
     if (!actionId) continue
     await square.subscriptions.deleteAction({
-      subscriptionId: membership.billing_subscription_id,
+      subscriptionId,
       actionId
     } as never)
   }
 
   await square.subscriptions.swapPlan({
-    subscriptionId: membership.billing_subscription_id,
+    subscriptionId,
     newPlanVariationId: targetPlanVariationId
   } as never)
 
   const refreshedRes = await square.subscriptions.get({
-    subscriptionId: membership.billing_subscription_id,
+    subscriptionId,
     include: 'actions'
   } as never)
   const refreshed = (refreshedRes as { subscription?: Record<string, unknown> | null }).subscription ?? null

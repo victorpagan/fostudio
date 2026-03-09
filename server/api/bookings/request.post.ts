@@ -1,5 +1,8 @@
 import { z } from 'zod'
-import { serverSupabaseUser, serverSupabaseClient } from "#supabase/server";
+import { DateTime } from 'luxon'
+import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
+import { computeOvernightHoldWindow, resolveHoldCycleWindow } from '~~/server/utils/booking/holds'
+import { loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
 
 const schema = z.object({
   start_time: z.string(),
@@ -8,33 +11,125 @@ const schema = z.object({
   request_hold: z.boolean().optional().default(false)
 })
 
-function nextDay10am(end: Date) {
-  const d = new Date(end)
-  d.setDate(d.getDate() + 1)
-  d.setHours(10, 0, 0, 0)
-  return d
-}
-
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
   if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
 
-  const supabase = await serverSupabaseClient(event)
+  const supabase = serverSupabaseServiceRole(event)
+  const peakWindow = await loadPeakWindowConfig(event)
   const body = schema.parse(await readBody(event))
 
-  const start = new Date(body.start_time)
-  const end = new Date(body.end_time)
+  const start = DateTime.fromISO(body.start_time, { zone: STUDIO_TZ })
+  const end = DateTime.fromISO(body.end_time, { zone: STUDIO_TZ })
+  if (!start.isValid || !end.isValid) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
   if (!(start < end)) throw createError({ statusCode: 400, statusMessage: 'Invalid time range' })
+
+  const startIso = start.toUTC().toISO()
+  const endIso = end.toUTC().toISO()
+  if (!startIso || !endIso) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
 
   // membership active check
   const { data: membership } = await supabase
     .from('memberships')
-    .select('status')
+    .select('status,tier,current_period_start,current_period_end')
     .eq('user_id', user.sub)
     .maybeSingle()
 
   if (!membership || (membership.status || '').toLowerCase() !== 'active') {
     throw createError({ statusCode: 403, statusMessage: 'Membership required' })
+  }
+
+  const { data: tier } = await supabase
+    .from('membership_tiers')
+    .select('holds_included')
+    .eq('id', membership.tier)
+    .maybeSingle()
+  const holdsIncluded = Math.max(0, Number(tier?.holds_included ?? 0))
+
+  const { data: bookingConflicts, error: bookingConflictErr } = await supabase
+    .from('bookings')
+    .select('id')
+    .in('status', ['confirmed', 'requested', 'pending_payment'])
+    .lt('start_time', endIso)
+    .gt('end_time', startIso)
+    .limit(1)
+
+  if (bookingConflictErr) throw createError({ statusCode: 500, statusMessage: bookingConflictErr.message })
+  if (bookingConflicts && bookingConflicts.length > 0) {
+    throw createError({ statusCode: 409, statusMessage: 'Time slot is already booked' })
+  }
+
+  const { data: holdConflicts, error: holdErr } = await supabase
+    .from('booking_holds')
+    .select('id')
+    .lt('hold_start', endIso)
+    .gt('hold_end', startIso)
+    .limit(1)
+
+  if (holdErr) throw createError({ statusCode: 500, statusMessage: holdErr.message })
+  if (holdConflicts && holdConflicts.length > 0) {
+    throw createError({ statusCode: 409, statusMessage: 'Time slot is blocked by an equipment hold' })
+  }
+
+  let holdStartIso: string | null = null
+  let holdEndIso: string | null = null
+
+  if (body.request_hold) {
+    const holdCycle = resolveHoldCycleWindow({
+      periodStartIso: membership.current_period_start ?? null,
+      periodEndIso: membership.current_period_end ?? null
+    })
+    if (!holdCycle.startIso || !holdCycle.endIso) {
+      throw createError({ statusCode: 500, statusMessage: 'Could not resolve hold cycle window' })
+    }
+
+    const { count: usedHoldsCount, error: usedHoldsErr } = await supabase
+      .from('booking_holds')
+      .select('id, bookings!inner(user_id,status)', { count: 'exact', head: true })
+      .eq('bookings.user_id', user.sub)
+      .not('bookings.status', 'eq', 'canceled')
+      .gte('hold_start', holdCycle.startIso)
+      .lt('hold_start', holdCycle.endIso)
+
+    if (usedHoldsErr) throw createError({ statusCode: 500, statusMessage: usedHoldsErr.message })
+    const usedHoldsThisCycle = Math.max(0, usedHoldsCount ?? 0)
+    const includedHoldsRemaining = Math.max(0, holdsIncluded - usedHoldsThisCycle)
+    if (includedHoldsRemaining <= 0) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Monthly hold cap reached. Buy additional holds or use the instant booking flow with credit fallback.'
+      })
+    }
+
+    const holdWindow = computeOvernightHoldWindow(end, peakWindow.startHour)
+    holdStartIso = holdWindow.holdStartIso
+    holdEndIso = holdWindow.holdEndIso
+    if (!holdStartIso || !holdEndIso) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
+
+    const { data: holdWindowBookingConflicts, error: holdWindowBookingErr } = await supabase
+      .from('bookings')
+      .select('id')
+      .in('status', ['confirmed', 'requested', 'pending_payment'])
+      .lt('start_time', holdEndIso)
+      .gt('end_time', holdStartIso)
+      .limit(1)
+
+    if (holdWindowBookingErr) throw createError({ statusCode: 500, statusMessage: holdWindowBookingErr.message })
+    if (holdWindowBookingConflicts && holdWindowBookingConflicts.length > 0) {
+      throw createError({ statusCode: 409, statusMessage: 'Requested hold conflicts with another booking' })
+    }
+
+    const { data: holdWindowHoldConflicts, error: holdWindowHoldErr } = await supabase
+      .from('booking_holds')
+      .select('id')
+      .lt('hold_start', holdEndIso)
+      .gt('hold_end', holdStartIso)
+      .limit(1)
+
+    if (holdWindowHoldErr) throw createError({ statusCode: 500, statusMessage: holdWindowHoldErr.message })
+    if (holdWindowHoldConflicts && holdWindowHoldConflicts.length > 0) {
+      throw createError({ statusCode: 409, statusMessage: 'Requested hold conflicts with an existing hold' })
+    }
   }
 
   // fetch customer id for linkage
@@ -50,8 +145,8 @@ export default defineEventHandler(async (event) => {
     .insert({
       user_id: user.sub,
       customer_id: cust?.id ?? null,
-      start_time: start.toISOString(),
-      end_time: end.toISOString(),
+      start_time: startIso,
+      end_time: endIso,
       status: 'requested',
       notes: body.notes ?? null
     })
@@ -60,17 +155,16 @@ export default defineEventHandler(async (event) => {
 
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 
-  // optional hold request (v1: just create hold record; later enforce caps/cost)
+  // optional hold request
   if (body.request_hold) {
-    const hs = end
-    const he = nextDay10am(end)
+    if (!holdStartIso || !holdEndIso) throw createError({ statusCode: 500, statusMessage: 'Could not resolve hold window' })
 
     const { error: holdErr } = await supabase
       .from('booking_holds')
       .insert({
         booking_id: booking.id,
-        hold_start: hs.toISOString(),
-        hold_end: he.toISOString(),
+        hold_start: holdStartIso,
+        hold_end: holdEndIso,
         hold_type: 'overnight'
       })
 

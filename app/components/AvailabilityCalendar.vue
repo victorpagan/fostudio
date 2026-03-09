@@ -18,6 +18,8 @@ type CalendarEvent = EventInput & {
     type?: 'booking' | 'hold'
     isOwn?: boolean
     status?: string
+    bookingId?: string
+    notes?: string
   }
 }
 
@@ -34,6 +36,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'select', payload: { start: Date, end: Date }): void
+  (e: 'booking-click', payload: {
+    bookingId: string
+    start: string
+    end: string
+    status?: string
+    notes?: string
+  }): void
 }>()
 
 const loading = ref(false)
@@ -54,9 +63,17 @@ type CalendarResponse = {
 }
 
 function formatRange(start: Date, end: Date) {
-  const startLabel = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const startLabel = start.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'America/Los_Angeles'
+  })
   const endMinusTick = new Date(end.getTime() - 1)
-  const endLabel = endMinusTick.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const endLabel = endMinusTick.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'America/Los_Angeles'
+  })
   return `${startLabel} to ${endLabel}`
 }
 
@@ -73,7 +90,8 @@ async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
     peakWindow.value = res.peakWindow ?? null
     lastRefreshedAt.value = new Date().toLocaleTimeString('en-US', {
       hour: 'numeric',
-      minute: '2-digit'
+      minute: '2-digit',
+      timeZone: 'America/Los_Angeles'
     })
   } finally {
     loading.value = false
@@ -137,7 +155,9 @@ const peakChip = computed(() => {
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
   initialView: 'timeGridWeek',
+  timeZone: 'America/Los_Angeles',
   selectable: canSelect.value,
+  selectOverlap: false,
   selectMirror: true,
   nowIndicator: true,
   allDaySlot: false,
@@ -163,6 +183,17 @@ const calendarOptions = computed(() => ({
   events: events.value,
   eventClassNames,
   eventContent,
+  eventClick: (info: { event: { extendedProps?: CalendarEvent['extendedProps'], startStr: string, endStr: string | null } }) => {
+    const ext = info.event.extendedProps
+    if (ext?.type !== 'booking' || !ext.isOwn || !ext.bookingId) return
+    emit('booking-click', {
+      bookingId: ext.bookingId,
+      start: info.event.startStr,
+      end: info.event.endStr ?? info.event.startStr,
+      status: ext.status,
+      notes: ext.notes
+    })
+  },
   select: (info: DateSelectArg) => emit('select', { start: info.start, end: info.end }),
   datesSet: (info: DatesSetArg) => {
     // Called when the visible range changes

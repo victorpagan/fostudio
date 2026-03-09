@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
 
 const variationSchema = z.object({
-  cadence: z.enum(['monthly', 'quarterly', 'annual']),
+  cadence: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'annual']),
   provider: z.literal('square').default('square'),
   providerPlanId: z.string().optional().nullable(),
   providerPlanVariationId: z.string().optional().nullable(),
@@ -34,6 +34,36 @@ const bodySchema = z.object({
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
   const body = bodySchema.parse(await readBody(event))
+  const cadenceOrder = ['daily', 'weekly', 'monthly', 'quarterly', 'annual'] as const
+  const enabledVariations = body.variations.filter(variation => variation.active)
+
+  if (enabledVariations.length === 0) {
+    throw createError({ statusCode: 400, statusMessage: 'Enable at least one billing cadence.' })
+  }
+
+  const missingPlanLink = enabledVariations.find((variation) => {
+    const planId = variation.providerPlanId?.trim()
+    const variationId = variation.providerPlanVariationId?.trim()
+    return !planId || !variationId
+  })
+  if (missingPlanLink) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Missing Square plan link for ${missingPlanLink.cadence}. Provide both plan ID and variation ID.`
+    })
+  }
+
+  const knownPlanIds = new Set(
+    enabledVariations
+      .map(variation => variation.providerPlanId?.trim())
+      .filter((id): id is string => Boolean(id))
+  )
+  if (knownPlanIds.size > 1) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Enabled cadences must share the same Square plan ID.'
+    })
+  }
 
   const tierRow = {
     id: body.id,
@@ -56,20 +86,22 @@ export default defineEventHandler(async (event) => {
 
   if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
 
-  const variationRows = body.variations.map(variation => ({
-    tier_id: body.id,
-    cadence: variation.cadence,
-    provider: variation.provider,
-    provider_plan_id: variation.providerPlanId ?? null,
-    provider_plan_variation_id: variation.providerPlanVariationId ?? null,
-    credits_per_month: variation.creditsPerMonth,
-    price_cents: variation.priceCents,
-    currency: variation.currency.toUpperCase(),
-    discount_label: variation.discountLabel ?? null,
-    active: variation.active,
-    visible: body.directAccessOnly ? false : variation.visible,
-    sort_order: variation.sortOrder
-  }))
+  const variationRows = enabledVariations.map((variation) => {
+    return {
+      tier_id: body.id,
+      cadence: variation.cadence,
+      provider: variation.provider,
+      provider_plan_id: variation.providerPlanId?.trim() ?? null,
+      provider_plan_variation_id: variation.providerPlanVariationId?.trim() ?? null,
+      credits_per_month: variation.creditsPerMonth,
+      price_cents: variation.priceCents,
+      currency: variation.currency.toUpperCase(),
+      discount_label: variation.discountLabel?.trim() || null,
+      active: true,
+      visible: body.directAccessOnly ? false : variation.visible,
+      sort_order: variation.sortOrder
+    }
+  })
 
   const { error: variationErr } = await supabase
     .from('membership_plan_variations')
@@ -77,8 +109,8 @@ export default defineEventHandler(async (event) => {
 
   if (variationErr) throw createError({ statusCode: 500, statusMessage: variationErr.message })
 
-  const disabledCadences = (['monthly', 'quarterly', 'annual'] as const).filter(
-    cadence => !body.variations.some(variation => variation.cadence === cadence)
+  const disabledCadences = cadenceOrder.filter(
+    cadence => !enabledVariations.some(variation => variation.cadence === cadence)
   )
 
   if (disabledCadences.length > 0) {
@@ -94,6 +126,8 @@ export default defineEventHandler(async (event) => {
 
   return {
     ok: true,
-    tierId: body.id
+    tierId: body.id,
+    squarePlanId: Array.from(knownPlanIds)[0] ?? null,
+    linkedCadences: enabledVariations.map(variation => variation.cadence)
   }
 })

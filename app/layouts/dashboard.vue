@@ -47,9 +47,21 @@ const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
         onSelect: () => { open.value = false }
       },
       {
-        label: 'Bookings & Calendar',
+        label: 'Bookings',
         icon: 'i-lucide-calendar-range',
         to: '/dashboard/admin/bookings',
+        onSelect: () => { open.value = false }
+      },
+      {
+        label: 'Calendar Settings',
+        icon: 'i-lucide-calendar-clock',
+        to: '/dashboard/admin/calendar',
+        onSelect: () => { open.value = false }
+      },
+      {
+        label: 'Holds',
+        icon: 'i-lucide-package-plus',
+        to: '/dashboard/admin/holds',
         onSelect: () => { open.value = false }
       }
     ]
@@ -178,8 +190,7 @@ watch(
   () => route.fullPath,
   () => {
     if (import.meta.client) void recoverPendingTopups()
-  },
-  { immediate: true }
+  }
 )
 </script>
 

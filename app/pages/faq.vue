@@ -3,7 +3,12 @@ definePageMeta({
   layout: 'default'
 })
 
-const faqs = [
+const { data: bookingPolicy } = await useAsyncData('faq:bookings:policy', async () => {
+  return await $fetch<{ memberRescheduleNoticeHours: number }>('/api/bookings/policy')
+})
+const memberRescheduleNoticeHours = computed(() => Number(bookingPolicy.value?.memberRescheduleNoticeHours ?? 24))
+
+const faqs = computed(() => [
   {
     question: 'Do I need a membership to book the studio?',
     answer: 'No. You can book as a guest for a one-off session. Membership becomes the better fit when you need repeat access, a longer booking window, and a steadier cost structure.'
@@ -34,7 +39,7 @@ const faqs = [
   },
   {
     question: 'What happens if I need to cancel a booking?',
-    answer: 'The exact cancellation treatment depends on timing, but the system is designed to protect availability while still being workable for real production changes. If a session needs to move, contact the studio as early as possible.'
+    answer: `Member reschedules are available until ${memberRescheduleNoticeHours.value} hours before the booking start. Cancellation and refund treatment depends on timing, so if a session needs to move, do it as early as possible.`
   },
   {
     question: 'How far ahead can I book?',
@@ -42,7 +47,7 @@ const faqs = [
   },
   {
     question: 'Can I hold equipment or keep a setup overnight?',
-    answer: 'Some plans include hold windows. Those are meant for cases where a set needs to stay in place between sessions, subject to the plan limits and current schedule.'
+    answer: 'Membership tiers include a monthly overnight-hold cap. Each hold runs until the earlier of 10:00am next day or peak-hours start, and once the monthly cap is used you can still buy extra hold add-ons.'
   },
   {
     question: 'Do you support film shooters?',
@@ -52,7 +57,7 @@ const faqs = [
     question: 'What if I am not sure which plan fits?',
     answer: 'That is what the contact page is for. Share how often you shoot, how far ahead your client work needs planning, and whether you mostly work solo or with a team. The right plan is the one that matches your real rhythm, not the biggest one.'
   }
-]
+])
 
 const openItem = ref<number | null>(0)
 </script>

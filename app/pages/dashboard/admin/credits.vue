@@ -29,14 +29,29 @@ const creditPolicy = reactive({
   creditRolloverMaxMultiplier: 2
 })
 
+const usdAmountRegex = /^\d+(?:\.\d{1,2})?$/
+
+function centsToDollars(cents: number | null | undefined) {
+  return ((Number(cents ?? 0) || 0) / 100).toFixed(2)
+}
+
+function parseDollarsToCents(value: string | null | undefined) {
+  const trimmed = (value ?? '').trim()
+  if (!trimmed) return null
+  if (!usdAmountRegex.test(trimmed)) return null
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed < 0) return null
+  return Math.round(parsed * 100)
+}
+
 const form = reactive({
   id: '' as string,
   key: '',
   label: '',
   description: '',
   credits: 1,
-  basePriceCents: 4000,
-  salePriceCents: null as number | null,
+  basePriceDollars: '40.00',
+  salePriceDollars: '' as string,
   saleStartsAt: null as string | null,
   saleEndsAt: null as string | null,
   active: true,
@@ -89,8 +104,8 @@ function resetForm() {
   form.label = ''
   form.description = ''
   form.credits = 1
-  form.basePriceCents = 4000
-  form.salePriceCents = null
+  form.basePriceDollars = '40.00'
+  form.salePriceDollars = ''
   form.saleStartsAt = null
   form.saleEndsAt = null
   form.active = true
@@ -106,8 +121,8 @@ function loadOption(optionId: string) {
   form.label = option.label
   form.description = option.description ?? ''
   form.credits = Number(option.credits)
-  form.basePriceCents = Number(option.base_price_cents)
-  form.salePriceCents = option.sale_price_cents === null ? null : Number(option.sale_price_cents)
+  form.basePriceDollars = centsToDollars(option.base_price_cents)
+  form.salePriceDollars = option.sale_price_cents === null ? '' : centsToDollars(option.sale_price_cents)
   form.saleStartsAt = option.sale_starts_at
   form.saleEndsAt = option.sale_ends_at
   form.active = option.active
@@ -127,6 +142,26 @@ watch(options, (next) => {
 async function saveAndSyncSquare() {
   savingAndSyncing.value = true
   try {
+    const basePriceCents = parseDollarsToCents(form.basePriceDollars)
+    if (basePriceCents === null || basePriceCents <= 0) {
+      toast.add({
+        title: 'Invalid base price',
+        description: 'Base price must be a dollar amount with up to 2 decimal places.',
+        color: 'error'
+      })
+      return
+    }
+
+    const salePriceCents = form.salePriceDollars.trim() ? parseDollarsToCents(form.salePriceDollars) : null
+    if (form.salePriceDollars.trim() && (salePriceCents === null || salePriceCents <= 0)) {
+      toast.add({
+        title: 'Invalid sale price',
+        description: 'Sale price must be blank or a dollar amount with up to 2 decimal places.',
+        color: 'error'
+      })
+      return
+    }
+
     const upsertRes = await $fetch<{ option: { id: string } }>('/api/admin/credits/options.upsert', {
       method: 'POST',
       body: {
@@ -135,8 +170,8 @@ async function saveAndSyncSquare() {
         label: form.label,
         description: form.description.trim() || null,
         credits: form.credits,
-        basePriceCents: form.basePriceCents,
-        salePriceCents: form.salePriceCents,
+        basePriceCents,
+        salePriceCents,
         saleStartsAt: form.saleStartsAt,
         saleEndsAt: form.saleEndsAt,
         active: form.active,
@@ -273,7 +308,9 @@ async function saveCreditPolicy() {
         <UCard>
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div class="font-medium">Top-up reconciliation</div>
+              <div class="font-medium">
+                Top-up reconciliation
+              </div>
               <div class="text-sm text-dimmed">
                 Claims any completed Square top-up sessions still marked pending.
               </div>
@@ -293,7 +330,9 @@ async function saveCreditPolicy() {
         <UCard>
           <div class="flex items-center justify-between gap-3">
             <div>
-              <div class="font-medium">Credit lifecycle settings</div>
+              <div class="font-medium">
+                Credit lifecycle settings
+              </div>
               <div class="text-sm text-dimmed">
                 Configure expiration and maximum rollover cap used by monthly grant processing.
               </div>
@@ -357,11 +396,11 @@ async function saveCreditPolicy() {
               <UFormField label="Credits">
                 <UInput v-model.number="form.credits" type="number" min="0.25" step="0.25" />
               </UFormField>
-              <UFormField label="Base price (cents)">
-                <UInput v-model.number="form.basePriceCents" type="number" min="1" />
+              <UFormField label="Base price (USD)">
+                <UInput v-model="form.basePriceDollars" type="text" inputmode="decimal" placeholder="40.00" />
               </UFormField>
-              <UFormField label="Sale price (cents)">
-                <UInput v-model.number="form.salePriceCents" type="number" min="1" />
+              <UFormField label="Sale price (USD, optional)">
+                <UInput v-model="form.salePriceDollars" type="text" inputmode="decimal" placeholder="35.00" />
               </UFormField>
               <UFormField label="Sort order">
                 <UInput v-model.number="form.sortOrder" type="number" />

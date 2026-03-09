@@ -3,7 +3,7 @@
 definePageMeta({ auth: false })
 
 type TierId = 'creator' | 'pro' | 'studio_plus'
-type Cadence = 'monthly' | 'quarterly' | 'annual'
+type Cadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
 
 const route = useRoute()
 const router = useRouter()
@@ -11,7 +11,7 @@ const router = useRouter()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 
-const tierCatalog: Record<TierId, { name: string; credits: number; bookingWindowDays: number }> = {
+const tierCatalog: Record<TierId, { name: string, credits: number, bookingWindowDays: number }> = {
   creator: { name: 'Creator', credits: 12, bookingWindowDays: 14 },
   pro: { name: 'Pro', credits: 26, bookingWindowDays: 21 },
   studio_plus: { name: 'Studio+', credits: 42, bookingWindowDays: 30 }
@@ -42,7 +42,7 @@ const selectedPlan = computed(() => {
       selected.tier = tier
     }
 
-    if (cadence === 'monthly' || cadence === 'quarterly' || cadence === 'annual') {
+    if (cadence === 'daily' || cadence === 'weekly' || cadence === 'monthly' || cadence === 'quarterly' || cadence === 'annual') {
       selected.cadence = cadence
     }
   } catch {
@@ -80,6 +80,8 @@ watchEffect(() => {
 })
 
 function cadenceLabel(value: Cadence) {
+  if (value === 'daily') return 'Daily'
+  if (value === 'weekly') return 'Weekly'
   if (value === 'monthly') return 'Monthly'
   if (value === 'quarterly') return 'Quarterly'
   return 'Annual'
@@ -119,8 +121,9 @@ async function handleSignup() {
     }
 
     successMsg.value = 'Account created. Check your email to confirm your account, then log in to continue.'
-  } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Signup failed.'
+  } catch (error: unknown) {
+    const maybe = error as { message?: string }
+    errorMsg.value = maybe?.message ?? 'Signup failed.'
   } finally {
     loading.value = false
   }

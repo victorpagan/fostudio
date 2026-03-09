@@ -301,6 +301,8 @@ body {
   background: rgba(102, 92, 84, 0.82);
   color: var(--gruv-bg-0);
   border: 0;
+  cursor: default;
+  pointer-events: none;
 }
 
 .availability-shell .fc .fc-event.fc-event-own {
@@ -308,6 +310,7 @@ body {
     linear-gradient(135deg, rgba(7, 102, 120, 0.92) 0%, rgba(181, 118, 20, 0.9) 100%);
   border: 0;
   box-shadow: 0 10px 22px rgba(60, 56, 54, 0.18);
+  cursor: pointer;
 }
 
 .availability-shell .fc .fc-event-main-frame {

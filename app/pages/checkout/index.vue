@@ -1,5 +1,7 @@
 <script setup lang="ts">
-type Cadence = 'monthly' | 'quarterly' | 'annual'
+import { normalizeDiscountLabel, parseDiscountLabel } from '~~/app/utils/membershipDiscount'
+
+type Cadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
 type PlanOption = {
   cadence: Cadence
   provider_plan_variation_id: string | null
@@ -17,6 +19,7 @@ type Tier = {
 
 const route = useRoute()
 const router = useRouter()
+const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const toast = useToast()
 const loading = ref(false)
@@ -37,7 +40,7 @@ const tier = computed(() => {
 
 const queryCadence = computed<Cadence | null>(() => {
   const queryValue = (route.query.cadence as string | undefined)?.toLowerCase()
-  if (queryValue === 'monthly' || queryValue === 'quarterly' || queryValue === 'annual') return queryValue
+  if (queryValue === 'daily' || queryValue === 'weekly' || queryValue === 'monthly' || queryValue === 'quarterly' || queryValue === 'annual') return queryValue
   return null
 })
 const isPlanSwitchMode = computed(() => {
@@ -58,19 +61,21 @@ const isTestTier = computed(() => tier.value === 'test')
 const selectedTier = computed(() => tiers.value.find(item => item.id === tier.value) ?? null)
 const sortedOptions = computed(() => {
   const options = selectedTier.value?.membership_plan_variations ?? []
-  const order: Record<Cadence, number> = { monthly: 0, quarterly: 1, annual: 2 }
+  const order: Record<Cadence, number> = { daily: 0, weekly: 1, monthly: 2, quarterly: 3, annual: 4 }
   return [...options].sort((left, right) => order[left.cadence] - order[right.cadence])
 })
+const getDiscountLabel = (label?: string | null) => normalizeDiscountLabel(label)
+
 const selectedPlan = computed(() =>
   sortedOptions.value.find(option => option.cadence === selectedCadence.value) ?? sortedOptions.value[0] ?? null
 )
 const monthlyOption = computed(() => sortedOptions.value.find(option => option.cadence === 'monthly') ?? null)
 const selectedSavingsCents = computed(() => {
   if (!selectedPlan.value || !monthlyOption.value) return 0
-  const months = billingMonths(selectedPlan.value.cadence)
-  if (months <= 1) return 0
+  const months = cadenceToMonths(selectedPlan.value.cadence)
+  if (!months || months <= 1) return 0
   const baseline = monthlyOption.value.price_cents * months
-  return Math.max(0, baseline - selectedPlan.value.price_cents)
+  return Math.max(0, baseline - billedCycleCents(selectedPlan.value))
 })
 
 watch([sortedOptions, queryCadence], ([options, cadence]) => {
@@ -86,6 +91,25 @@ async function beginCheckout() {
   errorMsg.value = null
   loading.value = true
 
+  async function startSquareCheckoutSession(guestEmailForCheckout?: string) {
+    const res = await $fetch<{ redirectUrl: string, provider: string }>('/api/checkout/session', {
+      method: 'POST',
+      body: {
+        tier: selectedTier.value!.id,
+        cadence: selectedPlan.value!.cadence,
+        returnTo: returnTo.value,
+        guest_email: guestEmailForCheckout || undefined
+      }
+    })
+
+    if (res.provider === 'test' || res.redirectUrl.startsWith('/') || res.redirectUrl.startsWith(window.location.origin)) {
+      const url = new URL(res.redirectUrl, window.location.origin)
+      await router.push(url.pathname + url.search)
+    } else {
+      window.location.href = res.redirectUrl
+    }
+  }
+
   try {
     if (!selectedTier.value || !selectedPlan.value) {
       errorMsg.value = 'This membership option is not available right now.'
@@ -100,32 +124,66 @@ async function beginCheckout() {
         return
       }
 
-      const res = await $fetch<{
-        ok: boolean
-        effectiveDate: string | null
-        target: {
-          displayName: string
-          cadence: Cadence
-        }
-        message: string
-      }>('/api/membership/change-plan', {
-        method: 'POST',
-        body: {
-          tier: selectedTier.value.id,
-          cadence: selectedPlan.value.cadence
-        }
-      })
+      // If the current membership is not managed in Square (ex: admin/test tier),
+      // skip swap-plan and start a normal checkout session for the target plan.
+      try {
+        const { data: membership } = await supabase
+          .from('memberships')
+          .select('billing_provider,billing_subscription_id,square_subscription_id')
+          .eq('user_id', user.value.sub)
+          .maybeSingle()
 
-      const effective = res.effectiveDate
-        ? new Date(res.effectiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-        : 'the next billing cycle'
-      toast.add({
-        title: 'Plan change scheduled',
-        description: `${res.target.displayName} (${formatCadence(res.target.cadence)}) will start ${effective}.`,
-        color: 'success'
-      })
-      await router.push(returnTo.value)
-      return
+        const billingProvider = (membership?.billing_provider ?? '').toLowerCase()
+        const billingSubscriptionId = (membership?.billing_subscription_id ?? '').trim()
+        const squareSubscriptionId = (membership?.square_subscription_id ?? '').trim()
+        const hasManagedSquare = billingProvider === 'square' && (Boolean(billingSubscriptionId) || Boolean(squareSubscriptionId))
+
+        if (!hasManagedSquare) {
+          await startSquareCheckoutSession()
+          return
+        }
+      } catch {
+        // Fall through to existing switch-path logic.
+      }
+
+      try {
+        const res = await $fetch<{
+          ok: boolean
+          effectiveDate: string | null
+          target: {
+            displayName: string
+            cadence: Cadence
+          }
+          message: string
+        }>('/api/membership/change-plan', {
+          method: 'POST',
+          body: {
+            tier: selectedTier.value.id,
+            cadence: selectedPlan.value.cadence
+          }
+        })
+
+        const effective = res.effectiveDate
+          ? new Date(res.effectiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : 'the next billing cycle'
+        toast.add({
+          title: 'Plan change scheduled',
+          description: `${res.target.displayName} (${formatCadence(res.target.cadence)}) will start ${effective}.`,
+          color: 'success'
+        })
+        await router.push(returnTo.value)
+        return
+      } catch (switchError: unknown) {
+        const message = readErrorMessage(switchError).toLowerCase()
+        const canFallbackToCheckout
+          = message.includes('not linked to a managed square subscription')
+            || message.includes('could not load subscription from square')
+
+        if (!canFallbackToCheckout) throw switchError
+
+        await startSquareCheckoutSession()
+        return
+      }
     }
 
     const emailForCheckout = (user.value?.email ?? guestEmail.value).trim().toLowerCase()
@@ -135,35 +193,26 @@ async function beginCheckout() {
       return
     }
 
-    const res = await $fetch<{ redirectUrl: string, provider: string }>('/api/checkout/session', {
-      method: 'POST',
-      body: {
-        tier: selectedTier.value.id,
-        cadence: selectedPlan.value.cadence,
-        returnTo: returnTo.value,
-        guest_email: emailForCheckout || undefined
-      }
-    })
-
-    if (res.provider === 'test' || res.redirectUrl.startsWith('/') || res.redirectUrl.startsWith(window.location.origin)) {
-      const url = new URL(res.redirectUrl, window.location.origin)
-      await router.push(url.pathname + url.search)
-    } else {
-      window.location.href = res.redirectUrl
-    }
+    await startSquareCheckoutSession(emailForCheckout)
   } catch (error: unknown) {
-    const e = error as {
-      data?: { statusMessage?: string }
-      statusMessage?: string
-      message?: string
-    }
-    errorMsg.value = e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Checkout failed.'
+    errorMsg.value = readErrorMessage(error)
     loading.value = false
   }
 }
 
+function readErrorMessage(error: unknown) {
+  const e = error as {
+    data?: { statusMessage?: string }
+    statusMessage?: string
+    message?: string
+  }
+  return e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Checkout failed.'
+}
+
 function formatCadence(cadence: Cadence) {
   switch (cadence) {
+    case 'daily': return 'Daily (billed every day)'
+    case 'weekly': return 'Weekly (billed every week)'
     case 'monthly': return 'Monthly'
     case 'quarterly': return 'Quarterly (billed every 3 months)'
     case 'annual': return 'Annual (billed once per year)'
@@ -181,28 +230,64 @@ function formatTier(tierId: string) {
 }
 
 function formatMoney(cents: number, currency: string) {
-  const dollars = (cents / 100).toFixed(0)
-  return currency === 'USD' ? `$${dollars}` : `${dollars} ${currency}`
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100)
 }
 
-function billingMonths(cadence: Cadence) {
+function cadenceToMonths(cadence: Cadence) {
   switch (cadence) {
     case 'monthly': return 1
     case 'quarterly': return 3
     case 'annual': return 12
+    default: return null
   }
 }
 
 function effectiveMonthlyCents(option: PlanOption) {
-  return Math.round(option.price_cents / billingMonths(option.cadence))
+  const months = cadenceToMonths(option.cadence)
+  if (!months) return null
+  return Math.round(billedCycleCents(option) / months)
 }
 
 function savingsVsMonthlyCents(option: PlanOption) {
   if (!monthlyOption.value) return 0
-  const months = billingMonths(option.cadence)
-  if (months <= 1) return 0
+  const months = cadenceToMonths(option.cadence)
+  if (!months || months <= 1) return 0
   const baseline = monthlyOption.value.price_cents * months
-  return Math.max(0, baseline - option.price_cents)
+  return Math.max(0, baseline - billedCycleCents(option))
+}
+
+function billedCycleCents(option: PlanOption) {
+  const months = cadenceToMonths(option.cadence)
+  if (!months) return option.price_cents
+
+  const monthlyBase = monthlyOption.value?.price_cents ?? option.price_cents
+  let cycleCents = monthlyBase * months
+  const discount = parseDiscountLabel(option.discount_label)
+
+  if (discount.type === 'percent') {
+    const pct = Number(discount.amount)
+    if (Number.isFinite(pct) && pct > 0) {
+      const clampedPct = Math.min(100, Math.max(0, pct))
+      cycleCents = Math.round(cycleCents * (1 - (clampedPct / 100)))
+    }
+  }
+
+  if (discount.type === 'dollar') {
+    const dollarAmount = Number(discount.amount)
+    if (Number.isFinite(dollarAmount) && dollarAmount > 0) {
+      cycleCents = Math.max(0, cycleCents - Math.round(dollarAmount * 100))
+    }
+  }
+
+  return cycleCents
+}
+
+function cadencePriceSuffix(cadence: Cadence) {
+  if (cadence === 'daily') return '/day'
+  if (cadence === 'weekly') return '/week'
+  if (cadence === 'quarterly') return '/quarter'
+  if (cadence === 'annual') return '/year'
+  return '/mo'
 }
 </script>
 
@@ -269,14 +354,14 @@ function savingsVsMonthlyCents(option: PlanOption) {
               class="flex justify-between"
             >
               <span class="text-dimmed">Price</span>
-              <span class="font-medium">{{ formatMoney(selectedPlan.price_cents, selectedPlan.currency) }}</span>
+              <span class="font-medium">{{ formatMoney(billedCycleCents(selectedPlan), selectedPlan.currency) }} {{ cadencePriceSuffix(selectedPlan.cadence) }}</span>
             </div>
             <div
-              v-if="selectedPlan"
+              v-if="selectedPlan && effectiveMonthlyCents(selectedPlan) !== null"
               class="flex justify-between"
             >
               <span class="text-dimmed">Effective monthly</span>
-              <span>{{ formatMoney(effectiveMonthlyCents(selectedPlan), selectedPlan.currency) }}/mo</span>
+              <span>{{ formatMoney(effectiveMonthlyCents(selectedPlan) ?? 0, selectedPlan.currency) }}/mo</span>
             </div>
             <div
               v-if="selectedPlan && selectedSavingsCents > 0"
@@ -334,7 +419,7 @@ function savingsVsMonthlyCents(option: PlanOption) {
             <div class="text-sm font-medium">
               Choose billing cadence
             </div>
-            <div class="grid gap-2 sm:grid-cols-3">
+            <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               <button
                 v-for="option in sortedOptions"
                 :key="option.cadence"
@@ -348,13 +433,13 @@ function savingsVsMonthlyCents(option: PlanOption) {
                   {{ formatCadence(option.cadence).split(' (')[0] }}
                 </div>
                 <div class="mt-1 text-xs text-dimmed">
-                  {{ formatMoney(option.price_cents, option.currency) }}
+                  {{ formatMoney(billedCycleCents(option), option.currency) }}
                 </div>
                 <div
-                  v-if="option.cadence !== 'monthly'"
+                  v-if="effectiveMonthlyCents(option) !== null && option.cadence !== 'monthly'"
                   class="mt-1 text-xs text-dimmed"
                 >
-                  {{ formatMoney(effectiveMonthlyCents(option), option.currency) }}/mo effective
+                  {{ formatMoney(effectiveMonthlyCents(option) ?? 0, option.currency) }}/mo effective
                 </div>
                 <div
                   v-if="savingsVsMonthlyCents(option) > 0"
@@ -363,15 +448,15 @@ function savingsVsMonthlyCents(option: PlanOption) {
                   Save {{ formatMoney(savingsVsMonthlyCents(option), option.currency) }} vs monthly
                 </div>
                 <div
-                  v-else-if="option.discount_label"
+                  v-else-if="getDiscountLabel(option.discount_label)"
                   class="mt-1 text-xs text-[color:var(--gruv-accent)]"
                 >
-                  {{ option.discount_label }}
+                  {{ getDiscountLabel(option.discount_label) }}
                 </div>
               </button>
             </div>
             <p class="text-xs text-dimmed">
-              Quarterly and annual options can lower effective monthly cost. Credits still release month by month.
+              Longer billing cadences can reduce effective monthly cost. Credits still release month by month.
             </p>
           </div>
 

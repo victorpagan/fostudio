@@ -4,22 +4,36 @@ import type { PaymentsProvider, CreateCheckoutSessionInput, CreateCheckoutSessio
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import type { H3Event } from 'h3'
+import { serverSupabaseServiceRole } from '#supabase/server'
 
 export const squareProvider: PaymentsProvider = {
   name: 'square',
 
   async createCheckoutSession(input: CreateCheckoutSessionInput, event: H3Event): Promise<CreateCheckoutSessionOutput> {
-    const [locationId, planVariationId] = await Promise.all([
-      getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID'),
-      getServerConfig(event, `SQUARE_PLAN_VARIATION_${input.tier.toUpperCase()}_${input.cadence.toUpperCase()}`)
-    ])
+    const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
+    const supabase = serverSupabaseServiceRole(event)
+    const { data: variation, error: variationErr } = await supabase
+      .from('membership_plan_variations')
+      .select('provider_plan_variation_id,active')
+      .eq('tier_id', input.tier)
+      .eq('cadence', input.cadence)
+      .eq('provider', 'square')
+      .maybeSingle()
+    if (variationErr) throw new Error(variationErr.message)
+    if (!variation || !variation.active) {
+      throw new Error('Selected plan variation is not active.')
+    }
+    const planVariationId = variation.provider_plan_variation_id?.trim()
+    if (!planVariationId) {
+      throw new Error('Selected plan variation is not linked to Square.')
+    }
 
     const client = await useSquareClient(event)
     const idempotencyKey = randomUUID()
     const { origin } = getRequestURL(event)
     const redirectUrl = `${origin}/checkout/success`
 
-    const body: any = {
+    const body: Record<string, unknown> = {
       idempotencyKey,
       quickPay: {
         name: `FO Studio Membership (${input.tier} • ${input.cadence})`,
@@ -39,7 +53,7 @@ export const squareProvider: PaymentsProvider = {
       }
     }
 
-    const res = await client.checkout.paymentLinks.create(body)
+    const res = await client.checkout.paymentLinks.create(body as never)
     const paymentLink = res.paymentLink
 
     if (!paymentLink?.url) throw new Error('Square did not return a payment link URL.')

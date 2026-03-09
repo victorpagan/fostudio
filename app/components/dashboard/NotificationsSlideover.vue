@@ -3,9 +3,25 @@ import { formatTimeAgo } from '@vueuse/core'
 import type { Notification } from '~/types'
 
 const { isNotificationsSlideoverOpen } = useDashboard()
+const notificationsHydrated = ref(false)
 
 const { data: notifications } = await useFetch<Notification[]>('/api/notifications', {
   default: () => []
+})
+
+function fallbackDate(value: string) {
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return value
+  return dt.toISOString().slice(0, 10)
+}
+
+function notificationTime(value: string) {
+  if (!notificationsHydrated.value) return fallbackDate(value)
+  return formatTimeAgo(new Date(value))
+}
+
+onMounted(() => {
+  notificationsHydrated.value = true
 })
 </script>
 
@@ -40,7 +56,7 @@ const { data: notifications } = await useFetch<Notification[]>('/api/notificatio
             <time
               :datetime="n.date"
               class="text-muted text-xs"
-              v-text="formatTimeAgo(new Date(n.date))"
+              v-text="notificationTime(n.date)"
             />
           </p>
 

@@ -7,8 +7,9 @@ const bodySchema = z.object({
   peakStartHour: z.number().int().min(0).max(23),
   peakEndHour: z.number().int().min(1).max(24),
   guestPeakMultiplier: z.number().min(1).max(5),
-  guestBookingWindowDays: z.number().int().min(1).max(60)
-}).refine((value) => value.peakEndHour > value.peakStartHour, {
+  guestBookingWindowDays: z.number().int().min(1).max(60),
+  memberRescheduleNoticeHours: z.number().int().min(1).max(240)
+}).refine(value => value.peakEndHour > value.peakStartHour, {
   message: 'Peak end hour must be after start hour',
   path: ['peakEndHour']
 })
@@ -22,7 +23,8 @@ export default defineEventHandler(async (event) => {
     { key: 'peak_start_hour', value: body.peakStartHour },
     { key: 'peak_end_hour', value: body.peakEndHour },
     { key: 'guest_peak_multiplier', value: body.guestPeakMultiplier },
-    { key: 'guest_booking_window_days', value: body.guestBookingWindowDays }
+    { key: 'guest_booking_window_days', value: body.guestBookingWindowDays },
+    { key: 'member_reschedule_notice_hours', value: body.memberRescheduleNoticeHours }
   ]
 
   const { error } = await supabase

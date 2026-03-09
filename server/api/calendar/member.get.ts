@@ -86,7 +86,7 @@ export default defineEventHandler(async (event) => {
 
   // Shape events for FullCalendar — distinguish own bookings from others
   const events = [
-    ...(bookings ?? []).map(b => {
+    ...(bookings ?? []).map((b) => {
       const isOwn = b.user_id === user.sub
       return {
         id: `b_${b.id}`,
@@ -100,12 +100,13 @@ export default defineEventHandler(async (event) => {
         extendedProps: {
           type: 'booking',
           isOwn,
+          bookingId: b.id,
           status: b.status,
           notes: isOwn ? b.notes : undefined
         }
       }
     }),
-    ...(holds ?? []).map((h) => ({
+    ...(holds ?? []).map(h => ({
       id: `h_${h.id}`,
       start: h.hold_start,
       end: h.hold_end,
@@ -114,7 +115,7 @@ export default defineEventHandler(async (event) => {
       color: '#f59e0b', // amber for holds
       extendedProps: { type: 'hold' }
     })),
-    ...(blocks ?? []).map((block) => ({
+    ...(blocks ?? []).map(block => ({
       id: `x_${block.id}`,
       start: block.start_time,
       end: block.end_time,

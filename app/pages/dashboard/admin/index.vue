@@ -33,10 +33,22 @@ const sections = [
     to: '/dashboard/admin/members'
   },
   {
-    title: 'Bookings & calendar',
+    title: 'Bookings',
     description: 'Review all bookings and run admin-level cancellation/refund actions.',
     icon: 'i-lucide-calendar-range',
     to: '/dashboard/admin/bookings'
+  },
+  {
+    title: 'Calendar settings',
+    description: 'Manage LA peak windows, booking windows, and blackout blocks.',
+    icon: 'i-lucide-calendar-clock',
+    to: '/dashboard/admin/calendar'
+  },
+  {
+    title: 'Holds',
+    description: 'Configure hold fallback, hold top-up settings, and sync the hold item to Square.',
+    icon: 'i-lucide-package-plus',
+    to: '/dashboard/admin/holds'
   }
 ]
 

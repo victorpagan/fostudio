@@ -55,15 +55,39 @@ function subtractMonths(iso: string, months: number) {
   return addMonths(iso, -months)
 }
 
-function monthsForCadence(cadence: string) {
-  if (cadence === 'annual') return 12
-  if (cadence === 'quarterly') return 3
-  return 1
+function addCadenceInterval(iso: string, cadence: string) {
+  if (cadence === 'daily') {
+    const value = new Date(iso)
+    value.setUTCDate(value.getUTCDate() + 1)
+    return value.toISOString()
+  }
+  if (cadence === 'weekly') {
+    const value = new Date(iso)
+    value.setUTCDate(value.getUTCDate() + 7)
+    return value.toISOString()
+  }
+  if (cadence === 'annual') return addMonths(iso, 12)
+  if (cadence === 'quarterly') return addMonths(iso, 3)
+  return addMonths(iso, 1)
+}
+
+function subtractCadenceInterval(iso: string, cadence: string) {
+  if (cadence === 'daily') {
+    const value = new Date(iso)
+    value.setUTCDate(value.getUTCDate() - 1)
+    return value.toISOString()
+  }
+  if (cadence === 'weekly') {
+    const value = new Date(iso)
+    value.setUTCDate(value.getUTCDate() - 7)
+    return value.toISOString()
+  }
+  if (cadence === 'annual') return subtractMonths(iso, 12)
+  if (cadence === 'quarterly') return subtractMonths(iso, 3)
+  return subtractMonths(iso, 1)
 }
 
 export function resolveMembershipBillingPeriod(input: BillingPeriodInput): BillingPeriod | null {
-  const cadenceMonths = monthsForCadence(input.cadence)
-
   const rawStart = readFirst(input.invoice, [
     ['subscriptionDetails', 'billingPeriodStartDate'],
     ['subscription_details', 'billing_period_start_date'],
@@ -92,11 +116,11 @@ export function resolveMembershipBillingPeriod(input: BillingPeriodInput): Billi
   let currentPeriodEnd = toIso(rawEnd)
 
   if (!currentPeriodStart && currentPeriodEnd) {
-    currentPeriodStart = subtractMonths(currentPeriodEnd, cadenceMonths)
+    currentPeriodStart = subtractCadenceInterval(currentPeriodEnd, input.cadence)
   }
 
   if (currentPeriodStart && !currentPeriodEnd) {
-    currentPeriodEnd = addMonths(currentPeriodStart, cadenceMonths)
+    currentPeriodEnd = addCadenceInterval(currentPeriodStart, input.cadence)
   }
 
   if (!currentPeriodStart || !currentPeriodEnd) return null

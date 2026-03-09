@@ -12,7 +12,7 @@
  */
 import { z } from 'zod'
 import { DateTime } from 'luxon'
-import { serverSupabaseUser, serverSupabaseClient } from '#supabase/server'
+import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 import { getServerConfigMap } from '~~/server/utils/config/secret'
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
 
@@ -74,7 +74,7 @@ export default defineEventHandler(async (event) => {
   let tierName: string | null = null
 
   if (mode === 'member' && user) {
-    const supabase = await serverSupabaseClient(event)
+    const supabase = serverSupabaseServiceRole(event)
 
     const { data: membership } = await supabase
       .from('memberships')
@@ -120,7 +120,7 @@ export default defineEventHandler(async (event) => {
     // Breakdown info for display
     breakdown: {
       isPeakWindow: isPeakByConfig(start, peakWindow) || isPeakByConfig(end.minus({ minutes: 1 }), peakWindow),
-      offPeakHours: durationHours, // simplified — full breakdown could be computed
+      offPeakHours: durationHours // simplified — full breakdown could be computed
     }
   }
 })

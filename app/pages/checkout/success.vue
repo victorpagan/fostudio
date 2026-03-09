@@ -37,6 +37,33 @@ const claimComplete = ref(false)
 let timer: ReturnType<typeof setInterval> | null = null
 let claimRetryTimer: ReturnType<typeof setTimeout> | null = null
 
+const statusLabel = computed(() => {
+  if (status.value === 'active') return 'Active'
+  if (status.value === 'pending_checkout') return 'Activating'
+  if (status.value === 'past_due') return 'Past due'
+  if (status.value === 'canceled') return 'Canceled'
+  if (status.value === 'completed') return 'Completed'
+  return status.value
+})
+
+const statusColor = computed(() => {
+  if (status.value === 'active') return 'success'
+  if (status.value === 'pending_checkout') return 'warning'
+  if (status.value === 'past_due' || status.value === 'canceled') return 'error'
+  return 'neutral'
+})
+
+function startStatusPolling() {
+  if (timer) clearInterval(timer)
+  timer = setInterval(async () => {
+    await pollLegacyMembershipStatus()
+    if (status.value === 'active') {
+      if (timer) clearInterval(timer)
+      await navigateTo(returnTo.value)
+    }
+  }, 2500)
+}
+
 function scheduleClaimRetry() {
   if (claimRetryTimer) clearTimeout(claimRetryTimer)
   claimRetryTimer = setTimeout(() => {
@@ -111,8 +138,12 @@ async function claimCheckout() {
 
 onMounted(async () => {
   if (checkoutToken.value) {
-    if (user.value) await claimCheckout()
-    else status.value = 'completed'
+    if (user.value) {
+      await claimCheckout()
+      if (status.value !== 'active' && !claimError.value) {
+        startStatusPolling()
+      }
+    } else status.value = 'completed'
     return
   }
 
@@ -127,13 +158,7 @@ onMounted(async () => {
     return
   }
 
-  timer = setInterval(async () => {
-    await pollLegacyMembershipStatus()
-    if (status.value === 'active') {
-      if (timer) clearInterval(timer)
-      await navigateTo(returnTo.value)
-    }
-  }, 2000)
+  startStatusPolling()
 })
 
 watch(() => user.value?.sub, async (nextUserId) => {
@@ -188,15 +213,16 @@ onBeforeUnmount(() => {
             </div>
             <div class="mt-3 flex items-center gap-3">
               <UBadge
-                :color="status === 'active' ? 'success' : 'neutral'"
+                :color="statusColor"
                 variant="soft"
                 size="lg"
               >
-                {{ status }}
+                {{ statusLabel }}
               </UBadge>
               <span class="text-sm text-[color:var(--gruv-ink-2)]">
                 <span v-if="claimLoading">Linking your account now.</span>
                 <span v-else-if="status === 'active'">Ready to book.</span>
+                <span v-else-if="status === 'pending_checkout'">Payment received. Membership activation is syncing with Square.</span>
                 <span v-else-if="checkoutToken && !user">Account step required.</span>
                 <span v-else>Sync in progress.</span>
               </span>

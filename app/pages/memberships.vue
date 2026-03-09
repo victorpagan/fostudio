@@ -1,5 +1,5 @@
 <script setup lang="ts">
-type Cadence = 'monthly' | 'quarterly' | 'annual'
+type Cadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
 
 type PlanOption = {
   cadence: Cadence
@@ -56,7 +56,7 @@ function formatMoney(cents: number, currency: string) {
 }
 
 function sortedOptions(tier: Tier) {
-  const order: Record<Cadence, number> = { monthly: 0, quarterly: 1, annual: 2 }
+  const order: Record<Cadence, number> = { daily: 0, weekly: 1, monthly: 2, quarterly: 3, annual: 4 }
   return [...tier.membership_plan_variations].sort((left, right) => order[left.cadence] - order[right.cadence])
 }
 
@@ -265,7 +265,7 @@ function onSelectTier(tierId: string) {
         </div>
 
         <div class="rounded-2xl border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] px-4 py-3 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
-          Includes {{ tier.holds_included }} hold window{{ tier.holds_included === 1 ? '' : 's' }}, full equipment access, and consumables like backdrop paper.
+          Includes up to {{ tier.holds_included }} overnight hold{{ tier.holds_included === 1 ? '' : 's' }} per month, full equipment access, and consumables like backdrop paper.
           Peak-time bookings use {{ formatPeakCredits(tier.peak_multiplier) }} credits per hour when demand is highest.
         </div>
       </article>

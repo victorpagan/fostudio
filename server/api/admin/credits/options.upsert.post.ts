@@ -13,11 +13,12 @@ const bodySchema = z.object({
   saleEndsAt: z.string().datetime().optional().nullable(),
   active: z.boolean().default(true),
   sortOrder: z.number().int().default(0),
-  metadata: z.record(z.string(), z.any()).optional().nullable()
+  metadata: z.record(z.string(), z.unknown()).optional().nullable()
 })
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
   const parsed = bodySchema.safeParse(await readBody(event))
   if (!parsed.success) {
@@ -30,7 +31,10 @@ export default defineEventHandler(async (event) => {
   }
   const body = parsed.data
 
-  if (body.salePriceCents !== null && body.salePriceCents !== undefined && body.salePriceCents > body.basePriceCents) {
+  const basePriceCents = body.basePriceCents
+  const salePriceCents = body.salePriceCents
+
+  if (salePriceCents !== null && salePriceCents !== undefined && salePriceCents > basePriceCents) {
     throw createError({ statusCode: 400, statusMessage: 'Sale price must be less than or equal to base price.' })
   }
 
@@ -43,8 +47,8 @@ export default defineEventHandler(async (event) => {
     label: body.label,
     description: body.description ?? null,
     credits: body.credits,
-    base_price_cents: body.basePriceCents,
-    sale_price_cents: body.salePriceCents ?? null,
+    base_price_cents: basePriceCents,
+    sale_price_cents: salePriceCents ?? null,
     sale_starts_at: body.saleStartsAt ?? null,
     sale_ends_at: body.saleEndsAt ?? null,
     active: body.active,

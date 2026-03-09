@@ -74,6 +74,7 @@ const pending = ref(false)
 const processing = ref(false)
 const backfilling = ref(false)
 const data = ref<AdminOpsResponse | null>(null)
+const dashboardHydrated = ref(false)
 
 function readErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Unknown error'
@@ -151,8 +152,18 @@ async function loadOps() {
 
 function formatDateTime(value: string | null) {
   if (!value) return '—'
-  return new Date(value).toLocaleString()
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return value
+  if (!dashboardHydrated.value) {
+    const iso = dt.toISOString()
+    return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
+  }
+  return dt.toLocaleString('en-US')
 }
+
+onMounted(() => {
+  dashboardHydrated.value = true
+})
 </script>
 
 <template>

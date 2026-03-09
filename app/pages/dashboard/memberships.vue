@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { getMembershipPlanDetails } from '~~/app/utils/membershipPlanDetails'
+import { normalizeDiscountLabel } from '~~/app/utils/membershipDiscount'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -14,7 +15,7 @@ type MembershipRow = {
 }
 
 type PlanVariation = {
-  cadence: 'monthly' | 'quarterly' | 'annual'
+  cadence: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
   credits_per_month: number | null
   price_cents: number | null
   currency: string | null
@@ -44,7 +45,7 @@ const { data: membership } = await useAsyncData('dash:browse:membership', async 
   return data as MembershipRow | null
 })
 
-const { data: catalog, refresh } = await useAsyncData('dash:browse:catalog', async () => {
+const { data: catalog, refresh, pending: catalogPending, error: catalogError } = await useAsyncData('dash:browse:catalog', async () => {
   const res = await $fetch<{ tiers: CatalogTier[] }>('/api/membership/catalog')
   return res?.tiers ?? []
 })
@@ -70,10 +71,16 @@ function formatPeakCredits(value: number) {
 }
 
 function formatCadence(value: string) {
+  if (value === 'daily') return 'Daily'
+  if (value === 'weekly') return 'Weekly'
   if (value === 'monthly') return 'Monthly'
   if (value === 'quarterly') return 'Quarterly'
   if (value === 'annual') return 'Annual'
   return value
+}
+
+function getDiscountLabel(label?: string | null) {
+  return normalizeDiscountLabel(label)
 }
 
 function formatPrice(cents: number | null, currency: string | null) {
@@ -102,8 +109,11 @@ function openTierDetails(tierId: string) {
 </script>
 
 <template>
-  <div>
-    <UDashboardPanel id="memberships">
+  <div class="flex min-h-0 flex-1">
+    <UDashboardPanel
+      id="memberships"
+      class="min-h-0 flex-1"
+    >
       <template #header>
         <UDashboardNavbar title="Browse Memberships">
           <template #leading>
@@ -115,7 +125,7 @@ function openTierDetails(tierId: string) {
               color="neutral"
               variant="soft"
               icon="i-lucide-refresh-cw"
-              @click="refresh"
+              @click="() => refresh()"
             />
           </template>
         </UDashboardNavbar>
@@ -123,6 +133,24 @@ function openTierDetails(tierId: string) {
 
       <template #body>
         <div class="p-4 space-y-4">
+          <UAlert
+            v-if="catalogError"
+            color="error"
+            variant="soft"
+            icon="i-lucide-circle-alert"
+            title="Could not load memberships"
+            :description="catalogError.message"
+          />
+
+          <UAlert
+            v-else-if="!catalogPending && !tiers.length"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-search-x"
+            title="No memberships available"
+            description="No visible membership tiers were returned for this account."
+          />
+
           <UAlert
             v-if="hasActiveMembership"
             color="neutral"
@@ -132,7 +160,10 @@ function openTierDetails(tierId: string) {
             description="Upgrades and downgrades are scheduled for your next billing cycle. Mid-cycle prorated membership changes are not applied."
           />
 
-          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div
+            v-if="tiers.length"
+            class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          >
             <UCard
               v-for="tier in tiers"
               :key="tier.id"
@@ -195,13 +226,13 @@ function openTierDetails(tierId: string) {
                       <span class="font-medium">{{ formatCadence(plan.cadence) }}</span>
                       <span class="text-dimmed"> · {{ plan.credits_per_month ?? '—' }} cr/mo</span>
                       <UBadge
-                        v-if="plan.discount_label"
+                        v-if="getDiscountLabel(plan.discount_label)"
                         color="success"
                         variant="soft"
                         size="xs"
                         class="ml-1"
                       >
-                        {{ plan.discount_label }}
+                        {{ getDiscountLabel(plan.discount_label) }}
                       </UBadge>
                     </div>
                     <div class="text-sm font-medium">
