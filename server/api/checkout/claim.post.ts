@@ -302,7 +302,7 @@ export default defineEventHandler(async (event) => {
         .from('memberships')
         .select('id,status,square_customer_id')
         .eq('user_id', customerBySquare.user_id)
-        .in('status', ['active', 'past_due', 'pending_checkout'])
+        .in('status', ['active', 'past_due'])
         .limit(1)
         .maybeSingle()
 
