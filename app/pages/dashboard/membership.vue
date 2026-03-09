@@ -466,7 +466,8 @@ const holdTopupLoading = ref(false)
 const membershipCancelLoading = ref(false)
 const membershipUndoCancelLoading = ref(false)
 const doorCodeRequestLoading = ref(false)
-const topupClaiming = ref(false)
+const topupClaimInFlight = ref(false)
+const topupClaimingFromRoute = ref(false)
 const holdTopupClaiming = ref(false)
 const topupOptionsRefreshing = ref(false)
 const topupOptionsTimedOut = ref(false)
@@ -736,9 +737,11 @@ function readQueryString(value: unknown) {
 async function claimTopupFromRoute() {
   const topupToken = readQueryString(route.query.topup)
   const topupOrderId = readQueryString(route.query.orderId) ?? readQueryString(route.query.order_id)
-  if (topupClaiming.value) return
+  if (topupClaimInFlight.value) return
+  const hasCheckoutQuery = Boolean(topupToken || topupOrderId)
 
-  topupClaiming.value = true
+  topupClaimInFlight.value = true
+  if (hasCheckoutQuery) topupClaimingFromRoute.value = true
   let shouldClearTopupQuery = false
   try {
     const maxAttempts = topupToken ? 7 : 1
@@ -817,7 +820,8 @@ async function claimTopupFromRoute() {
       })
     }
   } finally {
-    topupClaiming.value = false
+    topupClaimInFlight.value = false
+    if (hasCheckoutQuery) topupClaimingFromRoute.value = false
     if (shouldClearTopupQuery && route.query.topup) {
       const nextQuery = { ...route.query }
       delete nextQuery.topup
@@ -1431,6 +1435,12 @@ onUnmounted(() => {
                       </div>
                     </div>
                   </ClientOnly>
+                  <div
+                    v-if="topupClaimingFromRoute"
+                    class="text-xs text-dimmed"
+                  >
+                    Finalizing your recent credit payment…
+                  </div>
 
                   <div
                     v-if="topupOptions?.length"
@@ -1477,8 +1487,8 @@ onUnmounted(() => {
                         class="mt-3"
                         size="xs"
                         block
-                        :loading="topupLoadingKey === option.key"
-                        :disabled="topupLoadingKey !== null || topupClaiming"
+                        :loading="topupLoadingKey === option.key || (topupClaimingFromRoute && topupLoadingKey === null)"
+                        :disabled="topupLoadingKey !== null || topupClaimingFromRoute"
                         @click="startTopup(option.key)"
                       >
                         Buy {{ option.credits }} credit{{ option.credits === 1 ? '' : 's' }}
