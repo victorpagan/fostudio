@@ -34,6 +34,7 @@ const claimHint = ref<string | null>(null)
 const claimedMembershipId = ref<string | null>(null)
 const claimComplete = ref(false)
 const activationReminderTriggered = ref(false)
+const bootstrapAttempted = ref(false)
 
 let timer: ReturnType<typeof setInterval> | null = null
 let claimRetryTimer: ReturnType<typeof setTimeout> | null = null
@@ -97,6 +98,22 @@ async function triggerActivationReminder() {
   }
 }
 
+async function ensureBootstrap() {
+  if (!user.value || bootstrapAttempted.value) return
+  bootstrapAttempted.value = true
+
+  try {
+    await $fetch('/api/account/bootstrap', {
+      method: 'POST',
+      body: {
+        email: user.value.email ?? undefined
+      }
+    })
+  } catch {
+    // Keep checkout claim flow resilient; claim may still succeed without bootstrap.
+  }
+}
+
 async function claimCheckout() {
   if (!checkoutToken.value || !user.value) return
 
@@ -104,6 +121,8 @@ async function claimCheckout() {
   claimError.value = null
 
   try {
+    await ensureBootstrap()
+
     const res = await $fetch<{
       ok: boolean
       pending?: boolean
@@ -153,6 +172,7 @@ async function claimCheckout() {
 onMounted(async () => {
   if (checkoutToken.value) {
     if (user.value) {
+      await ensureBootstrap()
       await claimCheckout()
       if (status.value !== 'active' && !claimError.value) {
         startStatusPolling()
@@ -180,6 +200,7 @@ onMounted(async () => {
 
 watch(() => user.value?.sub, async (nextUserId) => {
   if (checkoutToken.value && nextUserId && !claimLoading.value && !claimComplete.value) {
+    await ensureBootstrap()
     await claimCheckout()
   }
 })
