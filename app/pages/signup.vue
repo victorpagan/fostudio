@@ -2,7 +2,7 @@
 <script setup lang="ts">
 definePageMeta({ auth: false })
 
-type TierId = 'creator' | 'pro' | 'studio_plus'
+type TierId = string
 type Cadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
 
 const route = useRoute()
@@ -11,7 +11,7 @@ const router = useRouter()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 
-const tierCatalog: Record<TierId, { name: string, credits: number, bookingWindowDays: number }> = {
+const tierCatalog: Record<string, { name: string, credits: number, bookingWindowDays: number }> = {
   creator: { name: 'Creator', credits: 12, bookingWindowDays: 14 },
   pro: { name: 'Pro', credits: 26, bookingWindowDays: 21 },
   studio_plus: { name: 'Studio+', credits: 42, bookingWindowDays: 30 }
@@ -52,15 +52,52 @@ const selectedPlan = computed(() => {
   return selected
 })
 
+const checkoutTokenFromReturnTo = computed(() => {
+  try {
+    const target = new URL(returnTo.value, 'https://fostudio.local')
+    if (!target.pathname.startsWith('/checkout/success')) return null
+    const token = target.searchParams.get('checkout')
+    return token || null
+  } catch {
+    return null
+  }
+})
+
+const { data: checkoutSessionInfo } = await useAsyncData('signup:checkout-session-info', async () => {
+  if (!checkoutTokenFromReturnTo.value) return null
+  const res = await $fetch<{
+    session: {
+      tier: string
+      cadence: Cadence
+      tierDisplayName: string
+    }
+  }>('/api/checkout/session-info', {
+    query: { token: checkoutTokenFromReturnTo.value }
+  })
+  return res.session
+}, {
+  watch: [checkoutTokenFromReturnTo]
+})
+
 const tier = computed<TierId>(() => {
   const direct = (route.query.tier as string | undefined)?.toLowerCase()
-  if (direct === 'creator' || direct === 'pro' || direct === 'studio_plus') return direct
+  if (direct) return direct
+  if (checkoutSessionInfo.value?.tier) return checkoutSessionInfo.value.tier
   return selectedPlan.value.tier ?? 'creator'
 })
 
-const cadence = computed<Cadence>(() => selectedPlan.value.cadence ?? 'monthly')
+const cadence = computed<Cadence>(() => checkoutSessionInfo.value?.cadence ?? selectedPlan.value.cadence ?? 'monthly')
 
-const tierInfo = computed(() => tierCatalog[tier.value])
+const tierInfo = computed(() => {
+  const known = tierCatalog[tier.value]
+  if (known) return known
+  const fallbackName = checkoutSessionInfo.value?.tierDisplayName ?? tier.value
+  return {
+    name: fallbackName,
+    credits: 0,
+    bookingWindowDays: 0
+  }
+})
 
 const form = reactive({
   email: '',
@@ -147,11 +184,11 @@ async function handleSignup() {
             <div class="text-xs text-gray-500 dark:text-gray-400">billing</div>
           </div>
           <div class="rounded-xl border border-gray-200/60 p-3 text-center dark:border-gray-800/60">
-            <div class="text-sm font-medium">{{ tierInfo.credits }}</div>
+            <div class="text-sm font-medium">{{ tierInfo.credits > 0 ? tierInfo.credits : '—' }}</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">credits</div>
           </div>
           <div class="rounded-xl border border-gray-200/60 p-3 text-center dark:border-gray-800/60">
-            <div class="text-sm font-medium">{{ tierInfo.bookingWindowDays }}d</div>
+            <div class="text-sm font-medium">{{ tierInfo.bookingWindowDays > 0 ? `${tierInfo.bookingWindowDays}d` : '—' }}</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">booking</div>
           </div>
         </div>

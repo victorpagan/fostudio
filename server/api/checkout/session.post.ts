@@ -348,6 +348,40 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'Email is required to continue checkout.' })
     }
 
+    const { data: existingCustomer, error: existingCustomerErr } = await supabase
+      .from('customers')
+      .select('id,user_id,email')
+      .ilike('email', guestEmail)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (existingCustomerErr) {
+      throw createError({ statusCode: 500, statusMessage: existingCustomerErr.message })
+    }
+
+    if (existingCustomer?.user_id) {
+      const { data: existingMembership, error: existingMembershipErr } = await supabase
+        .from('memberships')
+        .select('id,status')
+        .eq('user_id', existingCustomer.user_id)
+        .in('status', ['active', 'pending_checkout', 'past_due'])
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (existingMembershipErr) {
+        throw createError({ statusCode: 500, statusMessage: existingMembershipErr.message })
+      }
+
+      if (existingMembership) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'This email is already linked to a member account. Sign in to manage or change the existing membership.'
+        })
+      }
+    }
+
     const checkoutToken = randomUUID()
     const { data: checkoutSession, error: sessionErr } = await supabase
       .from('membership_checkout_sessions')
