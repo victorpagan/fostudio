@@ -53,7 +53,6 @@ type BookingPolicy = {
 }
 
 const nowIso = useState('dashboard:bookings:now-iso', () => new Date().toISOString())
-const dashboardHydrated = ref(false)
 
 // Check membership status first (admins always pass)
 const { data: membershipData } = await useAsyncData('bookings:membership', async () => {
@@ -231,31 +230,25 @@ function formatRange(start: string, end: string) {
   if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) {
     return { dateStr: `${start} to ${end}`, timeStr: '' }
   }
-  const dateStr = dashboardHydrated.value
-    ? s.toLocaleDateString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        timeZone: 'America/Los_Angeles'
-      })
-    : s.toISOString().slice(0, 10)
-  const startTime = dashboardHydrated.value
-    ? s.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: 'America/Los_Angeles'
-      })
-    : `${s.toISOString().slice(11, 16)} UTC`
-  const endTime = dashboardHydrated.value
-    ? e.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: 'America/Los_Angeles'
-      })
-    : `${e.toISOString().slice(11, 16)} UTC`
+  const dateStr = s.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'America/Los_Angeles'
+  })
+  const startTime = s.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/Los_Angeles'
+  })
+  const endTime = e.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/Los_Angeles'
+  })
   return { dateStr, timeStr: `${startTime} – ${endTime}` }
 }
 
@@ -441,7 +434,6 @@ function goCheckout(tierId: string, cadence: string) {
 }
 
 onMounted(() => {
-  dashboardHydrated.value = true
   nowIso.value = new Date().toISOString()
   void openRescheduleFromQuery()
 })
