@@ -87,7 +87,9 @@ function loadPromo(promoId: string) {
   form.code = promo.code
   form.description = promo.description ?? ''
   form.discountType = promo.discount_type
-  form.discountValue = Number(promo.discount_value)
+  form.discountValue = promo.discount_type === 'fixed_cents'
+    ? Number(promo.discount_value) / 100
+    : Number(promo.discount_value)
   form.appliesTo = promo.applies_to
   form.active = promo.active
   form.startsAt = promo.starts_at
@@ -209,8 +211,17 @@ function formatPromoValue(promo: PromoCode) {
                       {{ promo.active ? 'active' : 'inactive' }}
                     </UBadge>
                   </div>
-                  <div class="mt-1 text-xs text-dimmed">
-                    {{ formatPromoValue(promo) }} · {{ promo.applies_to }}
+                  <div class="mt-1 flex flex-wrap items-center gap-1 text-xs text-dimmed">
+                    <span>{{ formatPromoValue(promo) }}</span>
+                    <span>·</span>
+                    <UBadge
+                      size="xs"
+                      variant="subtle"
+                      color="neutral"
+                      class="max-w-full whitespace-normal"
+                    >
+                      Applies to {{ promo.applies_to }}
+                    </UBadge>
                   </div>
                 </button>
                 <UButton
@@ -235,6 +246,7 @@ function formatPromoValue(promo: PromoCode) {
               <UFormField label="Applies to">
                 <USelect
                   v-model="form.appliesTo"
+                  class="w-full"
                   :items="[
                     { label: 'All', value: 'all' },
                     { label: 'Membership', value: 'membership' },
@@ -248,14 +260,25 @@ function formatPromoValue(promo: PromoCode) {
               <UFormField label="Discount type">
                 <USelect
                   v-model="form.discountType"
+                  class="w-full"
                   :items="[
                     { label: 'Percent', value: 'percent' },
-                    { label: 'Fixed cents', value: 'fixed_cents' }
+                    { label: 'Fixed amount ($)', value: 'fixed_cents' }
                   ]"
                 />
               </UFormField>
-              <UFormField :label="form.discountType === 'percent' ? 'Discount percent' : 'Discount cents'">
-                <UInput v-model.number="form.discountValue" type="number" min="0.01" step="0.01" />
+              <UFormField :label="form.discountType === 'percent' ? 'Discount percent' : 'Discount amount ($)'">
+                <UInput
+                  v-if="form.discountType === 'percent'"
+                  v-model.number="form.discountValue"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                />
+                <UFieldGroup v-else>
+                  <UBadge color="neutral" variant="outline" size="lg" label="$" />
+                  <UInput v-model.number="form.discountValue" type="number" min="0.01" step="0.01" />
+                </UFieldGroup>
               </UFormField>
               <UFormField label="Starts at">
                 <UInput

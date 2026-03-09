@@ -23,11 +23,20 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Promo end date must be after start date.' })
   }
 
+  if (body.discountType === 'percent' && body.discountValue > 100) {
+    throw createError({ statusCode: 400, statusMessage: 'Percent discount cannot exceed 100.' })
+  }
+
+  // UI enters fixed discounts as dollars; persist in cents for existing schema compatibility.
+  const normalizedDiscountValue = body.discountType === 'fixed_cents'
+    ? Math.round(body.discountValue * 100)
+    : body.discountValue
+
   const payload = {
     code: body.code.trim().toUpperCase(),
     description: body.description ?? null,
     discount_type: body.discountType,
-    discount_value: body.discountValue,
+    discount_value: normalizedDiscountValue,
     applies_to: body.appliesTo,
     active: body.active,
     starts_at: body.startsAt ?? null,
