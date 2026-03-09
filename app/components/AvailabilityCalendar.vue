@@ -10,9 +10,9 @@ import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 
 type CalendarEvent = EventInput & {
-  id: string
-  start: string
-  end: string
+  id?: string
+  start?: string
+  end?: string
   title?: string
   extendedProps?: {
     type?: 'booking' | 'hold'
@@ -25,6 +25,9 @@ type CalendarEvent = EventInput & {
 
 type PeakWindow = {
   timezone: string
+  days: number[]
+  startHour: number
+  endHour: number
   daysLabel: string
   windowLabel: string
   multiplier: number | null
@@ -152,6 +155,36 @@ const peakChip = computed(() => {
   return `Peak ${base} · ${multiplier} credits/hr`
 })
 
+function hourToTimeLabel(hour: number) {
+  const safe = Math.max(0, Math.min(24, Math.floor(hour)))
+  return `${safe.toString().padStart(2, '0')}:00:00`
+}
+
+const peakEvents = computed<CalendarEvent[]>(() => {
+  if (!peakWindow.value) return []
+  const days = (peakWindow.value.days ?? [])
+    .map(day => Number(day))
+    .filter(day => Number.isInteger(day) && day >= 1 && day <= 7)
+  if (!days.length) return []
+
+  return [
+    {
+      id: 'peak-window',
+      title: 'Peak hours',
+      display: 'background',
+      daysOfWeek: days.map(day => day % 7),
+      startTime: hourToTimeLabel(peakWindow.value.startHour),
+      endTime: hourToTimeLabel(peakWindow.value.endHour),
+      classNames: ['fc-peak-window']
+    } as CalendarEvent
+  ]
+})
+
+const calendarEvents = computed<CalendarEvent[]>(() => [
+  ...events.value,
+  ...peakEvents.value
+])
+
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
   initialView: 'timeGridWeek',
@@ -180,7 +213,7 @@ const calendarOptions = computed(() => ({
     timeGridDay: 'Day'
   },
   dayHeaderFormat,
-  events: events.value,
+  events: calendarEvents.value,
   eventClassNames,
   eventContent,
   eventClick: (info: { event: { extendedProps?: CalendarEvent['extendedProps'], startStr: string, endStr: string | null } }) => {
@@ -246,6 +279,7 @@ onMounted(() => loadEvents())
           v-if="peakChip"
           class="availability-chip"
         >
+          <span class="availability-dot bg-[color:var(--gruv-rust)]" />
           {{ peakChip }}
         </div>
         <div

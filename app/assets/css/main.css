@@ -278,6 +278,15 @@ body {
   border-radius: 0.8rem;
 }
 
+.availability-shell .fc .fc-bg-event.fc-peak-window {
+  background: rgba(211, 134, 34, 0.16);
+  opacity: 1;
+}
+
+.dark .availability-shell .fc .fc-bg-event.fc-peak-window {
+  background: rgba(250, 189, 47, 0.16);
+}
+
 .availability-shell .fc .fc-event {
   border-radius: 0.8rem;
   padding: 0.35rem 0.45rem;

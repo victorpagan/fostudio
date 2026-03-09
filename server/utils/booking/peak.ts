@@ -70,6 +70,9 @@ export function isPeakByConfig(dt: DateTime, cfg: PeakWindowConfig) {
 export function toPeakWindowPayload(cfg: PeakWindowConfig, multiplier: number | null) {
   return {
     timezone: cfg.timezone,
+    days: cfg.days,
+    startHour: cfg.startHour,
+    endHour: cfg.endHour,
     daysLabel: formatDaysLabel(cfg.days),
     windowLabel: `${formatHourLabel(cfg.startHour)}-${formatHourLabel(cfg.endHour)}`,
     multiplier
