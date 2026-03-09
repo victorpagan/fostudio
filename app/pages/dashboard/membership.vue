@@ -124,6 +124,20 @@ type DoorCodeState = {
   } | null
 }
 
+type CreditSummary = {
+  totalBalance: number
+  bankBalance: number
+  topoffBalance: number
+  expiringSoonCredits: number
+  expiringSoonAt: string | null
+  maxBank: number
+  atCap: boolean
+  overCap: boolean
+  canBuyTopoff: boolean
+  membershipCreditExpiryDays: number
+  topoffCreditExpiryDays: number
+}
+
 // ── Current membership ─────────────────────────────────────────────────────
 const { data: membership, refresh } = await useAsyncData('dash:membership', async () => {
   if (!user.value) return null
@@ -257,6 +271,12 @@ const { data: topupOptions, refresh: refreshTopupOptions, pending: topupOptionsP
   return res?.options ?? []
 }, { watch: [user, membershipState] })
 
+const { data: creditSummary, refresh: refreshCreditSummary } = await useAsyncData('dash:membership:credits:summary', async () => {
+  if (!user.value || !hasActiveMembership.value) return null
+  const res = await $fetch<{ summary: CreditSummary | null }>('/api/credits/summary')
+  return res.summary
+}, { watch: [user, membershipState] })
+
 const { data: holdSummary, refresh: refreshHoldSummary } = await useAsyncData('dash:membership:hold-summary', async () => {
   if (!user.value || !hasActiveMembership.value) return null
   return await $fetch<HoldSummary>('/api/holds/summary')
@@ -313,6 +333,12 @@ function formatDelta(value: number | string) {
   return n > 0 ? `+${n}` : `${n}`
 }
 
+function formatCredits(value: number | null | undefined) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '0'
+  if (Number.isInteger(value)) return String(value)
+  return value.toFixed(2).replace(/\.?0+$/, '')
+}
+
 function formatLedgerTitle(row: LedgerRow) {
   const reason = (row.reason || '').toLowerCase()
   if (reason === 'topoff') {
@@ -350,6 +376,15 @@ const pendingSwapSummary = computed(() => {
 const currentVariation = computed(() =>
   variations.value?.find(v => v.cadence === membership.value?.cadence) ?? null
 )
+
+const displayedCreditBalance = computed(() => creditSummary.value?.totalBalance ?? balance.value ?? 0)
+const canBuyTopoff = computed(() => creditSummary.value?.canBuyTopoff ?? true)
+const topoffGateDescription = computed(() => {
+  if (!hasActiveMembership.value || canBuyTopoff.value) return null
+  const bank = formatCredits(creditSummary.value?.bankBalance ?? 0)
+  const max = formatCredits(creditSummary.value?.maxBank ?? 0)
+  return `Top-offs unlock once your plan credits reach the cap (${bank}/${max}).`
+})
 
 function formatPrice(cents: number | null, currency = 'USD') {
   if (cents === null) return '—'
@@ -513,13 +548,20 @@ function startTopupOptionsLoadTimers() {
   }, TOPUP_OPTIONS_TIMEOUT_MS)
 }
 
-watch([hasActiveMembership, topupOptionsPending], ([active, pending]) => {
+watch([hasActiveMembership, topupOptionsPending, canBuyTopoff], ([active, pending, canPurchase]) => {
   if (!dashboardHydrated.value) return
 
   if (!active) {
     clearTopupOptionsLoadTimers()
     topupOptionsTimedOut.value = false
     topupOptionsProgress.value = 0
+    return
+  }
+
+  if (!canPurchase) {
+    clearTopupOptionsLoadTimers()
+    topupOptionsTimedOut.value = false
+    topupOptionsProgress.value = 100
     return
   }
 
@@ -545,6 +587,7 @@ watch(topupOptions, (options) => {
 
 async function ensureTopupOptionsLoaded(options?: { force?: boolean, attempts?: number }) {
   if (!hasActiveMembership.value) return
+  if (!canBuyTopoff.value) return
   if (topupOptionsPending.value) return
   if (!options?.force && (topupOptions.value?.length ?? 0) > 0) return
   if (topupOptionsRefreshing.value) return
@@ -577,6 +620,7 @@ async function refreshAll() {
     refreshVariations(),
     refreshSubscriptionState(),
     refreshBalance(),
+    refreshCreditSummary(),
     refreshLedger(),
     refreshTopupOptions(),
     refreshHoldSummary(),
@@ -1404,7 +1448,12 @@ onUnmounted(() => {
                         Credits
                       </div>
                       <div class="mt-1 text-3xl font-semibold">
-                        {{ balance ?? 0 }}
+                        {{ formatCredits(displayedCreditBalance) }}
+                      </div>
+                      <div class="mt-1 text-xs text-dimmed">
+                        Plan bank: {{ formatCredits(creditSummary?.bankBalance ?? 0) }}
+                        <span v-if="creditSummary"> / {{ formatCredits(creditSummary.maxBank) }}</span>
+                        · Top-off: {{ formatCredits(creditSummary?.topoffBalance ?? 0) }}
                       </div>
                     </div>
                     <UButton
@@ -1418,8 +1467,50 @@ onUnmounted(() => {
                   </div>
 
                   <p class="text-sm text-dimmed">
-                    Need extra credit capacity this month? Purchase top-ups instantly.
+                    Top-off purchases are available when your plan credit bank reaches cap.
                   </p>
+                  <p
+                    v-if="creditSummary"
+                    class="text-xs text-dimmed"
+                  >
+                    Plan credits expire after {{ creditSummary.membershipCreditExpiryDays }} days. Top-off credits expire after {{ creditSummary.topoffCreditExpiryDays }} days.
+                  </p>
+
+                  <UAlert
+                    v-if="creditSummary?.overCap"
+                    color="warning"
+                    variant="soft"
+                    icon="i-lucide-alert-triangle"
+                    title="Plan bank is over cap"
+                    description="New plan credits are paused until your plan bank drops back under cap."
+                  />
+
+                  <UAlert
+                    v-else-if="creditSummary?.atCap"
+                    color="info"
+                    variant="soft"
+                    icon="i-lucide-circle-check-big"
+                    title="Plan bank is at cap"
+                    description="Top-off credit purchases are unlocked while your plan bank is at cap."
+                  />
+
+                  <UAlert
+                    v-if="creditSummary?.expiringSoonCredits && creditSummary.expiringSoonCredits > 0"
+                    color="warning"
+                    variant="soft"
+                    icon="i-lucide-timer"
+                    :title="`${formatCredits(creditSummary.expiringSoonCredits)} credits expiring soon`"
+                    :description="`Use expiring credits by ${formatDateLabel(creditSummary.expiringSoonAt) ?? 'this week'}.`"
+                  />
+
+                  <UAlert
+                    v-if="topoffGateDescription"
+                    color="info"
+                    variant="soft"
+                    icon="i-lucide-lock"
+                    title="Top-off locked"
+                    :description="topoffGateDescription"
+                  />
 
                   <ClientOnly>
                     <div
@@ -1490,7 +1581,7 @@ onUnmounted(() => {
                         size="xs"
                         block
                         :loading="topupLoadingKey === option.key || (topupClaimingFromRoute && topupLoadingKey === null)"
-                        :disabled="topupLoadingKey !== null || topupClaimingFromRoute"
+                        :disabled="topupLoadingKey !== null || topupClaimingFromRoute || !canBuyTopoff"
                         @click="startTopup(option.key)"
                       >
                         Buy {{ option.credits }} credit{{ option.credits === 1 ? '' : 's' }}
@@ -1498,10 +1589,10 @@ onUnmounted(() => {
                     </div>
                   </div>
                   <div
-                    v-if="hasActiveMembership && !(topupOptions?.length) && !topupOptionsPending && !topupOptionsRefreshing && topupOptionsTimedOut"
+                    v-if="hasActiveMembership && !(topupOptions?.length) && !topupOptionsPending && !topupOptionsRefreshing"
                     class="text-xs text-dimmed"
                   >
-                    No credit top-up options are active right now.
+                    {{ topoffGateDescription ?? 'No credit top-up options are active right now.' }}
                   </div>
 
                   <div

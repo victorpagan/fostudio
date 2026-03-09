@@ -7,6 +7,7 @@ import { getCreditOptionEffectivePriceCents, mapCreditOption } from '~~/server/u
 import type { CreditPricingOptionRow } from '~~/server/utils/credits/topup'
 import { ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
 import { toSquareBuyerPhone } from '~~/server/utils/square/checkoutPrefill'
+import { computeCreditBucketSummary } from '~~/server/utils/credits/buckets'
 
 const bodySchema = z.object({
   optionKey: z.string().min(1)
@@ -45,7 +46,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: membership, error: membershipErr } = await supabase
     .from('memberships')
-    .select('id,status')
+    .select('id,status,tier')
     .eq('user_id', user.sub)
     .maybeSingle()
 
@@ -54,6 +55,28 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 403,
       statusMessage: 'An active membership is required before purchasing additional credits.'
+    })
+  }
+
+  const { data: tierRow, error: tierErr } = await supabase
+    .from('membership_tiers')
+    .select('max_bank')
+    .eq('id', membership.tier)
+    .maybeSingle()
+  if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
+
+  const { data: ledgerRows, error: ledgerErr } = await supabase
+    .from('credits_ledger')
+    .select('id,delta,reason,expires_at,created_at')
+    .eq('user_id', user.sub)
+  if (ledgerErr) throw createError({ statusCode: 500, statusMessage: ledgerErr.message })
+
+  const bucketSummary = computeCreditBucketSummary(ledgerRows ?? [])
+  const maxBank = Number(tierRow?.max_bank ?? 0)
+  if (maxBank > 0 && bucketSummary.bankBalance < maxBank) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: `Top-off credits are available once your plan credits reach the cap (${bucketSummary.bankBalance}/${maxBank}).`
     })
   }
 

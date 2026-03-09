@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
+import { buildExpiryIsoFromDays, resolveTopoffCreditExpiryDays } from '~~/server/utils/credits/buckets'
 
 const bodySchema = z.object({
   token: z.string().uuid().optional(),
@@ -201,6 +202,7 @@ export default defineEventHandler(async (event) => {
     let ledgerEntryId = existingLedger?.id ?? null
     baseDebug.hasLedgerEntry = Boolean(ledgerEntryId)
     if (!ledgerEntryId) {
+      const topoffExpiryDays = await resolveTopoffCreditExpiryDays(supabase, user.sub, topup.membership_id)
       const optionLabel = readString(topup.metadata, 'option_label', 'optionLabel')
       const optionKey = readString(topup.metadata, 'option_key', 'optionKey')
       const { data: insertedLedger, error: ledgerErr } = await supabase
@@ -211,12 +213,14 @@ export default defineEventHandler(async (event) => {
           delta: topup.credits,
           reason: 'topoff',
           external_ref: orderId,
+          expires_at: buildExpiryIsoFromDays(topoffExpiryDays),
           metadata: {
             source: 'dashboard_topup',
             topup_session_id: topup.id,
             amount_cents: topup.amount_cents,
             option_label: optionLabel,
-            option_key: optionKey
+            option_key: optionKey,
+            topoff_credit_expiry_days: topoffExpiryDays
           }
         })
         .select('id')

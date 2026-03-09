@@ -586,6 +586,7 @@ export type Database = {
         Row: {
           active: boolean
           booking_window_days: number
+          credit_expiry_days: number
           description: string | null
           display_name: string
           holds_included: number
@@ -594,12 +595,14 @@ export type Database = {
           max_slots: number | null
           peak_multiplier: number
           sort_order: number
+          topoff_credit_expiry_days: number
           updated_at: string
           visible: boolean
         }
         Insert: {
           active?: boolean
           booking_window_days: number
+          credit_expiry_days?: number
           description?: string | null
           display_name: string
           holds_included?: number
@@ -608,12 +611,14 @@ export type Database = {
           max_slots?: number | null
           peak_multiplier: number
           sort_order?: number
+          topoff_credit_expiry_days?: number
           updated_at?: string
           visible?: boolean
         }
         Update: {
           active?: boolean
           booking_window_days?: number
+          credit_expiry_days?: number
           description?: string | null
           display_name?: string
           holds_included?: number
@@ -622,6 +627,7 @@ export type Database = {
           max_slots?: number | null
           peak_multiplier?: number
           sort_order?: number
+          topoff_credit_expiry_days?: number
           updated_at?: string
           visible?: boolean
         }

@@ -25,6 +25,8 @@ const bodySchema = z.object({
   bookingWindowDays: z.number().int().min(1).max(365),
   peakMultiplier: z.number().min(1).max(4),
   maxBank: z.number().int().min(0).max(10000),
+  creditExpiryDays: z.number().int().min(1).max(3650).default(90),
+  topoffCreditExpiryDays: z.number().int().min(1).max(3650).default(30),
   maxSlots: z.number().int().min(0).max(10000).optional().nullable().default(10),
   holdsIncluded: z.number().int().min(0).max(50),
   active: z.boolean().default(true),
@@ -224,6 +226,8 @@ export default defineEventHandler(async (event) => {
     booking_window_days: body.bookingWindowDays,
     peak_multiplier: body.peakMultiplier,
     max_bank: body.maxBank,
+    credit_expiry_days: body.creditExpiryDays,
+    topoff_credit_expiry_days: body.topoffCreditExpiryDays,
     max_slots: body.maxSlots ?? null,
     holds_included: body.holdsIncluded,
     active: body.active,
@@ -236,7 +240,16 @@ export default defineEventHandler(async (event) => {
     .from('membership_tiers')
     .upsert(tierRow, { onConflict: 'id' })
 
-  if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
+  if (tierErr) {
+    const rawMessage = tierErr.message ?? ''
+    if (/credit_expiry_days|topoff_credit_expiry_days/i.test(rawMessage)) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Database schema is missing per-tier credit expiry columns. Apply migration 20240030_membership_credit_expiry_and_cap_split.sql and retry.'
+      })
+    }
+    throw createError({ statusCode: 500, statusMessage: tierErr.message })
+  }
 
   const variationRows = enabledVariations.map((variation) => {
     return {

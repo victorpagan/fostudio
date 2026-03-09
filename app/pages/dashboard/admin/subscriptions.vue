@@ -27,6 +27,8 @@ type TierRecord = {
   booking_window_days: number
   peak_multiplier: number
   max_bank: number
+  credit_expiry_days: number
+  topoff_credit_expiry_days: number
   max_slots: number | null
   holds_included: number
   active: boolean
@@ -43,6 +45,8 @@ type TierForm = {
   bookingWindowDays: number
   peakMultiplier: number
   maxBank: number
+  creditExpiryDays: number
+  topoffCreditExpiryDays: number
   maxSlots: number | null
   holdsIncluded: number
   active: boolean
@@ -75,9 +79,9 @@ const cadenceOrder: Cadence[] = ['daily', 'weekly', 'monthly', 'quarterly', 'ann
 const usdAmountRegex = /^\d+(?:\.\d{1,2})?$/
 const discountTypeOptions = [
   { label: 'None', value: 'none' },
-  { label: 'Percentage', value: 'percent' },
-  { label: 'Dollar amount', value: 'dollar' }
-] as const
+  { label: '%', value: 'percent' },
+  { label: '$', value: 'dollar' }
+]
 
 function formatCentsAsDollars(cents: number) {
   return (Math.round(cents) / 100).toFixed(2)
@@ -101,7 +105,7 @@ function parseDiscountAmount(value: string, type: DiscountType) {
   return true
 }
 
-function defaultVariations() {
+function defaultVariations(): TierForm['variations'] {
   return [
     { cadence: 'daily' as const, provider: 'square' as const, providerPlanId: '', providerPlanVariationId: '', creditsPerMonth: 4, currency: 'USD', discountType: 'none', discountAmount: '', discountLabel: '', active: false, visible: true, sortOrder: 1 },
     { cadence: 'weekly' as const, provider: 'square' as const, providerPlanId: '', providerPlanVariationId: '', creditsPerMonth: 8, currency: 'USD', discountType: 'none', discountAmount: '', discountLabel: '', active: false, visible: true, sortOrder: 2 },
@@ -126,6 +130,8 @@ const form = reactive<TierForm>({
   bookingWindowDays: 30,
   peakMultiplier: 1,
   maxBank: 100,
+  creditExpiryDays: 90,
+  topoffCreditExpiryDays: 30,
   maxSlots: 10,
   holdsIncluded: 0,
   active: true,
@@ -170,13 +176,14 @@ function readErrorMessage(error: unknown) {
 }
 
 function syncSelectedTier(next: TierRecord[]) {
-  if (!next.length) return
+  const firstTier = next[0]
+  if (!firstTier) return
   if (!selectedTierId.value) {
-    loadTier(next[0]!.id)
+    loadTier(firstTier.id)
     return
   }
   const stillExists = next.find(tier => tier.id === selectedTierId.value)
-  if (!stillExists) loadTier(next[0]!.id)
+  if (!stillExists) loadTier(firstTier.id)
 }
 
 watch(
@@ -202,6 +209,8 @@ function resetForm() {
   form.bookingWindowDays = 30
   form.peakMultiplier = 1
   form.maxBank = 100
+  form.creditExpiryDays = 90
+  form.topoffCreditExpiryDays = 30
   form.maxSlots = 10
   form.holdsIncluded = 0
   form.active = true
@@ -239,6 +248,8 @@ function loadTier(tierId: string) {
   form.bookingWindowDays = tier.booking_window_days
   form.peakMultiplier = Number(tier.peak_multiplier)
   form.maxBank = Number(tier.max_bank)
+  form.creditExpiryDays = Number(tier.credit_expiry_days ?? 90)
+  form.topoffCreditExpiryDays = Number(tier.topoff_credit_expiry_days ?? 30)
   form.maxSlots = tier.max_slots
   form.holdsIncluded = Number(tier.holds_included)
   form.active = tier.active
@@ -349,6 +360,7 @@ async function onTierDrop(event: DragEvent, targetTierId: string) {
   if (fromIndex < 0 || toIndex < 0) return
 
   const [moved] = nextOrder.splice(fromIndex, 1)
+  if (!moved) return
   nextOrder.splice(toIndex, 0, moved)
   reorderedTiers.value = nextOrder
   await persistTierReorder(nextOrder)
@@ -386,6 +398,8 @@ function getTierPayloadBase() {
     bookingWindowDays: form.bookingWindowDays,
     peakMultiplier: form.peakMultiplier,
     maxBank: form.maxBank,
+    creditExpiryDays: form.creditExpiryDays,
+    topoffCreditExpiryDays: form.topoffCreditExpiryDays,
     maxSlots: form.maxSlots,
     holdsIncluded: form.holdsIncluded,
     sortOrder: form.sortOrder,
@@ -471,6 +485,8 @@ async function saveTier() {
           bookingWindowDays: tierPayloadBase.bookingWindowDays,
           peakMultiplier: tierPayloadBase.peakMultiplier,
           maxBank: tierPayloadBase.maxBank,
+          creditExpiryDays: tierPayloadBase.creditExpiryDays,
+          topoffCreditExpiryDays: tierPayloadBase.topoffCreditExpiryDays,
           maxSlots: tierPayloadBase.maxSlots,
           holdsIncluded: tierPayloadBase.holdsIncluded,
           sortOrder: tierPayloadBase.sortOrder,
@@ -506,6 +522,8 @@ async function saveTier() {
           bookingWindowDays: tierPayloadBase.bookingWindowDays,
           peakMultiplier: tierPayloadBase.peakMultiplier,
           maxBank: tierPayloadBase.maxBank,
+          creditExpiryDays: tierPayloadBase.creditExpiryDays,
+          topoffCreditExpiryDays: tierPayloadBase.topoffCreditExpiryDays,
           maxSlots: tierPayloadBase.maxSlots,
           holdsIncluded: tierPayloadBase.holdsIncluded,
           sortOrder: tierPayloadBase.sortOrder,
@@ -671,6 +689,12 @@ async function deleteTier() {
                 </UFormField>
                 <UFormField label="Max bank">
                   <UInput v-model.number="form.maxBank" type="number" min="0" />
+                </UFormField>
+                <UFormField label="Membership credit expiry (days)">
+                  <UInput v-model.number="form.creditExpiryDays" type="number" min="1" max="3650" />
+                </UFormField>
+                <UFormField label="Top-off credit expiry (days)">
+                  <UInput v-model.number="form.topoffCreditExpiryDays" type="number" min="1" max="3650" />
                 </UFormField>
                 <UFormField label="Member cap">
                   <UInput v-model.number="form.maxSlots" type="number" min="1" />
