@@ -172,7 +172,6 @@ export default defineEventHandler(async (event) => {
   }
 
   const sharedPlanId = Array.from(knownPlanIds)[0] ?? null
-  const cadenceOrder = ['daily', 'weekly', 'monthly', 'quarterly', 'annual'] as const
   const basePriceVariation = [...enabledVariations]
     .sort((a, b) => cadenceSortOrder(a.cadence) - cadenceSortOrder(b.cadence))
     .find(variation => variation.cadence === 'monthly')
