@@ -4,6 +4,7 @@ import type {
   DatesSetArg,
   EventInput
 } from '@fullcalendar/core'
+import { DateTime } from 'luxon'
 import FullCalendar from '@fullcalendar/vue3'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
@@ -56,6 +57,7 @@ const lastRefreshedAt = ref<string | null>(null)
 const bookingWindowDays = ref<number | null>(null)
 const peakWindow = ref<PeakWindow | null>(null)
 const instance = getCurrentInstance()
+const STUDIO_TZ = 'America/Los_Angeles'
 
 type CalendarResponse = {
   from?: string
@@ -66,29 +68,92 @@ type CalendarResponse = {
 }
 
 function formatRange(start: Date, end: Date) {
-  const startLabel = start.toLocaleDateString('en-US', {
+  const studioStart = calendarDateToStudioDate(start)
+  const studioEnd = calendarDateToStudioDate(end)
+  const startLabel = studioStart.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
-    timeZone: 'America/Los_Angeles'
+    timeZone: STUDIO_TZ
   })
-  const endMinusTick = new Date(end.getTime() - 1)
+  const endMinusTick = new Date(studioEnd.getTime() - 1)
   const endLabel = endMinusTick.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
-    timeZone: 'America/Los_Angeles'
+    timeZone: STUDIO_TZ
   })
   return `${startLabel} to ${endLabel}`
+}
+
+function parseApiDateTime(value: string) {
+  const asIso = DateTime.fromISO(value, { setZone: true })
+  if (asIso.isValid) return asIso.toUTC()
+  const asSql = DateTime.fromSQL(value, { zone: 'utc' })
+  if (asSql.isValid) return asSql.toUTC()
+  return null
+}
+
+// Converts a true instant into a synthetic UTC timestamp that renders as LA wall-time in FullCalendar.
+function studioInstantToCalendarIso(value: string | Date) {
+  const instantUtc = typeof value === 'string'
+    ? parseApiDateTime(value)
+    : DateTime.fromJSDate(value, { zone: 'utc' })
+
+  if (!instantUtc || !instantUtc.isValid) {
+    return typeof value === 'string' ? value : value.toISOString()
+  }
+
+  const la = instantUtc.setZone(STUDIO_TZ)
+  const pseudoUtc = DateTime.fromObject(
+    {
+      year: la.year,
+      month: la.month,
+      day: la.day,
+      hour: la.hour,
+      minute: la.minute,
+      second: la.second,
+      millisecond: la.millisecond
+    },
+    { zone: 'utc' }
+  )
+  return pseudoUtc.toISO() ?? (typeof value === 'string' ? value : value.toISOString())
+}
+
+// Converts synthetic UTC calendar timestamps back into true instants in LA.
+function calendarDateToStudioDate(value: Date) {
+  const pseudoUtc = DateTime.fromJSDate(value, { zone: 'utc' })
+  const laInstant = DateTime.fromObject(
+    {
+      year: pseudoUtc.year,
+      month: pseudoUtc.month,
+      day: pseudoUtc.day,
+      hour: pseudoUtc.hour,
+      minute: pseudoUtc.minute,
+      second: pseudoUtc.second,
+      millisecond: pseudoUtc.millisecond
+    },
+    { zone: STUDIO_TZ }
+  ).toUTC()
+
+  return laInstant.toJSDate()
+}
+
+function mapApiEventsToCalendar(events: CalendarEvent[]) {
+  return events.map((event) => ({
+    ...event,
+    start: event.start ? studioInstantToCalendarIso(event.start) : event.start,
+    end: event.end ? studioInstantToCalendarIso(event.end) : event.end
+  }))
 }
 
 async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
   loading.value = true
   try {
     const q: Record<string, string> = {}
-    if (rangeStart) q.from = rangeStart.toISOString()
-    if (rangeEnd) q.to = rangeEnd.toISOString()
+    if (rangeStart) q.from = calendarDateToStudioDate(rangeStart).toISOString()
+    if (rangeEnd) q.to = calendarDateToStudioDate(rangeEnd).toISOString()
 
     const res = await $fetch<CalendarResponse>(props.endpoint, { query: q })
-    events.value = res.events ?? []
+    events.value = mapApiEventsToCalendar(res.events ?? [])
     bookingWindowDays.value = res.bookingWindowDays ?? null
     peakWindow.value = res.peakWindow ?? null
     lastRefreshedAt.value = new Date().toLocaleTimeString('en-US', {
@@ -187,15 +252,15 @@ const memberValidRange = computed(() => {
   const now = new Date()
   const end = new Date(now.getTime() + bookingWindowDays.value * 24 * 60 * 60 * 1000)
   return {
-    start: now.toISOString(),
-    end: end.toISOString()
+    start: studioInstantToCalendarIso(now),
+    end: studioInstantToCalendarIso(end)
   }
 })
 
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
   initialView: 'timeGridWeek',
-  timeZone: 'America/Los_Angeles',
+  timeZone: 'UTC',
   selectable: canSelect.value,
   validRange: memberValidRange.value,
   selectOverlap: (event: { display: string, classNames?: string[] }) => {
@@ -205,7 +270,7 @@ const calendarOptions = computed(() => ({
   selectAllow: (selectionInfo: { start: Date, end: Date }) => {
     if (!isMemberFeed.value || !bookingWindowDays.value) return true
     const maxStart = new Date(Date.now() + bookingWindowDays.value * 24 * 60 * 60 * 1000)
-    return selectionInfo.start <= maxStart
+    return calendarDateToStudioDate(selectionInfo.start) <= maxStart
   },
   selectMirror: true,
   nowIndicator: true,
@@ -232,18 +297,24 @@ const calendarOptions = computed(() => ({
   events: calendarEvents.value,
   eventClassNames,
   eventContent,
-  eventClick: (info: { event: { extendedProps?: CalendarEvent['extendedProps'], startStr: string, endStr: string | null } }) => {
+  eventClick: (info: { event: { extendedProps?: CalendarEvent['extendedProps'], start: Date | null, end: Date | null } }) => {
     const ext = info.event.extendedProps
     if (ext?.type !== 'booking' || !ext.isOwn || !ext.bookingId) return
+    const start = info.event.start ? calendarDateToStudioDate(info.event.start).toISOString() : null
+    const end = info.event.end ? calendarDateToStudioDate(info.event.end).toISOString() : null
+    if (!start) return
     emit('booking-click', {
       bookingId: ext.bookingId,
-      start: info.event.startStr,
-      end: info.event.endStr ?? info.event.startStr,
+      start,
+      end: end ?? start,
       status: ext.status,
       notes: ext.notes
     })
   },
-  select: (info: DateSelectArg) => emit('select', { start: info.start, end: info.end }),
+  select: (info: DateSelectArg) => emit('select', {
+    start: calendarDateToStudioDate(info.start),
+    end: calendarDateToStudioDate(info.end)
+  }),
   datesSet: (info: DatesSetArg) => {
     // Called when the visible range changes
     visibleTitle.value = info.view.title
