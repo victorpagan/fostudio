@@ -183,6 +183,49 @@ async function handleSignup() {
   successMsg.value = null
   loading.value = true
   try {
+    if (isCheckoutLinkedSignup.value && checkoutTokenFromReturnTo.value) {
+      const email = form.email.trim()
+      await $fetch('/api/account/signup-from-checkout', {
+        method: 'POST',
+        body: {
+          token: checkoutTokenFromReturnTo.value,
+          password: form.password,
+          first_name: form.firstName.trim() || undefined,
+          last_name: form.lastName.trim() || undefined,
+          phone: form.phone.trim() || undefined
+        }
+      })
+
+      const { error: loginErr } = await supabase.auth.signInWithPassword({
+        email,
+        password: form.password
+      })
+      if (loginErr) throw loginErr
+
+      await $fetch('/api/account/bootstrap', {
+        method: 'POST',
+        body: {
+          email,
+          phone: form.phone.trim() || undefined,
+          first_name: form.firstName.trim() || undefined,
+          last_name: form.lastName.trim() || undefined
+        }
+      })
+
+      const pending = await $fetch<{ pending: { token: string, returnTo: string } | null }>('/api/checkout/pending').catch(() => ({ pending: null }))
+      if (pending.pending?.token) {
+        const query = new URLSearchParams({
+          checkout: pending.pending.token,
+          returnTo: pending.pending.returnTo
+        })
+        await router.push(`/checkout/success?${query.toString()}`)
+        return
+      }
+
+      await router.push(returnTo.value)
+      return
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email: form.email.trim(),
       password: form.password,
