@@ -112,24 +112,37 @@ export default defineEventHandler(async (event) => {
   const origin = getRequestURL(event).origin
   const activationUrl = `${origin}/checkout/success?checkout=${encodeURIComponent(session.token)}&returnTo=${encodeURIComponent(normalizeReturnTo(session.return_to))}`
 
-  const sendResult = await sendViaFomailer(event, {
-    type: 'membership.checkoutActivationPending',
-    payload: {
-      to: String(session.guest_email).trim().toLowerCase(),
-      locationId: typeof locationId === 'string' ? locationId : null,
-      templateId,
-      templateKey: 'membershipCheckoutActivation',
-      tierId: session.tier,
-      tierName: tier?.display_name ?? session.tier,
-      cadence: session.cadence,
-      cadenceLabel: cadenceLabel(session.cadence),
-      activationUrl
-    }
-  })
+  let sendResult: { ok: boolean, reason?: string } = { ok: false, reason: 'unknown' }
+  try {
+    sendResult = await sendViaFomailer(event, {
+      type: 'membership.checkoutActivationPending',
+      payload: {
+        to: String(session.guest_email).trim().toLowerCase(),
+        locationId: typeof locationId === 'string' ? locationId : null,
+        templateId,
+        templateKey: 'membershipCheckoutActivation',
+        tierId: session.tier,
+        tierName: tier?.display_name ?? session.tier,
+        cadence: session.cadence,
+        cadenceLabel: cadenceLabel(session.cadence),
+        activationUrl
+      }
+    })
+  } catch (error) {
+    console.warn('[checkout/remind-activation] fomailer send failed (non-blocking)', {
+      token: session.token,
+      message: error instanceof Error ? error.message : String(error)
+    })
+    return { ok: true, sent: false, reason: 'fomailer_error_ignored' }
+  }
 
   if (!sendResult.ok) {
+    console.warn('[checkout/remind-activation] reminder skipped (non-blocking)', {
+      token: session.token,
+      reason: sendResult.reason ?? 'unknown'
+    })
     return {
-      ok: false,
+      ok: true,
       sent: false,
       reason: sendResult.reason
     }
@@ -150,4 +163,3 @@ export default defineEventHandler(async (event) => {
 
   return { ok: true, sent: true }
 })
-
