@@ -44,11 +44,6 @@ function buildWaitlistCheckoutUrl(origin: string, tierId: string, cadence: Waitl
   return `${origin}/checkout?${params.toString()}`
 }
 
-function resolveWaitlistMailEndpoint(raw: unknown) {
-  if (typeof raw !== 'string' || !raw.trim()) return '/api/mail/membership/waitlist'
-  return raw.trim()
-}
-
 export async function inviteWaitlistForTier(event: H3Event, tierId: string) {
   const supabase = serverSupabaseServiceRole(event) as any
   const capacity = await getSingleTierCapacity(supabase, tierId)
@@ -102,9 +97,6 @@ export async function inviteWaitlistForTier(event: H3Event, tierId: string) {
     ? settingsRow.membershipWaitlistInvite.trim() || null
     : null
 
-  const waitlistMailEndpointRaw = await getServerConfig(event, 'MAIL_SERVER_WAITLIST_ENDPOINT').catch(() => null)
-  const waitlistMailEndpoint = resolveWaitlistMailEndpoint(waitlistMailEndpointRaw)
-
   const { data: waitlistRowsRaw, error: waitlistErr } = await supabase
     .from('membership_waitlist')
     .select('id,tier_id,cadence,user_id,email,phone,is_priority_member,status,created_at')
@@ -138,20 +130,18 @@ export async function inviteWaitlistForTier(event: H3Event, tierId: string) {
     const checkoutUrl = buildWaitlistCheckoutUrl(origin, tierId, row.cadence, row.is_priority_member)
     try {
       const sendResult = await sendViaFomailer(event, {
-        endpoint: waitlistMailEndpoint,
-        body: {
+        type: 'membership.waitlistInvite',
+        payload: {
           to: toEmail,
           locationId,
           templateId,
           templateKey: 'membershipWaitlistInvite',
-          data: {
-            tierId,
-            tierName: tierRow.display_name ?? tierId,
-            cadence: row.cadence ?? 'monthly',
-            cadenceLabel: cadenceLabel(row.cadence),
-            checkoutUrl,
-            isPriorityMember: row.is_priority_member
-          }
+          tierId,
+          tierName: tierRow.display_name ?? tierId,
+          cadence: row.cadence ?? 'monthly',
+          cadenceLabel: cadenceLabel(row.cadence),
+          checkoutUrl,
+          isPriorityMember: row.is_priority_member
         }
       })
 
@@ -174,7 +164,7 @@ export async function inviteWaitlistForTier(event: H3Event, tierId: string) {
             checkout_url: checkoutUrl,
             template_id: templateId,
             location_id: locationId,
-            mail_endpoint: waitlistMailEndpoint
+            mail_type: 'membership.waitlistInvite'
           }
         })
         .eq('id', row.id)
