@@ -33,6 +33,7 @@ const claimError = ref<string | null>(null)
 const claimHint = ref<string | null>(null)
 const claimedMembershipId = ref<string | null>(null)
 const claimComplete = ref(false)
+const activationReminderTriggered = ref(false)
 
 let timer: ReturnType<typeof setInterval> | null = null
 let claimRetryTimer: ReturnType<typeof setTimeout> | null = null
@@ -81,6 +82,19 @@ async function pollLegacyMembershipStatus() {
     .maybeSingle()
 
   status.value = data?.status ?? (isTest.value ? 'active' : 'pending')
+}
+
+async function triggerActivationReminder() {
+  if (!checkoutToken.value || activationReminderTriggered.value) return
+  activationReminderTriggered.value = true
+  try {
+    await $fetch('/api/checkout/remind-activation', {
+      method: 'POST',
+      body: { token: checkoutToken.value }
+    })
+  } catch {
+    // Best-effort notification only; no UI interruption.
+  }
 }
 
 async function claimCheckout() {
@@ -143,7 +157,10 @@ onMounted(async () => {
       if (status.value !== 'active' && !claimError.value) {
         startStatusPolling()
       }
-    } else status.value = 'completed'
+    } else {
+      status.value = 'completed'
+      await triggerActivationReminder()
+    }
     return
   }
 

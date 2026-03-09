@@ -193,6 +193,16 @@ async function handleSignup() {
         }
       })
 
+      const pending = await $fetch<{ pending: { token: string, returnTo: string } | null }>('/api/checkout/pending').catch(() => ({ pending: null }))
+      if (pending.pending?.token) {
+        const query = new URLSearchParams({
+          checkout: pending.pending.token,
+          returnTo: pending.pending.returnTo
+        })
+        await router.push(`/checkout/success?${query.toString()}`)
+        return
+      }
+
       await router.push(returnTo.value)
       return
     }

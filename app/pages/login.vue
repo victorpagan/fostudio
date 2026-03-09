@@ -80,6 +80,16 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
     })
     if (error) throw error
 
+    const pending = await $fetch<{ pending: { token: string, returnTo: string } | null }>('/api/checkout/pending').catch(() => ({ pending: null }))
+    if (pending.pending?.token) {
+      const query = new URLSearchParams({
+        checkout: pending.pending.token,
+        returnTo: pending.pending.returnTo
+      })
+      await router.push(`/checkout/success?${query.toString()}`)
+      return
+    }
+
     toast.add({ title: 'Welcome back', description: 'Signed in successfully' })
     await router.push(returnTo.value)
   } catch (error: unknown) {
