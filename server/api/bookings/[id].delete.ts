@@ -1,13 +1,14 @@
 /**
  * DELETE /api/bookings/:id
  *
- * Cancels a booking and — if canceled > 24h before start — refunds the credits.
+ * Cancels a booking.
  *
  * Rules:
  *  - Must be authenticated
  *  - Must own the booking (or be admin)
  *  - Booking must be 'confirmed' or 'requested' (not already canceled/completed)
- *  - Credit refund only if start_time is more than 24h from now
+ *  - Member cancellations are allowed only when start_time is >= 24h from now
+ *  - Eligible cancellations refund burned credits
  *  - Admins can cancel any booking regardless of time
  */
 import { serverSupabaseUser, serverSupabaseServiceRole, serverSupabaseClient } from '#supabase/server'
@@ -57,11 +58,28 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // 4. Determine if within refund window
+  // 4. Determine timing lock/refund eligibility
   const now = DateTime.now().setZone(TZ)
   const start = DateTime.fromISO(booking.start_time, { zone: TZ })
+  if (!start.isValid) {
+    throw createError({ statusCode: 409, statusMessage: 'This booking cannot be canceled right now. Invalid start time.' })
+  }
   const hoursUntilStart = start.diff(now, 'hours').hours
   const eligibleForRefund = hoursUntilStart >= REFUND_WINDOW_HOURS
+  if (!isAdmin) {
+    if (hoursUntilStart <= 0) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'This booking has already started or passed and can no longer be canceled.'
+      })
+    }
+    if (!eligibleForRefund) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: `This booking is within ${REFUND_WINDOW_HOURS} hours of start and can no longer be canceled.`
+      })
+    }
+  }
   const creditsToRefund = eligibleForRefund ? (booking.credits_burned ?? 0) : 0
 
   // 5. Cancel the booking (service role needed for ledger insert)

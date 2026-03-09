@@ -65,9 +65,19 @@ export default defineEventHandler(async (event) => {
 
     const memberNoticeHours = Number(policyRow?.value ?? DEFAULT_MEMBER_RESCHEDULE_NOTICE_HOURS)
     const currentStart = DateTime.fromISO(booking.start_time)
+    if (!currentStart.isValid) {
+      throw createError({ statusCode: 409, statusMessage: 'This booking cannot be rescheduled right now. Invalid start time.' })
+    }
     const hoursUntilCurrentStart = currentStart.diff(DateTime.now(), 'hours').hours
 
-    if (!currentStart.isValid || hoursUntilCurrentStart < memberNoticeHours) {
+    if (hoursUntilCurrentStart <= 0) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'This booking has already started or passed and can no longer be rescheduled.'
+      })
+    }
+
+    if (hoursUntilCurrentStart < memberNoticeHours) {
       throw createError({
         statusCode: 409,
         statusMessage: `Rescheduling is locked within ${memberNoticeHours} hours of the booking start time.`

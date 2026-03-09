@@ -279,8 +279,18 @@ function formatStatus(status: string) {
   return status
 }
 
+function hoursUntilStart(booking: Booking) {
+  return (new Date(booking.start_time).getTime() - new Date(nowIso.value).getTime()) / 3600000
+}
+
+function hasPassed(booking: Booking) {
+  return hoursUntilStart(booking) <= 0
+}
+
 function canCancel(booking: Booking) {
-  return booking.status === 'confirmed' && new Date(booking.start_time).getTime() > new Date(nowIso.value).getTime()
+  const status = String(booking.status ?? '').toLowerCase()
+  if (!['confirmed', 'requested', 'pending_payment'].includes(status)) return false
+  return hoursUntilStart(booking) >= 24
 }
 
 function hasHold(booking: Booking) {
@@ -291,7 +301,7 @@ function canCancelHoldOnly(booking: Booking) {
   const status = String(booking.status ?? '').toLowerCase()
   if (!['confirmed', 'requested', 'pending_payment'].includes(status)) return false
   if (!hasHold(booking)) return false
-  return new Date(booking.start_time).getTime() > new Date(nowIso.value).getTime()
+  return !hasPassed(booking)
 }
 
 function holdRangeLabel(booking: Booking) {
@@ -301,13 +311,22 @@ function holdRangeLabel(booking: Booking) {
 }
 
 function isRefundEligible(booking: Booking) {
-  return (new Date(booking.start_time).getTime() - new Date(nowIso.value).getTime()) / 3600000 > 24
+  return hoursUntilStart(booking) >= 24
 }
 
 function canReschedule(booking: Booking) {
   if (!['confirmed', 'requested', 'pending_payment'].includes(String(booking.status ?? '').toLowerCase())) return false
-  const hoursUntilStart = (new Date(booking.start_time).getTime() - new Date(nowIso.value).getTime()) / 3600000
-  return hoursUntilStart >= memberRescheduleNoticeHours.value
+  return hoursUntilStart(booking) >= memberRescheduleNoticeHours.value
+}
+
+function rescheduleLockReason(booking: Booking) {
+  if (hasPassed(booking)) return 'Reschedule unavailable: booking has already started/passed.'
+  return `Reschedule locked within ${memberRescheduleNoticeHours.value}h of start.`
+}
+
+function cancelLockReason(booking: Booking) {
+  if (hasPassed(booking)) return 'Cancel unavailable: booking has already started/passed.'
+  return 'Cancel unavailable within 24h of booking start.'
 }
 
 function openReschedule(booking: Booking) {
@@ -343,7 +362,7 @@ async function openRescheduleFromQuery() {
   if (!canReschedule(target)) {
     toast.add({
       title: 'Cannot reschedule this booking',
-      description: `Reschedules require at least ${memberRescheduleNoticeHours.value} hours notice.`,
+      description: rescheduleLockReason(target),
       color: 'warning'
     })
     await clearRescheduleQuery()
@@ -682,7 +701,7 @@ watch(
                     <UTooltip
                       :text="canReschedule(booking)
                         ? `Reschedule booking (${memberRescheduleNoticeHours}+h notice)`
-                        : `Reschedule locked within ${memberRescheduleNoticeHours}h of start`"
+                        : rescheduleLockReason(booking)"
                     >
                       <UButton
                         size="sm"
@@ -709,13 +728,13 @@ watch(
                       </UButton>
                     </UTooltip>
                     <UTooltip
-                      v-if="canCancel(booking)"
-                      :text="isRefundEligible(booking) ? 'Cancel · credit refund eligible' : 'Cancel · no refund (< 24h)'"
+                      :text="canCancel(booking) ? 'Cancel · credit refund eligible' : cancelLockReason(booking)"
                     >
                       <UButton
                         size="sm"
                         color="error"
                         variant="soft"
+                        :disabled="!canCancel(booking)"
                         :loading="cancellingId === booking.id"
                         @click="openCancelConfirm(booking)"
                       >
@@ -900,7 +919,7 @@ watch(
               color="warning"
               variant="soft"
               icon="i-lucide-info"
-              :description="isRefundEligible(cancelTarget) ? 'Cancellation is outside 24h, credits are expected to be refunded.' : 'Cancellation is inside 24h, credits are typically not refunded.'"
+              :description="isRefundEligible(cancelTarget) ? 'Cancellation is outside 24h and credits are expected to be refunded.' : 'Cancellation is unavailable within 24h of booking start or after it has started.'"
             />
             <UAlert
               v-if="hasHold(cancelTarget)"
@@ -934,7 +953,7 @@ watch(
               <UButton
                 color="error"
                 :loading="Boolean(cancellingId)"
-                :disabled="Boolean(holdCancellingId)"
+                :disabled="Boolean(holdCancellingId) || !cancelTarget || !canCancel(cancelTarget)"
                 @click="confirmCancel"
               >
                 Confirm cancel
