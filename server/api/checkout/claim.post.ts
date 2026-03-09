@@ -190,7 +190,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: 'This checkout has already been claimed by another account.' })
   }
 
-  if (session.claimed_by_user_id === user.sub && session.claimed_membership_id) {
+  if (session.status === 'claimed' && session.claimed_by_user_id === user.sub && session.claimed_membership_id) {
     const { data: claimedMembership } = await supabase
       .from('memberships')
       .select('id,status')

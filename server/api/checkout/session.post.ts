@@ -595,8 +595,6 @@ export default defineEventHandler(async (event) => {
         guest_email: user?.email ?? null,
         payment_provider: 'square',
         plan_variation_id: resolvedPlanVariationId,
-        claimed_by_user_id: userId,
-        claimed_membership_id: membershipId,
         metadata: promoPricing
           ? {
               promo_code: promoPricing.code,
