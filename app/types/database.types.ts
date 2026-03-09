@@ -330,6 +330,8 @@ export type Database = {
         Row: {
           address: Json | null
           created_at: string
+          door_code: string | null
+          door_code_updated_at: string | null
           email: string | null
           first_name: string | null
           id: string
@@ -344,6 +346,8 @@ export type Database = {
         Insert: {
           address?: Json | null
           created_at?: string
+          door_code?: string | null
+          door_code_updated_at?: string | null
           email?: string | null
           first_name?: string | null
           id?: string
@@ -358,6 +362,8 @@ export type Database = {
         Update: {
           address?: Json | null
           created_at?: string
+          door_code?: string | null
+          door_code_updated_at?: string | null
           email?: string | null
           first_name?: string | null
           id?: string
@@ -370,6 +376,50 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      door_code_change_requests: {
+        Row: {
+          customer_id: string
+          id: string
+          request_note: string | null
+          requested_at: string
+          resolution_note: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          customer_id: string
+          id?: string
+          request_note?: string | null
+          requested_at?: string
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          customer_id?: string
+          id?: string
+          request_note?: string | null
+          requested_at?: string
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "door_code_change_requests_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       internal_errors: {
         Row: {

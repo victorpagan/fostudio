@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { getMembershipPlanDetails } from '~~/app/utils/membershipPlanDetails'
+import { normalizeDiscountLabel } from '~~/app/utils/membershipDiscount'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -62,6 +63,24 @@ type CreditTopupOption = {
   squareVariationId: string | null
 }
 
+type HoldTopupOffer = {
+  label: string
+  holds: number
+  amountCents: number
+  currency: string
+}
+
+type HoldSummary = {
+  holdsIncluded: number
+  activeHolds: number
+  holdsUsedThisCycle: number
+  cycleStartIso: string | null
+  cycleEndIso: string | null
+  paidHoldBalance: number
+  includedHoldsRemaining: number
+  canRequestHoldNow: boolean
+}
+
 type CatalogTier = {
   id: string
   display_name: string
@@ -89,6 +108,19 @@ type SubscriptionState = {
   pendingCancel: {
     actionId: string | null
     effectiveDate: string | null
+  } | null
+}
+
+type DoorCodeState = {
+  doorCode: string | null
+  doorCodeUpdatedAt: string | null
+  canRequestChange: boolean
+  cooldownEndsAt: string | null
+  latestRequest: {
+    id: string
+    status: string | null
+    requestedAt: string
+    resolvedAt: string | null
   } | null
 }
 
@@ -127,6 +159,10 @@ const { data: variations, refresh: refreshVariations } = await useAsyncData('das
   if (error) throw error
   return (data ?? []) as PlanVariation[]
 }, { watch: [membership] })
+
+function getDiscountLabel(label?: string | null) {
+  return normalizeDiscountLabel(label)
+}
 
 // ── Tier catalog (shown when no active membership) ─────────────────────────
 const membershipState = computed(() => {
@@ -199,10 +235,21 @@ const { data: topupOptions, refresh: refreshTopupOptions, pending: topupOptionsP
   return res?.options ?? []
 }, { watch: [user, membershipState] })
 
-watch([user, hasActiveMembership], async ([currentUser, active]) => {
-  if (!currentUser || !active) return
-  await refreshTopupOptions()
-}, { immediate: true })
+const { data: holdSummary, refresh: refreshHoldSummary } = await useAsyncData('dash:membership:hold-summary', async () => {
+  if (!user.value || !hasActiveMembership.value) return null
+  return await $fetch<HoldSummary>('/api/holds/summary')
+}, { watch: [user, membershipState] })
+
+const { data: holdTopupOffer, refresh: refreshHoldTopupOffer } = await useAsyncData('dash:membership:hold-topup-offer', async () => {
+  if (!user.value || !hasActiveMembership.value) return null
+  const res = await $fetch<{ offer: HoldTopupOffer | null }>('/api/holds/topup/offer')
+  return res.offer
+}, { watch: [user, membershipState] })
+
+const { data: doorCodeState, refresh: refreshDoorCodeState } = await useAsyncData('dash:membership:door-code', async () => {
+  if (!user.value || !hasActiveMembership.value) return null
+  return await $fetch<DoorCodeState>('/api/membership/door-code')
+}, { watch: [user, membershipState] })
 
 function goCheckout(tierId: string, cadence: string) {
   router.push(`/checkout?tier=${tierId}&cadence=${cadence}&returnTo=/dashboard/membership`)
@@ -278,10 +325,34 @@ function formatOptionUnit(option: CreditTopupOption) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(perCredit / 100)
 }
 
+const dashboardHydrated = ref(false)
+
+function parseDate(value: string | null | undefined) {
+  if (!value) return null
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return null
+  return dt
+}
+
+function fallbackDate(dt: Date) {
+  return dt.toISOString().slice(0, 10)
+}
+
+function fallbackDateTime(dt: Date) {
+  const iso = dt.toISOString()
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
+}
+
 function formatSaleWindow(start: string | null, end: string | null) {
   const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
-  const from = start ? new Date(start).toLocaleDateString('en-US', options) : null
-  const to = end ? new Date(end).toLocaleDateString('en-US', options) : null
+  const fromDate = parseDate(start)
+  const toDate = parseDate(end)
+  const from = fromDate
+    ? (dashboardHydrated.value ? fromDate.toLocaleDateString('en-US', options) : fallbackDate(fromDate))
+    : null
+  const to = toDate
+    ? (dashboardHydrated.value ? toDate.toLocaleDateString('en-US', options) : fallbackDate(toDate))
+    : null
 
   if (from && to) return `${from} to ${to}`
   if (from) return `Starts ${from}`
@@ -291,6 +362,8 @@ function formatSaleWindow(start: string | null, end: string | null) {
 
 function formatCadence(c: string | null) {
   switch (c) {
+    case 'daily': return 'Daily'
+    case 'weekly': return 'Weekly'
     case 'monthly': return 'Monthly'
     case 'quarterly': return 'Quarterly (3 months)'
     case 'annual': return 'Annual'
@@ -298,9 +371,21 @@ function formatCadence(c: string | null) {
   }
 }
 
+function cadencePriceSuffix(cadence: string | null) {
+  if (cadence === 'daily') return '/day'
+  if (cadence === 'weekly') return '/week'
+  if (cadence === 'monthly') return '/mo'
+  if (cadence === 'quarterly') return '/quarter'
+  if (cadence === 'annual') return '/year'
+  return ''
+}
+
 function memberSince(createdAt: string | null) {
   if (!createdAt) return '—'
-  return new Date(createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const dt = parseDate(createdAt)
+  if (!dt) return createdAt
+  if (!dashboardHydrated.value) return dt.toISOString().slice(0, 7)
+  return dt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 }
 
 function formatStatus(status: string | null | undefined) {
@@ -309,8 +394,9 @@ function formatStatus(status: string | null | undefined) {
 
 function formatDateLabel(value: string | null | undefined) {
   if (!value) return null
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return null
+  const dt = parseDate(value)
+  if (!dt) return null
+  if (!dashboardHydrated.value) return fallbackDate(dt)
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
@@ -320,13 +406,22 @@ function formatPeakCredits(value: number | null | undefined) {
   return value.toFixed(2).replace(/\.?0+$/, '')
 }
 
+function formatLedgerTimestamp(value: string) {
+  const dt = parseDate(value)
+  if (!dt) return value
+  if (!dashboardHydrated.value) return fallbackDateTime(dt)
+  return dt.toLocaleString('en-US')
+}
+
 const topupLoadingKey = ref<string | null>(null)
+const holdTopupLoading = ref(false)
 const membershipCancelLoading = ref(false)
 const membershipUndoCancelLoading = ref(false)
+const doorCodeRequestLoading = ref(false)
 const topupClaiming = ref(false)
+const holdTopupClaiming = ref(false)
 const topupOptionsTimedOut = ref(false)
 const topupOptionsProgress = ref(0)
-const topupProgressReady = ref(false)
 const TOPUP_OPTIONS_TIMEOUT_MS = 5000
 
 let topupOptionsTimeoutHandle: ReturnType<typeof setTimeout> | null = null
@@ -365,6 +460,8 @@ function startTopupOptionsLoadTimers() {
 }
 
 watch([hasActiveMembership, topupOptionsPending], ([active, pending]) => {
+  if (!dashboardHydrated.value) return
+
   if (!active) {
     clearTopupOptionsLoadTimers()
     topupOptionsTimedOut.value = false
@@ -382,7 +479,7 @@ watch([hasActiveMembership, topupOptionsPending], ([active, pending]) => {
     topupOptionsTimedOut.value = false
     topupOptionsProgress.value = 100
   }
-}, { immediate: true })
+})
 
 watch(topupOptions, (options) => {
   if ((options?.length ?? 0) > 0) {
@@ -400,8 +497,35 @@ async function refreshAll() {
     refreshSubscriptionState(),
     refreshBalance(),
     refreshLedger(),
-    refreshTopupOptions()
+    refreshTopupOptions(),
+    refreshHoldSummary(),
+    refreshHoldTopupOffer(),
+    refreshDoorCodeState()
   ])
+}
+
+async function requestDoorCodeChange() {
+  if (doorCodeRequestLoading.value || !doorCodeState.value?.canRequestChange) return
+
+  doorCodeRequestLoading.value = true
+  try {
+    await $fetch('/api/membership/door-code-request', { method: 'POST' })
+    toast.add({
+      title: 'Door code change requested',
+      description: 'Your request was sent to the admin team for manual update.',
+      color: 'success'
+    })
+    await refreshDoorCodeState()
+  } catch (error: unknown) {
+    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+    toast.add({
+      title: 'Could not request code change',
+      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error',
+      color: 'error'
+    })
+  } finally {
+    doorCodeRequestLoading.value = false
+  }
 }
 
 async function schedulePlanChange(tierId: string, cadence: string) {
@@ -500,16 +624,36 @@ async function startTopup(optionKey: string) {
   }
 }
 
-async function claimTopupFromRoute() {
-  const readQueryString = (value: unknown) => {
-    if (typeof value === 'string' && value.trim()) return value.trim()
-    if (Array.isArray(value)) {
-      const first = value.find(item => typeof item === 'string' && item.trim())
-      if (typeof first === 'string' && first.trim()) return first.trim()
-    }
-    return null
+async function startHoldTopup() {
+  if (holdTopupLoading.value) return
+  holdTopupLoading.value = true
+  try {
+    const res = await $fetch<{ redirectUrl: string }>('/api/holds/topup/session', {
+      method: 'POST'
+    })
+    window.location.href = res.redirectUrl
+  } catch (error: unknown) {
+    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+    toast.add({
+      title: 'Could not start hold purchase',
+      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error',
+      color: 'error'
+    })
+  } finally {
+    holdTopupLoading.value = false
   }
+}
 
+function readQueryString(value: unknown) {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (Array.isArray(value)) {
+    const first = value.find(item => typeof item === 'string' && item.trim())
+    if (typeof first === 'string' && first.trim()) return first.trim()
+  }
+  return null
+}
+
+async function claimTopupFromRoute() {
   const topupToken = readQueryString(route.query.topup)
   const topupOrderId = readQueryString(route.query.orderId) ?? readQueryString(route.query.order_id)
   if (topupClaiming.value) return
@@ -604,18 +748,113 @@ async function claimTopupFromRoute() {
   }
 }
 
+async function claimHoldTopupFromRoute() {
+  const holdTopupToken = readQueryString(route.query.hold_topup)
+  const holdTopupOrderId = readQueryString(route.query.orderId) ?? readQueryString(route.query.order_id)
+  if (holdTopupClaiming.value || !holdTopupToken) return
+
+  holdTopupClaiming.value = true
+  let shouldClearHoldTopupQuery = false
+  try {
+    const maxAttempts = 7
+    let attempt = 0
+    let res: {
+      status: 'processed' | 'pending' | 'failed'
+      holdsAdded?: number
+      newHoldBalance?: number | null
+      message?: string
+    } | null = null
+
+    while (attempt < maxAttempts) {
+      res = await $fetch<{
+        status: 'processed' | 'pending' | 'failed'
+        holdsAdded?: number
+        newHoldBalance?: number | null
+        message?: string
+      }>('/api/holds/topup/claim', {
+        method: 'POST',
+        body: { token: holdTopupToken, orderId: holdTopupOrderId ?? undefined }
+      })
+      if (res.status !== 'pending') break
+      attempt += 1
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1500))
+      }
+    }
+
+    if (!res) return
+
+    if (res.status === 'pending') {
+      toast.add({
+        title: 'Hold purchase pending',
+        description: res.message ?? 'Payment confirmation is still syncing. Refresh in a moment.',
+        color: 'warning'
+      })
+      return
+    }
+
+    if (res.status === 'failed') {
+      toast.add({
+        title: 'Hold purchase failed',
+        description: res.message ?? 'This hold purchase is no longer valid. Please start a new purchase.',
+        color: 'error'
+      })
+      shouldClearHoldTopupQuery = true
+      return
+    }
+
+    const added = typeof res.holdsAdded === 'number'
+      ? `${res.holdsAdded} hold${res.holdsAdded === 1 ? '' : 's'} added.`
+      : 'Hold balance updated.'
+    const balanceLine = res.newHoldBalance !== null && res.newHoldBalance !== undefined
+      ? ` New paid hold balance: ${res.newHoldBalance}.`
+      : ''
+    toast.add({
+      title: 'Hold purchase complete',
+      description: `${added}${balanceLine}`,
+      color: 'success'
+    })
+    shouldClearHoldTopupQuery = true
+    await refreshAll()
+  } catch (error: unknown) {
+    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+    toast.add({
+      title: 'Hold purchase pending',
+      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Payment confirmation is still syncing.',
+      color: 'warning'
+    })
+  } finally {
+    holdTopupClaiming.value = false
+    if (shouldClearHoldTopupQuery && route.query.hold_topup) {
+      const nextQuery = { ...route.query }
+      delete nextQuery.hold_topup
+      delete nextQuery.orderId
+      delete nextQuery.order_id
+      router.replace({ query: nextQuery })
+    }
+  }
+}
+
 onMounted(async () => {
-  topupProgressReady.value = true
+  dashboardHydrated.value = true
+  if (hasActiveMembership.value && topupOptionsPending.value) {
+    startTopupOptionsLoadTimers()
+  } else if (hasActiveMembership.value && (topupOptions.value?.length ?? 0) > 0) {
+    topupOptionsProgress.value = 100
+  }
   await router.isReady()
   await claimTopupFromRoute()
+  await claimHoldTopupFromRoute()
 })
 
 watch(
-  () => [route.query.topup, route.query.orderId, route.query.order_id],
+  () => [route.query.topup, route.query.hold_topup, route.query.orderId, route.query.order_id],
   () => {
-    if (import.meta.client) void claimTopupFromRoute()
-  },
-  { immediate: true }
+    if (import.meta.client) {
+      void claimTopupFromRoute()
+      void claimHoldTopupFromRoute()
+    }
+  }
 )
 
 onUnmounted(() => {
@@ -624,8 +863,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div>
-    <UDashboardPanel id="membership">
+  <div class="flex min-h-0 flex-1">
+    <UDashboardPanel
+      id="membership"
+      class="min-h-0 flex-1"
+    >
       <template #header>
         <UDashboardNavbar
           title="Membership"
@@ -725,14 +967,8 @@ onUnmounted(() => {
                       <span class="font-medium text-default">{{ t.max_bank }} cr</span>
                     </li>
                     <li class="flex justify-between">
-                      <span>Equipment holds</span>
-                      <UBadge
-                        :color="t.holds_included ? 'success' : 'neutral'"
-                        variant="soft"
-                        size="xs"
-                      >
-                        {{ t.holds_included ? 'Included' : 'Extra' }}
-                      </UBadge>
+                      <span>Hold cap / month</span>
+                      <span class="font-medium text-default">{{ t.holds_included }} hold{{ t.holds_included === 1 ? '' : 's' }}</span>
                     </li>
                   </ul>
                   <UButton
@@ -756,20 +992,20 @@ onUnmounted(() => {
                       <span class="font-medium">{{ formatCadence(plan.cadence) }}</span>
                       <span class="text-dimmed"> · {{ plan.credits_per_month }} cr/mo</span>
                       <UBadge
-                        v-if="plan.discount_label"
+                        v-if="getDiscountLabel(plan.discount_label)"
                         color="success"
                         variant="soft"
                         size="xs"
                         class="ml-1"
                       >
-                        {{ plan.discount_label }}
+                        {{ getDiscountLabel(plan.discount_label) }}
                       </UBadge>
                     </div>
                     <UButton
                       size="xs"
                       @click="goCheckout(t.id, plan.cadence)"
                     >
-                      {{ formatPrice(plan.price_cents) }}/mo
+                      {{ formatPrice(plan.price_cents) }}{{ cadencePriceSuffix(plan.cadence) }}
                     </UButton>
                   </div>
                 </div>
@@ -885,7 +1121,7 @@ onUnmounted(() => {
                     </div>
                     <div class="flex justify-between">
                       <span class="text-dimmed">Monthly price</span>
-                      <span>{{ formatPrice(currentVariation?.price_cents ?? null) }}/mo</span>
+                      <span>{{ formatPrice(currentVariation?.price_cents ?? null) }}{{ cadencePriceSuffix(membership?.cadence ?? null) }}</span>
                     </div>
                     <div class="flex justify-between">
                       <span class="text-dimmed">Credits / month</span>
@@ -919,14 +1155,8 @@ onUnmounted(() => {
                       <span>{{ tier?.max_bank ?? '—' }} credits</span>
                     </div>
                     <div class="flex justify-between">
-                      <span class="text-dimmed">Equipment holds</span>
-                      <UBadge
-                        :color="tier?.holds_included ? 'success' : 'neutral'"
-                        variant="soft"
-                        size="sm"
-                      >
-                        {{ tier?.holds_included ? 'Included' : 'Extra' }}
-                      </UBadge>
+                      <span class="text-dimmed">Hold cap / month</span>
+                      <span>{{ tier?.holds_included ?? 0 }} hold{{ (tier?.holds_included ?? 0) === 1 ? '' : 's' }}</span>
                     </div>
                   </div>
                 </div>
@@ -960,16 +1190,16 @@ onUnmounted(() => {
                         Current
                       </UBadge>
                       <UBadge
-                        v-if="v.discount_label"
+                        v-if="getDiscountLabel(v.discount_label)"
                         color="success"
                         size="xs"
                         variant="soft"
                       >
-                        {{ v.discount_label }}
+                        {{ getDiscountLabel(v.discount_label) }}
                       </UBadge>
                     </div>
                     <div class="text-dimmed mt-1">
-                      {{ formatPrice(v.price_cents) }}/mo · {{ v.credits_per_month }} cr/mo
+                      {{ formatPrice(v.price_cents) }}{{ cadencePriceSuffix(v.cadence) }} · {{ v.credits_per_month }} cr/mo
                     </div>
                     <UButton
                       v-if="v.cadence !== membership?.cadence"
@@ -1027,6 +1257,46 @@ onUnmounted(() => {
               <p class="mt-3 text-xs text-dimmed">
                 Plan and cancellation actions are synchronized with Square. If your subscription status looks out of sync, refresh this page or contact support.
               </p>
+
+              <div class="mt-4 border-t border-default pt-4">
+                <div class="text-xs text-dimmed uppercase tracking-wide">
+                  Door access code
+                </div>
+                <div class="mt-1 flex items-center gap-2">
+                  <span class="font-mono text-xl font-semibold">
+                    {{ doorCodeState?.doorCode ?? 'Not assigned yet' }}
+                  </span>
+                  <UBadge
+                    v-if="doorCodeState?.latestRequest?.status === 'pending'"
+                    color="warning"
+                    variant="soft"
+                    size="xs"
+                  >
+                    Change requested
+                  </UBadge>
+                </div>
+                <p class="mt-1 text-xs text-dimmed">
+                  This code stays the same when you change plans. You can request one manual change every 30 days.
+                </p>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="soft"
+                    :loading="doorCodeRequestLoading"
+                    :disabled="!doorCodeState?.canRequestChange || doorCodeRequestLoading"
+                    @click="requestDoorCodeChange"
+                  >
+                    Request code change
+                  </UButton>
+                  <span
+                    v-if="doorCodeState?.cooldownEndsAt && !doorCodeState?.canRequestChange"
+                    class="text-xs text-dimmed"
+                  >
+                    Next request: {{ formatDateLabel(doorCodeState.cooldownEndsAt) ?? doorCodeState.cooldownEndsAt }}
+                  </span>
+                </div>
+              </div>
             </UCard>
 
             <!-- Credits + ledger + top-up bundles -->
@@ -1056,20 +1326,22 @@ onUnmounted(() => {
                     Need extra credit capacity this month? Purchase top-ups instantly.
                   </p>
 
-                  <div
-                    v-if="topupProgressReady && hasActiveMembership && topupOptionsPending && !topupOptionsTimedOut"
-                    class="space-y-2"
-                  >
-                    <div class="h-2 w-full overflow-hidden rounded bg-elevated">
-                      <div
-                        class="h-full bg-primary transition-[width] duration-200"
-                        :style="{ width: `${topupOptionsProgress}%` }"
-                      />
+                  <ClientOnly>
+                    <div
+                      v-if="hasActiveMembership && topupOptionsPending && !topupOptionsTimedOut"
+                      class="space-y-2"
+                    >
+                      <div class="h-2 w-full overflow-hidden rounded bg-elevated">
+                        <div
+                          class="h-full bg-primary transition-[width] duration-200"
+                          :style="{ width: `${topupOptionsProgress}%` }"
+                        />
+                      </div>
+                      <div class="text-xs text-dimmed">
+                        Loading available top-up options…
+                      </div>
                     </div>
-                    <div class="text-xs text-dimmed">
-                      Loading available top-up options…
-                    </div>
-                  </div>
+                  </ClientOnly>
 
                   <div
                     v-if="topupOptions?.length"
@@ -1130,6 +1402,87 @@ onUnmounted(() => {
                   >
                     No credit top-up options are active right now.
                   </div>
+
+                  <div
+                    id="holds"
+                    class="mt-4 border-t border-default pt-4 space-y-3"
+                  >
+                    <div class="text-xs text-dimmed uppercase tracking-wide">
+                      Holds
+                    </div>
+                    <div class="grid gap-2 sm:grid-cols-3 text-sm">
+                      <div class="rounded-lg border border-default p-2">
+                        <div class="text-xs text-dimmed">
+                          Monthly cap
+                        </div>
+                        <div class="font-semibold">
+                          {{ holdSummary?.holdsIncluded ?? 0 }}
+                        </div>
+                      </div>
+                      <div class="rounded-lg border border-default p-2">
+                        <div class="text-xs text-dimmed">
+                          Used this cycle
+                        </div>
+                        <div class="font-semibold">
+                          {{ holdSummary?.holdsUsedThisCycle ?? 0 }}
+                        </div>
+                      </div>
+                      <div class="rounded-lg border border-default p-2">
+                        <div class="text-xs text-dimmed">
+                          Remaining this cycle
+                        </div>
+                        <div class="font-semibold">
+                          {{ holdSummary?.includedHoldsRemaining ?? 0 }}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="rounded-lg border border-default p-2 text-sm">
+                      <div class="text-xs text-dimmed">
+                        Paid hold balance
+                      </div>
+                      <div class="font-semibold">
+                        {{ holdSummary?.paidHoldBalance ?? 0 }}
+                      </div>
+                    </div>
+                    <div class="text-xs text-dimmed">
+                      Hold windows run until the earlier of 10am next day or peak-hours start. If your monthly cap is exhausted, booking with an overnight hold consumes one paid hold.
+                    </div>
+                    <div
+                      v-if="holdSummary?.cycleStartIso && holdSummary?.cycleEndIso"
+                      class="text-xs text-dimmed"
+                    >
+                      Current hold cycle: {{ formatDateLabel(holdSummary.cycleStartIso) }} to {{ formatDateLabel(holdSummary.cycleEndIso) }}
+                    </div>
+
+                    <div
+                      v-if="holdTopupOffer"
+                      class="rounded-xl border border-default p-3"
+                    >
+                      <div class="flex items-center justify-between gap-3">
+                        <div>
+                          <div class="font-medium">
+                            {{ holdTopupOffer.label }}
+                          </div>
+                          <div class="text-xs text-dimmed">
+                            Adds {{ holdTopupOffer.holds }} hold{{ holdTopupOffer.holds === 1 ? '' : 's' }}
+                          </div>
+                        </div>
+                        <div class="text-lg font-semibold">
+                          {{ formatPrice(holdTopupOffer.amountCents, holdTopupOffer.currency) }}
+                        </div>
+                      </div>
+                      <UButton
+                        class="mt-3"
+                        size="xs"
+                        block
+                        :loading="holdTopupLoading || holdTopupClaiming"
+                        :disabled="holdTopupLoading || holdTopupClaiming"
+                        @click="startHoldTopup"
+                      >
+                        Buy hold{{ holdTopupOffer.holds === 1 ? '' : 's' }}
+                      </UButton>
+                    </div>
+                  </div>
                 </div>
               </UCard>
 
@@ -1166,7 +1519,7 @@ onUnmounted(() => {
                         {{ formatLedgerTitle(row) }}
                       </div>
                       <div class="mt-1 text-xs text-dimmed">
-                        {{ new Date(row.created_at).toLocaleString() }}
+                        {{ formatLedgerTimestamp(row.created_at) }}
                         <span v-if="row.external_ref"> · ref: {{ row.external_ref }}</span>
                       </div>
                     </div>

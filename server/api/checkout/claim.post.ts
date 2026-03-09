@@ -3,6 +3,7 @@ import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { resolveMembershipBillingPeriod } from '~~/server/utils/square/billingPeriod'
 import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
+import { ensureDoorCodeForUser } from '~~/server/utils/membership/doorCode'
 
 const bodySchema = z.object({
   token: z.string().uuid()
@@ -13,8 +14,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 type CheckoutSessionRow = {
   id: string
   token: string
-  tier: 'creator' | 'pro' | 'studio_plus' | 'test'
-  cadence: 'monthly' | 'quarterly' | 'annual'
+  tier: string
+  cadence: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
   status: string
   return_to: string | null
   guest_email: string | null
@@ -32,6 +33,12 @@ type CheckoutSessionRow = {
 type MembershipStatus = 'active' | 'pending_checkout' | 'past_due' | 'canceled'
 
 type MembershipClaimRow = {
+  id: string
+  status: string | null
+  activated_at: string | null
+}
+
+type ExistingMembershipRow = {
   id: string
   status: string | null
   activated_at: string | null
@@ -72,34 +79,48 @@ async function findLatestSubscription(
   customerId: string,
   planVariationId: string | null
 ) {
-  const filter: Record<string, unknown> = {
-    customerIds: [customerId]
-  }
+  const runSearch = async (usePlanFilter: boolean) => {
+    const filter: Record<string, unknown> = { customerIds: [customerId] }
+    if (usePlanFilter && planVariationId) {
+      filter.planVariationIds = [planVariationId]
+    }
 
-  if (planVariationId) {
-    filter.planVariationIds = [planVariationId]
-  }
+    const queryPayload = {
+      query: {
+        filter,
+        sort: { sortOrder: 'DESC', sortField: 'CREATED_AT' }
+      },
+      limit: 20
+    }
 
-  const queryPayload = {
-    query: {
-      filter,
-      sort: { sortOrder: 'DESC', sortField: 'CREATED_AT' }
-    },
-    limit: 20
-  }
-
-  try {
     const searchRes = await square.subscriptions.search(queryPayload as never)
-    const subscriptions = toRecordArray((searchRes as { subscriptions?: unknown }).subscriptions)
+    return toRecordArray((searchRes as { subscriptions?: unknown }).subscriptions)
+  }
 
-    if (!subscriptions.length) return null
-
+  const sortSubscriptions = (subscriptions: Record<string, unknown>[]) => {
     subscriptions.sort((left, right) => {
+      const leftStatus = (readString(left, 'status') ?? '').toUpperCase()
+      const rightStatus = (readString(right, 'status') ?? '').toUpperCase()
+      const leftActive = leftStatus === 'ACTIVE' ? 1 : 0
+      const rightActive = rightStatus === 'ACTIVE' ? 1 : 0
+      if (rightActive !== leftActive) return rightActive - leftActive
+
       const leftCreated = Date.parse(readString(left, 'createdAt', 'created_at') ?? '')
       const rightCreated = Date.parse(readString(right, 'createdAt', 'created_at') ?? '')
       return (Number.isNaN(rightCreated) ? 0 : rightCreated) - (Number.isNaN(leftCreated) ? 0 : leftCreated)
     })
+  }
 
+  try {
+    let subscriptions = await runSearch(true)
+    if (!subscriptions.length && planVariationId) {
+      // Fallback: the subscription can exist but not match the originally stored
+      // plan variation id due to Square-side updates; search by customer only.
+      subscriptions = await runSearch(false)
+    }
+
+    if (!subscriptions.length) return null
+    sortSubscriptions(subscriptions)
     return subscriptions[0] ?? null
   } catch {
     return null
@@ -138,12 +159,19 @@ export default defineEventHandler(async (event) => {
       .eq('id', session.claimed_membership_id)
       .maybeSingle()
 
-    return {
-      ok: true,
-      membershipId: session.claimed_membership_id,
-      membershipStatus: claimedMembership?.status ?? 'pending_checkout',
-      returnTo
+    const claimedStatus = (claimedMembership?.status ?? '').toLowerCase()
+    if (claimedStatus === 'active') {
+      return {
+        ok: true,
+        membershipId: session.claimed_membership_id,
+        membershipStatus: claimedMembership?.status ?? 'active',
+        returnTo
+      }
     }
+
+    // Session was already claimed but membership is not active yet.
+    // Continue below to re-check Square payment/subscription state and
+    // update membership status idempotently.
   }
 
   if (session.status === 'failed' || session.status === 'expired') {
@@ -270,19 +298,27 @@ export default defineEventHandler(async (event) => {
     fallbackEnd: null
   })
 
-  const { data: existingMembership, error: existingErr } = await supabase
+  const { data: existingMembershipRaw, error: existingErr } = await supabase
     .from('memberships')
     .select('id,status,activated_at')
     .eq('user_id', user.sub)
     .maybeSingle()
 
   if (existingErr) throw createError({ statusCode: 500, statusMessage: existingErr.message })
+  const existingMembership = (existingMembershipRaw as ExistingMembershipRow | null) ?? null
+
+  const existingStatus = (existingMembership?.status ?? '').toLowerCase()
+  const existingActivated = Boolean(existingMembership?.activated_at)
+  const preserveActive = existingStatus === 'active' || existingActivated
+  const resolvedMembershipStatus: MembershipStatus = preserveActive && membershipStatus !== 'active'
+    ? 'active'
+    : membershipStatus
 
   const nowIso = new Date().toISOString()
   const membershipPatch: Record<string, unknown> = {
     tier: session.tier,
     cadence: session.cadence,
-    status: membershipStatus,
+    status: resolvedMembershipStatus,
     checkout_provider: 'square',
     checkout_payment_link_id: session.payment_link_id,
     checkout_order_template_id: orderId,
@@ -302,7 +338,7 @@ export default defineEventHandler(async (event) => {
     membershipPatch.current_period_end = billingPeriod.currentPeriodEnd
   }
 
-  if (membershipStatus === 'active' && !existingMembership?.activated_at) {
+  if (resolvedMembershipStatus === 'active' && !existingMembership?.activated_at) {
     membershipPatch.activated_at = nowIso
   }
 
@@ -370,10 +406,27 @@ export default defineEventHandler(async (event) => {
 
   if (sessionUpdateErr) throw createError({ statusCode: 500, statusMessage: sessionUpdateErr.message })
 
+  await ensureDoorCodeForUser(event, {
+    userId: user.sub,
+    email: accountEmail ?? user.email ?? null
+  })
+
+  const finalStatus = (claimedMembership.status ?? 'pending_checkout').toLowerCase()
+  if (finalStatus !== 'active') {
+    return {
+      ok: false,
+      pending: true,
+      membershipId: claimedMembership.id,
+      membershipStatus: claimedMembership.status ?? 'pending_checkout',
+      returnTo,
+      message: 'Payment received. Waiting for Square to finalize your subscription.'
+    }
+  }
+
   return {
     ok: true,
     membershipId: claimedMembership.id,
-    membershipStatus: claimedMembership.status ?? 'pending_checkout',
+    membershipStatus: claimedMembership.status ?? 'active',
     returnTo
   }
 })

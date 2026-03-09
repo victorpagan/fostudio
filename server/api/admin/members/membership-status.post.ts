@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
+import { ensureDoorCodeForUser } from '~~/server/utils/membership/doorCode'
 
 const bodySchema = z.object({
   membershipId: z.string().uuid(),
@@ -12,7 +13,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: currentMembership, error: currentErr } = await supabase
     .from('memberships')
-    .select('id,status')
+    .select('id,user_id,status')
     .eq('id', body.membershipId)
     .maybeSingle()
 
@@ -34,5 +35,10 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+
+  if (body.status === 'active' && currentMembership.user_id) {
+    await ensureDoorCodeForUser(event, { userId: currentMembership.user_id })
+  }
+
   return { membership: data }
 })

@@ -14,6 +14,9 @@ type MemberRecord = {
   customer_email: string | null
   customer_first_name: string | null
   customer_last_name: string | null
+  door_code: string | null
+  door_code_request_status: string | null
+  door_code_last_request_at: string | null
   credit_balance: number | null
 }
 
@@ -21,6 +24,8 @@ const toast = useToast()
 const selectedMemberId = ref<string | null>(null)
 const updatingStatus = ref(false)
 const adjustingCredits = ref(false)
+const updatingDoorCode = ref(false)
+const dashboardHydrated = ref(false)
 
 const statusForm = reactive({
   status: 'active'
@@ -30,6 +35,10 @@ const creditForm = reactive({
   delta: 1,
   reason: 'admin_adjustment',
   note: ''
+})
+
+const doorCodeForm = reactive({
+  value: ''
 })
 
 const { data: memberRows, refresh, pending } = await useAsyncData('admin:members', async () => {
@@ -54,15 +63,18 @@ watch(members, (next) => {
   if (!selectedMemberId.value) {
     selectedMemberId.value = next[0]!.membership_id
     statusForm.status = next[0]!.status ?? 'active'
+    doorCodeForm.value = next[0]!.door_code ?? ''
     return
   }
   const current = next.find(member => member.membership_id === selectedMemberId.value)
   if (!current) {
     selectedMemberId.value = next[0]!.membership_id
     statusForm.status = next[0]!.status ?? 'active'
+    doorCodeForm.value = next[0]!.door_code ?? ''
     return
   }
   statusForm.status = current.status ?? 'active'
+  doorCodeForm.value = current.door_code ?? ''
 }, { immediate: true })
 
 function memberLabel(member: MemberRecord) {
@@ -72,7 +84,13 @@ function memberLabel(member: MemberRecord) {
 
 function formatDate(value: string | null) {
   if (!value) return '—'
-  return new Date(value).toLocaleString()
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return value
+  if (!dashboardHydrated.value) {
+    const iso = dt.toISOString()
+    return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
+  }
+  return dt.toLocaleString('en-US')
 }
 
 async function saveMembershipStatus() {
@@ -126,6 +144,42 @@ async function applyCreditAdjustment() {
     adjustingCredits.value = false
   }
 }
+
+function formatRequestStatus(status: string | null) {
+  if (!status) return 'None'
+  if (status === 'pending') return 'Pending'
+  if (status === 'resolved') return 'Resolved'
+  if (status === 'rejected') return 'Rejected'
+  return status
+}
+
+async function saveDoorCode() {
+  if (!selectedMember.value || updatingDoorCode.value) return
+  updatingDoorCode.value = true
+  try {
+    await $fetch('/api/admin/members/door-code-set', {
+      method: 'POST',
+      body: {
+        userId: selectedMember.value.user_id,
+        doorCode: String(doorCodeForm.value ?? '').trim()
+      }
+    })
+    toast.add({ title: 'Door code updated' })
+    await refresh()
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not update door code',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    updatingDoorCode.value = false
+  }
+}
+
+onMounted(() => {
+  dashboardHydrated.value = true
+})
 </script>
 
 <template>
@@ -213,6 +267,42 @@ async function applyCreditAdjustment() {
                     {{ formatDate(selectedMember.current_period_end) }}
                   </div>
                 </div>
+                <div>
+                  <div class="text-xs uppercase tracking-wide text-dimmed">
+                    Door code request
+                  </div>
+                  <div class="mt-1">
+                    {{ formatRequestStatus(selectedMember.door_code_request_status) }}
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs uppercase tracking-wide text-dimmed">
+                    Last request at
+                  </div>
+                  <div class="mt-1">
+                    {{ formatDate(selectedMember.door_code_last_request_at) }}
+                  </div>
+                </div>
+              </div>
+            </UCard>
+
+            <UCard v-if="selectedMember">
+              <div class="font-medium">
+                Door code
+              </div>
+              <p class="mt-1 text-xs text-dimmed">
+                Set a 6-digit code. Saving a new code resolves pending member requests.
+              </p>
+              <div class="mt-3 grid gap-3 sm:grid-cols-[12rem_auto]">
+                <UInput
+                  v-model="doorCodeForm.value"
+                  maxlength="6"
+                  inputmode="numeric"
+                  placeholder="000000"
+                />
+                <UButton :loading="updatingDoorCode" @click="saveDoorCode">
+                  Save door code
+                </UButton>
               </div>
             </UCard>
 

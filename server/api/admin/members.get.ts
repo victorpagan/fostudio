@@ -13,6 +13,9 @@ type MemberRow = {
   customer_email: string | null
   customer_first_name: string | null
   customer_last_name: string | null
+  door_code: string | null
+  door_code_request_status: string | null
+  door_code_last_request_at: string | null
   credit_balance: number | null
 }
 
@@ -32,6 +35,12 @@ export default defineEventHandler(async (event) => {
     email: string | null
     first_name: string | null
     last_name: string | null
+    door_code: string | null
+  }
+  type DoorCodeRequestRow = {
+    user_id: string
+    status: string | null
+    requested_at: string
   }
   type BalanceRow = {
     user_id: string
@@ -41,24 +50,32 @@ export default defineEventHandler(async (event) => {
   const userIds = [...new Set((memberships ?? []).map(row => row.user_id))]
   let customers: CustomerRow[] = []
   let balances: BalanceRow[] = []
+  let doorCodeRequests: DoorCodeRequestRow[] = []
 
   if (userIds.length) {
-    const [customersRes, balancesRes] = await Promise.all([
+    const [customersRes, balancesRes, doorCodeRequestsRes] = await Promise.all([
       supabase
         .from('customers')
-        .select('user_id,email,first_name,last_name')
+        .select('user_id,email,first_name,last_name,door_code')
         .in('user_id', userIds),
       supabase
         .from('credit_balance')
         .select('user_id,balance')
+        .in('user_id', userIds),
+      supabase
+        .from('door_code_change_requests')
+        .select('user_id,status,requested_at')
         .in('user_id', userIds)
+        .order('requested_at', { ascending: false })
     ])
 
     if (customersRes.error) throw createError({ statusCode: 500, statusMessage: customersRes.error.message })
     if (balancesRes.error) throw createError({ statusCode: 500, statusMessage: balancesRes.error.message })
+    if (doorCodeRequestsRes.error) throw createError({ statusCode: 500, statusMessage: doorCodeRequestsRes.error.message })
 
     customers = (customersRes.data ?? []) as CustomerRow[]
     balances = (balancesRes.data ?? []) as BalanceRow[]
+    doorCodeRequests = (doorCodeRequestsRes.data ?? []) as DoorCodeRequestRow[]
   }
 
   const customersByUserId = new Map<string, CustomerRow>()
@@ -71,8 +88,16 @@ export default defineEventHandler(async (event) => {
     balancesByUserId.set(balance.user_id, Number(balance.balance ?? 0))
   }
 
+  const latestDoorCodeRequestByUserId = new Map<string, DoorCodeRequestRow>()
+  for (const request of doorCodeRequests) {
+    if (!latestDoorCodeRequestByUserId.has(request.user_id)) {
+      latestDoorCodeRequestByUserId.set(request.user_id, request)
+    }
+  }
+
   const members: MemberRow[] = (memberships ?? []).map((membership) => {
     const customer = customersByUserId.get(membership.user_id)
+    const latestDoorCodeRequest = latestDoorCodeRequestByUserId.get(membership.user_id)
     return {
       membership_id: membership.id,
       user_id: membership.user_id,
@@ -86,6 +111,9 @@ export default defineEventHandler(async (event) => {
       customer_email: customer?.email ?? null,
       customer_first_name: customer?.first_name ?? null,
       customer_last_name: customer?.last_name ?? null,
+      door_code: customer?.door_code ?? null,
+      door_code_request_status: latestDoorCodeRequest?.status ?? null,
+      door_code_last_request_at: latestDoorCodeRequest?.requested_at ?? null,
       credit_balance: balancesByUserId.get(membership.user_id) ?? null
     }
   })
