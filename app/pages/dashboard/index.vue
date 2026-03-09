@@ -184,59 +184,54 @@ const pendingSwapSummary = computed(() => {
           </UDropdownMenu>
         </template>
       </UDashboardNavbar>
-
-      <UDashboardToolbar>
-        <template #left>
-          <div class="w-full">
-            <!-- Admin bypass notice -->
-            <UAlert
-              v-if="isAdmin"
-              color="primary"
-              variant="soft"
-              title="Admin access"
-              description="You are viewing the dashboard as an admin. Membership guards are bypassed."
-            />
-            <!-- Membership CTA for non-members -->
-            <UAlert
-              v-else-if="needsMembership"
-              color="warning"
-              variant="soft"
-              title="Membership required to book"
-              description="Choose a plan (or finish checkout) to access booking and credits."
-            >
-              <template #actions>
-                <UButton
-                  size="sm"
-                  :to="membershipCta.to"
-                >
-                  {{ membershipCta.label }}
-                </UButton>
-              </template>
-            </UAlert>
-            <!-- Active member welcome -->
-            <UAlert
-              v-else
-              color="success"
-              variant="soft"
-              title="Membership active"
-              :description="tierLabel ? `Plan: ${tierLabel}` : 'Welcome back!'"
-            >
-              <template #actions>
-                <UButton
-                  size="sm"
-                  to="/dashboard/book"
-                >
-                  Book studio
-                </UButton>
-              </template>
-            </UAlert>
-          </div>
-        </template>
-      </UDashboardToolbar>
     </template>
 
     <template #body>
       <div class="p-4 space-y-4">
+          <div class="w-full">
+              <!-- Admin bypass notice -->
+              <UAlert
+                  v-if="isAdmin"
+                  color="primary"
+                  variant="soft"
+                  title="Admin access"
+                  description="You are viewing the dashboard as an admin. Membership guards are bypassed."
+              />
+              <!-- Membership CTA for non-members -->
+              <UAlert
+                  v-else-if="needsMembership"
+                  color="warning"
+                  variant="soft"
+                  title="Membership required to book"
+                  description="Choose a plan (or finish checkout) to access booking and credits."
+              >
+                  <template #actions>
+                      <UButton
+                          size="sm"
+                          :to="membershipCta.to"
+                      >
+                          {{ membershipCta.label }}
+                      </UButton>
+                  </template>
+              </UAlert>
+              <!-- Active member welcome -->
+              <UAlert
+                  v-else
+                  color="success"
+                  variant="soft"
+                  title="Membership active"
+                  :description="tierLabel ? `Plan: ${tierLabel}` : 'Welcome back!'"
+              >
+                  <template #actions>
+                      <UButton
+                          size="sm"
+                          to="/dashboard/book"
+                      >
+                          Book studio
+                      </UButton>
+                  </template>
+              </UAlert>
+          </div>
         <!-- Stat cards -->
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <!-- Membership card -->
