@@ -259,7 +259,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const squareCustomerId = paymentState.paymentCustomerId
+  let squareCustomerId = paymentState.paymentCustomerId
     ?? paymentState.orderCustomerId
     ?? session.square_customer_id
   if (!squareCustomerId) {
@@ -278,11 +278,48 @@ export default defineEventHandler(async (event) => {
   const userEmail = (user.email ?? '').trim().toLowerCase() || null
   const sessionEmail = (session.guest_email ?? '').trim().toLowerCase() || null
 
-  const { data: customerBySquare } = await supabase
+  const expectedEmails = new Set(
+    [session.guest_email, user.email]
+      .map(value => normalizeEmail(value))
+      .filter((value): value is string => Boolean(value))
+  )
+
+  let { data: customerBySquare } = await supabase
     .from('customers')
     .select('id,user_id,email,square_customer_id')
     .eq('square_customer_id', squareCustomerId)
     .maybeSingle()
+
+  const customerBySquareEmail = normalizeEmail((customerBySquare as { email?: string | null } | null)?.email)
+  const customerEmailMismatched = customerBySquare
+    && expectedEmails.size > 0
+    && (!customerBySquareEmail || !expectedEmails.has(customerBySquareEmail))
+
+  if (customerBySquare && customerBySquare.user_id && customerBySquare.user_id !== user.sub && customerEmailMismatched) {
+    const { data: customerLinkedToUser } = await supabase
+      .from('customers')
+      .select('id,email,square_customer_id')
+      .eq('user_id', user.sub)
+      .maybeSingle()
+
+    const fallbackSquareCustomerId = customerLinkedToUser?.square_customer_id?.trim()
+    const fallbackEmail = normalizeEmail(customerLinkedToUser?.email)
+    const fallbackMatches = Boolean(
+      fallbackSquareCustomerId
+      && fallbackSquareCustomerId !== squareCustomerId
+      && (!expectedEmails.size || (fallbackEmail && expectedEmails.has(fallbackEmail)))
+    )
+
+    if (fallbackSquareCustomerId && fallbackMatches) {
+      squareCustomerId = fallbackSquareCustomerId
+      const fallbackLookup = await supabase
+        .from('customers')
+        .select('id,user_id,email,square_customer_id')
+        .eq('square_customer_id', fallbackSquareCustomerId)
+        .maybeSingle()
+      customerBySquare = fallbackLookup.data
+    }
+  }
 
   if (customerBySquare) {
     if (customerBySquare.user_id && customerBySquare.user_id !== user.sub) {
@@ -355,6 +392,16 @@ export default defineEventHandler(async (event) => {
         })
 
       if (customerInsertErr) throw createError({ statusCode: 500, statusMessage: customerInsertErr.message })
+    }
+  }
+
+  if (!squareCustomerId) {
+    return {
+      ok: false,
+      pending: true,
+      membershipStatus: 'pending_checkout',
+      returnTo,
+      message: 'Customer sync is still in progress. Please try again shortly.'
     }
   }
 
