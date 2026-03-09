@@ -7,6 +7,7 @@ definePageMeta({ middleware: ['auth'] })
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const router = useRouter()
+const toast = useToast()
 
 type MembershipRow = {
   tier: string | null
@@ -29,6 +30,11 @@ type CatalogTier = {
   booking_window_days: number
   peak_multiplier: number
   max_bank: number
+  max_slots: number | null
+  cap: number | null
+  active_members: number
+  spots_left: number | null
+  is_full: boolean
   holds_included: number
   adminOnly?: boolean
   membership_plan_variations: PlanVariation[]
@@ -52,6 +58,10 @@ const { data: catalog, refresh, pending: catalogPending, error: catalogError } =
 
 const tiers = computed(() => catalog.value ?? [])
 const hasActiveMembership = computed(() => (membership.value?.status ?? '').toLowerCase() === 'active')
+const hasPriorityMembership = computed(() => {
+  const status = (membership.value?.status ?? '').toLowerCase()
+  return status === 'active' || status === 'past_due'
+})
 const detailsOpen = ref(false)
 const detailsTierId = ref<string | null>(null)
 
@@ -64,6 +74,13 @@ const selectedTierDetails = computed(() => {
   if (!selectedTier.value) return null
   return getMembershipPlanDetails(selectedTier.value.id, selectedTier.value.display_name)
 })
+
+const waitlistOpen = ref(false)
+const waitlistSubmitting = ref(false)
+const waitlistTierId = ref<string | null>(null)
+const waitlistCadence = ref<PlanVariation['cadence']>('monthly')
+const waitlistPhone = ref('')
+const waitlistEmail = computed(() => user.value?.email ?? '')
 
 function formatPeakCredits(value: number) {
   if (Number.isInteger(value)) return value.toString()
@@ -97,15 +114,57 @@ function formatPrice(cents: number | null, currency: string | null) {
 function goToPlan(tierId: string, cadence: PlanVariation['cadence']) {
   const returnTo = encodeURIComponent('/dashboard/membership')
   const base = `/checkout?tier=${encodeURIComponent(tierId)}&cadence=${encodeURIComponent(cadence)}&returnTo=${returnTo}`
-  if (hasActiveMembership.value) {
+  if (hasPriorityMembership.value) {
     router.push(`${base}&mode=switch`)
     return
   }
   router.push(base)
 }
 
+function isTierBlockedForNewMembers(tier: CatalogTier) {
+  return tier.is_full && !hasPriorityMembership.value
+}
+
+function openWaitlist(tierId: string, cadence: PlanVariation['cadence']) {
+  waitlistTierId.value = tierId
+  waitlistCadence.value = cadence
+  waitlistPhone.value = ''
+  waitlistOpen.value = true
+}
+
+async function submitWaitlist() {
+  if (!waitlistTierId.value) return
+
+  waitlistSubmitting.value = true
+  try {
+    const res = await $fetch<{ message: string }>('/api/membership/waitlist', {
+      method: 'POST',
+      body: {
+        tier: waitlistTierId.value,
+        cadence: waitlistCadence.value,
+        phone: waitlistPhone.value.trim() || undefined
+      }
+    })
+    toast.add({
+      title: 'Waitlist updated',
+      description: res.message,
+      color: 'success'
+    })
+    waitlistOpen.value = false
+  } catch (error: unknown) {
+    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+    toast.add({
+      title: 'Could not join waitlist',
+      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error',
+      color: 'error'
+    })
+  } finally {
+    waitlistSubmitting.value = false
+  }
+}
+
 function isCurrentPlan(tierId: string, cadence: PlanVariation['cadence']) {
-  return hasActiveMembership.value && membership.value?.tier === tierId && membership.value?.cadence === cadence
+  return hasPriorityMembership.value && membership.value?.tier === tierId && membership.value?.cadence === cadence
 }
 
 function openTierDetails(tierId: string) {
@@ -187,6 +246,14 @@ function openTierDetails(tierId: string) {
                   >
                     Admin only
                   </UBadge>
+                  <UBadge
+                    v-if="tier.is_full"
+                    color="error"
+                    variant="soft"
+                    size="xs"
+                  >
+                    Waitlist open
+                  </UBadge>
                 </div>
                 <p
                   v-if="tier.description"
@@ -207,6 +274,12 @@ function openTierDetails(tierId: string) {
                   <li class="flex justify-between">
                     <span>Max bank</span>
                     <span class="font-medium text-default">{{ tier.max_bank }} credits</span>
+                  </li>
+                  <li class="flex justify-between">
+                    <span>Capacity</span>
+                    <span class="font-medium text-default">
+                      {{ tier.cap === null ? 'Unlimited' : `${tier.active_members}/${tier.cap}` }}
+                    </span>
                   </li>
                 </ul>
 
@@ -247,6 +320,7 @@ function openTierDetails(tierId: string) {
                   </div>
 
                   <UButton
+                    v-if="!isTierBlockedForNewMembers(tier)"
                     class="mt-3"
                     size="xs"
                     block
@@ -255,7 +329,18 @@ function openTierDetails(tierId: string) {
                   >
                     {{ isCurrentPlan(tier.id, plan.cadence)
                       ? 'Current plan'
-                      : (hasActiveMembership ? `Schedule ${formatCadence(plan.cadence)}` : `Choose ${formatCadence(plan.cadence)}`) }}
+                      : (hasPriorityMembership ? `Schedule ${formatCadence(plan.cadence)}` : `Choose ${formatCadence(plan.cadence)}`) }}
+                  </UButton>
+                  <UButton
+                    v-else
+                    class="mt-3"
+                    size="xs"
+                    block
+                    color="neutral"
+                    variant="soft"
+                    @click="openWaitlist(tier.id, plan.cadence)"
+                  >
+                    Join waitlist
                   </UButton>
                 </div>
               </div>
@@ -264,6 +349,69 @@ function openTierDetails(tierId: string) {
         </div>
       </template>
     </UDashboardPanel>
+
+    <UModal
+      v-model:open="waitlistOpen"
+      :dismissible="true"
+    >
+      <template #content>
+        <UCard>
+          <template #header>
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="text-base font-semibold">
+                  Join waitlist
+                </div>
+                <p class="mt-1 text-sm text-dimmed">
+                  We will email {{ waitlistEmail || 'you' }} when a spot opens.
+                </p>
+              </div>
+              <UButton
+                icon="i-lucide-x"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                @click="waitlistOpen = false"
+              />
+            </div>
+          </template>
+
+          <div class="space-y-3">
+            <UFormField label="Email">
+              <UInput
+                :model-value="waitlistEmail"
+                type="email"
+                disabled
+              />
+            </UFormField>
+            <UFormField label="Phone (optional)">
+              <UInput
+                v-model="waitlistPhone"
+                placeholder="(555) 123-4567"
+              />
+            </UFormField>
+          </div>
+
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                @click="waitlistOpen = false"
+              >
+                Cancel
+              </UButton>
+              <UButton
+                :loading="waitlistSubmitting"
+                @click="submitWaitlist"
+              >
+                Join waitlist
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
 
     <UModal
       v-model:open="detailsOpen"

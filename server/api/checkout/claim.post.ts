@@ -391,6 +391,47 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  if (claimedMembership.status === 'active') {
+    const normalizedEmail = normalizeEmail(accountEmail)
+
+    const byUserUpdate = user.sub
+      ? supabase
+          .from('membership_waitlist')
+          .update({
+            status: 'claimed',
+            claimed_at: nowIso,
+            updated_at: nowIso
+          })
+          .eq('tier_id', session.tier)
+          .eq('user_id', user.sub)
+          .in('status', ['pending', 'invited'])
+      : null
+
+    if (byUserUpdate) {
+      const { error: claimUserErr } = await byUserUpdate
+      if (claimUserErr) {
+        console.warn('[checkout-claim] failed to mark waitlist rows as claimed (user)', claimUserErr.message)
+      }
+    }
+
+    if (normalizedEmail) {
+      const { error: claimEmailErr } = await supabase
+        .from('membership_waitlist')
+        .update({
+          status: 'claimed',
+          claimed_at: nowIso,
+          updated_at: nowIso
+        })
+        .eq('tier_id', session.tier)
+        .ilike('email', normalizedEmail)
+        .in('status', ['pending', 'invited'])
+
+      if (claimEmailErr) {
+        console.warn('[checkout-claim] failed to mark waitlist rows as claimed (email)', claimEmailErr.message)
+      }
+    }
+  }
+
   const { error: sessionUpdateErr } = await supabase
     .from('membership_checkout_sessions')
     .update({
@@ -430,3 +471,8 @@ export default defineEventHandler(async (event) => {
     returnTo
   }
 })
+
+function normalizeEmail(value: string | null | undefined) {
+  const normalized = (value ?? '').trim().toLowerCase()
+  return normalized || null
+}

@@ -26,7 +26,7 @@ const bodySchema = z.object({
   bookingWindowDays: z.number().int().min(1).max(365).default(30),
   peakMultiplier: z.number().min(1).max(4).default(1),
   maxBank: z.number().int().min(0).max(10000).default(100),
-  maxSlots: z.number().int().min(0).max(10000).optional().nullable(),
+  maxSlots: z.number().int().min(0).max(10000).optional().nullable().default(10),
   holdsIncluded: z.number().int().min(0).max(50).default(0),
   sortOrder: z.number().int().min(0).max(1000).default(100),
   active: z.boolean().default(true),

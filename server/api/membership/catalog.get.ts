@@ -3,6 +3,7 @@
 // (visible=false), such as the special 'test' tier for dry-run checkout.
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 import { resolveServerUserRole } from '~~/server/utils/auth'
+import { getTierCapMap } from '~~/server/utils/membership/capacity'
 
 type CatalogVariationRow = {
   cadence: string
@@ -24,6 +25,7 @@ type CatalogTierRow = {
   booking_window_days: number
   peak_multiplier: number
   max_bank: number
+  max_slots: number | null
   holds_included: number
   active: boolean
   visible: boolean | null
@@ -50,6 +52,7 @@ export default defineEventHandler(async (event) => {
     booking_window_days,
     peak_multiplier,
     max_bank,
+    max_slots,
     holds_included,
     active,
     visible,
@@ -76,6 +79,7 @@ export default defineEventHandler(async (event) => {
     booking_window_days,
     peak_multiplier,
     max_bank,
+    max_slots,
     holds_included,
     active,
     visible,
@@ -113,17 +117,24 @@ export default defineEventHandler(async (event) => {
 
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 
-  const tiers = ((data ?? []) as CatalogTierRow[])
+  const baseTiers = ((data ?? []) as CatalogTierRow[])
     .filter((tier) => {
       if (isAdmin) return true
       const tierVisible = tier.visible !== false
       const directAccessOnly = Boolean(tier.direct_access_only)
       return tierVisible && !directAccessOnly
     })
+  const capMap = await getTierCapMap(supabase as any, baseTiers.map(tier => tier.id))
+
+  const tiers = baseTiers
     .map(t => ({
       ...t,
       // Mark hidden tiers so the UI can label them appropriately
       adminOnly: t.visible === false || Boolean(t.direct_access_only),
+      cap: capMap[t.id]?.cap ?? null,
+      active_members: capMap[t.id]?.active ?? 0,
+      spots_left: capMap[t.id]?.spotsLeft ?? null,
+      is_full: capMap[t.id]?.isFull ?? false,
       membership_plan_variations: (t.membership_plan_variations ?? [])
         .filter(v => v.provider === 'square' && v.active && (isAdmin || v.visible !== false))
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))

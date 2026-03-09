@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { ensureDoorCodeForUser } from '~~/server/utils/membership/doorCode'
+import { inviteWaitlistForTier } from '~~/server/utils/membership/waitlist'
 
 const bodySchema = z.object({
   membershipId: z.string().uuid(),
@@ -13,7 +14,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: currentMembership, error: currentErr } = await supabase
     .from('memberships')
-    .select('id,user_id,status')
+    .select('id,user_id,status,tier')
     .eq('id', body.membershipId)
     .maybeSingle()
 
@@ -38,6 +39,20 @@ export default defineEventHandler(async (event) => {
 
   if (body.status === 'active' && currentMembership.user_id) {
     await ensureDoorCodeForUser(event, { userId: currentMembership.user_id })
+  }
+
+  const previousStatus = String(currentMembership.status ?? '').toLowerCase()
+  const nextStatus = body.status.toLowerCase()
+  const previouslyOccupied = previousStatus === 'active' || previousStatus === 'past_due'
+  const currentlyOccupied = nextStatus === 'active' || nextStatus === 'past_due'
+
+  if (previouslyOccupied && !currentlyOccupied && currentMembership.tier) {
+    await inviteWaitlistForTier(event, currentMembership.tier).catch((inviteError) => {
+      console.warn('[admin/members/membership-status] waitlist invite pass failed', {
+        tierId: currentMembership.tier,
+        message: inviteError instanceof Error ? inviteError.message : String(inviteError)
+      })
+    })
   }
 
   return { membership: data }

@@ -6,6 +6,7 @@ import { getServerConfig } from '~~/server/utils/config/secret'
 import { resolveServerUserRole } from '~~/server/utils/auth'
 import { ensureSquareCustomerForGuest, ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
 import { toSquareBuyerPhone } from '~~/server/utils/square/checkoutPrefill'
+import { getSingleTierCapacity, isPriorityMemberForWaitlist } from '~~/server/utils/membership/capacity'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 
 const bodySchema = z.object({
@@ -175,6 +176,19 @@ export default defineEventHandler(async (event) => {
   // Hidden tiers (e.g. 'test') are admin-only
   if (!tier.visible && !isAdmin) {
     throw createError({ statusCode: 403, statusMessage: 'Access denied' })
+  }
+
+  let isPriorityMember = false
+  if (userId) {
+    isPriorityMember = await isPriorityMemberForWaitlist(supabase as any, userId)
+  }
+
+  const capacity = await getSingleTierCapacity(supabase as any, tierId)
+  if (capacity.isFull && !isPriorityMember && !isAdmin) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: `${tier.display_name} is currently full. Join the waitlist to get notified when a spot opens.`
+    })
   }
 
   // ── 2) Lookup plan variation ─────────────────────────────────────────────

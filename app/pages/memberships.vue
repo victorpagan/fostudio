@@ -17,6 +17,11 @@ type Tier = {
   booking_window_days: number
   peak_multiplier: number
   max_bank: number
+  max_slots: number | null
+  cap: number | null
+  active_members: number
+  spots_left: number | null
+  is_full: boolean
   holds_included: number
   adminOnly?: boolean
   membership_plan_variations: PlanOption[]
@@ -24,6 +29,8 @@ type Tier = {
 
 const route = useRoute()
 const router = useRouter()
+const toast = useToast()
+const supabase = useSupabaseClient()
 const returnTo = computed(() => {
   const value = route.query.returnTo
   if (typeof value === 'string' && value.startsWith('/')) return value
@@ -41,6 +48,38 @@ const { data, refresh } = await useFetch<{ tiers: Tier[] }>('/api/membership/cat
 })
 
 const tiers = computed(() => data.value?.tiers ?? [])
+
+type MembershipStatusRow = {
+  status: string | null
+}
+
+const { data: currentMembership } = await useAsyncData('memberships:current-status', async () => {
+  if (!user.value?.sub) return null
+  const { data, error } = await supabase
+    .from('memberships')
+    .select('status')
+    .eq('user_id', user.value.sub)
+    .maybeSingle()
+  if (error) throw error
+  return (data as MembershipStatusRow | null) ?? null
+}, { watch: [() => user.value?.sub] })
+
+const isPriorityMember = computed(() => {
+  const status = (currentMembership.value?.status ?? '').toLowerCase()
+  return status === 'active' || status === 'past_due'
+})
+
+const waitlistOpen = ref(false)
+const waitlistSubmitting = ref(false)
+const waitlistTierId = ref<string | null>(null)
+const waitlistCadence = ref<Cadence>('monthly')
+const waitlistEmail = ref('')
+const waitlistPhone = ref('')
+
+const waitlistTier = computed(() => {
+  if (!waitlistTierId.value) return null
+  return tiers.value.find(tier => tier.id === waitlistTierId.value) ?? null
+})
 
 watch(() => user.value?.sub, async () => {
   await refresh()
@@ -105,6 +144,50 @@ function checkoutUrl(tierId: string) {
 
 function onSelectTier(tierId: string) {
   router.push(checkoutUrl(tierId))
+}
+
+function isTierBlockedForCheckout(tier: Tier) {
+  return tier.is_full && !isPriorityMember.value
+}
+
+function openWaitlist(tier: Tier, cadence: Cadence = 'monthly') {
+  waitlistTierId.value = tier.id
+  waitlistCadence.value = cadence
+  waitlistEmail.value = user.value?.email ?? ''
+  waitlistPhone.value = ''
+  waitlistOpen.value = true
+}
+
+async function submitWaitlist() {
+  if (!waitlistTierId.value) return
+
+  waitlistSubmitting.value = true
+  try {
+    const res = await $fetch<{ message: string }>('/api/membership/waitlist', {
+      method: 'POST',
+      body: {
+        tier: waitlistTierId.value,
+        cadence: waitlistCadence.value,
+        email: waitlistEmail.value.trim() || undefined,
+        phone: waitlistPhone.value.trim() || undefined
+      }
+    })
+    toast.add({
+      title: 'Waitlist updated',
+      description: res.message,
+      color: 'success'
+    })
+    waitlistOpen.value = false
+  } catch (error: unknown) {
+    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+    toast.add({
+      title: 'Could not join waitlist',
+      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error',
+      color: 'error'
+    })
+  } finally {
+    waitlistSubmitting.value = false
+  }
 }
 </script>
 
@@ -191,6 +274,14 @@ function onSelectTier(tierId: string) {
               >
                 Admin only
               </UBadge>
+              <UBadge
+                v-if="tier.is_full"
+                color="error"
+                variant="soft"
+                size="xs"
+              >
+                Waitlist open
+              </UBadge>
             </div>
             <p
               v-if="tier.description"
@@ -216,7 +307,7 @@ function onSelectTier(tierId: string) {
           </div>
         </div>
 
-        <div class="grid grid-cols-3 gap-2">
+        <div class="grid grid-cols-4 gap-2">
           <div class="plan-stat text-center">
             <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
               {{ tier.booking_window_days }}d
@@ -241,6 +332,14 @@ function onSelectTier(tierId: string) {
               bank cap
             </div>
           </div>
+          <div class="plan-stat text-center">
+            <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
+              {{ tier.cap === null ? '∞' : `${tier.active_members}/${tier.cap}` }}
+            </div>
+            <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
+              members
+            </div>
+          </div>
         </div>
 
         <div class="rounded-2xl border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] p-4">
@@ -257,11 +356,27 @@ function onSelectTier(tierId: string) {
 
         <div class="grid gap-2">
           <UButton
+            v-if="!isTierBlockedForCheckout(tier)"
             block
             @click="onSelectTier(tier.id)"
           >
             {{ isPlanSwitchMode ? `Change to ${tier.display_name}` : `Choose ${tier.display_name}` }}
           </UButton>
+          <UButton
+            v-else
+            block
+            color="neutral"
+            variant="soft"
+            @click="openWaitlist(tier)"
+          >
+            Join waitlist
+          </UButton>
+          <p
+            v-if="tier.is_full && isPriorityMember"
+            class="text-xs text-dimmed"
+          >
+            Tier is full for new members. Active members still have priority for plan changes.
+          </p>
         </div>
 
         <div class="rounded-2xl border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] px-4 py-3 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
@@ -303,5 +418,79 @@ function onSelectTier(tierId: string) {
         </UButton>
       </div>
     </div>
+
+    <UModal v-model:open="waitlistOpen">
+      <template #content>
+        <UCard>
+          <template #header>
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="text-base font-semibold">
+                  Join Waitlist
+                </div>
+                <p class="mt-1 text-sm text-dimmed">
+                  {{ waitlistTier?.display_name ?? 'Membership tier' }} is currently at capacity.
+                </p>
+              </div>
+              <UButton
+                icon="i-lucide-x"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                @click="waitlistOpen = false"
+              />
+            </div>
+          </template>
+
+          <div class="space-y-3">
+            <UFormField label="Email">
+              <UInput
+                v-model="waitlistEmail"
+                type="email"
+                placeholder="you@example.com"
+              />
+            </UFormField>
+            <UFormField label="Phone (optional)">
+              <UInput
+                v-model="waitlistPhone"
+                placeholder="(555) 123-4567"
+              />
+            </UFormField>
+            <UFormField label="Preferred cadence">
+              <USelect
+                v-model="waitlistCadence"
+                :items="[
+                  { label: 'Daily', value: 'daily' },
+                  { label: 'Weekly', value: 'weekly' },
+                  { label: 'Monthly', value: 'monthly' },
+                  { label: 'Quarterly', value: 'quarterly' },
+                  { label: 'Annual', value: 'annual' }
+                ]"
+                value-key="value"
+                option-attribute="label"
+              />
+            </UFormField>
+          </div>
+
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                @click="waitlistOpen = false"
+              >
+                Cancel
+              </UButton>
+              <UButton
+                :loading="waitlistSubmitting"
+                @click="submitWaitlist"
+              >
+                Join waitlist
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
   </UContainer>
 </template>

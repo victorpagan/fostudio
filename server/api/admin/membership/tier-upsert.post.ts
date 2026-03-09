@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
+import { inviteWaitlistForTier } from '~~/server/utils/membership/waitlist'
 
 const variationSchema = z.object({
   cadence: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'annual']),
@@ -22,7 +23,7 @@ const bodySchema = z.object({
   bookingWindowDays: z.number().int().min(1).max(365),
   peakMultiplier: z.number().min(1).max(4),
   maxBank: z.number().int().min(0).max(10000),
-  maxSlots: z.number().int().min(0).max(10000).optional().nullable(),
+  maxSlots: z.number().int().min(0).max(10000).optional().nullable().default(10),
   holdsIncluded: z.number().int().min(0).max(50),
   active: z.boolean().default(true),
   visible: z.boolean().default(true),
@@ -123,6 +124,13 @@ export default defineEventHandler(async (event) => {
 
     if (disableErr) throw createError({ statusCode: 500, statusMessage: disableErr.message })
   }
+
+  await inviteWaitlistForTier(event, body.id).catch((error) => {
+    console.warn('[admin/membership/tier-upsert] waitlist invite pass failed', {
+      tierId: body.id,
+      message: error instanceof Error ? error.message : String(error)
+    })
+  })
 
   return {
     ok: true,

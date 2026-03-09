@@ -126,7 +126,7 @@ const form = reactive<TierForm>({
   bookingWindowDays: 30,
   peakMultiplier: 1,
   maxBank: 100,
-  maxSlots: null,
+  maxSlots: 10,
   holdsIncluded: 0,
   active: true,
   visible: true,
@@ -202,7 +202,7 @@ function resetForm() {
   form.bookingWindowDays = 30
   form.peakMultiplier = 1
   form.maxBank = 100
-  form.maxSlots = null
+  form.maxSlots = 10
   form.holdsIncluded = 0
   form.active = true
   form.visible = true
@@ -671,6 +671,9 @@ async function deleteTier() {
                 </UFormField>
                 <UFormField label="Max bank">
                   <UInput v-model.number="form.maxBank" type="number" min="0" />
+                </UFormField>
+                <UFormField label="Member cap">
+                  <UInput v-model.number="form.maxSlots" type="number" min="1" />
                 </UFormField>
                 <UFormField label="Hold cap / month">
                   <UInput v-model.number="form.holdsIncluded" type="number" min="0" />

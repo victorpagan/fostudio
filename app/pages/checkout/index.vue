@@ -14,6 +14,11 @@ type Tier = {
   id: string
   display_name: string
   description?: string | null
+  max_slots: number | null
+  cap: number | null
+  active_members: number
+  spots_left: number | null
+  is_full: boolean
   membership_plan_variations: PlanOption[]
 }
 
@@ -23,6 +28,7 @@ const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const toast = useToast()
 const loading = ref(false)
+const waitlistSubmitting = ref(false)
 const errorMsg = ref<string | null>(null)
 const selectedCadence = ref<Cadence>('monthly')
 const guestEmail = ref('')
@@ -59,6 +65,26 @@ const signupTo = computed(() => `/signup?returnTo=${encodeURIComponent(route.ful
 
 const isTestTier = computed(() => tier.value === 'test')
 const selectedTier = computed(() => tiers.value.find(item => item.id === tier.value) ?? null)
+const { data: currentMembership } = await useAsyncData('checkout:membership-status', async () => {
+  if (!user.value?.sub) return null
+  const { data, error } = await supabase
+    .from('memberships')
+    .select('status')
+    .eq('user_id', user.value.sub)
+    .maybeSingle()
+  if (error) throw error
+  return data as { status: string | null } | null
+}, { watch: [() => user.value?.sub] })
+
+const isPriorityMember = computed(() => {
+  const status = (currentMembership.value?.status ?? '').toLowerCase()
+  return status === 'active' || status === 'past_due'
+})
+
+const tierAtCapacity = computed(() => {
+  if (isTestTier.value) return false
+  return Boolean(selectedTier.value?.is_full) && !isPriorityMember.value
+})
 const sortedOptions = computed(() => {
   const options = selectedTier.value?.membership_plan_variations ?? []
   const order: Record<Cadence, number> = { daily: 0, weekly: 1, monthly: 2, quarterly: 3, annual: 4 }
@@ -113,6 +139,12 @@ async function beginCheckout() {
   try {
     if (!selectedTier.value || !selectedPlan.value) {
       errorMsg.value = 'This membership option is not available right now.'
+      loading.value = false
+      return
+    }
+
+    if (tierAtCapacity.value) {
+      errorMsg.value = `${selectedTier.value.display_name} is currently full. Join the waitlist to get notified when a spot opens.`
       loading.value = false
       return
     }
@@ -295,6 +327,31 @@ function cadenceCreditsSuffix(cadence: Cadence) {
   if (cadence === 'weekly') return 'per week'
   return 'per month'
 }
+
+async function submitWaitlist() {
+  if (!selectedTier.value) return
+  waitlistSubmitting.value = true
+  try {
+    const waitlistEmail = (user.value?.email ?? guestEmail.value).trim()
+    const res = await $fetch<{ message: string }>('/api/membership/waitlist', {
+      method: 'POST',
+      body: {
+        tier: selectedTier.value.id,
+        cadence: selectedCadence.value,
+        email: waitlistEmail || undefined
+      }
+    })
+    toast.add({
+      title: 'Waitlist updated',
+      description: res.message,
+      color: 'success'
+    })
+  } catch (error: unknown) {
+    errorMsg.value = readErrorMessage(error)
+  } finally {
+    waitlistSubmitting.value = false
+  }
+}
 </script>
 
 <template>
@@ -321,6 +378,14 @@ function cadenceCreditsSuffix(cadence: Cadence) {
         variant="soft"
         icon="i-lucide-circle-alert"
         :title="errorMsg"
+      />
+      <UAlert
+        v-if="tierAtCapacity"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-users"
+        :title="`${selectedTier?.display_name ?? 'This tier'} is currently full`"
+        description="New member checkout is paused for this tier. Join the waitlist and we will email you when a spot opens."
       />
 
       <UAlert
@@ -354,6 +419,15 @@ function cadenceCreditsSuffix(cadence: Cadence) {
             <div class="flex justify-between">
               <span class="text-dimmed">Billing</span>
               <span>{{ selectedPlan ? formatCadence(selectedPlan.cadence) : 'Not available' }}</span>
+            </div>
+            <div
+              v-if="selectedTier"
+              class="flex justify-between"
+            >
+              <span class="text-dimmed">Capacity</span>
+              <span>
+                {{ selectedTier.cap === null ? 'Unlimited' : `${selectedTier.active_members}/${selectedTier.cap}` }}
+              </span>
             </div>
             <div
               v-if="selectedPlan"
@@ -491,6 +565,7 @@ function cadenceCreditsSuffix(cadence: Cadence) {
 
           <div class="mt-4 flex gap-2">
             <UButton
+              v-if="!tierAtCapacity"
               :loading="loading"
               :disabled="loading || !selectedPlan || (!user && isPlanSwitchMode) || (!isPlanSwitchMode && !user && !guestEmail.trim())"
               @click="beginCheckout"
@@ -498,6 +573,14 @@ function cadenceCreditsSuffix(cadence: Cadence) {
               {{ isPlanSwitchMode
                 ? 'Schedule plan change'
                 : (isTestTier ? 'Activate test membership' : 'Continue to secure checkout') }}
+            </UButton>
+            <UButton
+              v-else
+              :loading="waitlistSubmitting"
+              :disabled="!user && !guestEmail.trim()"
+              @click="submitWaitlist"
+            >
+              Join waitlist
             </UButton>
             <UButton
               color="neutral"
