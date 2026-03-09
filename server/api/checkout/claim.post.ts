@@ -315,21 +315,7 @@ export default defineEventHandler(async (event) => {
       }
 
       if (conflictingMembership) {
-        const safeToTransfer = !conflictingMembership.square_customer_id
-          || conflictingMembership.square_customer_id === squareCustomerId
-
-        if (!safeToTransfer) {
-          throw createError({ statusCode: 409, statusMessage: 'This membership payment is already linked to another account.' })
-        }
-
-        const { error: transferMembershipErr } = await supabase
-          .from('memberships')
-          .update({ user_id: user.sub })
-          .eq('id', conflictingMembership.id)
-
-        if (transferMembershipErr) {
-          throw createError({ statusCode: 500, statusMessage: transferMembershipErr.message })
-        }
+        throw createError({ statusCode: 409, statusMessage: 'This membership payment is already linked to another account.' })
       }
     }
 
