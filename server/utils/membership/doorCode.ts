@@ -40,16 +40,32 @@ async function ensureCustomerRow(event: H3Event, params: { userId: string, email
   const supabase = serverSupabaseServiceRole(event)
   const normalizedEmail = normalizeEmail(params.email)
 
-  const { data: existingByUser, error: existingByUserErr } = await supabase
+  const { data: existingByUserRows, error: existingByUserErr } = await supabase
     .from('customers')
     .select('id,user_id,email,door_code')
     .eq('user_id', params.userId)
-    .maybeSingle()
+    .order('updated_at', { ascending: false })
+    .limit(5)
 
   if (existingByUserErr) {
     throw createError({ statusCode: 500, statusMessage: existingByUserErr.message })
   }
-  if (existingByUser) return existingByUser as CustomerDoorCodeRow
+
+  const existingByUser = (existingByUserRows?.[0] ?? null) as CustomerDoorCodeRow | null
+  if (existingByUser) {
+    const duplicateIds = (existingByUserRows ?? [])
+      .slice(1)
+      .map((row: { id: string }) => row.id)
+
+    if (duplicateIds.length) {
+      await supabase
+        .from('customers')
+        .delete()
+        .in('id', duplicateIds)
+    }
+
+    return existingByUser
+  }
 
   const { data: inserted, error: insertErr } = await supabase
     .from('customers')
@@ -66,15 +82,17 @@ async function ensureCustomerRow(event: H3Event, params: { userId: string, email
     throw createError({ statusCode: 500, statusMessage: insertErr?.message ?? 'Failed to create customer row' })
   }
 
-  const { data: retried, error: retriedErr } = await supabase
+  const { data: retriedRows, error: retriedErr } = await supabase
     .from('customers')
     .select('id,user_id,email,door_code')
     .eq('user_id', params.userId)
-    .maybeSingle()
+    .order('updated_at', { ascending: false })
+    .limit(5)
 
   if (retriedErr) throw createError({ statusCode: 500, statusMessage: retriedErr.message })
+  const retried = (retriedRows?.[0] ?? null) as CustomerDoorCodeRow | null
   if (!retried) throw createError({ statusCode: 500, statusMessage: 'Failed to load customer row' })
-  return retried as CustomerDoorCodeRow
+  return retried
 }
 
 export async function ensureDoorCodeForUser(event: H3Event, params: { userId: string, email?: string | null }) {
