@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { inviteWaitlistForTier } from '~~/server/utils/membership/waitlist'
+import { useSquareClient } from '~~/server/utils/square'
 
 const variationSchema = z.object({
   cadence: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'annual']),
@@ -31,6 +33,109 @@ const bodySchema = z.object({
   sortOrder: z.number().int().default(0),
   variations: z.array(variationSchema).min(1)
 })
+
+type SquareLooseObject = Record<string, unknown>
+
+function extractSquareObject(response: unknown) {
+  if (!response || typeof response !== 'object') return null
+  const responseObject = response as {
+    object?: unknown
+    body?: { object?: unknown }
+    result?: { object?: unknown }
+    data?: { object?: unknown }
+  }
+  return (
+    responseObject.object
+    ?? responseObject.body?.object
+    ?? responseObject.result?.object
+    ?? responseObject.data?.object
+    ?? null
+  )
+}
+
+function toSquareVersion(value: unknown) {
+  if (typeof value === 'bigint') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return BigInt(Math.trunc(value))
+  if (typeof value === 'string' && /^\d+$/.test(value)) return BigInt(value)
+  return undefined
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map(item => typeof item === 'string' ? item.trim() : '')
+    .filter((item): item is string => item.length > 0)
+}
+
+function extractPlanEligibleItemIds(squareObject: unknown) {
+  if (!squareObject || typeof squareObject !== 'object') return [] as string[]
+  const objectValue = squareObject as {
+    type?: string
+    subscriptionPlanData?: { eligibleItemIds?: unknown }
+    subscription_plan_data?: { eligibleItemIds?: unknown, eligible_item_ids?: unknown }
+  }
+  if (objectValue.type !== 'SUBSCRIPTION_PLAN') return []
+
+  const planData = objectValue.subscriptionPlanData ?? objectValue.subscription_plan_data
+  const rawIds = planData?.eligibleItemIds ?? planData?.eligible_item_ids
+  return toStringArray(rawIds)
+}
+
+function normalizeTierItemObject(
+  sourceObject: SquareLooseObject,
+  displayName: string,
+  priceCents: number,
+  currency: string
+) {
+  const itemData = (sourceObject.itemData ?? sourceObject.item_data) as SquareLooseObject | undefined
+  if (!itemData) return null
+
+  const rawVariations = (itemData.variations as unknown[] | undefined) ?? []
+  if (!Array.isArray(rawVariations) || rawVariations.length === 0) return null
+
+  const updatedVariations = rawVariations.map((variation) => {
+    if (!variation || typeof variation !== 'object') return variation
+    const variationValue = variation as SquareLooseObject
+    const variationData = (variationValue.itemVariationData ?? variationValue.item_variation_data) as SquareLooseObject | undefined
+    if (!variationData) return variation
+    return {
+      ...variationValue,
+      itemVariationData: {
+        ...variationData,
+        pricingType: 'FIXED_PRICING',
+        priceMoney: {
+          amount: BigInt(priceCents),
+          currency
+        }
+      }
+    }
+  })
+
+  const payload: SquareLooseObject = {
+    id: sourceObject.id,
+    type: 'ITEM',
+    itemData: {
+      ...itemData,
+      name: itemData.name ?? `${displayName} membership`,
+      productType: 'DIGITAL_PRODUCT',
+      isTaxable: false,
+      variations: updatedVariations
+    }
+  }
+
+  const version = toSquareVersion(sourceObject.version)
+  if (version !== undefined) payload.version = version
+  return payload
+}
+
+function cadenceSortOrder(cadence: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual') {
+  if (cadence === 'daily') return 1
+  if (cadence === 'weekly') return 2
+  if (cadence === 'monthly') return 3
+  if (cadence === 'quarterly') return 4
+  if (cadence === 'annual') return 5
+  return 6
+}
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
@@ -64,6 +169,53 @@ export default defineEventHandler(async (event) => {
       statusCode: 400,
       statusMessage: 'Enabled cadences must share the same Square plan ID.'
     })
+  }
+
+  const sharedPlanId = Array.from(knownPlanIds)[0] ?? null
+  const cadenceOrder = ['daily', 'weekly', 'monthly', 'quarterly', 'annual'] as const
+  const basePriceVariation = [...enabledVariations]
+    .sort((a, b) => cadenceSortOrder(a.cadence) - cadenceSortOrder(b.cadence))
+    .find(variation => variation.cadence === 'monthly')
+    ?? [...enabledVariations].sort((a, b) => cadenceSortOrder(a.cadence) - cadenceSortOrder(b.cadence))[0]
+
+  if (sharedPlanId && basePriceVariation) {
+    try {
+      const square = await useSquareClient(event)
+      const planRes = await square.catalog.object.get({
+        objectId: sharedPlanId,
+        includeRelatedObjects: false
+      } as never)
+      const planObject = extractSquareObject(planRes)
+      const eligibleItemIds = extractPlanEligibleItemIds(planObject)
+
+      for (const itemId of eligibleItemIds) {
+        const itemRes = await square.catalog.object.get({
+          objectId: itemId,
+          includeRelatedObjects: false
+        } as never)
+        const itemObject = extractSquareObject(itemRes) as SquareLooseObject | null
+        if (!itemObject) continue
+
+        const normalizedObject = normalizeTierItemObject(
+          itemObject,
+          body.displayName,
+          basePriceVariation.priceCents,
+          basePriceVariation.currency.toUpperCase()
+        )
+        if (!normalizedObject) continue
+
+        await square.catalog.object.upsert({
+          idempotencyKey: randomUUID(),
+          object: normalizedObject
+        } as never)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw createError({
+        statusCode: 502,
+        statusMessage: `Failed to sync Square base item price/type: ${message}`
+      })
+    }
   }
 
   const tierRow = {
@@ -135,7 +287,7 @@ export default defineEventHandler(async (event) => {
   return {
     ok: true,
     tierId: body.id,
-    squarePlanId: Array.from(knownPlanIds)[0] ?? null,
+    squarePlanId: sharedPlanId,
     linkedCadences: enabledVariations.map(variation => variation.cadence)
   }
 })

@@ -346,6 +346,8 @@ export default defineEventHandler(async (event) => {
         presentAtAllLocations: true,
         itemData: {
           name: `${body.displayName} membership`,
+          productType: 'DIGITAL_PRODUCT',
+          isTaxable: false,
           variations: [
             {
               id: squareItemVariationTempId,
