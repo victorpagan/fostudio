@@ -68,8 +68,8 @@ export default defineEventHandler(async (event) => {
       start: h.hold_start,
       end: h.hold_end,
       title: 'Hold',
-      display: 'background',
-      color: '#f59e0b', // amber
+      display: 'auto',
+      color: '#f59e0b',
       extendedProps: { type: 'hold' }
     })),
     ...(blocks ?? []).map(block => ({

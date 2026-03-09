@@ -101,10 +101,6 @@ async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
   }
 }
 
-const eventCount = computed(() => events.value.length)
-const holdCount = computed(() =>
-  events.value.filter(event => event.extendedProps?.type === 'hold').length
-)
 const bookingCount = computed(() =>
   events.value.filter(event => event.extendedProps?.type === 'booking').length
 )
@@ -129,10 +125,11 @@ function eventClassNames(arg: { event: { display: string, extendedProps: Calenda
   return classes
 }
 
-function eventContent(arg: { event: { display: string, title: string }, timeText: string }) {
+function eventContent(arg: { event: { display: string, title: string, extendedProps?: CalendarEvent['extendedProps'] }, timeText: string }) {
   if (arg.event.display === 'background') return undefined
 
-  const time = arg.timeText ? `<div class="fc-event-time">${arg.timeText}</div>` : ''
+  const isHold = arg.event.extendedProps?.type === 'hold'
+  const time = !isHold && arg.timeText ? `<div class="fc-event-time">${arg.timeText}</div>` : ''
   return {
     html: `<div class="fc-event-label">${arg.event.title}</div>${time}`
   }
@@ -185,12 +182,28 @@ const calendarEvents = computed<CalendarEvent[]>(() => [
   ...peakEvents.value
 ])
 
+const memberValidRange = computed(() => {
+  if (!isMemberFeed.value || !bookingWindowDays.value) return undefined
+  const now = new Date()
+  const end = new Date(now.getTime() + bookingWindowDays.value * 24 * 60 * 60 * 1000)
+  return {
+    start: now.toISOString(),
+    end: end.toISOString()
+  }
+})
+
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
   initialView: 'timeGridWeek',
   timeZone: 'America/Los_Angeles',
   selectable: canSelect.value,
+  validRange: memberValidRange.value,
   selectOverlap: false,
+  selectAllow: (selectionInfo: { start: Date, end: Date }) => {
+    if (!isMemberFeed.value || !bookingWindowDays.value) return true
+    const maxStart = new Date(Date.now() + bookingWindowDays.value * 24 * 60 * 60 * 1000)
+    return selectionInfo.start <= maxStart
+  },
   selectMirror: true,
   nowIndicator: true,
   allDaySlot: false,
@@ -253,15 +266,8 @@ onMounted(() => loadEvents())
 
       <div class="availability-meta">
         <div class="availability-chip">
-          <span class="availability-dot bg-[color:var(--gruv-accent)]" />
-          {{ holdCount }} hold window{{ holdCount === 1 ? '' : 's' }}
-        </div>
-        <div class="availability-chip">
           <span class="availability-dot bg-[color:var(--gruv-ink-2)]" />
           {{ bookingCount }} confirmed session{{ bookingCount === 1 ? '' : 's' }}
-        </div>
-        <div class="availability-chip">
-          {{ eventCount }} blocked block{{ eventCount === 1 ? '' : 's' }}
         </div>
         <div
           v-if="isMemberFeed && bookingWindowDays"
