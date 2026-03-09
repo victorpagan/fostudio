@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DateTime } from 'luxon'
 import { normalizeDiscountLabel } from '~~/app/utils/membershipDiscount'
 
 // auth only — no membership-required middleware. We handle the no-membership
@@ -225,30 +226,23 @@ function fromLocalInputValue(value: string) {
 }
 
 function formatRange(start: string, end: string) {
-  const s = new Date(start)
-  const e = new Date(end)
-  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) {
+  const parse = (value: string) => {
+    const iso = DateTime.fromISO(value, { setZone: true })
+    if (iso.isValid) return iso.setZone('America/Los_Angeles')
+    const sql = DateTime.fromSQL(value, { zone: 'utc' })
+    if (sql.isValid) return sql.setZone('America/Los_Angeles')
+    return null
+  }
+
+  const s = parse(start)
+  const e = parse(end)
+  if (!s || !e) {
     return { dateStr: `${start} to ${end}`, timeStr: '' }
   }
-  const dateStr = s.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'America/Los_Angeles'
-  })
-  const startTime = s.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'America/Los_Angeles'
-  })
-  const endTime = e.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'America/Los_Angeles'
-  })
+
+  const dateStr = s.toFormat('ccc, LLL d, yyyy')
+  const startTime = s.toFormat('h:mm a')
+  const endTime = e.toFormat('h:mm a')
   return { dateStr, timeStr: `${startTime} – ${endTime}` }
 }
 

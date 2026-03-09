@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { DateTime } from 'luxon'
 import { serverSupabaseClient } from '#supabase/server'
 import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
 
@@ -13,6 +14,14 @@ function durationHours(startIso: string, endIso: string) {
   const hours = Math.max(0, (end - start) / 3600000)
   const rounded = Math.round(hours * 100) / 100
   return Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(2).replace(/\.?0+$/, '')
+}
+
+function normalizeIso(value: string) {
+  const parsed = DateTime.fromISO(value, { setZone: true })
+  if (parsed.isValid) return parsed.toUTC().toISO()
+  const sqlParsed = DateTime.fromSQL(value, { zone: 'utc' })
+  if (sqlParsed.isValid) return sqlParsed.toUTC().toISO()
+  return value
 }
 
 export default defineEventHandler(async (event) => {
@@ -56,8 +65,8 @@ export default defineEventHandler(async (event) => {
   const events = [
     ...(bookings ?? []).map(b => ({
       id: `b_${b.id}`,
-      start: b.start_time,
-      end: b.end_time,
+      start: normalizeIso(b.start_time),
+      end: normalizeIso(b.end_time),
       title: `Member booked · ${durationHours(b.start_time, b.end_time)}h`,
       display: 'auto',
       color: '#64748b', // slate — neutral, no info leak
@@ -65,8 +74,8 @@ export default defineEventHandler(async (event) => {
     })),
     ...(holds ?? []).map(h => ({
       id: `h_${h.id}`,
-      start: h.hold_start,
-      end: h.hold_end,
+      start: normalizeIso(h.hold_start),
+      end: normalizeIso(h.hold_end),
       title: 'Hold',
       display: 'auto',
       color: '#f59e0b',
@@ -74,8 +83,8 @@ export default defineEventHandler(async (event) => {
     })),
     ...(blocks ?? []).map(block => ({
       id: `x_${block.id}`,
-      start: block.start_time,
-      end: block.end_time,
+      start: normalizeIso(block.start_time),
+      end: normalizeIso(block.end_time),
       title: block.reason || 'Studio block',
       display: 'background',
       color: '#dc2626',
