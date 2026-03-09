@@ -380,6 +380,18 @@ function cadencePriceSuffix(cadence: string | null) {
   return ''
 }
 
+function creditsCycleLabel(cadence: string | null) {
+  if (cadence === 'daily') return 'Credits / day'
+  if (cadence === 'weekly') return 'Credits / week'
+  return 'Credits / month'
+}
+
+function creditsCycleAbbrev(cadence: string | null) {
+  if (cadence === 'daily') return 'cr/day'
+  if (cadence === 'weekly') return 'cr/week'
+  return 'cr/mo'
+}
+
 function memberSince(createdAt: string | null) {
   if (!createdAt) return '—'
   const dt = parseDate(createdAt)
@@ -990,7 +1002,7 @@ onUnmounted(() => {
                   >
                     <div class="text-sm">
                       <span class="font-medium">{{ formatCadence(plan.cadence) }}</span>
-                      <span class="text-dimmed"> · {{ plan.credits_per_month }} cr/mo</span>
+                      <span class="text-dimmed"> · {{ plan.credits_per_month }} {{ creditsCycleAbbrev(plan.cadence) }}</span>
                       <UBadge
                         v-if="getDiscountLabel(plan.discount_label)"
                         color="success"
@@ -1078,6 +1090,14 @@ onUnmounted(() => {
               :description="`This change takes effect on ${formatDateLabel(subscriptionState.pendingSwap.effectiveDate) ?? 'your next billing cycle'}.`"
             />
             <UAlert
+              v-if="subscriptionState?.pendingSwap"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-info"
+              title="Current features still apply"
+              description="Plan features and credit cadence shown below reflect your current active cycle until the scheduled change date."
+            />
+            <UAlert
               v-if="subscriptionState?.pendingCancel"
               color="warning"
               variant="soft"
@@ -1124,7 +1144,7 @@ onUnmounted(() => {
                       <span>{{ formatPrice(currentVariation?.price_cents ?? null) }}{{ cadencePriceSuffix(membership?.cadence ?? null) }}</span>
                     </div>
                     <div class="flex justify-between">
-                      <span class="text-dimmed">Credits / month</span>
+                      <span class="text-dimmed">{{ creditsCycleLabel(membership?.cadence ?? null) }}</span>
                       <span>{{ currentVariation?.credits_per_month ?? '—' }}</span>
                     </div>
                     <div class="flex justify-between">
@@ -1199,7 +1219,7 @@ onUnmounted(() => {
                       </UBadge>
                     </div>
                     <div class="text-dimmed mt-1">
-                      {{ formatPrice(v.price_cents) }}{{ cadencePriceSuffix(v.cadence) }} · {{ v.credits_per_month }} cr/mo
+                      {{ formatPrice(v.price_cents) }}{{ cadencePriceSuffix(v.cadence) }} · {{ v.credits_per_month }} {{ creditsCycleAbbrev(v.cadence) }}
                     </div>
                     <UButton
                       v-if="v.cadence !== membership?.cadence"

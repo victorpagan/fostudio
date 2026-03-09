@@ -289,6 +289,12 @@ function cadencePriceSuffix(cadence: Cadence) {
   if (cadence === 'annual') return '/year'
   return '/mo'
 }
+
+function cadenceCreditsSuffix(cadence: Cadence) {
+  if (cadence === 'daily') return 'per day'
+  if (cadence === 'weekly') return 'per week'
+  return 'per month'
+}
 </script>
 
 <template>
@@ -375,7 +381,7 @@ function cadencePriceSuffix(cadence: Cadence) {
               class="flex justify-between"
             >
               <span class="text-dimmed">Credits</span>
-              <span>{{ selectedPlan.credits_per_month }} per month</span>
+              <span>{{ selectedPlan.credits_per_month }} {{ cadenceCreditsSuffix(selectedPlan.cadence) }}</span>
             </div>
           </div>
 

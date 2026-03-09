@@ -79,6 +79,12 @@ function formatCadence(value: string) {
   return value
 }
 
+function creditsCycleAbbrev(cadence: string) {
+  if (cadence === 'daily') return 'cr/day'
+  if (cadence === 'weekly') return 'cr/week'
+  return 'cr/mo'
+}
+
 function getDiscountLabel(label?: string | null) {
   return normalizeDiscountLabel(label)
 }
@@ -224,7 +230,7 @@ function openTierDetails(tierId: string) {
                   <div class="flex items-center justify-between gap-2">
                     <div class="text-sm">
                       <span class="font-medium">{{ formatCadence(plan.cadence) }}</span>
-                      <span class="text-dimmed"> · {{ plan.credits_per_month ?? '—' }} cr/mo</span>
+                      <span class="text-dimmed"> · {{ plan.credits_per_month ?? '—' }} {{ creditsCycleAbbrev(plan.cadence) }}</span>
                       <UBadge
                         v-if="getDiscountLabel(plan.discount_label)"
                         color="success"

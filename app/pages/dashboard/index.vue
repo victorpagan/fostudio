@@ -14,6 +14,17 @@ const actions = [[
   { label: 'Manage membership', icon: 'i-lucide-badge-check', to: '/dashboard/membership' }
 ]] satisfies DropdownMenuItem[][]
 
+type HoldSummary = {
+  holdsIncluded: number
+  activeHolds: number
+  holdsUsedThisCycle: number
+  cycleStartIso: string | null
+  cycleEndIso: string | null
+  paidHoldBalance: number
+  includedHoldsRemaining: number
+  canRequestHoldNow: boolean
+}
+
 // Membership
 const { data: membership } = await useAsyncData('dash:home:membership', async () => {
   if (!user.value) return null
@@ -49,6 +60,11 @@ const { data: upcomingCount } = await useAsyncData('dash:home:upcoming', async (
     .in('status', ['confirmed', 'requested'])
   if (error) return 0
   return count ?? 0
+})
+
+const { data: holdSummary } = await useAsyncData('dash:home:holds', async () => {
+  if (!user.value) return null
+  return await $fetch<HoldSummary>('/api/holds/summary')
 })
 
 const membershipState = computed(() => {
@@ -176,7 +192,7 @@ function formatStatus(status: string | null | undefined) {
     <template #body>
       <div class="p-4 space-y-4">
         <!-- Stat cards -->
-        <div class="grid gap-4 sm:grid-cols-3">
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <!-- Membership card -->
           <UCard>
             <div class="text-xs text-dimmed uppercase tracking-wide">
@@ -268,6 +284,29 @@ function formatStatus(status: string | null | undefined) {
                 size="sm"
               >
                 My bookings
+              </UButton>
+            </div>
+          </UCard>
+
+          <!-- Holds card -->
+          <UCard>
+            <div class="text-xs text-dimmed uppercase tracking-wide">
+              Holds
+            </div>
+            <div class="mt-2 text-4xl font-semibold tabular-nums">
+              {{ holdSummary?.includedHoldsRemaining ?? 0 }}
+            </div>
+            <div class="mt-1.5 text-xs text-dimmed">
+              Included remaining this cycle · Paid balance {{ holdSummary?.paidHoldBalance ?? 0 }}
+            </div>
+            <div class="mt-4">
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="soft"
+                to="/dashboard/membership#holds"
+              >
+                View holds
               </UButton>
             </div>
           </UCard>

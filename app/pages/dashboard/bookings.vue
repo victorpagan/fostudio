@@ -353,6 +353,12 @@ function cadencePriceUnit(cadence: string) {
   return cadence
 }
 
+function cadenceCreditsUnit(cadence: string) {
+  if (cadence === 'daily') return 'day'
+  if (cadence === 'weekly') return 'week'
+  return 'mo'
+}
+
 function formatPeakCredits(value: number) {
   if (Number.isInteger(value)) return value.toString()
   return value.toFixed(2).replace(/\.?0+$/, '')
@@ -506,7 +512,7 @@ watch(
                       </UBadge>
                     </div>
                     <div class="text-xs text-dimmed">
-                      {{ opt.credits_per_month }} credits/mo
+                      {{ opt.credits_per_month }} credits/{{ cadenceCreditsUnit(opt.cadence) }}
                     </div>
                   </div>
                   <div class="text-right">
