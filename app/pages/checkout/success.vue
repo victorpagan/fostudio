@@ -263,12 +263,6 @@ onBeforeUnmount(() => {
             </span>
           </div>
 
-          <p
-            v-if="claimedMembershipId"
-            class="mt-5 text-xs leading-6 text-[color:var(--gruv-ink-2)]"
-          >
-            Membership ID: {{ claimedMembershipId }}
-          </p>
         </div>
       </div>
     </section>
