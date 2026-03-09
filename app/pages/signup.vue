@@ -23,10 +23,6 @@ const returnTo = computed(() => {
   return '/onboarding'
 })
 
-const loginTo = computed(() =>
-  `/login?returnTo=${encodeURIComponent(returnTo.value)}`
-)
-
 const selectedPlan = computed(() => {
   const selected = {
     tier: null as TierId | null,
@@ -291,10 +287,6 @@ async function handleSignup() {
             </UButton>
           </div>
 
-          <div class="text-sm text-gray-600 dark:text-gray-300">
-            Already have an account?
-            <NuxtLink class="underline" :to="loginTo">Log in</NuxtLink>
-          </div>
         </div>
       </UCard>
     </div>
