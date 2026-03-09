@@ -54,35 +54,33 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: `Cannot reschedule booking in status "${booking.status}"` })
   }
 
-  if (!isAdmin) {
-    const { data: policyRow, error: policyErr } = await supabase
-      .from('system_config')
-      .select('value')
-      .eq('key', 'member_reschedule_notice_hours')
-      .maybeSingle()
+  const { data: policyRow, error: policyErr } = await supabase
+    .from('system_config')
+    .select('value')
+    .eq('key', 'member_reschedule_notice_hours')
+    .maybeSingle()
 
-    if (policyErr) throw createError({ statusCode: 500, statusMessage: policyErr.message })
+  if (policyErr) throw createError({ statusCode: 500, statusMessage: policyErr.message })
 
-    const memberNoticeHours = Number(policyRow?.value ?? DEFAULT_MEMBER_RESCHEDULE_NOTICE_HOURS)
-    const currentStart = DateTime.fromISO(booking.start_time)
-    if (!currentStart.isValid) {
-      throw createError({ statusCode: 409, statusMessage: 'This booking cannot be rescheduled right now. Invalid start time.' })
-    }
-    const hoursUntilCurrentStart = currentStart.diff(DateTime.now(), 'hours').hours
+  const memberNoticeHours = Number(policyRow?.value ?? DEFAULT_MEMBER_RESCHEDULE_NOTICE_HOURS)
+  const currentStart = DateTime.fromISO(booking.start_time)
+  if (!currentStart.isValid) {
+    throw createError({ statusCode: 409, statusMessage: 'This booking cannot be rescheduled right now. Invalid start time.' })
+  }
+  const hoursUntilCurrentStart = currentStart.diff(DateTime.now(), 'hours').hours
 
-    if (hoursUntilCurrentStart <= 0) {
-      throw createError({
-        statusCode: 409,
-        statusMessage: 'This booking has already started or passed and can no longer be rescheduled.'
-      })
-    }
+  if (hoursUntilCurrentStart <= 0) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'This booking has already started or passed and can no longer be rescheduled.'
+    })
+  }
 
-    if (hoursUntilCurrentStart < memberNoticeHours) {
-      throw createError({
-        statusCode: 409,
-        statusMessage: `Rescheduling is locked within ${memberNoticeHours} hours of the booking start time.`
-      })
-    }
+  if (!isAdmin && hoursUntilCurrentStart < memberNoticeHours) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: `Rescheduling is locked within ${memberNoticeHours} hours of the booking start time.`
+    })
   }
 
   const startIso = nextStart.toUTC().toISO()

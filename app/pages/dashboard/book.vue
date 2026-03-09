@@ -3,6 +3,7 @@ definePageMeta({ middleware: ['auth', 'membership-required'] })
 
 const toast = useToast()
 const router = useRouter()
+const { isAdmin } = useCurrentUser()
 type BookingPolicy = {
   memberRescheduleNoticeHours: number
   holdCreditCost: number
@@ -160,6 +161,40 @@ function onOwnBookingClick(payload: {
   ownBookingActionOpen.value = true
 }
 
+function clickedBookingHoursUntilStart() {
+  if (!clickedBooking.value?.start) return Number.NaN
+  const startMs = new Date(clickedBooking.value.start).getTime()
+  return (startMs - Date.now()) / (1000 * 60 * 60)
+}
+
+const ownBookingHasPassed = computed(() => {
+  const hours = clickedBookingHoursUntilStart()
+  return Number.isFinite(hours) && hours <= 0
+})
+
+const ownBookingWithinNoticeWindow = computed(() => {
+  const hours = clickedBookingHoursUntilStart()
+  return Number.isFinite(hours) && hours < memberRescheduleNoticeHours.value
+})
+
+const ownBookingCanModify = computed(() => {
+  if (ownBookingHasPassed.value) return false
+  if (isAdmin.value) return true
+  return !ownBookingWithinNoticeWindow.value
+})
+
+const ownBookingCanCancel = computed(() => {
+  if (ownBookingHasPassed.value) return false
+  if (isAdmin.value) return true
+  return !ownBookingWithinNoticeWindow.value
+})
+
+const ownBookingLockReason = computed(() => {
+  if (ownBookingHasPassed.value) return 'This booking has already started or passed and can no longer be modified or canceled.'
+  if (!isAdmin.value && ownBookingWithinNoticeWindow.value) return `Members cannot modify/cancel within ${memberRescheduleNoticeHours.value} hours of start.`
+  return ''
+})
+
 function closeOwnBookingActions() {
   if (ownBookingActionLoading.value) return
   ownBookingActionOpen.value = false
@@ -168,6 +203,10 @@ function closeOwnBookingActions() {
 
 async function cancelClickedBooking() {
   if (!clickedBooking.value?.bookingId) return
+  if (!ownBookingCanCancel.value) {
+    toast.add({ title: 'Cannot cancel booking', description: ownBookingLockReason.value || 'Booking is locked', color: 'warning' })
+    return
+  }
   ownBookingActionLoading.value = true
   try {
     await $fetch(`/api/bookings/${clickedBooking.value.bookingId}`, { method: 'DELETE' })
@@ -189,6 +228,10 @@ async function cancelClickedBooking() {
 
 async function manageClickedBooking() {
   if (!clickedBooking.value?.bookingId) return
+  if (!ownBookingCanModify.value) {
+    toast.add({ title: 'Cannot reschedule booking', description: ownBookingLockReason.value || 'Booking is locked', color: 'warning' })
+    return
+  }
   await router.push(`/dashboard/bookings?reschedule=${encodeURIComponent(clickedBooking.value.bookingId)}`)
 }
 
@@ -480,6 +523,13 @@ function formatPeakCredits(value: number) {
             <div class="text-dimmed">
               You already own this booking slot.
             </div>
+            <UAlert
+              v-if="ownBookingLockReason"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-lock"
+              :description="ownBookingLockReason"
+            />
             <div class="rounded-lg border border-default p-3">
               <div>
                 {{ formatDateTime(new Date(clickedBooking.start)) }} to {{ formatDateTime(new Date(clickedBooking.end)) }}
@@ -498,7 +548,7 @@ function formatPeakCredits(value: number) {
               <UButton
                 color="neutral"
                 variant="soft"
-                :disabled="ownBookingActionLoading"
+                :disabled="ownBookingActionLoading || !ownBookingCanModify"
                 @click="manageClickedBooking"
               >
                 Modify / reschedule
@@ -506,6 +556,7 @@ function formatPeakCredits(value: number) {
               <UButton
                 color="error"
                 :loading="ownBookingActionLoading"
+                :disabled="!ownBookingCanCancel"
                 @click="cancelClickedBooking"
               >
                 Cancel booking

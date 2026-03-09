@@ -7,9 +7,10 @@
  *  - Must be authenticated
  *  - Must own the booking (or be admin)
  *  - Booking must be 'confirmed' or 'requested' (not already canceled/completed)
+ *  - Past/started bookings cannot be canceled
  *  - Member cancellations are allowed only when start_time is >= 24h from now
  *  - Eligible cancellations refund burned credits
- *  - Admins can cancel any booking regardless of time
+ *  - Admins can cancel within 24h, but not after start
  */
 import { serverSupabaseUser, serverSupabaseServiceRole, serverSupabaseClient } from '#supabase/server'
 import { DateTime } from 'luxon'
@@ -65,20 +66,18 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: 'This booking cannot be canceled right now. Invalid start time.' })
   }
   const hoursUntilStart = start.diff(now, 'hours').hours
+  if (hoursUntilStart <= 0) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'This booking has already started or passed and can no longer be canceled.'
+    })
+  }
   const eligibleForRefund = hoursUntilStart >= REFUND_WINDOW_HOURS
-  if (!isAdmin) {
-    if (hoursUntilStart <= 0) {
-      throw createError({
-        statusCode: 409,
-        statusMessage: 'This booking has already started or passed and can no longer be canceled.'
-      })
-    }
-    if (!eligibleForRefund) {
-      throw createError({
-        statusCode: 409,
-        statusMessage: `This booking is within ${REFUND_WINDOW_HOURS} hours of start and can no longer be canceled.`
-      })
-    }
+  if (!isAdmin && !eligibleForRefund) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: `This booking is within ${REFUND_WINDOW_HOURS} hours of start and can no longer be canceled.`
+    })
   }
   const creditsToRefund = eligibleForRefund ? (booking.credits_burned ?? 0) : 0
 
