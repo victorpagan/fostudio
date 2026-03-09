@@ -3,6 +3,8 @@ definePageMeta({ middleware: ['auth', 'membership-required'] })
 
 const toast = useToast()
 const router = useRouter()
+const supabase = useSupabaseClient()
+const user = useSupabaseUser()
 const { isAdmin } = useCurrentUser()
 type BookingPolicy = {
   memberRescheduleNoticeHours: number
@@ -106,9 +108,30 @@ watch(holdSelectionRequired, (required) => {
 const preview = ref<BookingPreview | null>(null)
 const previewLoading = ref(false)
 const previewError = ref<string | null>(null)
+const balanceLoading = ref(false)
+const creditBalance = ref<number>(0)
 
 // Bump this key to force calendar to remount + reload events after a booking
 const calendarKey = ref(0)
+
+async function refreshCreditBalance() {
+  if (!user.value?.id) return
+  balanceLoading.value = true
+  try {
+    const { data, error } = await supabase
+      .from('credit_balance')
+      .select('balance')
+      .eq('user_id', user.value.id)
+      .maybeSingle()
+
+    if (error) throw error
+    creditBalance.value = Math.max(0, Number(data?.balance ?? 0))
+  } catch (error) {
+    console.error('[book] failed to load credit balance', error)
+  } finally {
+    balanceLoading.value = false
+  }
+}
 
 async function fetchPreview(start: Date, end: Date) {
   previewLoading.value = true
@@ -139,6 +162,7 @@ function onSelect(payload: { start: Date, end: Date }) {
   preview.value = null
   previewError.value = null
   open.value = true
+  refreshCreditBalance()
   refreshHoldSummary()
   fetchPreview(payload.start, payload.end)
 }
@@ -237,6 +261,14 @@ async function manageClickedBooking() {
 
 async function confirmBooking() {
   if (!selected.value) return
+  if (hasInsufficientCredits.value) {
+    toast.add({
+      title: 'Insufficient credits',
+      description: 'Please buy more credits before booking this slot.',
+      color: 'warning'
+    })
+    return
+  }
   confirming.value = true
   try {
     const res = await $fetch<BookingCreateResponse>('/api/bookings/create', {
@@ -257,6 +289,7 @@ async function confirmBooking() {
     })
     closeModal()
     calendarKey.value++ // refresh calendar events
+    await refreshCreditBalance()
   } catch (error: unknown) {
     const maybe = error as ApiErrorLike
     const msg = maybe.data?.statusMessage ?? maybe.message ?? 'Booking failed'
@@ -271,6 +304,31 @@ async function confirmBooking() {
   } finally {
     confirming.value = false
   }
+}
+
+const requiredCredits = computed(() => {
+  const previewCredits = Number(preview.value?.creditsNeeded ?? 0)
+  if (!form.request_hold || !holdSelectionRequired.value) return previewCredits
+
+  if (form.holdPaymentMethod === 'credits') {
+    return previewCredits + holdCreditCost.value
+  }
+
+  if (form.holdPaymentMethod === 'auto' && !canUseHoldToken.value && canUseHoldCredits.value) {
+    return previewCredits + holdCreditCost.value
+  }
+
+  return previewCredits
+})
+
+const hasInsufficientCredits = computed(() => {
+  if (!preview.value || previewLoading.value || !!previewError.value) return false
+  return creditBalance.value < requiredCredits.value
+})
+
+function goToBuyCredits() {
+  closeModal()
+  router.push('/dashboard/credits')
 }
 
 function formatDateTime(d: Date) {
@@ -434,8 +492,36 @@ function formatPeakCredits(value: number) {
                 >
                   Calculated for your {{ preview.tierName }} membership
                 </div>
+                <div class="mt-2 flex justify-between items-center text-xs text-dimmed">
+                  <span>Available now</span>
+                  <span>{{ balanceLoading ? 'Loading…' : `${creditBalance} credits` }}</span>
+                </div>
+                <div class="flex justify-between items-center text-xs text-dimmed">
+                  <span>Required</span>
+                  <span>{{ requiredCredits }} credits</span>
+                </div>
               </div>
             </div>
+
+            <UAlert
+              v-if="hasInsufficientCredits"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-wallet-cards"
+              title="Insufficient credits"
+              :description="`This booking needs ${requiredCredits} credits, but you currently have ${creditBalance}.`"
+            >
+              <template #actions>
+                <UButton
+                  size="sm"
+                  color="warning"
+                  variant="soft"
+                  @click="goToBuyCredits"
+                >
+                  Buy credits
+                </UButton>
+              </template>
+            </UAlert>
 
             <!-- Notes -->
             <UFormField
@@ -486,7 +572,7 @@ function formatPeakCredits(value: number) {
               </UButton>
               <UButton
                 :loading="confirming"
-                :disabled="previewLoading || !!previewError || !preview"
+                :disabled="previewLoading || !!previewError || !preview || hasInsufficientCredits"
                 @click="confirmBooking"
               >
                 Book {{ preview ? `· ${preview.creditsNeeded} cr` : '' }}
