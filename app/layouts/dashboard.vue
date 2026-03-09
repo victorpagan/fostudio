@@ -87,9 +87,15 @@ const primaryLinks = computed<NavigationMenuItem[]>(() => [
     onSelect: () => { open.value = false }
   },
   {
-    label: 'Membership & Credits',
+    label: 'Membership',
     icon: 'i-lucide-badge-check',
     to: '/dashboard/membership',
+    onSelect: () => { open.value = false }
+  },
+  {
+    label: 'Credits',
+    icon: 'i-lucide-wallet-cards',
+    to: '/dashboard/credits',
     onSelect: () => { open.value = false }
   },
   {
