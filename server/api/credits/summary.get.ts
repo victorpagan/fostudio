@@ -28,9 +28,6 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    await db.rpc('backfill_membership_credit_grants', {
-      p_membership_id: membership.id
-    })
     await db.rpc('process_due_membership_credit_grants', {
       p_limit: 24
     })

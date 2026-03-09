@@ -379,7 +379,7 @@ export default defineEventHandler(async (event) => {
   const membershipStatus: MembershipStatus = rawSubscriptionStatus
     ? mapSquareStatus(rawSubscriptionStatus)
     : 'active'
-  const billingPeriod = resolveMembershipBillingPeriod({
+  const providerBillingPeriod = resolveMembershipBillingPeriod({
     cadence: session.cadence,
     subscription,
     fallbackStart: nowIso,
@@ -394,6 +394,7 @@ export default defineEventHandler(async (event) => {
 
   if (existingErr) throw createError({ statusCode: 500, statusMessage: existingErr.message })
   const existingMembership = (existingMembershipRaw as ExistingMembershipRow | null) ?? null
+  const isFirstActivation = !existingMembership?.activated_at
 
   const existingStatus = (existingMembership?.status ?? '').toLowerCase()
   const existingActivated = Boolean(existingMembership?.activated_at)
@@ -401,6 +402,12 @@ export default defineEventHandler(async (event) => {
   const resolvedMembershipStatus: MembershipStatus = preserveActive && membershipStatus !== 'active'
     ? 'active'
     : membershipStatus
+  const effectiveBillingPeriod = isFirstActivation
+    ? {
+        currentPeriodStart: nowIso,
+        currentPeriodEnd: addCadenceInterval(nowIso, session.cadence)
+      }
+    : providerBillingPeriod
 
   const membershipPatch: Record<string, unknown> = {
     tier: session.tier,
@@ -420,9 +427,9 @@ export default defineEventHandler(async (event) => {
     membershipPatch.billing_subscription_id = subscriptionId
   }
 
-  if (billingPeriod) {
-    membershipPatch.current_period_start = billingPeriod.currentPeriodStart
-    membershipPatch.current_period_end = billingPeriod.currentPeriodEnd
+  if (effectiveBillingPeriod) {
+    membershipPatch.current_period_start = effectiveBillingPeriod.currentPeriodStart
+    membershipPatch.current_period_end = effectiveBillingPeriod.currentPeriodEnd
   }
 
   if (resolvedMembershipStatus === 'active' && !existingMembership?.activated_at) {
@@ -461,7 +468,7 @@ export default defineEventHandler(async (event) => {
     claimedMembership = insertedMembership as MembershipClaimRow
   }
 
-  if (claimedMembership.status === 'active' && billingPeriod) {
+  if (claimedMembership.status === 'active' && effectiveBillingPeriod) {
     const { error: backfillErr } = await supabase.rpc('backfill_membership_credit_grants', {
       p_membership_id: claimedMembership.id
     })
