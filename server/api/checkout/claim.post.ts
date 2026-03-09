@@ -276,6 +276,7 @@ export default defineEventHandler(async (event) => {
 
   const accountEmail = (session.guest_email ?? user.email ?? '').trim().toLowerCase() || null
   const userEmail = (user.email ?? '').trim().toLowerCase() || null
+  const sessionEmail = (session.guest_email ?? '').trim().toLowerCase() || null
 
   const { data: customerBySquare } = await supabase
     .from('customers')
@@ -287,10 +288,13 @@ export default defineEventHandler(async (event) => {
     if (customerBySquare.user_id && customerBySquare.user_id !== user.sub) {
       const customerEmail = normalizeEmail(customerBySquare.email)
       const canAttemptTransfer = Boolean(
-        customerEmail
-        && (
-          (userEmail && userEmail === customerEmail)
-          || (accountEmail && accountEmail === customerEmail)
+        (sessionEmail && userEmail && sessionEmail === userEmail)
+        || (
+          customerEmail
+          && (
+            (userEmail && userEmail === customerEmail)
+            || (accountEmail && accountEmail === customerEmail)
+          )
         )
       )
 
