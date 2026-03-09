@@ -687,7 +687,7 @@ async function deleteTier() {
                 <UFormField label="Peak credits/hr">
                   <UInput v-model.number="form.peakMultiplier" type="number" step="0.25" min="1" />
                 </UFormField>
-                <UFormField label="Max bank">
+                <UFormField label="Credit cap">
                   <UInput v-model.number="form.maxBank" type="number" min="0" />
                 </UFormField>
                 <UFormField label="Membership credit expiry (days)">

@@ -329,7 +329,7 @@ async function submitWaitlist() {
               {{ tier.max_bank }}
             </div>
             <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
-              bank cap
+              credit cap
             </div>
           </div>
           <div class="plan-stat text-center">

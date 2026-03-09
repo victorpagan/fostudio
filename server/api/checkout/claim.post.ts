@@ -372,14 +372,18 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  const nowIso = new Date().toISOString()
   const subscription = await findLatestSubscription(square, squareCustomerId, session.plan_variation_id)
   const subscriptionId = readString(subscription, 'id')
-  const membershipStatus = mapSquareStatus(readString(subscription, 'status'))
+  const rawSubscriptionStatus = readString(subscription, 'status')
+  const membershipStatus: MembershipStatus = rawSubscriptionStatus
+    ? mapSquareStatus(rawSubscriptionStatus)
+    : 'active'
   const billingPeriod = resolveMembershipBillingPeriod({
     cadence: session.cadence,
     subscription,
-    fallbackStart: null,
-    fallbackEnd: null
+    fallbackStart: nowIso,
+    fallbackEnd: addCadenceInterval(nowIso, session.cadence)
   })
 
   const { data: existingMembershipRaw, error: existingErr } = await supabase
@@ -398,7 +402,6 @@ export default defineEventHandler(async (event) => {
     ? 'active'
     : membershipStatus
 
-  const nowIso = new Date().toISOString()
   const membershipPatch: Record<string, unknown> = {
     tier: session.tier,
     cadence: session.cadence,
@@ -575,4 +578,19 @@ export default defineEventHandler(async (event) => {
 function normalizeEmail(value: string | null | undefined) {
   const normalized = (value ?? '').trim().toLowerCase()
   return normalized || null
+}
+
+function addCadenceInterval(iso: string, cadence: CheckoutSessionRow['cadence']) {
+  const value = new Date(iso)
+  if (cadence === 'daily') {
+    value.setUTCDate(value.getUTCDate() + 1)
+    return value.toISOString()
+  }
+  if (cadence === 'weekly') {
+    value.setUTCDate(value.getUTCDate() + 7)
+    return value.toISOString()
+  }
+  const months = cadence === 'annual' ? 12 : cadence === 'quarterly' ? 3 : 1
+  value.setUTCMonth(value.getUTCMonth() + months)
+  return value.toISOString()
 }

@@ -379,12 +379,6 @@ const currentVariation = computed(() =>
 
 const displayedCreditBalance = computed(() => creditSummary.value?.totalBalance ?? balance.value ?? 0)
 const canBuyTopoff = computed(() => creditSummary.value?.canBuyTopoff ?? true)
-const topoffGateDescription = computed(() => {
-  if (!hasActiveMembership.value || canBuyTopoff.value) return null
-  const bank = formatCredits(creditSummary.value?.bankBalance ?? 0)
-  const max = formatCredits(creditSummary.value?.maxBank ?? 0)
-  return `Top-offs unlock once your plan credits reach the cap (${bank}/${max}).`
-})
 
 function formatPrice(cents: number | null, currency = 'USD') {
   if (cents === null) return '—'
@@ -587,7 +581,6 @@ watch(topupOptions, (options) => {
 
 async function ensureTopupOptionsLoaded(options?: { force?: boolean, attempts?: number }) {
   if (!hasActiveMembership.value) return
-  if (!canBuyTopoff.value) return
   if (topupOptionsPending.value) return
   if (!options?.force && (topupOptions.value?.length ?? 0) > 0) return
   if (topupOptionsRefreshing.value) return
@@ -1102,7 +1095,7 @@ onUnmounted(() => {
                       <span class="font-medium text-default">{{ formatPeakCredits(t.peak_multiplier) }} credits/hr</span>
                     </li>
                     <li class="flex justify-between">
-                      <span>Max credit bank</span>
+                      <span>Credit cap</span>
                       <span class="font-medium text-default">{{ t.max_bank }} cr</span>
                     </li>
                     <li class="flex justify-between">
@@ -1290,7 +1283,7 @@ onUnmounted(() => {
                       <span>{{ formatPeakCredits(tier?.peak_multiplier) }} credits/hr</span>
                     </div>
                     <div class="flex justify-between">
-                      <span class="text-dimmed">Max credit bank</span>
+                      <span class="text-dimmed">Credit cap</span>
                       <span>{{ tier?.max_bank ?? '—' }} credits</span>
                     </div>
                     <div class="flex justify-between">
@@ -1467,7 +1460,7 @@ onUnmounted(() => {
                   </div>
 
                   <p class="text-sm text-dimmed">
-                    Top-off purchases are available when your plan credit bank reaches cap.
+                    Top-off credits can be purchased anytime while your membership is active.
                   </p>
                   <p
                     v-if="creditSummary"
@@ -1491,7 +1484,7 @@ onUnmounted(() => {
                     variant="soft"
                     icon="i-lucide-circle-check-big"
                     title="Plan bank is at cap"
-                    description="Top-off credit purchases are unlocked while your plan bank is at cap."
+                    description="New plan-credit minting is paused until your plan bank drops under cap."
                   />
 
                   <UAlert
@@ -1501,15 +1494,6 @@ onUnmounted(() => {
                     icon="i-lucide-timer"
                     :title="`${formatCredits(creditSummary.expiringSoonCredits)} credits expiring soon`"
                     :description="`Use expiring credits by ${formatDateLabel(creditSummary.expiringSoonAt) ?? 'this week'}.`"
-                  />
-
-                  <UAlert
-                    v-if="topoffGateDescription"
-                    color="info"
-                    variant="soft"
-                    icon="i-lucide-lock"
-                    title="Top-off locked"
-                    :description="topoffGateDescription"
                   />
 
                   <ClientOnly>
@@ -1581,7 +1565,7 @@ onUnmounted(() => {
                         size="xs"
                         block
                         :loading="topupLoadingKey === option.key || (topupClaimingFromRoute && topupLoadingKey === null)"
-                        :disabled="topupLoadingKey !== null || topupClaimingFromRoute || !canBuyTopoff"
+                        :disabled="topupLoadingKey !== null || topupClaimingFromRoute"
                         @click="startTopup(option.key)"
                       >
                         Buy {{ option.credits }} credit{{ option.credits === 1 ? '' : 's' }}
@@ -1592,7 +1576,7 @@ onUnmounted(() => {
                     v-if="hasActiveMembership && !(topupOptions?.length) && !topupOptionsPending && !topupOptionsRefreshing"
                     class="text-xs text-dimmed"
                   >
-                    {{ topoffGateDescription ?? 'No credit top-up options are active right now.' }}
+                    No credit top-up options are active right now.
                   </div>
 
                   <div

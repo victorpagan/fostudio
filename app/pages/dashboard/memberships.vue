@@ -272,7 +272,7 @@ function openTierDetails(tierId: string) {
                     <span class="font-medium text-default">{{ formatPeakCredits(tier.peak_multiplier) }} credits/hr</span>
                   </li>
                   <li class="flex justify-between">
-                    <span>Max bank</span>
+                    <span>Credit cap</span>
                     <span class="font-medium text-default">{{ tier.max_bank }} credits</span>
                   </li>
                   <li class="flex justify-between">

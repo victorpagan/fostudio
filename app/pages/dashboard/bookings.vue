@@ -560,7 +560,7 @@ watch(
                     {{ tier.max_bank }}
                   </div>
                   <div class="text-xs text-dimmed">
-                    max credits
+                    credit cap
                   </div>
                 </div>
               </div>

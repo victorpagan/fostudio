@@ -27,6 +27,17 @@ export default defineEventHandler(async (event) => {
     return { summary: null }
   }
 
+  try {
+    await db.rpc('backfill_membership_credit_grants', {
+      p_membership_id: membership.id
+    })
+    await db.rpc('process_due_membership_credit_grants', {
+      p_limit: 24
+    })
+  } catch (error) {
+    console.error('[credits-summary] grant refresh failed', error)
+  }
+
   let { data: tierRow, error: tierErr } = await db
     .from('membership_tiers')
     .select('max_bank,credit_expiry_days,topoff_credit_expiry_days')
@@ -53,7 +64,7 @@ export default defineEventHandler(async (event) => {
 
   const summary = computeCreditBucketSummary(ledgerRows ?? [])
   const maxBank = Number(tierRow?.max_bank ?? 0)
-  const canBuyTopoff = maxBank <= 0 || summary.bankBalance >= maxBank
+  const canBuyTopoff = true
   const overCap = maxBank > 0 && summary.bankBalance > maxBank
   const atCap = maxBank > 0 && summary.bankBalance >= maxBank
 
