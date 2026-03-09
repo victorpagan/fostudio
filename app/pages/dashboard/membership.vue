@@ -311,6 +311,20 @@ const statusColor = computed(() => {
   }
 })
 
+const pendingSwapSummary = computed(() => {
+  const pendingSwap = subscriptionState.value?.pendingSwap
+  if (!pendingSwap) return null
+
+  const currentName = tier.value?.display_name ?? membership.value?.tier ?? 'Current plan'
+  const currentCadence = formatCadence(membership.value?.cadence ?? null)
+  const targetName = pendingSwap.target?.displayName ?? pendingSwap.target?.tier ?? 'new plan'
+  const targetCadence = pendingSwap.target?.cadence ? formatCadence(pendingSwap.target.cadence) : null
+  const targetLabel = targetCadence ? `${targetName} (${targetCadence})` : String(targetName)
+  const effective = formatDateLabel(pendingSwap.effectiveDate) ?? 'your next billing cycle'
+
+  return `You are currently on ${currentName} (${currentCadence}). ${targetLabel} starts ${effective}. Current plan features and credit cadence stay in effect until then.`
+})
+
 const currentVariation = computed(() =>
   variations.value?.find(v => v.cadence === membership.value?.cadence) ?? null
 )
@@ -1087,15 +1101,7 @@ onUnmounted(() => {
               variant="soft"
               icon="i-lucide-calendar-sync"
               :title="`Plan change scheduled${subscriptionState?.pendingSwap?.target?.displayName ? `: ${subscriptionState.pendingSwap.target.displayName}` : ''}`"
-              :description="`This change takes effect on ${formatDateLabel(subscriptionState.pendingSwap.effectiveDate) ?? 'your next billing cycle'}.`"
-            />
-            <UAlert
-              v-if="subscriptionState?.pendingSwap"
-              color="neutral"
-              variant="soft"
-              icon="i-lucide-info"
-              title="Current features still apply"
-              description="Plan features and credit cadence shown below reflect your current active cycle until the scheduled change date."
+              :description="pendingSwapSummary ?? `This change takes effect on ${formatDateLabel(subscriptionState.pendingSwap.effectiveDate) ?? 'your next billing cycle'}.`"
             />
             <UAlert
               v-if="subscriptionState?.pendingCancel"

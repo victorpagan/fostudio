@@ -77,6 +77,20 @@ const membershipState = computed(() => {
   return 'inactive'
 })
 
+const { data: subscriptionState } = await useAsyncData('dash:home:subscription-state', async () => {
+  if (!user.value) return null
+  return await $fetch<{
+    pendingSwap: {
+      effectiveDate: string | null
+      target: {
+        displayName: string | null
+        tier: string | null
+        cadence: string | null
+      } | null
+    } | null
+  }>('/api/membership/subscription-state')
+})
+
 const needsMembership = computed(() => membershipState.value !== 'active' && !isAdmin.value)
 
 const membershipCta = computed(() => {
@@ -93,6 +107,38 @@ const tierLabel = computed(() => {
 function formatStatus(status: string | null | undefined) {
   return status || 'none'
 }
+
+function formatCadence(cadence: string | null | undefined) {
+  if (cadence === 'daily') return 'Daily'
+  if (cadence === 'weekly') return 'Weekly'
+  if (cadence === 'monthly') return 'Monthly'
+  if (cadence === 'quarterly') return 'Quarterly'
+  if (cadence === 'annual') return 'Annual'
+  return cadence ?? '—'
+}
+
+function formatExactDate(iso: string | null | undefined) {
+  if (!iso) return null
+  const dt = new Date(iso)
+  if (Number.isNaN(dt.getTime())) return iso
+  return dt.toISOString().slice(0, 10)
+}
+
+const pendingSwapSummary = computed(() => {
+  const pendingSwap = subscriptionState.value?.pendingSwap
+  if (!pendingSwap || !membership.value) return null
+
+  const currentTier = membership.value.tier ?? 'current plan'
+  const currentCadence = formatCadence(membership.value.cadence)
+  const targetName = pendingSwap.target?.displayName ?? pendingSwap.target?.tier ?? 'new plan'
+  const targetCadence = formatCadence(pendingSwap.target?.cadence)
+  const effectiveDate = formatExactDate(pendingSwap.effectiveDate) ?? 'next billing cycle'
+
+  return {
+    title: 'Plan switch pending',
+    detail: `${currentTier} (${currentCadence}) remains active until ${effectiveDate}. Then ${targetName} (${targetCadence}) starts.`
+  }
+})
 </script>
 
 <template>
@@ -223,6 +269,17 @@ function formatStatus(status: string | null | undefined) {
               >
                 {{ membershipCta.label }}
               </UButton>
+            </div>
+            <div
+              v-if="pendingSwapSummary"
+              class="mt-3 rounded-lg border border-default bg-elevated/60 p-2"
+            >
+              <div class="text-xs font-medium">
+                {{ pendingSwapSummary.title }}
+              </div>
+              <div class="mt-1 text-xs text-dimmed">
+                {{ pendingSwapSummary.detail }}
+              </div>
             </div>
           </UCard>
 
