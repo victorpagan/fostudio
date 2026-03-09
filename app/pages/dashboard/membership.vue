@@ -1431,284 +1431,41 @@ onUnmounted(() => {
               </div>
             </UCard>
 
-            <!-- Credits + ledger + top-up bundles -->
-            <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <UCard id="credits">
-                <div class="space-y-3">
-                  <div class="flex items-center justify-between gap-2">
-                    <div>
-                      <div class="text-xs text-dimmed uppercase tracking-wide">
-                        Credits
-                      </div>
-                      <div class="mt-1 text-3xl font-semibold">
-                        {{ formatCredits(displayedCreditBalance) }}
-                      </div>
-                      <div class="mt-1 text-xs text-dimmed">
-                        Plan bank: {{ formatCredits(creditSummary?.bankBalance ?? 0) }}
-                        <span v-if="creditSummary"> / {{ formatCredits(creditSummary.maxBank) }}</span>
-                        · Top-off: {{ formatCredits(creditSummary?.topoffBalance ?? 0) }}
-                      </div>
-                    </div>
-                    <UButton
-                      size="sm"
-                      color="neutral"
-                      variant="soft"
-                      to="/dashboard/book"
-                    >
-                      Book studio
-                    </UButton>
+            <UCard id="credits">
+              <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div class="text-xs text-dimmed uppercase tracking-wide">
+                    Credits
                   </div>
-
-                  <p class="text-sm text-dimmed">
-                    Top-off credits can be purchased anytime while your membership is active.
-                  </p>
-                  <p
-                    v-if="creditSummary"
-                    class="text-xs text-dimmed"
-                  >
-                    Plan credits expire after {{ creditSummary.membershipCreditExpiryDays }} days. Top-off credits expire after {{ creditSummary.topoffCreditExpiryDays }} days.
-                  </p>
-
-                  <UAlert
-                    v-if="creditSummary?.overCap"
-                    color="warning"
+                  <div class="mt-1 text-3xl font-semibold">
+                    {{ formatCredits(displayedCreditBalance) }}
+                  </div>
+                  <div class="mt-1 text-xs text-dimmed">
+                    Plan bank: {{ formatCredits(creditSummary?.bankBalance ?? 0) }}
+                    <span v-if="creditSummary"> / {{ formatCredits(creditSummary.maxBank) }}</span>
+                    · Top-off: {{ formatCredits(creditSummary?.topoffBalance ?? 0) }}
+                  </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <UButton
+                    color="neutral"
                     variant="soft"
-                    icon="i-lucide-alert-triangle"
-                    title="Plan bank is over cap"
-                    description="New plan credits are paused until your plan bank drops back under cap."
-                  />
-
-                  <UAlert
-                    v-else-if="creditSummary?.atCap"
-                    color="info"
+                    icon="i-lucide-wallet"
+                    to="/dashboard/credits"
+                  >
+                    Manage credits
+                  </UButton>
+                  <UButton
+                    color="neutral"
                     variant="soft"
-                    icon="i-lucide-circle-check-big"
-                    title="Plan bank is at cap"
-                    description="New plan-credit minting is paused until your plan bank drops under cap."
-                  />
-
-                  <UAlert
-                    v-if="creditSummary?.expiringSoonCredits && creditSummary.expiringSoonCredits > 0"
-                    color="warning"
-                    variant="soft"
-                    icon="i-lucide-timer"
-                    :title="`${formatCredits(creditSummary.expiringSoonCredits)} credits expiring soon`"
-                    :description="`Use expiring credits by ${formatDateLabel(creditSummary.expiringSoonAt) ?? 'this week'}.`"
-                  />
-
-                  <ClientOnly>
-                    <div
-                      v-if="hasActiveMembership && (topupOptionsPending || topupOptionsRefreshing) && !topupOptionsTimedOut"
-                      class="space-y-2"
-                    >
-                      <div class="h-2 w-full overflow-hidden rounded bg-elevated">
-                        <div
-                          class="h-full bg-primary transition-[width] duration-200"
-                          :style="{ width: `${topupOptionsProgress}%` }"
-                        />
-                      </div>
-                      <div class="text-xs text-dimmed">
-                        Loading available top-up options…
-                      </div>
-                    </div>
-                  </ClientOnly>
-                  <div
-                    v-if="topupClaimingFromRoute"
-                    class="text-xs text-dimmed"
+                    icon="i-lucide-calendar-plus"
+                    to="/dashboard/book"
                   >
-                    Finalizing your recent credit payment…
-                  </div>
-
-                  <div
-                    v-if="topupOptions?.length"
-                    class="grid gap-2 sm:grid-cols-2"
-                  >
-                    <div
-                      v-for="option in topupOptions ?? []"
-                      :key="option.key"
-                      class="rounded-xl border border-default p-3"
-                    >
-                      <div class="flex items-center justify-between">
-                        <div class="font-medium">
-                          {{ option.label }}
-                        </div>
-                        <div class="text-sm text-dimmed">
-                          {{ formatOptionUnit(option) }}/credit
-                        </div>
-                      </div>
-                      <div class="mt-1 text-lg font-semibold flex items-center gap-2">
-                        <span>{{ formatPrice(option.effectivePriceCents) }}</span>
-                        <span
-                          v-if="option.saleActive && option.salePriceCents !== null"
-                          class="text-sm text-dimmed line-through"
-                        >
-                          {{ formatPrice(option.basePriceCents) }}
-                        </span>
-                      </div>
-                      <div
-                        v-if="option.description"
-                        class="mt-1 text-xs text-dimmed"
-                      >
-                        {{ option.description }}
-                      </div>
-                      <div
-                        v-if="option.saleActive"
-                        class="mt-1 text-xs text-success"
-                      >
-                        Sale active
-                        <span v-if="formatSaleWindow(option.saleStartsAt, option.saleEndsAt)">
-                          · {{ formatSaleWindow(option.saleStartsAt, option.saleEndsAt) }}
-                        </span>
-                      </div>
-                      <UButton
-                        class="mt-3"
-                        size="xs"
-                        block
-                        :loading="topupLoadingKey === option.key || (topupClaimingFromRoute && topupLoadingKey === null)"
-                        :disabled="topupLoadingKey !== null || topupClaimingFromRoute"
-                        @click="startTopup(option.key)"
-                      >
-                        Buy {{ option.credits }} credit{{ option.credits === 1 ? '' : 's' }}
-                      </UButton>
-                    </div>
-                  </div>
-                  <div
-                    v-if="hasActiveMembership && !(topupOptions?.length) && !topupOptionsPending && !topupOptionsRefreshing"
-                    class="text-xs text-dimmed"
-                  >
-                    No credit top-up options are active right now.
-                  </div>
-
-                  <div
-                    id="holds"
-                    class="mt-4 border-t border-default pt-4 space-y-3"
-                  >
-                    <div class="text-xs text-dimmed uppercase tracking-wide">
-                      Holds
-                    </div>
-                    <div class="grid gap-2 sm:grid-cols-3 text-sm">
-                      <div class="rounded-lg border border-default p-2">
-                        <div class="text-xs text-dimmed">
-                          Monthly cap
-                        </div>
-                        <div class="font-semibold">
-                          {{ holdSummary?.holdsIncluded ?? 0 }}
-                        </div>
-                      </div>
-                      <div class="rounded-lg border border-default p-2">
-                        <div class="text-xs text-dimmed">
-                          Used this cycle
-                        </div>
-                        <div class="font-semibold">
-                          {{ holdSummary?.holdsUsedThisCycle ?? 0 }}
-                        </div>
-                      </div>
-                      <div class="rounded-lg border border-default p-2">
-                        <div class="text-xs text-dimmed">
-                          Remaining this cycle
-                        </div>
-                        <div class="font-semibold">
-                          {{ holdSummary?.includedHoldsRemaining ?? 0 }}
-                        </div>
-                      </div>
-                    </div>
-                    <div class="rounded-lg border border-default p-2 text-sm">
-                      <div class="text-xs text-dimmed">
-                        Paid hold balance
-                      </div>
-                      <div class="font-semibold">
-                        {{ holdSummary?.paidHoldBalance ?? 0 }}
-                      </div>
-                    </div>
-                    <div class="text-xs text-dimmed">
-                      Hold windows run until the earlier of 10am next day or peak-hours start. If your monthly cap is exhausted, booking with an overnight hold consumes one paid hold.
-                    </div>
-                    <div
-                      v-if="holdSummary?.cycleStartIso && holdSummary?.cycleEndIso"
-                      class="text-xs text-dimmed"
-                    >
-                      Current hold cycle: {{ formatDateLabel(holdSummary.cycleStartIso) }} to {{ formatDateLabel(holdSummary.cycleEndIso) }}
-                    </div>
-
-                    <div
-                      v-if="holdTopupOffer"
-                      class="rounded-xl border border-default p-3"
-                    >
-                      <div class="flex items-center justify-between gap-3">
-                        <div>
-                          <div class="font-medium">
-                            {{ holdTopupOffer.label }}
-                          </div>
-                          <div class="text-xs text-dimmed">
-                            Adds {{ holdTopupOffer.holds }} hold{{ holdTopupOffer.holds === 1 ? '' : 's' }}
-                          </div>
-                        </div>
-                        <div class="text-lg font-semibold">
-                          {{ formatPrice(holdTopupOffer.amountCents, holdTopupOffer.currency) }}
-                        </div>
-                      </div>
-                      <UButton
-                        class="mt-3"
-                        size="xs"
-                        block
-                        :loading="holdTopupLoading || holdTopupClaiming"
-                        :disabled="holdTopupLoading || holdTopupClaiming"
-                        @click="startHoldTopup"
-                      >
-                        Buy hold{{ holdTopupOffer.holds === 1 ? '' : 's' }}
-                      </UButton>
-                    </div>
-                  </div>
+                    Book studio
+                  </UButton>
                 </div>
-              </UCard>
-
-              <UCard>
-                <div class="flex items-center justify-between gap-2">
-                  <div>
-                    <div class="text-xs text-dimmed uppercase tracking-wide">
-                      Recent credit activity
-                    </div>
-                    <div class="mt-1 text-sm text-dimmed">
-                      Newest first
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  v-if="!ledger?.length"
-                  class="mt-4 text-sm text-dimmed"
-                >
-                  No credit activity yet.
-                </div>
-
-                <div
-                  v-else
-                  class="mt-3 divide-y divide-default"
-                >
-                  <div
-                    v-for="row in ledger"
-                    :key="row.id"
-                    class="py-3 flex items-start justify-between gap-4"
-                  >
-                    <div class="min-w-0">
-                      <div class="text-sm font-medium truncate">
-                        {{ formatLedgerTitle(row) }}
-                      </div>
-                      <div class="mt-1 text-xs text-dimmed">
-                        {{ formatLedgerTimestamp(row.created_at) }}
-                        <span v-if="row.external_ref"> · ref: {{ row.external_ref }}</span>
-                      </div>
-                    </div>
-                    <div
-                      class="text-sm font-semibold shrink-0"
-                      :class="asNumber(row.delta) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
-                    >
-                      {{ formatDelta(row.delta) }}
-                    </div>
-                  </div>
-                </div>
-              </UCard>
-            </div>
+              </div>
+            </UCard>
           </template>
         </div>
       </template>
