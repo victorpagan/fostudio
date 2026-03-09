@@ -468,6 +468,7 @@ const membershipUndoCancelLoading = ref(false)
 const doorCodeRequestLoading = ref(false)
 const topupClaiming = ref(false)
 const holdTopupClaiming = ref(false)
+const topupOptionsRefreshing = ref(false)
 const topupOptionsTimedOut = ref(false)
 const topupOptionsProgress = ref(0)
 const TOPUP_OPTIONS_TIMEOUT_MS = 5000
@@ -485,6 +486,10 @@ function clearTopupOptionsLoadTimers() {
     clearInterval(topupOptionsProgressHandle)
     topupOptionsProgressHandle = null
   }
+}
+
+function wait(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 function startTopupOptionsLoadTimers() {
@@ -536,6 +541,33 @@ watch(topupOptions, (options) => {
     topupOptionsProgress.value = 100
   }
 })
+
+async function ensureTopupOptionsLoaded(options?: { force?: boolean, attempts?: number }) {
+  if (!hasActiveMembership.value) return
+  if (topupOptionsPending.value) return
+  if (!options?.force && (topupOptions.value?.length ?? 0) > 0) return
+  if (topupOptionsRefreshing.value) return
+
+  const attempts = Math.max(1, options?.attempts ?? 3)
+  topupOptionsRefreshing.value = true
+  startTopupOptionsLoadTimers()
+  topupOptionsTimedOut.value = false
+
+  try {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      await refreshTopupOptions()
+      if ((topupOptions.value?.length ?? 0) > 0) break
+      if (attempt < attempts - 1) {
+        await wait(500)
+      }
+    }
+  } finally {
+    topupOptionsRefreshing.value = false
+    clearTopupOptionsLoadTimers()
+    topupOptionsProgress.value = 100
+    topupOptionsTimedOut.value = (topupOptions.value?.length ?? 0) === 0
+  }
+}
 
 async function refreshAll() {
   await Promise.all([
@@ -885,14 +917,14 @@ async function claimHoldTopupFromRoute() {
 
 onMounted(async () => {
   dashboardHydrated.value = true
-  if (hasActiveMembership.value && topupOptionsPending.value) {
-    startTopupOptionsLoadTimers()
-  } else if (hasActiveMembership.value && (topupOptions.value?.length ?? 0) > 0) {
-    topupOptionsProgress.value = 100
-  }
+  await ensureTopupOptionsLoaded({ force: true, attempts: 4 })
   await router.isReady()
   await claimTopupFromRoute()
   await claimHoldTopupFromRoute()
+})
+
+onActivated(() => {
+  void ensureTopupOptionsLoaded({ force: true, attempts: 3 })
 })
 
 watch(
@@ -902,6 +934,15 @@ watch(
       void claimTopupFromRoute()
       void claimHoldTopupFromRoute()
     }
+  }
+)
+
+watch(
+  () => route.fullPath,
+  (path) => {
+    if (!dashboardHydrated.value) return
+    if (!path.startsWith('/dashboard/membership')) return
+    void ensureTopupOptionsLoaded({ force: true, attempts: 3 })
   }
 )
 
@@ -1376,7 +1417,7 @@ onUnmounted(() => {
 
                   <ClientOnly>
                     <div
-                      v-if="hasActiveMembership && topupOptionsPending && !topupOptionsTimedOut"
+                      v-if="hasActiveMembership && (topupOptionsPending || topupOptionsRefreshing) && !topupOptionsTimedOut"
                       class="space-y-2"
                     >
                       <div class="h-2 w-full overflow-hidden rounded bg-elevated">
@@ -1445,7 +1486,7 @@ onUnmounted(() => {
                     </div>
                   </div>
                   <div
-                    v-if="hasActiveMembership && !(topupOptions?.length) && (!topupOptionsPending || topupOptionsTimedOut)"
+                    v-if="hasActiveMembership && !(topupOptions?.length) && !topupOptionsPending && !topupOptionsRefreshing && topupOptionsTimedOut"
                     class="text-xs text-dimmed"
                   >
                     No credit top-up options are active right now.
