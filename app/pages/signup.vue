@@ -164,6 +164,20 @@ function cadenceLabel(value: Cadence | null) {
   return 'Annual'
 }
 
+function mapSignupError(error: unknown) {
+  const maybe = error as { message?: string, status?: number, statusCode?: number }
+  const message = String(maybe?.message ?? '').toLowerCase()
+  const statusCode = Number(maybe?.statusCode ?? maybe?.status ?? 0)
+
+  if (statusCode === 429 || message.includes('too many requests') || message.includes('rate limit')) {
+    return 'Email verification rate limit hit. If this email already has an account, log in to resume membership activation.'
+  }
+  if (message.includes('user already registered')) {
+    return 'This email already has an account. Log in to resume membership activation.'
+  }
+  return maybe?.message ?? 'Signup failed.'
+}
+
 async function handleSignup() {
   errorMsg.value = null
   successMsg.value = null
@@ -209,8 +223,7 @@ async function handleSignup() {
 
     successMsg.value = 'Account created. Check your email to confirm your account, then log in to continue.'
   } catch (error: unknown) {
-    const maybe = error as { message?: string }
-    errorMsg.value = maybe?.message ?? 'Signup failed.'
+    errorMsg.value = mapSignupError(error)
   } finally {
     loading.value = false
   }
