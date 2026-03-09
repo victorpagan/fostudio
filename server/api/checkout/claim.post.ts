@@ -22,6 +22,7 @@ type CheckoutSessionRow = {
   payment_link_id: string | null
   order_template_id: string | null
   plan_variation_id: string | null
+  customer_id: string | null
   square_customer_id: string | null
   square_subscription_id: string | null
   paid_at: string | null
@@ -193,12 +194,15 @@ export default defineEventHandler(async (event) => {
   if (session.status === 'claimed' && session.claimed_by_user_id === user.sub && session.claimed_membership_id) {
     const { data: claimedMembership } = await supabase
       .from('memberships')
-      .select('id,status')
+      .select('id,user_id,tier,cadence,status')
       .eq('id', session.claimed_membership_id)
       .maybeSingle()
 
     const claimedStatus = (claimedMembership?.status ?? '').toLowerCase()
-    if (claimedStatus === 'active') {
+    const claimedBelongsToUser = claimedMembership?.user_id === user.sub
+    const claimedMatchesSession = claimedMembership?.tier === session.tier
+      && claimedMembership?.cadence === session.cadence
+    if (claimedStatus === 'active' && claimedBelongsToUser && claimedMatchesSession) {
       return {
         ok: true,
         membershipId: session.claimed_membership_id,
@@ -262,6 +266,14 @@ export default defineEventHandler(async (event) => {
   let squareCustomerId = paymentState.paymentCustomerId
     ?? paymentState.orderCustomerId
     ?? session.square_customer_id
+  if (!squareCustomerId && session.customer_id) {
+    const { data: customerBySessionId } = await supabase
+      .from('customers')
+      .select('square_customer_id')
+      .eq('id', session.customer_id)
+      .maybeSingle()
+    squareCustomerId = customerBySessionId?.square_customer_id?.trim() || null
+  }
   if (!squareCustomerId) {
     return {
       ok: false,
@@ -283,12 +295,14 @@ export default defineEventHandler(async (event) => {
       .map(value => normalizeEmail(value))
       .filter((value): value is string => Boolean(value))
   )
+  let resolvedCustomerId: string | null = null
 
   let { data: customerBySquare } = await supabase
     .from('customers')
     .select('id,user_id,email,square_customer_id')
     .eq('square_customer_id', squareCustomerId)
     .maybeSingle()
+  resolvedCustomerId = customerBySquare?.id ?? null
 
   const customerBySquareEmail = normalizeEmail((customerBySquare as { email?: string | null } | null)?.email)
   const customerEmailMismatched = customerBySquare
@@ -318,6 +332,7 @@ export default defineEventHandler(async (event) => {
         .eq('square_customer_id', fallbackSquareCustomerId)
         .maybeSingle()
       customerBySquare = fallbackLookup.data
+      resolvedCustomerId = customerBySquare?.id ?? null
     }
   }
 
@@ -365,6 +380,7 @@ export default defineEventHandler(async (event) => {
       .eq('id', customerBySquare.id)
 
     if (customerUpdateErr) throw createError({ statusCode: 500, statusMessage: customerUpdateErr.message })
+    resolvedCustomerId = customerBySquare.id
   } else {
     const { data: customerByUser } = await supabase
       .from('customers')
@@ -382,17 +398,30 @@ export default defineEventHandler(async (event) => {
         .eq('id', customerByUser.id)
 
       if (customerUpdateErr) throw createError({ statusCode: 500, statusMessage: customerUpdateErr.message })
+      resolvedCustomerId = customerByUser.id
     } else {
-      const { error: customerInsertErr } = await supabase
+      const { data: insertedCustomer, error: customerInsertErr } = await supabase
         .from('customers')
         .insert({
           user_id: user.sub,
           email: accountEmail,
           square_customer_id: squareCustomerId
         })
+        .select('id')
+        .single()
 
       if (customerInsertErr) throw createError({ statusCode: 500, statusMessage: customerInsertErr.message })
+      resolvedCustomerId = insertedCustomer?.id ?? null
     }
+  }
+
+  if (!resolvedCustomerId) {
+    const { data: customerRow } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('user_id', user.sub)
+      .maybeSingle()
+    resolvedCustomerId = customerRow?.id ?? null
   }
 
   if (!squareCustomerId) {
@@ -446,6 +475,7 @@ export default defineEventHandler(async (event) => {
     tier: session.tier,
     cadence: session.cadence,
     status: resolvedMembershipStatus,
+    customer_id: resolvedCustomerId,
     checkout_provider: 'square',
     checkout_payment_link_id: session.payment_link_id,
     checkout_order_template_id: orderId,
@@ -580,6 +610,7 @@ export default defineEventHandler(async (event) => {
       status: 'claimed',
       claimed_by_user_id: user.sub,
       claimed_membership_id: claimedMembership.id,
+      customer_id: resolvedCustomerId,
       square_customer_id: squareCustomerId,
       square_subscription_id: subscriptionId ?? session.square_subscription_id,
       paid_at: session.paid_at ?? nowIso,

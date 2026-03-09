@@ -911,6 +911,7 @@ export type Database = {
           checkout_payment_link_id: string | null
           checkout_provider: string | null
           created_at: string
+          customer_id: string | null
           current_period_end: string | null
           current_period_start: string | null
           id: string
@@ -934,6 +935,7 @@ export type Database = {
           checkout_payment_link_id?: string | null
           checkout_provider?: string | null
           created_at?: string
+          customer_id?: string | null
           current_period_end?: string | null
           current_period_start?: string | null
           id?: string
@@ -957,6 +959,7 @@ export type Database = {
           checkout_payment_link_id?: string | null
           checkout_provider?: string | null
           created_at?: string
+          customer_id?: string | null
           current_period_end?: string | null
           current_period_start?: string | null
           id?: string
@@ -969,13 +972,22 @@ export type Database = {
           tier?: Database["public"]["Enums"]["membership_tier"]
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "memberships_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       membership_checkout_sessions: {
         Row: {
           cadence: string
           claimed_by_user_id: string | null
           claimed_membership_id: string | null
+          customer_id: string | null
           created_at: string
           guest_email: string | null
           id: string
@@ -997,6 +1009,7 @@ export type Database = {
           cadence: string
           claimed_by_user_id?: string | null
           claimed_membership_id?: string | null
+          customer_id?: string | null
           created_at?: string
           guest_email?: string | null
           id?: string
@@ -1018,6 +1031,7 @@ export type Database = {
           cadence?: string
           claimed_by_user_id?: string | null
           claimed_membership_id?: string | null
+          customer_id?: string | null
           created_at?: string
           guest_email?: string | null
           id?: string
@@ -1036,6 +1050,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "membership_checkout_sessions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "membership_checkout_sessions_claimed_membership_id_fkey"
             columns: ["claimed_membership_id"]

@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: session, error: sessionErr } = await supabase
     .from('membership_checkout_sessions')
-    .select('token,tier,cadence,status,guest_email,created_at,square_customer_id')
+    .select('token,tier,cadence,status,guest_email,created_at,customer_id,square_customer_id')
     .eq('token', query.token)
     .maybeSingle()
 
@@ -42,7 +42,9 @@ export default defineEventHandler(async (event) => {
     .order('created_at', { ascending: false })
     .limit(1)
 
-  if (session.square_customer_id) {
+  if (session.customer_id) {
+    customerQuery = customerQuery.eq('id', session.customer_id)
+  } else if (session.square_customer_id) {
     customerQuery = customerQuery.eq('square_customer_id', session.square_customer_id)
   } else if (guestEmail) {
     customerQuery = customerQuery.ilike('email', guestEmail)

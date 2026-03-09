@@ -15,6 +15,7 @@ const bodySchema = z.object({
 
 type MembershipRow = {
   id: string
+  customer_id: string | null
   tier: string | null
   cadence: string | null
   status: string | null
@@ -89,7 +90,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: membershipRaw, error: membershipErr } = await supabase
     .from('memberships')
-    .select('id,tier,cadence,status,billing_provider,billing_customer_id,billing_subscription_id,square_customer_id,square_subscription_id,square_plan_variation_id')
+    .select('id,customer_id,tier,cadence,status,billing_provider,billing_customer_id,billing_subscription_id,square_customer_id,square_subscription_id,square_plan_variation_id')
     .eq('user_id', user.sub)
     .maybeSingle()
 
@@ -104,7 +105,30 @@ export default defineEventHandler(async (event) => {
 
   const billingProvider = (membership.billing_provider ?? '').toLowerCase()
   const currentPlanVariationId = membership.square_plan_variation_id?.trim() || null
-  const customerId = membership.billing_customer_id?.trim() || membership.square_customer_id?.trim() || null
+  let customerId = membership.billing_customer_id?.trim() || membership.square_customer_id?.trim() || null
+  let mappedCustomerId = membership.customer_id?.trim() || null
+  if (mappedCustomerId) {
+    const { data: customerRow, error: customerRowErr } = await supabase
+      .from('customers')
+      .select('id,square_customer_id')
+      .eq('id', mappedCustomerId)
+      .maybeSingle()
+    if (customerRowErr) throw createError({ statusCode: 500, statusMessage: customerRowErr.message })
+    if (customerRow?.square_customer_id?.trim()) {
+      customerId = customerRow.square_customer_id.trim()
+    }
+  } else if (!customerId) {
+    const { data: customerRow, error: customerRowErr } = await supabase
+      .from('customers')
+      .select('id,square_customer_id')
+      .eq('user_id', user.sub)
+      .maybeSingle()
+    if (customerRowErr) throw createError({ statusCode: 500, statusMessage: customerRowErr.message })
+    mappedCustomerId = customerRow?.id ?? null
+    if (customerRow?.square_customer_id?.trim()) {
+      customerId = customerRow.square_customer_id.trim()
+    }
+  }
   let subscriptionId = membership.billing_subscription_id?.trim() || membership.square_subscription_id?.trim() || null
 
   const { data: targetTier, error: targetTierErr } = await supabase
@@ -159,8 +183,14 @@ export default defineEventHandler(async (event) => {
           billing_provider: 'square',
           billing_subscription_id: subscriptionId
         }
-        if (!membership.billing_customer_id && membership.square_customer_id) {
-          patch.billing_customer_id = membership.square_customer_id
+        if (!membership.billing_customer_id && customerId) {
+          patch.billing_customer_id = customerId
+        }
+        if (!membership.square_customer_id && customerId) {
+          patch.square_customer_id = customerId
+        }
+        if (!membership.customer_id && mappedCustomerId) {
+          patch.customer_id = mappedCustomerId
         }
         const { error: linkPatchErr } = await supabase
           .from('memberships')

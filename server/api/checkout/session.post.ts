@@ -417,13 +417,20 @@ export default defineEventHandler(async (event) => {
     const planVariationId = resolvedPlanVariationId as string
     const redirectUrl = `${origin}/checkout/success?checkout=${encodeURIComponent(session.token)}&returnTo=${encodeURIComponent(returnTo)}`
     const guestSquareCustomerId = await ensureSquareCustomerForGuest(event, { email: guestEmail })
-    const { data: guestCustomer } = await supabase
+    let guestCustomerQuery = supabase
       .from('customers')
-      .select('email,phone,first_name,last_name')
-      .ilike('email', guestEmail)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+      .select('id,email,phone,first_name,last_name,square_customer_id')
+
+    if (guestSquareCustomerId) {
+      guestCustomerQuery = guestCustomerQuery.eq('square_customer_id', guestSquareCustomerId)
+    } else {
+      guestCustomerQuery = guestCustomerQuery
+        .ilike('email', guestEmail)
+        .order('created_at', { ascending: false })
+        .limit(1)
+    }
+
+    const { data: guestCustomer } = await guestCustomerQuery.maybeSingle()
 
     let createRes: SquarePaymentLinkResult
     let orderFallbackUsed = false
@@ -512,6 +519,7 @@ export default defineEventHandler(async (event) => {
       .update({
         payment_link_id: paymentLink.id ?? null,
         order_template_id: paymentLink.orderId ?? null,
+        customer_id: guestCustomer?.id ?? null,
         square_customer_id: guestSquareCustomerId ?? null,
         metadata: orderFallbackUsed
           ? {
@@ -677,9 +685,11 @@ export default defineEventHandler(async (event) => {
   })
   const { data: memberCustomer } = await supabase
     .from('customers')
-    .select('email,phone,first_name,last_name')
+    .select('id,email,phone,first_name,last_name,square_customer_id')
     .eq('user_id', userId)
     .maybeSingle()
+  const memberCustomerId = memberCustomer?.id ?? null
+  const resolvedSquareCustomerId = squareCustomerId ?? memberCustomer?.square_customer_id ?? null
 
   let createRes: SquarePaymentLinkResult
   try {
@@ -710,7 +720,7 @@ export default defineEventHandler(async (event) => {
           cadence
         },
         buyerEmailAddress: user?.email ?? undefined,
-        customerId: squareCustomerId ?? undefined
+        customerId: resolvedSquareCustomerId ?? undefined
       }
     })
     createRes = created.result
@@ -761,9 +771,10 @@ export default defineEventHandler(async (event) => {
       checkout_provider: 'square',
       checkout_payment_link_id: paymentLink.id ?? null,
       checkout_order_template_id: paymentLink.orderId ?? null,
+      customer_id: memberCustomerId,
       square_plan_variation_id: planVariationId,
-      square_customer_id: squareCustomerId ?? null,
-      billing_customer_id: squareCustomerId ?? null
+      square_customer_id: resolvedSquareCustomerId ?? null,
+      billing_customer_id: resolvedSquareCustomerId ?? null
     })
     .eq('id', membershipId)
 
@@ -775,7 +786,8 @@ export default defineEventHandler(async (event) => {
       .update({
         payment_link_id: paymentLink.id ?? null,
         order_template_id: paymentLink.orderId ?? null,
-        square_customer_id: squareCustomerId ?? null
+        customer_id: memberCustomerId,
+        square_customer_id: resolvedSquareCustomerId ?? null
       })
       .eq('id', authCheckoutSession.id)
 
