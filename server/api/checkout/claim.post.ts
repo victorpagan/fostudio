@@ -198,6 +198,21 @@ async function findLatestSubscription(
   }
 }
 
+async function findUsableCardId(
+  square: Awaited<ReturnType<typeof useSquareClient>>,
+  customerId: string
+) {
+  try {
+    const listRes = await square.cards.list({ customerId, includeDisabled: false } as never)
+    const cards = toRecordArray((listRes as { cards?: unknown }).cards)
+    if (!cards.length) return null
+    const first = cards.find(card => readString(card, 'id')) ?? null
+    return readString(first, 'id')
+  } catch {
+    return null
+  }
+}
+
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
   if (!user?.sub || !UUID_RE.test(user.sub)) {
@@ -490,8 +505,9 @@ export default defineEventHandler(async (event) => {
         source: { name: 'FO Studio membership checkout claim' }
       }
 
-      if (paymentState.paymentCardId) {
-        createPayload.cardId = paymentState.paymentCardId
+      const fallbackCardId = paymentState.paymentCardId ?? await findUsableCardId(square, squareCustomerId)
+      if (fallbackCardId) {
+        createPayload.cardId = fallbackCardId
       }
 
       try {
@@ -532,12 +548,7 @@ export default defineEventHandler(async (event) => {
   const existingMembership = (existingMembershipRaw as ExistingMembershipRow | null) ?? null
   const isFirstActivation = !existingMembership?.activated_at
 
-  const existingStatus = (existingMembership?.status ?? '').toLowerCase()
-  const existingActivated = Boolean(existingMembership?.activated_at)
-  const preserveActive = existingStatus === 'active' || existingActivated
-  const resolvedMembershipStatus: MembershipStatus = preserveActive && membershipStatus !== 'active'
-    ? 'active'
-    : membershipStatus
+  const resolvedMembershipStatus: MembershipStatus = membershipStatus
   const effectiveBillingPeriod = isFirstActivation
     ? {
         currentPeriodStart: nowIso,
