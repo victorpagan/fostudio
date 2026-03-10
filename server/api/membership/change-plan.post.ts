@@ -3,6 +3,7 @@ import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { resolveServerUserRole } from '~~/server/utils/auth'
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
+import { buildSubscriptionCreatePhasesFromPlanVariation } from '~~/server/utils/square/subscriptionPhases'
 import {
   findPendingCancelAction,
   findPendingSwapAction,
@@ -224,7 +225,7 @@ export default defineEventHandler(async (event) => {
     try {
       const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
       const startDate = toDateOnly(membership.current_period_end) ?? new Date().toISOString().slice(0, 10)
-      const createRes = await square.subscriptions.create({
+      const createPayload: Record<string, unknown> = {
         idempotencyKey: `mswap:${membership.id}`,
         locationId,
         customerId,
@@ -232,7 +233,14 @@ export default defineEventHandler(async (event) => {
         startDate,
         timezone: 'America/Los_Angeles',
         source: { name: 'FO Studio plan swap bootstrap' }
-      } as never)
+      }
+
+      const subscriptionPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, currentPlanVariationId)
+      if (subscriptionPhases?.length) {
+        createPayload.phases = subscriptionPhases
+      }
+
+      const createRes = await square.subscriptions.create(createPayload as never)
 
       subscriptionId = readString(
         (createRes as { subscription?: Record<string, unknown> | null }).subscription ?? null,

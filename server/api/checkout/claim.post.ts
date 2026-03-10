@@ -6,6 +6,7 @@ import { resolveMembershipBillingPeriod } from '~~/server/utils/square/billingPe
 import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
 import { ensureDoorCodeForUser } from '~~/server/utils/membership/doorCode'
 import { getServerConfig } from '~~/server/utils/config/secret'
+import { buildSubscriptionCreatePhasesFromPlanVariation } from '~~/server/utils/square/subscriptionPhases'
 
 const bodySchema = z.object({
   token: z.string().uuid()
@@ -544,6 +545,11 @@ export default defineEventHandler(async (event) => {
       const fallbackCardId = paymentState.paymentCardId ?? await findUsableCardId(square, squareCustomerId)
       if (fallbackCardId) {
         createPayload.cardId = fallbackCardId
+      }
+
+      const subscriptionPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, session.plan_variation_id)
+      if (subscriptionPhases?.length) {
+        createPayload.phases = subscriptionPhases
       }
 
       try {

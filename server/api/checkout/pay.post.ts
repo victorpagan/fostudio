@@ -4,6 +4,7 @@ import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { ensureSquareCustomerForGuest, ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
+import { buildSubscriptionCreatePhasesFromPlanVariation } from '~~/server/utils/square/subscriptionPhases'
 
 const bodySchema = z.object({
   token: z.string().uuid(),
@@ -221,8 +222,9 @@ export default defineEventHandler(async (event) => {
   let subscriptionId: string | null = session.square_subscription_id?.trim() || null
   if (!subscriptionId) {
     const startDate = addCadenceDate(session.cadence, paymentCreatedAt ?? new Date().toISOString())
+    const subscriptionPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, planVariationId)
     try {
-      const subRes = await square.subscriptions.create({
+      const createPayload: Record<string, unknown> = {
         idempotencyKey: `${idempotencyBase}:s`,
         locationId,
         customerId: squareCustomerId,
@@ -231,7 +233,13 @@ export default defineEventHandler(async (event) => {
         startDate,
         timezone: 'America/Los_Angeles',
         source: { name: 'FO Studio membership checkout pay' }
-      } as never)
+      }
+
+      if (subscriptionPhases?.length) {
+        createPayload.phases = subscriptionPhases
+      }
+
+      const subRes = await square.subscriptions.create(createPayload as never)
       const subscription = (subRes as { subscription?: Record<string, unknown> | null }).subscription ?? null
       subscriptionId = readString(subscription, 'id')
       if (!subscriptionId) throw new Error('Square did not return a subscription id')
