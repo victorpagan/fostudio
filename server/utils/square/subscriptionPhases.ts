@@ -21,6 +21,15 @@ function readPositiveInt(value: unknown) {
   return null
 }
 
+function readNonNegativeInt(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return Math.floor(value)
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed) && parsed >= 0) return Math.floor(parsed)
+  }
+  return null
+}
+
 function toStringArray(value: unknown) {
   if (!Array.isArray(value)) return [] as string[]
   return value
@@ -77,7 +86,7 @@ export async function buildSubscriptionCreatePhasesFromPlanVariation(
         const phase = asRecord(entry)
         if (!phase) return null
 
-        const ordinal = readPositiveInt(phase.ordinal)
+        const ordinal = readNonNegativeInt(phase.ordinal)
         const cadence = readString(phase, 'cadence')
         const orderTemplateId = readString(
           phase,
