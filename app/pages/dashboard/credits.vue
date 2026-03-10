@@ -103,6 +103,7 @@ const topupLoadingKey = ref<string | null>(null)
 const topupClaimInFlight = ref(false)
 const topupClaimingFromRoute = ref(false)
 const dashboardHydrated = ref(false)
+const dashboardReady = ref(false)
 
 function asNumber(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) return value
@@ -326,6 +327,7 @@ async function claimTopupFromRoute() {
 }
 
 onMounted(async () => {
+  dashboardReady.value = true
   dashboardHydrated.value = true
   await refreshAll()
   await claimTopupFromRoute()
@@ -366,7 +368,10 @@ watch(
       </template>
 
       <template #body>
-        <div class="p-4 space-y-4">
+        <div
+          v-if="dashboardReady"
+          class="p-4 space-y-4"
+        >
           <UAlert
             v-if="!hasActiveMembership"
             color="warning"
@@ -600,6 +605,12 @@ watch(
               </div>
             </UCard>
           </template>
+        </div>
+        <div
+          v-else
+          class="p-4 text-sm text-dimmed"
+        >
+          Loading credits…
         </div>
       </template>
     </UDashboardPanel>
