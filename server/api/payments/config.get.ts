@@ -4,9 +4,24 @@ function normalizeString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
+function pickString(value: unknown, keys: string[]) {
+  const direct = normalizeString(value)
+  if (direct) return direct
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  for (const key of keys) {
+    const candidate = normalizeString(record[key])
+    if (candidate) return candidate
+  }
+  return null
+}
+
 export default defineEventHandler(async (event) => {
-  const locationId = normalizeString(await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID').catch(() => null))
-    ?? normalizeString(await getServerConfig(event, 'SQUARE_LOCATION_ID').catch(() => null))
+  const squareConfigValue = await getServerConfig(event, 'SQUARE').catch(() => null)
+
+  const locationId = pickString(await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID').catch(() => null), ['id', 'value', 'locationId', 'location_id'])
+    ?? pickString(await getServerConfig(event, 'SQUARE_LOCATION_ID').catch(() => null), ['id', 'value', 'locationId', 'location_id'])
+    ?? pickString(squareConfigValue, ['locationId', 'location_id', 'location', 'squareLocationId', 'square_location_id'])
     ?? normalizeString(await getKey(event, 'SQUARE_STUDIO_LOCATION_ID').catch(() => null))
     ?? normalizeString(await getKey(event, 'SQUARE_LOCATION_ID').catch(() => null))
     ?? normalizeString(process.env.SQUARE_STUDIO_LOCATION_ID)
@@ -14,10 +29,11 @@ export default defineEventHandler(async (event) => {
     ?? normalizeString(process.env.NUXT_PUBLIC_SQUARE_STUDIO_LOCATION_ID)
     ?? normalizeString(process.env.NUXT_PUBLIC_SQUARE_LOCATION_ID)
 
-  const applicationId = normalizeString(await getKey(event, 'SQUARE_APPLICATION_ID').catch(() => null))
+  const applicationId = pickString(squareConfigValue, ['id', 'applicationId', 'application_id', 'appId', 'app_id'])
+    ?? normalizeString(await getKey(event, 'SQUARE_APPLICATION_ID').catch(() => null))
     ?? normalizeString(await getKey(event, 'SQUARE_APP_ID').catch(() => null))
-    ?? normalizeString(await getServerConfig(event, 'SQUARE_APPLICATION_ID').catch(() => null))
-    ?? normalizeString(await getServerConfig(event, 'SQUARE_APP_ID').catch(() => null))
+    ?? pickString(await getServerConfig(event, 'SQUARE_APPLICATION_ID').catch(() => null), ['id', 'value', 'applicationId', 'application_id'])
+    ?? pickString(await getServerConfig(event, 'SQUARE_APP_ID').catch(() => null), ['id', 'value', 'applicationId', 'application_id'])
     ?? normalizeString(process.env.SQUARE_APPLICATION_ID)
     ?? normalizeString(process.env.SQUARE_APP_ID)
     ?? normalizeString(process.env.NUXT_PUBLIC_SQUARE_APPLICATION_ID)
