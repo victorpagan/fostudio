@@ -1,11 +1,7 @@
 // File: server/api/checkout/session.post.ts
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
-import { useSquareClient } from '~~/server/utils/square'
-import { getServerConfig } from '~~/server/utils/config/secret'
 import { resolveServerUserRole } from '~~/server/utils/auth'
-import { ensureSquareCustomerForGuest, ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
-import { toSquareBuyerPhone } from '~~/server/utils/square/checkoutPrefill'
 import { getSingleTierCapacity, isPriorityMemberForWaitlist } from '~~/server/utils/membership/capacity'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 
@@ -19,20 +15,10 @@ const bodySchema = z.object({
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-type SquarePaymentLinkResult = {
-  paymentLink?: {
-    id?: string | null
-    orderId?: string | null
-    url?: string | null
-  } | null
-}
-
 type GuestCheckoutSessionInsertResult = {
   id: string
   token: string
 }
-
-type SquareClient = Awaited<ReturnType<typeof useSquareClient>>
 type PromoRow = {
   id: string
   code: string
@@ -75,30 +61,6 @@ function readPromoTierScope(metadata: Record<string, unknown> | null | undefined
   return raw.map(entry => String(entry ?? '').trim()).filter(Boolean)
 }
 
-function extractSquareErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message.trim()
-  }
-
-  if (typeof error === 'object' && error !== null) {
-    const details = (error as { errors?: unknown }).errors
-    if (Array.isArray(details) && details.length > 0) {
-      const first = details[0]
-      if (first && typeof first === 'object') {
-        const detail = (first as { detail?: unknown }).detail
-        if (typeof detail === 'string' && detail.trim()) return detail.trim()
-      }
-    }
-  }
-
-  return 'Square checkout error'
-}
-
-function truncateErrorMessage(message: string, max = 220): string {
-  const collapsed = message.replace(/\s+/g, ' ').trim()
-  if (collapsed.length <= max) return collapsed
-  return `${collapsed.slice(0, max - 3)}...`
-}
 
 async function resolveMembershipPromoPricing(params: {
   supabase: any
@@ -178,37 +140,6 @@ function addCadenceInterval(startIso: string, cadence: 'daily' | 'weekly' | 'mon
   const months = cadence === 'annual' ? 12 : cadence === 'quarterly' ? 3 : 1
   value.setUTCMonth(value.getUTCMonth() + months)
   return value.toISOString()
-}
-
-async function createSubscriptionPaymentLink(params: {
-  square: SquareClient
-  displayName: string
-  cadence: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
-  locationId: string
-  planVariationId: string
-  priceCents: number
-  currency: string
-  redirectUrl: string
-  prePopulatedData?: Record<string, unknown>
-}) {
-  const payload = {
-    idempotencyKey: randomUUID(),
-    quickPay: {
-      name: `${params.displayName} (${params.cadence})`,
-      locationId: params.locationId,
-      priceMoney: {
-        amount: BigInt(params.priceCents),
-        currency: params.currency
-      }
-    },
-    checkoutOptions: {
-      redirectUrl: params.redirectUrl,
-      subscriptionPlanId: params.planVariationId
-    },
-    prePopulatedData: params.prePopulatedData
-  }
-
-  return await params.square.checkout.paymentLinks.create(payload as never) as SquarePaymentLinkResult
 }
 
 export default defineEventHandler(async (event) => {
@@ -293,6 +224,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const isTestTier = tierId === 'test'
+  if (!isTestTier && effectivePlanPriceCents > 0 && effectivePlanPriceCents < 100) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Plan price is below Square minimum. Expected cents, got ${effectivePlanPriceCents}.`
+    })
+  }
   let resolvedPlanVariationId: string | null = null
 
   if (isTestTier && !userId) {
@@ -309,8 +246,6 @@ export default defineEventHandler(async (event) => {
       })
     }
   }
-
-  const { origin } = getRequestURL(event)
 
   // ── 3a) Guest checkout (no auth required) ────────────────────────────────
   // Guests can complete payment first, then create/sign in to claim
@@ -384,98 +319,13 @@ export default defineEventHandler(async (event) => {
     }
 
     const session = checkoutSession as GuestCheckoutSessionInsertResult
-    const square = await useSquareClient(event)
-    const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
-    const planVariationId = resolvedPlanVariationId as string
-    const redirectUrl = `${origin}/checkout/success?checkout=${encodeURIComponent(session.token)}&returnTo=${encodeURIComponent(returnTo)}`
-    const guestSquareCustomerId = await ensureSquareCustomerForGuest(event, { email: guestEmail })
-    let guestCustomerQuery = supabase
-      .from('customers')
-      .select('id,email,phone,first_name,last_name,square_customer_id')
-
-    if (guestSquareCustomerId) {
-      guestCustomerQuery = guestCustomerQuery.eq('square_customer_id', guestSquareCustomerId)
-    } else {
-      guestCustomerQuery = guestCustomerQuery
-        .ilike('email', guestEmail)
-        .order('created_at', { ascending: false })
-        .limit(1)
-    }
-
-    const { data: guestCustomer } = await guestCustomerQuery.maybeSingle()
-
-    let createRes: SquarePaymentLinkResult
-    try {
-      createRes = await createSubscriptionPaymentLink({
-        square,
-        displayName: tier.display_name,
-        cadence,
-        locationId,
-        planVariationId,
-        priceCents: effectivePlanPriceCents,
-        currency: planCurrency,
-        redirectUrl,
-        prePopulatedData: {
-          buyerEmail: guestCustomer?.email ?? guestEmail,
-          buyerPhoneNumber: toSquareBuyerPhone(guestCustomer?.phone),
-          buyerAddress: {
-            firstName: guestCustomer?.first_name ?? undefined,
-            lastName: guestCustomer?.last_name ?? undefined
-          }
-        }
-      })
-    } catch (error) {
-      const errMsg = truncateErrorMessage(extractSquareErrorMessage(error))
-      console.error('[checkout-session] failed to create guest subscription checkout link', {
-        tierId,
-        cadence,
-        planVariationId,
-        guestEmail,
-        errMsg
-      })
-      await supabase
-        .from('membership_checkout_sessions')
-        .update({
-          status: 'failed',
-          metadata: { error: errMsg }
-        })
-        .eq('id', session.id)
-
-      throw createError({
-        statusCode: 502,
-        statusMessage: `Failed to start secure checkout: ${errMsg}`
-      })
-    }
-
-    const paymentLink = createRes.paymentLink
-    if (!paymentLink?.url) {
-      await supabase
-        .from('membership_checkout_sessions')
-        .update({
-          status: 'failed',
-          metadata: { error: 'missing_payment_link_url' }
-        })
-        .eq('id', session.id)
-
-      throw createError({ statusCode: 500, statusMessage: 'Square did not return a payment link URL' })
-    }
-
-    const { error: saveErr } = await supabase
-      .from('membership_checkout_sessions')
-      .update({
-        payment_link_id: paymentLink.id ?? null,
-        order_template_id: paymentLink.orderId ?? null,
-        customer_id: guestCustomer?.id ?? null,
-        square_customer_id: guestSquareCustomerId ?? null,
-        metadata: null
-      })
-      .eq('id', session.id)
-
-    if (saveErr) throw createError({ statusCode: 500, statusMessage: saveErr.message })
-
     return {
-      redirectUrl: paymentLink.url,
-      provider: 'square'
+      provider: 'square_web_payments',
+      checkoutToken: session.token,
+      amountCents: effectivePlanPriceCents,
+      currency: planCurrency,
+      tier: tierId,
+      cadence
     }
   }
 
@@ -606,126 +456,34 @@ export default defineEventHandler(async (event) => {
     }
 
     return {
-      redirectUrl: `${origin}/checkout/success?test=1&returnTo=${encodeURIComponent(returnTo)}`,
+      redirectUrl: `/checkout/success?test=1&returnTo=${encodeURIComponent(returnTo)}`,
       provider: 'test'
     }
   }
 
-  // ── 4) Create Square payment link (real subscription checkout) ───────────
-  const square = await useSquareClient(event)
-  const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
+  // ── 4) Return web-payments checkout token (card entry happens in-app) ─────
   const checkoutToken = authCheckoutSession?.token
   if (!checkoutToken) {
     throw createError({ statusCode: 500, statusMessage: 'Failed to initialize checkout session token' })
   }
-  const redirectUrl = `${origin}/checkout/success?checkout=${encodeURIComponent(checkoutToken)}&returnTo=${encodeURIComponent(returnTo)}`
-  const planVariationId = resolvedPlanVariationId as string
-  const squareCustomerId = await ensureSquareCustomerForUser(event, {
-    userId,
-    email: user?.email ?? null
-  })
-  const { data: memberCustomer } = await supabase
-    .from('customers')
-    .select('id,email,phone,first_name,last_name,square_customer_id')
-    .eq('user_id', userId)
-    .maybeSingle()
-  const memberCustomerId = memberCustomer?.id ?? null
-  const resolvedSquareCustomerId = squareCustomerId ?? memberCustomer?.square_customer_id ?? null
-
-  let createRes: SquarePaymentLinkResult
-  try {
-    createRes = await createSubscriptionPaymentLink({
-      square,
-      displayName: tier.display_name,
-      cadence,
-      locationId,
-      planVariationId,
-      priceCents: effectivePlanPriceCents,
-      currency: planCurrency,
-      redirectUrl,
-      prePopulatedData: {
-        buyerEmail: memberCustomer?.email ?? user?.email ?? undefined,
-        buyerPhoneNumber: toSquareBuyerPhone(memberCustomer?.phone),
-        buyerAddress: {
-          firstName: memberCustomer?.first_name ?? undefined,
-          lastName: memberCustomer?.last_name ?? undefined
-        }
-      }
-    })
-  } catch (error) {
-    const errMsg = truncateErrorMessage(extractSquareErrorMessage(error))
-    console.error('[checkout-session] failed to create member subscription checkout link', {
-      tierId,
-      cadence,
-      planVariationId,
-      userId,
-      errMsg
-    })
-
-    if (authCheckoutSession?.id) {
-      await supabase
-        .from('membership_checkout_sessions')
-        .update({
-          status: 'failed',
-          metadata: { error: errMsg }
-        })
-        .eq('id', authCheckoutSession.id)
-    }
-
-    throw createError({
-      statusCode: 502,
-      statusMessage: `Failed to start secure checkout: ${errMsg}`
-    })
-  }
-
-  const paymentLink = (createRes as SquarePaymentLinkResult)?.paymentLink
-  if (!paymentLink?.url) {
-    if (authCheckoutSession?.id) {
-      await supabase
-        .from('membership_checkout_sessions')
-        .update({
-          status: 'failed',
-          metadata: { error: 'missing_payment_link_url' }
-        })
-        .eq('id', authCheckoutSession.id)
-    }
-    throw createError({ statusCode: 500, statusMessage: 'Square did not return a payment link URL' })
-  }
-
-  // 5) Store checkout pointers
   const { error: saveErr } = await supabase
     .from('memberships')
     .update({
-      checkout_provider: 'square',
-      checkout_payment_link_id: paymentLink.id ?? null,
-      checkout_order_template_id: paymentLink.orderId ?? null,
-      customer_id: memberCustomerId,
-      square_plan_variation_id: planVariationId,
-      square_customer_id: resolvedSquareCustomerId ?? null,
-      billing_customer_id: resolvedSquareCustomerId ?? null
+      checkout_provider: 'square_web_payments',
+      checkout_payment_link_id: null,
+      checkout_order_template_id: null,
+      square_plan_variation_id: resolvedPlanVariationId
     })
     .eq('id', membershipId)
 
   if (saveErr) throw createError({ statusCode: 500, statusMessage: saveErr.message })
 
-  if (authCheckoutSession?.id) {
-    const { error: checkoutSessionUpdateErr } = await supabase
-      .from('membership_checkout_sessions')
-      .update({
-        payment_link_id: paymentLink.id ?? null,
-        order_template_id: paymentLink.orderId ?? null,
-        customer_id: memberCustomerId,
-        square_customer_id: resolvedSquareCustomerId ?? null
-      })
-      .eq('id', authCheckoutSession.id)
-
-    if (checkoutSessionUpdateErr) {
-      throw createError({ statusCode: 500, statusMessage: checkoutSessionUpdateErr.message })
-    }
-  }
-
   return {
-    redirectUrl: paymentLink.url,
-    provider: 'square'
+    provider: 'square_web_payments',
+    checkoutToken,
+    amountCents: effectivePlanPriceCents,
+    currency: planCurrency,
+    tier: tierId,
+    cadence
   }
 })

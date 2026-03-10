@@ -20,6 +20,9 @@ type CheckoutSessionRow = {
   payment_link_id: string | null
   order_template_id: string | null
   plan_variation_id: string | null
+  square_customer_id: string | null
+  square_subscription_id: string | null
+  paid_at: string | null
   claimed_by_user_id: string | null
   claimed_membership_id: string | null
   return_to: string | null
@@ -47,7 +50,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: rawSession, error: sessionErr } = await db
     .from('membership_checkout_sessions')
-    .select('id,token,tier,cadence,status,guest_email,payment_link_id,order_template_id,plan_variation_id,claimed_by_user_id,claimed_membership_id,return_to,created_at,metadata')
+    .select('id,token,tier,cadence,status,guest_email,payment_link_id,order_template_id,plan_variation_id,square_customer_id,square_subscription_id,paid_at,claimed_by_user_id,claimed_membership_id,return_to,created_at,metadata')
     .eq('token', body.token)
     .maybeSingle()
 
@@ -63,28 +66,39 @@ export default defineEventHandler(async (event) => {
     : {}
   if (metadata.activation_email_sent_at) return { ok: true, sent: false, reason: 'already_sent' }
 
+  const directManagedCheckout = Boolean(
+    session.paid_at
+    && session.square_customer_id
+    && session.square_subscription_id
+    && !session.payment_link_id
+    && !session.order_template_id
+  )
+
   const square = await useSquareClient(event)
   let orderId = session.order_template_id
-  if (!orderId && session.payment_link_id) {
+  if (!directManagedCheckout && !orderId && session.payment_link_id) {
     const linkRes = await square.checkout.paymentLinks.get({ id: session.payment_link_id } as never)
     const paymentLink = (linkRes as { paymentLink?: Record<string, unknown> | null }).paymentLink ?? null
     const maybeOrderId = paymentLink?.orderId
     orderId = typeof maybeOrderId === 'string' ? maybeOrderId : null
   }
-  if (!orderId) return { ok: true, sent: false, reason: 'missing_order_id' }
 
-  const paymentState = await resolveOrderPaymentState({
-    square,
-    orderId,
-    beginTime: session.created_at ?? null
-  })
-  if (!paymentState.completed) {
-    return {
-      ok: true,
-      sent: false,
-      reason: 'payment_not_completed',
-      paymentStatus: paymentState.paymentStatus ?? null,
-      orderState: paymentState.orderState ?? null
+  if (!directManagedCheckout) {
+    if (!orderId) return { ok: true, sent: false, reason: 'missing_order_id' }
+
+    const paymentState = await resolveOrderPaymentState({
+      square,
+      orderId,
+      beginTime: session.created_at ?? null
+    })
+    if (!paymentState.completed) {
+      return {
+        ok: true,
+        sent: false,
+        reason: 'payment_not_completed',
+        paymentStatus: paymentState.paymentStatus ?? null,
+        orderState: paymentState.orderState ?? null
+      }
     }
   }
 
@@ -154,7 +168,7 @@ export default defineEventHandler(async (event) => {
 
   metadata.activation_email_sent_at = new Date().toISOString()
   metadata.activation_email_type = 'membership.checkoutActivationPending'
-  metadata.activation_email_order_id = orderId
+  metadata.activation_email_order_id = orderId ?? null
 
   const { error: updateErr } = await db
     .from('membership_checkout_sessions')

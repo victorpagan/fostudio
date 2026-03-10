@@ -1,24 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
-import { useSquareClient } from '~~/server/utils/square'
-import { getServerConfig } from '~~/server/utils/config/secret'
 import { getCreditOptionEffectivePriceCents, mapCreditOption } from '~~/server/utils/credits/topup'
 import type { CreditPricingOptionRow } from '~~/server/utils/credits/topup'
-import { ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
-import { toSquareBuyerPhone } from '~~/server/utils/square/checkoutPrefill'
 
 const bodySchema = z.object({
   optionKey: z.string().min(1)
 })
-
-type SquarePaymentLinkResult = {
-  paymentLink?: {
-    id?: string | null
-    orderId?: string | null
-    url?: string | null
-  } | null
-}
 
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
@@ -85,107 +73,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: topupErr?.message ?? 'Failed to create credit checkout session' })
   }
 
-  const { origin } = getRequestURL(event)
-  const redirectUrl = `${origin}/dashboard/membership?topup=${encodeURIComponent(topupSession.token)}`
-  const square = await useSquareClient(event)
-  const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
-  const squareCustomerId = await ensureSquareCustomerForUser(event, {
-    userId: user.sub,
-    email: user.email ?? null
-  })
-  const { data: customerRow } = await supabase
-    .from('customers')
-    .select('email,phone,first_name,last_name')
-    .eq('user_id', user.sub)
-    .maybeSingle()
-
-  let createRes: SquarePaymentLinkResult
-  try {
-    if (mappedOption.squareVariationId) {
-      createRes = await square.checkout.paymentLinks.create({
-        idempotencyKey: randomUUID(),
-        checkoutOptions: { redirectUrl },
-        prePopulatedData: {
-          buyerEmail: customerRow?.email ?? user.email ?? undefined,
-          buyerPhoneNumber: toSquareBuyerPhone(customerRow?.phone),
-          buyerAddress: {
-            firstName: customerRow?.first_name ?? undefined,
-            lastName: customerRow?.last_name ?? undefined
-          }
-        },
-        order: {
-          locationId,
-          referenceId: topupSession.id,
-          customerId: squareCustomerId ?? undefined,
-          buyerEmailAddress: user.email ?? undefined,
-          metadata: {
-            topup_session_id: topupSession.id,
-            option_key: mappedOption.key,
-            option_label: mappedOption.label
-          },
-          lineItems: [
-            {
-              catalogObjectId: mappedOption.squareVariationId,
-              quantity: '1',
-              note: `Credit top-up (${mappedOption.credits} credits)`
-            }
-          ]
-        }
-      } as never) as SquarePaymentLinkResult
-    } else {
-      createRes = await square.checkout.paymentLinks.create({
-        idempotencyKey: randomUUID(),
-        quickPay: {
-          name: `Studio Credit Top-Up (${mappedOption.credits} credits)`,
-          locationId,
-          priceMoney: {
-            amount: BigInt(effectivePriceCents),
-            currency: 'USD'
-          }
-        },
-        checkoutOptions: { redirectUrl },
-        prePopulatedData: {
-          buyerEmail: customerRow?.email ?? user.email ?? undefined,
-          buyerPhoneNumber: toSquareBuyerPhone(customerRow?.phone),
-          buyerAddress: {
-            firstName: customerRow?.first_name ?? undefined,
-            lastName: customerRow?.last_name ?? undefined
-          }
-        }
-      } as never) as SquarePaymentLinkResult
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Square checkout error'
-    await db
-      .from('credit_topup_sessions')
-      .update({ status: 'failed', metadata: { error: message } })
-      .eq('id', topupSession.id)
-
-    throw createError({ statusCode: 502, statusMessage: `Failed to start top-up checkout: ${message}` })
-  }
-
-  const paymentLink = createRes.paymentLink
-  if (!paymentLink?.url) {
-    await db
-      .from('credit_topup_sessions')
-      .update({ status: 'failed', metadata: { error: 'missing_payment_link_url' } })
-      .eq('id', topupSession.id)
-
-    throw createError({ statusCode: 500, statusMessage: 'Square did not return a payment link URL' })
-  }
-
-  const { error: saveErr } = await db
-    .from('credit_topup_sessions')
-    .update({
-      payment_link_id: paymentLink.id ?? null,
-      order_template_id: paymentLink.orderId ?? null
-    })
-    .eq('id', topupSession.id)
-
-  if (saveErr) throw createError({ statusCode: 500, statusMessage: saveErr.message })
-
   return {
-    redirectUrl: paymentLink.url,
-    provider: 'square'
+    provider: 'square_web_payments',
+    topupToken: topupSession.token,
+    amountCents: effectivePriceCents,
+    currency: 'USD',
+    credits: mappedOption.credits,
+    label: mappedOption.label
   }
 })

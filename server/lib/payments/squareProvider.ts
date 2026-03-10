@@ -34,6 +34,9 @@ export const squareProvider: PaymentsProvider = {
     if (!Number.isFinite(priceCents) || priceCents < 0) {
       throw new Error('Selected plan variation has an invalid price.')
     }
+    if (priceCents > 0 && priceCents < 100) {
+      throw new Error(`Selected plan variation price is below Square minimum. Expected cents, got ${priceCents}.`)
+    }
 
     const client = await useSquareClient(event)
     const idempotencyKey = randomUUID()

@@ -274,39 +274,72 @@ export default defineEventHandler(async (event) => {
   }
 
   const square = await useSquareClient(event)
+  const directManagedCheckout = Boolean(
+    session.paid_at
+    && session.square_customer_id
+    && session.square_subscription_id
+    && !session.payment_link_id
+    && !session.order_template_id
+  )
 
   let orderId = session.order_template_id
-  if (!orderId && session.payment_link_id) {
-    const linkRes = await square.checkout.paymentLinks.get({ id: session.payment_link_id } as never)
-    const paymentLink = (linkRes as { paymentLink?: Record<string, unknown> | null }).paymentLink ?? null
-    orderId = readString(paymentLink, 'orderId', 'order_id')
+  let paymentState: {
+    orderState: string | null
+    orderCustomerId: string | null
+    orderId: string
+    completed: boolean
+    paymentId: string | null
+    paymentStatus: string | null
+    paymentCustomerId: string | null
+    paymentCardId: string | null
+    paymentCreatedAt: string | null
   }
 
-  if (!orderId) {
-    return {
-      ok: false,
-      pending: true,
-      membershipStatus: 'pending_checkout',
-      returnTo,
-      message: 'Payment details are still syncing. Try again in a moment.'
+  if (directManagedCheckout) {
+    paymentState = {
+      orderState: 'COMPLETED',
+      orderCustomerId: session.square_customer_id,
+      orderId: session.order_template_id ?? session.id,
+      completed: true,
+      paymentId: null,
+      paymentStatus: 'COMPLETED',
+      paymentCustomerId: session.square_customer_id,
+      paymentCardId: null,
+      paymentCreatedAt: session.paid_at
     }
-  }
+  } else {
+    if (!orderId && session.payment_link_id) {
+      const linkRes = await square.checkout.paymentLinks.get({ id: session.payment_link_id } as never)
+      const paymentLink = (linkRes as { paymentLink?: Record<string, unknown> | null }).paymentLink ?? null
+      orderId = readString(paymentLink, 'orderId', 'order_id')
+    }
 
-  const paymentState = await resolveOrderPaymentState({
-    square,
-    orderId,
-    beginTime: session.created_at ?? null
-  })
+    if (!orderId) {
+      return {
+        ok: false,
+        pending: true,
+        membershipStatus: 'pending_checkout',
+        returnTo,
+        message: 'Payment details are still syncing. Try again in a moment.'
+      }
+    }
 
-  if (!paymentState.completed) {
-    return {
-      ok: false,
-      pending: true,
-      membershipStatus: 'pending_checkout',
-      returnTo,
-      message: 'Payment is not completed yet. Please refresh in a moment.',
-      orderState: paymentState.orderState,
-      paymentStatus: paymentState.paymentStatus
+    paymentState = await resolveOrderPaymentState({
+      square,
+      orderId,
+      beginTime: session.created_at ?? null
+    })
+
+    if (!paymentState.completed) {
+      return {
+        ok: false,
+        pending: true,
+        membershipStatus: 'pending_checkout',
+        returnTo,
+        message: 'Payment is not completed yet. Please refresh in a moment.',
+        orderState: paymentState.orderState,
+        paymentStatus: paymentState.paymentStatus
+      }
     }
   }
 
@@ -484,8 +517,11 @@ export default defineEventHandler(async (event) => {
   const nowIso = new Date().toISOString()
   let subscriptionProvisioningIssue: string | null = null
   let subscription = await findLatestSubscription(square, squareCustomerId, session.plan_variation_id)
-  let subscriptionId = readString(subscription, 'id')
+  let subscriptionId = session.square_subscription_id?.trim() || readString(subscription, 'id')
   let rawSubscriptionStatus = readString(subscription, 'status')
+  if (subscriptionId && !rawSubscriptionStatus) {
+    rawSubscriptionStatus = 'ACTIVE'
+  }
 
   if (!subscriptionId && session.plan_variation_id) {
     const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID').catch(() => null)
@@ -561,7 +597,7 @@ export default defineEventHandler(async (event) => {
     cadence: session.cadence,
     status: resolvedMembershipStatus,
     customer_id: resolvedCustomerId,
-    checkout_provider: 'square',
+    checkout_provider: session.payment_link_id ? 'square' : 'square_web_payments',
     checkout_payment_link_id: session.payment_link_id,
     checkout_order_template_id: orderId,
     square_plan_variation_id: session.plan_variation_id,

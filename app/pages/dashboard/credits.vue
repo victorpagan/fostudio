@@ -102,6 +102,13 @@ const canBuyTopoff = computed(() => creditSummary.value?.canBuyTopoff ?? true)
 const topupLoadingKey = ref<string | null>(null)
 const topupClaimInFlight = ref(false)
 const topupClaimingFromRoute = ref(false)
+const paymentModalOpen = ref(false)
+const paymentSubmitting = ref(false)
+const paymentError = ref<string | null>(null)
+const pendingTopupToken = ref<string | null>(null)
+const pendingTopupAmountCents = ref(0)
+const pendingTopupCurrency = ref('USD')
+const pendingTopupLabel = ref('credits')
 const dashboardHydrated = ref(false)
 
 function asNumber(value: unknown) {
@@ -214,13 +221,26 @@ async function refreshAll() {
 }
 
 async function startTopup(optionKey: string) {
+  paymentError.value = null
   topupLoadingKey.value = optionKey
   try {
-    const res = await $fetch<{ redirectUrl: string }>('/api/credits/topup/session', {
+    const res = await $fetch<{
+      topupToken: string
+      amountCents: number
+      currency?: string
+      label?: string
+    }>('/api/credits/topup/session', {
       method: 'POST',
       body: { optionKey }
     })
-    window.location.href = res.redirectUrl
+    if (!res.topupToken) {
+      throw new Error('Top-up session did not return a token.')
+    }
+    pendingTopupToken.value = res.topupToken
+    pendingTopupAmountCents.value = Number(res.amountCents ?? 0)
+    pendingTopupCurrency.value = String(res.currency ?? 'USD').toUpperCase()
+    pendingTopupLabel.value = typeof res.label === 'string' && res.label.trim() ? res.label.trim() : 'credits'
+    paymentModalOpen.value = true
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
     toast.add({
@@ -230,6 +250,46 @@ async function startTopup(optionKey: string) {
     })
   } finally {
     topupLoadingKey.value = null
+  }
+}
+
+async function confirmTopupPayment(payload: { sourceId: string }) {
+  if (!pendingTopupToken.value || paymentSubmitting.value) return
+  paymentSubmitting.value = true
+  paymentError.value = null
+  try {
+    const res = await $fetch<{
+      status: 'processed' | 'pending' | 'failed'
+      creditsAdded?: number
+      newBalance?: number | null
+      message?: string
+    }>('/api/credits/topup/pay', {
+      method: 'POST',
+      body: {
+        token: pendingTopupToken.value,
+        sourceId: payload.sourceId
+      }
+    })
+
+    if (res.status !== 'processed') {
+      throw new Error(res.message ?? 'Top-up is still processing.')
+    }
+
+    paymentModalOpen.value = false
+    const added = Number(res.creditsAdded ?? 0)
+    const balance = res.newBalance
+    toast.add({
+      title: 'Top-up complete',
+      description: added > 0
+        ? `${added} credits added${balance !== null && balance !== undefined ? ` · New balance: ${balance}` : ''}.`
+        : 'Credits updated.'
+    })
+    await refreshAll()
+  } catch (error: unknown) {
+    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+    paymentError.value = e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Could not complete top-up payment.'
+  } finally {
+    paymentSubmitting.value = false
   }
 }
 
@@ -366,247 +426,260 @@ watch(
       </template>
 
       <template #body>
-        <ClientOnly>
-          <div class="p-4 space-y-4">
-            <UAlert
-              v-if="!hasActiveMembership"
-              color="warning"
-              variant="soft"
-              icon="i-lucide-badge-x"
-              title="No active membership"
-              description="You can still use unexpired credits, but top-up purchases are locked until membership is active."
-            />
+        <div class="p-4 space-y-4">
+          <UAlert
+            v-if="!hasActiveMembership"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-badge-x"
+            title="No active membership"
+            description="You can still use unexpired credits, but top-up purchases are locked until membership is active."
+          />
 
-            <UCard>
-              <div class="space-y-3">
-                <div class="flex items-center justify-between gap-2">
-                  <div>
-                    <div class="text-xs text-dimmed uppercase tracking-wide">
-                      Total credits
-                    </div>
-                    <div class="mt-1 text-3xl font-semibold">
-                      {{ formatCredits(displayedCreditBalance) }}
-                    </div>
-                    <div class="mt-1 text-xs text-dimmed">
-                      Plan bank: {{ formatCredits(creditSummary?.bankBalance ?? 0) }}
-                      <span v-if="creditSummary"> / {{ formatCredits(creditSummary.maxBank) }}</span>
-                      · Top-off: {{ formatCredits(creditSummary?.topoffBalance ?? 0) }}
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <UButton
-                      size="sm"
-                      color="neutral"
-                      variant="soft"
-                      icon="i-lucide-users"
-                      to="/dashboard/membership"
-                    >
-                      Membership
-                    </UButton>
-                    <UButton
-                      size="sm"
-                      color="neutral"
-                      variant="soft"
-                      icon="i-lucide-calendar-plus"
-                      to="/dashboard/book"
-                    >
-                      Book studio
-                    </UButton>
-                  </div>
-                </div>
-
-                <p
-                  v-if="creditSummary"
-                  class="text-xs text-dimmed"
-                >
-                  Plan credits expire after {{ creditSummary.membershipCreditExpiryDays }} days.
-                  Top-off credits expire after {{ creditSummary.topoffCreditExpiryDays }} days.
-                </p>
-
-                <UAlert
-                  v-if="creditSummary?.overCap"
-                  color="warning"
-                  variant="soft"
-                  icon="i-lucide-alert-triangle"
-                  title="Plan bank is over cap"
-                  description="New plan credits are paused until your plan bank drops back under cap."
-                />
-
-                <UAlert
-                  v-else-if="creditSummary?.atCap"
-                  color="info"
-                  variant="soft"
-                  icon="i-lucide-circle-check-big"
-                  title="Plan bank is at cap"
-                  description="New plan-credit minting is paused until your plan bank drops under cap."
-                />
-
-                <UAlert
-                  v-if="creditSummary?.expiringSoonCredits && creditSummary.expiringSoonCredits > 0"
-                  color="warning"
-                  variant="soft"
-                  icon="i-lucide-timer"
-                  :title="`${formatCredits(creditSummary.expiringSoonCredits)} credits expiring soon`"
-                  :description="`Use expiring credits by ${formatDateLabel(creditSummary.expiringSoonAt) ?? 'this week'}.`"
-                />
-              </div>
-            </UCard>
-
-            <UCard>
-              <div class="space-y-3">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <div class="text-xs text-dimmed uppercase tracking-wide">
-                      Buy credits
-                    </div>
-                    <div class="mt-1 text-sm text-dimmed">
-                      Top-off credits can be purchased anytime while membership is active.
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  v-if="topupClaimingFromRoute"
-                  class="text-xs text-dimmed"
-                >
-                  Finalizing your recent credit payment…
-                </div>
-
-                <div
-                  v-if="topupOptionsPending"
-                  class="text-sm text-dimmed"
-                >
-                  Loading available top-up options…
-                </div>
-
-                <div
-                  v-else-if="!canBuyTopoff || !hasActiveMembership"
-                  class="text-sm text-dimmed"
-                >
-                  Top-off purchases are currently unavailable without an active membership.
-                </div>
-
-                <div
-                  v-else-if="topupOptions?.length"
-                  class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3"
-                >
-                  <div
-                    v-for="option in topupOptions ?? []"
-                    :key="option.key"
-                    class="rounded-xl border border-default p-3"
-                  >
-                    <div class="flex items-center justify-between gap-2">
-                      <div class="font-medium">
-                        {{ option.label }}
-                      </div>
-                      <div class="text-xs text-dimmed">
-                        {{ formatOptionUnit(option) }}/credit
-                      </div>
-                    </div>
-
-                    <div class="mt-1 text-lg font-semibold flex items-center gap-2">
-                      <span>{{ formatPrice(option.effectivePriceCents) }}</span>
-                      <span
-                        v-if="option.saleActive && option.salePriceCents !== null"
-                        class="text-sm text-dimmed line-through"
-                      >
-                        {{ formatPrice(option.basePriceCents) }}
-                      </span>
-                    </div>
-
-                    <div
-                      v-if="option.description"
-                      class="mt-1 text-xs text-dimmed"
-                    >
-                      {{ option.description }}
-                    </div>
-
-                    <div
-                      v-if="option.saleActive"
-                      class="mt-1 text-xs text-success"
-                    >
-                      Sale active
-                      <span v-if="formatSaleWindow(option.saleStartsAt, option.saleEndsAt)">
-                        · {{ formatSaleWindow(option.saleStartsAt, option.saleEndsAt) }}
-                      </span>
-                    </div>
-
-                    <UButton
-                      class="mt-3"
-                      size="xs"
-                      block
-                      :loading="topupLoadingKey === option.key"
-                      :disabled="topupLoadingKey !== null || topupClaimingFromRoute"
-                      @click="startTopup(option.key)"
-                    >
-                      Buy {{ option.credits }} credit{{ option.credits === 1 ? '' : 's' }}
-                    </UButton>
-                  </div>
-                </div>
-
-                <div
-                  v-else
-                  class="text-sm text-dimmed"
-                >
-                  No credit top-up options are active right now.
-                </div>
-              </div>
-            </UCard>
-
-            <UCard>
+          <UCard>
+            <div class="space-y-3">
               <div class="flex items-center justify-between gap-2">
                 <div>
                   <div class="text-xs text-dimmed uppercase tracking-wide">
-                    Recent credit activity
+                    Total credits
+                  </div>
+                  <div class="mt-1 text-3xl font-semibold">
+                    {{ formatCredits(displayedCreditBalance) }}
+                  </div>
+                  <div class="mt-1 text-xs text-dimmed">
+                    Plan bank: {{ formatCredits(creditSummary?.bankBalance ?? 0) }}
+                    <span v-if="creditSummary"> / {{ formatCredits(creditSummary.maxBank) }}</span>
+                    · Top-off: {{ formatCredits(creditSummary?.topoffBalance ?? 0) }}
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <UButton
+                    size="sm"
+                    color="neutral"
+                    variant="soft"
+                    icon="i-lucide-users"
+                    to="/dashboard/membership"
+                  >
+                    Membership
+                  </UButton>
+                  <UButton
+                    size="sm"
+                    color="neutral"
+                    variant="soft"
+                    icon="i-lucide-calendar-plus"
+                    to="/dashboard/book"
+                  >
+                    Book studio
+                  </UButton>
+                </div>
+              </div>
+
+              <p
+                v-if="creditSummary"
+                class="text-xs text-dimmed"
+              >
+                Plan credits expire after {{ creditSummary.membershipCreditExpiryDays }} days.
+                Top-off credits expire after {{ creditSummary.topoffCreditExpiryDays }} days.
+              </p>
+
+              <UAlert
+                v-if="creditSummary?.overCap"
+                color="warning"
+                variant="soft"
+                icon="i-lucide-alert-triangle"
+                title="Plan bank is over cap"
+                description="New plan credits are paused until your plan bank drops back under cap."
+              />
+
+              <UAlert
+                v-else-if="creditSummary?.atCap"
+                color="info"
+                variant="soft"
+                icon="i-lucide-circle-check-big"
+                title="Plan bank is at cap"
+                description="New plan-credit minting is paused until your plan bank drops under cap."
+              />
+
+              <UAlert
+                v-if="creditSummary?.expiringSoonCredits && creditSummary.expiringSoonCredits > 0"
+                color="warning"
+                variant="soft"
+                icon="i-lucide-timer"
+                :title="`${formatCredits(creditSummary.expiringSoonCredits)} credits expiring soon`"
+                :description="`Use expiring credits by ${formatDateLabel(creditSummary.expiringSoonAt) ?? 'this week'}.`"
+              />
+            </div>
+          </UCard>
+
+          <UCard>
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="text-xs text-dimmed uppercase tracking-wide">
+                    Buy credits
                   </div>
                   <div class="mt-1 text-sm text-dimmed">
-                    Newest first
+                    Top-off credits can be purchased anytime while membership is active.
                   </div>
                 </div>
               </div>
 
               <div
-                v-if="!ledger?.length"
-                class="mt-4 text-sm text-dimmed"
+                v-if="topupClaimingFromRoute"
+                class="text-xs text-dimmed"
               >
-                No credit activity yet.
+                Finalizing your recent credit payment…
+              </div>
+
+              <UAlert
+                v-if="paymentError"
+                color="error"
+                variant="soft"
+                icon="i-lucide-circle-alert"
+                :title="paymentError"
+              />
+
+              <div
+                v-if="topupOptionsPending"
+                class="text-sm text-dimmed"
+              >
+                Loading available top-up options…
+              </div>
+
+              <div
+                v-else-if="!canBuyTopoff || !hasActiveMembership"
+                class="text-sm text-dimmed"
+              >
+                Top-off purchases are currently unavailable without an active membership.
+              </div>
+
+              <div
+                v-else-if="topupOptions?.length"
+                class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3"
+              >
+                <div
+                  v-for="option in topupOptions ?? []"
+                  :key="option.key"
+                  class="rounded-xl border border-default p-3"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="font-medium">
+                      {{ option.label }}
+                    </div>
+                    <div class="text-xs text-dimmed">
+                      {{ formatOptionUnit(option) }}/credit
+                    </div>
+                  </div>
+
+                  <div class="mt-1 text-lg font-semibold flex items-center gap-2">
+                    <span>{{ formatPrice(option.effectivePriceCents) }}</span>
+                    <span
+                      v-if="option.saleActive && option.salePriceCents !== null"
+                      class="text-sm text-dimmed line-through"
+                    >
+                      {{ formatPrice(option.basePriceCents) }}
+                    </span>
+                  </div>
+
+                  <div
+                    v-if="option.description"
+                    class="mt-1 text-xs text-dimmed"
+                  >
+                    {{ option.description }}
+                  </div>
+
+                  <div
+                    v-if="option.saleActive"
+                    class="mt-1 text-xs text-success"
+                  >
+                    Sale active
+                    <span v-if="formatSaleWindow(option.saleStartsAt, option.saleEndsAt)">
+                      · {{ formatSaleWindow(option.saleStartsAt, option.saleEndsAt) }}
+                    </span>
+                  </div>
+
+                  <UButton
+                    class="mt-3"
+                    size="xs"
+                    block
+                    :loading="topupLoadingKey === option.key"
+                    :disabled="topupLoadingKey !== null || topupClaimingFromRoute || paymentSubmitting"
+                    @click="startTopup(option.key)"
+                  >
+                    Buy {{ option.credits }} credit{{ option.credits === 1 ? '' : 's' }}
+                  </UButton>
+                </div>
               </div>
 
               <div
                 v-else
-                class="mt-3 divide-y divide-default"
+                class="text-sm text-dimmed"
               >
-                <div
-                  v-for="row in ledger"
-                  :key="row.id"
-                  class="py-3 flex items-start justify-between gap-4"
-                >
-                  <div class="min-w-0">
-                    <div class="text-sm font-medium truncate">
-                      {{ formatLedgerTitle(row) }}
-                    </div>
-                    <div class="mt-1 text-xs text-dimmed">
-                      {{ formatLedgerTimestamp(row.created_at) }}
-                      <span v-if="row.external_ref"> · ref: {{ row.external_ref }}</span>
-                    </div>
-                  </div>
-                  <div
-                    class="text-sm font-semibold shrink-0"
-                    :class="asNumber(row.delta) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
-                  >
-                    {{ formatDelta(row.delta) }}
-                  </div>
+                No credit top-up options are active right now.
+              </div>
+            </div>
+          </UCard>
+
+          <UCard>
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <div class="text-xs text-dimmed uppercase tracking-wide">
+                  Recent credit activity
+                </div>
+                <div class="mt-1 text-sm text-dimmed">
+                  Newest first
                 </div>
               </div>
-            </UCard>
-          </div>
-          <template #fallback>
-            <div class="p-4 text-sm text-dimmed">
-              Loading credits…
             </div>
-          </template>
-        </ClientOnly>
+
+            <div
+              v-if="!ledger?.length"
+              class="mt-4 text-sm text-dimmed"
+            >
+              No credit activity yet.
+            </div>
+
+            <div
+              v-else
+              class="mt-3 divide-y divide-default"
+            >
+              <div
+                v-for="row in ledger"
+                :key="row.id"
+                class="py-3 flex items-start justify-between gap-4"
+              >
+                <div class="min-w-0">
+                  <div class="text-sm font-medium truncate">
+                    {{ formatLedgerTitle(row) }}
+                  </div>
+                  <div class="mt-1 text-xs text-dimmed">
+                    {{ formatLedgerTimestamp(row.created_at) }}
+                    <span v-if="row.external_ref"> · ref: {{ row.external_ref }}</span>
+                  </div>
+                </div>
+                <div
+                  class="text-sm font-semibold shrink-0"
+                  :class="asNumber(row.delta) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+                >
+                  {{ formatDelta(row.delta) }}
+                </div>
+              </div>
+            </div>
+          </UCard>
+        </div>
       </template>
     </UDashboardPanel>
+
+    <SquareCardPaymentModal
+      v-model:open="paymentModalOpen"
+      instance-key="credits-topup"
+      title="Secure card payment"
+      :description="`Square will securely process this ${pendingTopupLabel.toLowerCase()} purchase.`"
+      :amount-cents="pendingTopupAmountCents"
+      :currency="pendingTopupCurrency"
+      confirm-label="Pay now"
+      :busy="paymentSubmitting"
+      @confirm="confirmTopupPayment"
+    />
   </div>
 </template>

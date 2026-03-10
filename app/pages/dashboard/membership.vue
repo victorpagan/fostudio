@@ -492,6 +492,13 @@ function formatLedgerTimestamp(value: string) {
 
 const topupLoadingKey = ref<string | null>(null)
 const holdTopupLoading = ref(false)
+const paymentModalOpen = ref(false)
+const paymentSubmitting = ref(false)
+const paymentFlow = ref<'credits' | 'holds' | null>(null)
+const paymentToken = ref<string | null>(null)
+const paymentAmountCents = ref(0)
+const paymentCurrency = ref('USD')
+const paymentLabel = ref('purchase')
 const membershipCancelLoading = ref(false)
 const membershipUndoCancelLoading = ref(false)
 const doorCodeRequestLoading = ref(false)
@@ -725,11 +732,22 @@ async function undoMembershipCancellation() {
 async function startTopup(optionKey: string) {
   topupLoadingKey.value = optionKey
   try {
-    const res = await $fetch<{ redirectUrl: string }>('/api/credits/topup/session', {
+    const res = await $fetch<{
+      topupToken: string
+      amountCents: number
+      currency?: string
+      label?: string
+    }>('/api/credits/topup/session', {
       method: 'POST',
       body: { optionKey }
     })
-    window.location.href = res.redirectUrl
+    if (!res.topupToken) throw new Error('Top-up session did not return a token.')
+    paymentFlow.value = 'credits'
+    paymentToken.value = res.topupToken
+    paymentAmountCents.value = Number(res.amountCents ?? 0)
+    paymentCurrency.value = String(res.currency ?? 'USD').toUpperCase()
+    paymentLabel.value = typeof res.label === 'string' && res.label.trim() ? res.label.trim() : 'credit top-up'
+    paymentModalOpen.value = true
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
     toast.add({
@@ -746,10 +764,21 @@ async function startHoldTopup() {
   if (holdTopupLoading.value) return
   holdTopupLoading.value = true
   try {
-    const res = await $fetch<{ redirectUrl: string }>('/api/holds/topup/session', {
+    const res = await $fetch<{
+      topupToken: string
+      amountCents: number
+      currency?: string
+      label?: string
+    }>('/api/holds/topup/session', {
       method: 'POST'
     })
-    window.location.href = res.redirectUrl
+    if (!res.topupToken) throw new Error('Hold session did not return a token.')
+    paymentFlow.value = 'holds'
+    paymentToken.value = res.topupToken
+    paymentAmountCents.value = Number(res.amountCents ?? 0)
+    paymentCurrency.value = String(res.currency ?? 'USD').toUpperCase()
+    paymentLabel.value = typeof res.label === 'string' && res.label.trim() ? res.label.trim() : 'hold purchase'
+    paymentModalOpen.value = true
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
     toast.add({
@@ -759,6 +788,81 @@ async function startHoldTopup() {
     })
   } finally {
     holdTopupLoading.value = false
+  }
+}
+
+async function confirmModalPayment(payload: { sourceId: string }) {
+  if (!paymentFlow.value || !paymentToken.value || paymentSubmitting.value) return
+
+  paymentSubmitting.value = true
+  try {
+    if (paymentFlow.value === 'credits') {
+      const res = await $fetch<{
+        status: 'processed' | 'pending' | 'failed'
+        creditsAdded?: number
+        newBalance?: number | null
+        message?: string
+      }>('/api/credits/topup/pay', {
+        method: 'POST',
+        body: {
+          token: paymentToken.value,
+          sourceId: payload.sourceId
+        }
+      })
+
+      if (res.status !== 'processed') {
+        throw new Error(res.message ?? 'Credit top-up is still processing.')
+      }
+
+      const creditsAdded = Number(res.creditsAdded ?? 0)
+      const newBalance = res.newBalance
+      toast.add({
+        title: 'Credits added',
+        description: creditsAdded > 0
+          ? `${creditsAdded} credits added${newBalance !== null && newBalance !== undefined ? ` · New balance: ${newBalance}` : ''}.`
+          : 'Credit balance updated.',
+        color: 'success'
+      })
+    } else {
+      const res = await $fetch<{
+        status: 'processed' | 'pending' | 'failed'
+        holdsAdded?: number
+        newHoldBalance?: number | null
+        message?: string
+      }>('/api/holds/topup/pay', {
+        method: 'POST',
+        body: {
+          token: paymentToken.value,
+          sourceId: payload.sourceId
+        }
+      })
+
+      if (res.status !== 'processed') {
+        throw new Error(res.message ?? 'Hold purchase is still processing.')
+      }
+
+      const holdsAdded = Number(res.holdsAdded ?? 0)
+      const newHoldBalance = res.newHoldBalance
+      toast.add({
+        title: 'Holds added',
+        description: holdsAdded > 0
+          ? `${holdsAdded} hold${holdsAdded === 1 ? '' : 's'} added${newHoldBalance !== null && newHoldBalance !== undefined ? ` · Paid hold balance: ${newHoldBalance}` : ''}.`
+          : 'Hold balance updated.',
+        color: 'success'
+      })
+    }
+
+    paymentModalOpen.value = false
+    await refreshAll()
+  } catch (error: unknown) {
+    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+    toast.add({
+      title: 'Payment failed',
+      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error',
+      color: 'error'
+    })
+  } finally {
+    paymentSubmitting.value = false
   }
 }
 
@@ -1543,5 +1647,17 @@ onUnmounted(() => {
         </UCard>
       </template>
     </UModal>
+
+    <SquareCardPaymentModal
+      v-model:open="paymentModalOpen"
+      instance-key="membership-topup"
+      title="Secure card payment"
+      :description="`Square will securely process this ${paymentLabel.toLowerCase()}.`"
+      :amount-cents="paymentAmountCents"
+      :currency="paymentCurrency"
+      confirm-label="Pay now"
+      :busy="paymentSubmitting"
+      @confirm="confirmModalPayment"
+    />
   </div>
 </template>

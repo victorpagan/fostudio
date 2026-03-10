@@ -28,11 +28,16 @@ const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const toast = useToast()
 const loading = ref(false)
+const paymentSubmitting = ref(false)
 const waitlistSubmitting = ref(false)
 const errorMsg = ref<string | null>(null)
 const promoCode = ref('')
 const selectedCadence = ref<Cadence>('monthly')
 const guestEmail = ref('')
+const paymentModalOpen = ref(false)
+const checkoutToken = ref<string | null>(null)
+const checkoutAmountCents = ref(0)
+const checkoutCurrency = ref('USD')
 
 const { data } = await useFetch<{ tiers: Tier[] }>('/api/membership/catalog', {
   default: () => ({ tiers: [] })
@@ -119,7 +124,13 @@ async function beginCheckout() {
   loading.value = true
 
   async function startSquareCheckoutSession(guestEmailForCheckout?: string) {
-    const res = await $fetch<{ redirectUrl: string, provider: string }>('/api/checkout/session', {
+    const res = await $fetch<{
+      provider: string
+      redirectUrl?: string
+      checkoutToken?: string
+      amountCents?: number
+      currency?: string
+    }>('/api/checkout/session', {
       method: 'POST',
       body: {
         tier: selectedTier.value!.id,
@@ -130,12 +141,20 @@ async function beginCheckout() {
       }
     })
 
-    if (res.provider === 'test' || res.redirectUrl.startsWith('/') || res.redirectUrl.startsWith(window.location.origin)) {
+    if (res.provider === 'test' && res.redirectUrl) {
       const url = new URL(res.redirectUrl, window.location.origin)
       await router.push(url.pathname + url.search)
-    } else {
-      window.location.href = res.redirectUrl
+      return
     }
+
+    if (!res.checkoutToken) {
+      throw new Error('Checkout session did not return a token.')
+    }
+
+    checkoutToken.value = res.checkoutToken
+    checkoutAmountCents.value = Number(res.amountCents ?? billedCycleCents(selectedPlan.value!))
+    checkoutCurrency.value = String(res.currency ?? selectedPlan.value?.currency ?? 'USD').toUpperCase()
+    paymentModalOpen.value = true
   }
 
   try {
@@ -230,7 +249,34 @@ async function beginCheckout() {
     await startSquareCheckoutSession(emailForCheckout)
   } catch (error: unknown) {
     errorMsg.value = readErrorMessage(error)
+  } finally {
     loading.value = false
+  }
+}
+
+async function confirmCardPayment(payload: { sourceId: string }) {
+  if (!checkoutToken.value || paymentSubmitting.value) return
+  paymentSubmitting.value = true
+  errorMsg.value = null
+  try {
+    await $fetch('/api/checkout/pay', {
+      method: 'POST',
+      body: {
+        token: checkoutToken.value,
+        sourceId: payload.sourceId
+      }
+    })
+    paymentModalOpen.value = false
+
+    const query = new URLSearchParams({
+      checkout: checkoutToken.value,
+      returnTo: returnTo.value
+    })
+    await router.push(`/checkout/success?${query.toString()}`)
+  } catch (error: unknown) {
+    errorMsg.value = readErrorMessage(error)
+  } finally {
+    paymentSubmitting.value = false
   }
 }
 
@@ -474,7 +520,7 @@ async function submitWaitlist() {
               placeholder="you@example.com"
             />
             <p class="text-xs text-dimmed">
-              You’ll pay through Square first, then create or sign in to your account on the success page to claim this membership.
+              You’ll enter payment details securely in-app through Square, then create or sign in to your account on the success page to claim this membership.
             </p>
             <p class="text-xs text-dimmed">
               Already have an account?
@@ -556,7 +602,7 @@ async function submitWaitlist() {
             v-else-if="!isPlanSwitchMode"
             class="mt-3 text-sm text-dimmed"
           >
-            You’ll be redirected to Square’s secure checkout to complete payment. After payment, you’ll create or sign in to your account to finish activation.
+            Payment is collected through Square’s secure in-app card form. After payment, you’ll create or sign in to your account to finish activation.
           </div>
           <div
             v-if="!isTestTier && !isPlanSwitchMode"
@@ -581,12 +627,12 @@ async function submitWaitlist() {
             <UButton
               v-if="!tierAtCapacity"
               :loading="loading"
-              :disabled="loading || !selectedPlan || (!user && isPlanSwitchMode) || (!isPlanSwitchMode && !user && !guestEmail.trim())"
-              @click="beginCheckout"
-            >
+                :disabled="loading || !selectedPlan || (!user && isPlanSwitchMode) || (!isPlanSwitchMode && !user && !guestEmail.trim())"
+                @click="beginCheckout"
+              >
               {{ isPlanSwitchMode
                 ? 'Schedule plan change'
-                : (isTestTier ? 'Activate test membership' : 'Continue to secure checkout') }}
+                : (isTestTier ? 'Activate test membership' : 'Continue to payment') }}
             </UButton>
             <UButton
               v-else
@@ -607,5 +653,17 @@ async function submitWaitlist() {
         </div>
       </UCard>
     </div>
+
+    <SquareCardPaymentModal
+      v-model:open="paymentModalOpen"
+      instance-key="membership-checkout"
+      title="Secure card payment"
+      description="Your card is handled by Square. We do not store raw card details."
+      :amount-cents="checkoutAmountCents"
+      :currency="checkoutCurrency"
+      confirm-label="Pay membership"
+      :busy="paymentSubmitting"
+      @confirm="confirmCardPayment"
+    />
   </UContainer>
 </template>
