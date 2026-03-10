@@ -103,7 +103,6 @@ const topupLoadingKey = ref<string | null>(null)
 const topupClaimInFlight = ref(false)
 const topupClaimingFromRoute = ref(false)
 const dashboardHydrated = ref(false)
-const dashboardReady = ref(false)
 
 function asNumber(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) return value
@@ -327,7 +326,6 @@ async function claimTopupFromRoute() {
 }
 
 onMounted(async () => {
-  dashboardReady.value = true
   dashboardHydrated.value = true
   await refreshAll()
   await claimTopupFromRoute()
@@ -368,20 +366,17 @@ watch(
       </template>
 
       <template #body>
-        <div
-          v-if="dashboardReady"
-          class="p-4 space-y-4"
-        >
-          <UAlert
-            v-if="!hasActiveMembership"
-            color="warning"
-            variant="soft"
-            icon="i-lucide-badge-x"
-            title="No active membership"
-            description="You can still use unexpired credits, but top-up purchases are locked until membership is active."
-          />
+        <ClientOnly>
+          <div class="p-4 space-y-4">
+            <UAlert
+              v-if="!hasActiveMembership"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-badge-x"
+              title="No active membership"
+              description="You can still use unexpired credits, but top-up purchases are locked until membership is active."
+            />
 
-          <template>
             <UCard>
               <div class="space-y-3">
                 <div class="flex items-center justify-between gap-2">
@@ -604,14 +599,13 @@ watch(
                 </div>
               </div>
             </UCard>
+          </div>
+          <template #fallback>
+            <div class="p-4 text-sm text-dimmed">
+              Loading credits…
+            </div>
           </template>
-        </div>
-        <div
-          v-else
-          class="p-4 text-sm text-dimmed"
-        >
-          Loading credits…
-        </div>
+        </ClientOnly>
       </template>
     </UDashboardPanel>
   </div>
