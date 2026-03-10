@@ -19,6 +19,7 @@ type CheckoutSessionRow = {
   guest_email: string | null
   payment_link_id: string | null
   order_template_id: string | null
+  plan_variation_id: string | null
   claimed_by_user_id: string | null
   claimed_membership_id: string | null
   return_to: string | null
@@ -46,7 +47,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: rawSession, error: sessionErr } = await db
     .from('membership_checkout_sessions')
-    .select('id,token,tier,cadence,status,guest_email,payment_link_id,order_template_id,claimed_by_user_id,claimed_membership_id,return_to,created_at,metadata')
+    .select('id,token,tier,cadence,status,guest_email,payment_link_id,order_template_id,plan_variation_id,claimed_by_user_id,claimed_membership_id,return_to,created_at,metadata')
     .eq('token', body.token)
     .maybeSingle()
 
@@ -125,7 +126,10 @@ export default defineEventHandler(async (event) => {
         tierName: tier?.display_name ?? session.tier,
         cadence: session.cadence,
         cadenceLabel: cadenceLabel(session.cadence),
-        activationUrl
+        activationUrl,
+        checkoutToken: session.token,
+        planVariationId: session.plan_variation_id,
+        paymentLinkId: session.payment_link_id
       }
     })
   } catch (error) {

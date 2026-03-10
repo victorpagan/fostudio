@@ -1,9 +1,11 @@
 import { z } from 'zod'
+import { randomUUID } from 'node:crypto'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { resolveMembershipBillingPeriod } from '~~/server/utils/square/billingPeriod'
 import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
 import { ensureDoorCodeForUser } from '~~/server/utils/membership/doorCode'
+import { getServerConfig } from '~~/server/utils/config/secret'
 
 const bodySchema = z.object({
   token: z.string().uuid()
@@ -67,6 +69,20 @@ function toRecordArray(value: unknown) {
   return value.filter(item => item && typeof item === 'object') as Record<string, unknown>[]
 }
 
+function normalizeSquareErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) return error.message.trim()
+  if (!error || typeof error !== 'object') return 'unknown_error'
+  const details = (error as { errors?: unknown }).errors
+  if (!Array.isArray(details) || !details.length) return 'unknown_error'
+  const first = details[0]
+  if (!first || typeof first !== 'object') return 'unknown_error'
+  const detail = (first as { detail?: unknown }).detail
+  if (typeof detail === 'string' && detail.trim()) return detail.trim()
+  const code = (first as { code?: unknown }).code
+  if (typeof code === 'string' && code.trim()) return code.trim()
+  return 'unknown_error'
+}
+
 function mapSquareStatus(rawStatus: string | null): MembershipStatus {
   const status = (rawStatus ?? '').toUpperCase()
   if (!status) return 'pending_checkout'
@@ -74,6 +90,22 @@ function mapSquareStatus(rawStatus: string | null): MembershipStatus {
   if (status === 'CANCELED' || status === 'CANCELLED') return 'canceled'
   if (status === 'PENDING') return 'pending_checkout'
   return 'past_due'
+}
+
+function addCadenceDate(cadence: CheckoutSessionRow['cadence'], anchorIso: string) {
+  const date = new Date(anchorIso)
+  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10)
+  if (cadence === 'daily') {
+    date.setUTCDate(date.getUTCDate() + 1)
+    return date.toISOString().slice(0, 10)
+  }
+  if (cadence === 'weekly') {
+    date.setUTCDate(date.getUTCDate() + 7)
+    return date.toISOString().slice(0, 10)
+  }
+  const months = cadence === 'annual' ? 12 : cadence === 'quarterly' ? 3 : 1
+  date.setUTCMonth(date.getUTCMonth() + months)
+  return date.toISOString().slice(0, 10)
 }
 
 function readPromoId(metadata: Record<string, unknown> | null | undefined) {
@@ -435,12 +467,54 @@ export default defineEventHandler(async (event) => {
   }
 
   const nowIso = new Date().toISOString()
-  const subscription = await findLatestSubscription(square, squareCustomerId, session.plan_variation_id)
-  const subscriptionId = readString(subscription, 'id')
-  const rawSubscriptionStatus = readString(subscription, 'status')
-  const membershipStatus: MembershipStatus = rawSubscriptionStatus
+  let subscriptionProvisioningIssue: string | null = null
+  let subscription = await findLatestSubscription(square, squareCustomerId, session.plan_variation_id)
+  let subscriptionId = readString(subscription, 'id')
+  let rawSubscriptionStatus = readString(subscription, 'status')
+
+  if (!subscriptionId && session.plan_variation_id) {
+    const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID').catch(() => null)
+    if (!locationId || typeof locationId !== 'string') {
+      subscriptionProvisioningIssue = 'missing_location_id'
+    } else {
+      const createPayload: Record<string, unknown> = {
+        idempotencyKey: session.token
+          ? `${session.token}:${paymentState.paymentCardId ? 'card' : 'invoice'}`
+          : randomUUID(),
+        locationId,
+        customerId: squareCustomerId,
+        planVariationId: session.plan_variation_id,
+        // First checkout payment is already collected; recurring billing starts next cycle.
+        startDate: addCadenceDate(session.cadence, paymentState.paymentCreatedAt ?? nowIso),
+        timezone: 'America/Los_Angeles',
+        source: { name: 'FO Studio membership checkout claim' }
+      }
+
+      if (paymentState.paymentCardId) {
+        createPayload.cardId = paymentState.paymentCardId
+      }
+
+      try {
+        const createdRes = await square.subscriptions.create(createPayload as never)
+        const createdSub = (createdRes as { subscription?: Record<string, unknown> | null }).subscription ?? null
+        if (createdSub?.id) {
+          subscription = createdSub
+          subscriptionId = readString(subscription, 'id')
+          rawSubscriptionStatus = readString(subscription, 'status')
+        } else {
+          subscription = await findLatestSubscription(square, squareCustomerId, session.plan_variation_id)
+          subscriptionId = readString(subscription, 'id')
+          rawSubscriptionStatus = readString(subscription, 'status')
+        }
+      } catch (error) {
+        subscriptionProvisioningIssue = normalizeSquareErrorMessage(error)
+      }
+    }
+  }
+
+  const membershipStatus: MembershipStatus = subscriptionId
     ? mapSquareStatus(rawSubscriptionStatus)
-    : 'active'
+    : 'pending_checkout'
   const providerBillingPeriod = resolveMembershipBillingPeriod({
     cadence: session.cadence,
     subscription,
@@ -628,13 +702,16 @@ export default defineEventHandler(async (event) => {
 
   const finalStatus = (claimedMembership.status ?? 'pending_checkout').toLowerCase()
   if (finalStatus !== 'active') {
+    const pendingMessage = subscriptionProvisioningIssue
+      ? `Payment received. Waiting for Square to finalize your subscription. (${subscriptionProvisioningIssue})`
+      : 'Payment received. Waiting for Square to finalize your subscription.'
     return {
       ok: false,
       pending: true,
       membershipId: claimedMembership.id,
       membershipStatus: claimedMembership.status ?? 'pending_checkout',
       returnTo,
-      message: 'Payment received. Waiting for Square to finalize your subscription.'
+      message: pendingMessage
     }
   }
 

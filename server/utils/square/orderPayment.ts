@@ -18,6 +18,18 @@ export type OrderPaymentState = {
   paymentId: string | null
   paymentStatus: string | null
   paymentCustomerId: string | null
+  paymentCardId: string | null
+  paymentCreatedAt: string | null
+}
+
+function readCardId(source: Record<string, unknown> | null | undefined) {
+  if (!source) return null
+  const cardDetails = (source.cardDetails ?? source.card_details) as Record<string, unknown> | null | undefined
+  if (!cardDetails) return null
+  const card = (cardDetails.card ?? cardDetails.card_data) as Record<string, unknown> | null | undefined
+  if (!card) return null
+  const value = card.id
+  return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
 export async function resolveOrderPaymentState(params: {
@@ -54,6 +66,8 @@ export async function resolveOrderPaymentState(params: {
     let paymentStatus: string | null = null
     let paymentId: string | null = null
     let paymentCustomerId: string | null = null
+    let paymentCardId: string | null = null
+    let paymentCreatedAt: string | null = null
 
     for await (const item of pageable as AsyncIterable<Record<string, unknown>>) {
       scanned += 1
@@ -66,6 +80,8 @@ export async function resolveOrderPaymentState(params: {
       paymentStatus = paymentStatus ?? status
       paymentId = paymentId ?? readString(item, 'id')
       paymentCustomerId = paymentCustomerId ?? readString(item, 'customerId', 'customer_id')
+      paymentCardId = paymentCardId ?? readCardId(item)
+      paymentCreatedAt = paymentCreatedAt ?? readString(item, 'createdAt', 'created_at')
 
       if (status === 'COMPLETED') {
         return {
@@ -75,7 +91,9 @@ export async function resolveOrderPaymentState(params: {
           completed: true,
           paymentId: readString(item, 'id') ?? paymentId,
           paymentStatus: status,
-          paymentCustomerId: readString(item, 'customerId', 'customer_id') ?? paymentCustomerId
+          paymentCustomerId: readString(item, 'customerId', 'customer_id') ?? paymentCustomerId,
+          paymentCardId: readCardId(item) ?? paymentCardId,
+          paymentCreatedAt: readString(item, 'createdAt', 'created_at') ?? paymentCreatedAt
         } as OrderPaymentState
       }
     }
@@ -87,7 +105,9 @@ export async function resolveOrderPaymentState(params: {
       completed: orderState === 'COMPLETED',
       paymentId,
       paymentStatus,
-      paymentCustomerId
+      paymentCustomerId,
+      paymentCardId,
+      paymentCreatedAt
     } as OrderPaymentState
   }
 

@@ -14,7 +14,7 @@ export const squareProvider: PaymentsProvider = {
     const supabase = serverSupabaseServiceRole(event)
     const { data: variation, error: variationErr } = await supabase
       .from('membership_plan_variations')
-      .select('provider_plan_variation_id,active')
+      .select('provider_plan_variation_id,price_cents,currency,active')
       .eq('tier_id', input.tier)
       .eq('cadence', input.cadence)
       .eq('provider', 'square')
@@ -27,6 +27,13 @@ export const squareProvider: PaymentsProvider = {
     if (!planVariationId) {
       throw new Error('Selected plan variation is not linked to Square.')
     }
+    const priceCents = Number(variation.price_cents ?? 0)
+    const currency = typeof variation.currency === 'string' && variation.currency.trim()
+      ? variation.currency.trim().toUpperCase()
+      : 'USD'
+    if (!Number.isFinite(priceCents) || priceCents < 0) {
+      throw new Error('Selected plan variation has an invalid price.')
+    }
 
     const client = await useSquareClient(event)
     const idempotencyKey = randomUUID()
@@ -38,19 +45,14 @@ export const squareProvider: PaymentsProvider = {
       quickPay: {
         name: `FO Studio Membership (${input.tier} • ${input.cadence})`,
         locationId,
-        subscriptionPlanId: planVariationId
-      },
-      checkoutOptions: { redirectUrl },
-      order: {
-        locationId,
-        referenceId: input.membershipId,
-        metadata: {
-          user_id: input.userId,
-          membership_id: input.membershipId,
-          tier: input.tier,
-          cadence: input.cadence
+        priceMoney: {
+          amount: BigInt(Math.round(priceCents)),
+          currency
         }
-      }
+      },
+      // Subscription plan checkout must be bound in checkoutOptions.
+      checkoutOptions: { redirectUrl, subscriptionPlanId: planVariationId },
+      paymentNote: `membership_id:${input.membershipId}`
     }
 
     const res = await client.checkout.paymentLinks.create(body as never)

@@ -189,54 +189,26 @@ async function createSubscriptionPaymentLink(params: {
   priceCents: number
   currency: string
   redirectUrl: string
-  order?: Record<string, unknown>
   prePopulatedData?: Record<string, unknown>
 }) {
-  const basePayload = {
+  const payload = {
     idempotencyKey: randomUUID(),
     quickPay: {
       name: `${params.displayName} (${params.cadence})`,
       locationId: params.locationId,
-      subscriptionPlanId: params.planVariationId,
       priceMoney: {
         amount: BigInt(params.priceCents),
         currency: params.currency
       }
     },
-    checkoutOptions: { redirectUrl: params.redirectUrl },
+    checkoutOptions: {
+      redirectUrl: params.redirectUrl,
+      subscriptionPlanId: params.planVariationId
+    },
     prePopulatedData: params.prePopulatedData
   }
 
-  try {
-    const withOrderPayload = params.order
-      ? { ...basePayload, order: params.order }
-      : basePayload
-
-    const withOrder = await params.square.checkout.paymentLinks.create(
-      withOrderPayload as never
-    ) as SquarePaymentLinkResult
-
-    return {
-      result: withOrder,
-      orderFallbackUsed: false,
-      orderError: null as string | null
-    }
-  } catch (error) {
-    const orderError = extractSquareErrorMessage(error)
-    console.warn('[checkout-session] order metadata was rejected; retrying without order payload', {
-      orderError
-    })
-
-    const withoutOrder = await params.square.checkout.paymentLinks.create(
-      basePayload as never
-    ) as SquarePaymentLinkResult
-
-    return {
-      result: withoutOrder,
-      orderFallbackUsed: true,
-      orderError
-    }
-  }
+  return await params.square.checkout.paymentLinks.create(payload as never) as SquarePaymentLinkResult
 }
 
 export default defineEventHandler(async (event) => {
@@ -433,10 +405,8 @@ export default defineEventHandler(async (event) => {
     const { data: guestCustomer } = await guestCustomerQuery.maybeSingle()
 
     let createRes: SquarePaymentLinkResult
-    let orderFallbackUsed = false
-    let orderError: string | null = null
     try {
-      const created = await createSubscriptionPaymentLink({
+      createRes = await createSubscriptionPaymentLink({
         square,
         displayName: tier.display_name,
         cadence,
@@ -452,24 +422,8 @@ export default defineEventHandler(async (event) => {
             firstName: guestCustomer?.first_name ?? undefined,
             lastName: guestCustomer?.last_name ?? undefined
           }
-        },
-        order: {
-          locationId,
-          referenceId: session.id,
-          metadata: {
-            checkout_session_id: session.id,
-            checkout_token: session.token,
-            tier: tierId,
-            cadence
-          },
-          buyerEmailAddress: guestEmail,
-          customerId: guestSquareCustomerId ?? undefined
         }
       })
-
-      createRes = created.result
-      orderFallbackUsed = created.orderFallbackUsed
-      orderError = created.orderError
     } catch (error) {
       const errMsg = truncateErrorMessage(extractSquareErrorMessage(error))
       console.error('[checkout-session] failed to create guest subscription checkout link', {
@@ -483,11 +437,7 @@ export default defineEventHandler(async (event) => {
         .from('membership_checkout_sessions')
         .update({
           status: 'failed',
-          metadata: {
-            error: errMsg,
-            order_fallback_used: orderFallbackUsed,
-            order_error: orderError
-          }
+          metadata: { error: errMsg }
         })
         .eq('id', session.id)
 
@@ -503,11 +453,7 @@ export default defineEventHandler(async (event) => {
         .from('membership_checkout_sessions')
         .update({
           status: 'failed',
-          metadata: {
-            error: 'missing_payment_link_url',
-            order_fallback_used: orderFallbackUsed,
-            order_error: orderError
-          }
+          metadata: { error: 'missing_payment_link_url' }
         })
         .eq('id', session.id)
 
@@ -521,12 +467,7 @@ export default defineEventHandler(async (event) => {
         order_template_id: paymentLink.orderId ?? null,
         customer_id: guestCustomer?.id ?? null,
         square_customer_id: guestSquareCustomerId ?? null,
-        metadata: orderFallbackUsed
-          ? {
-              order_fallback_used: true,
-              order_error: orderError
-            }
-          : null
+        metadata: null
       })
       .eq('id', session.id)
 
@@ -693,7 +634,7 @@ export default defineEventHandler(async (event) => {
 
   let createRes: SquarePaymentLinkResult
   try {
-    const created = await createSubscriptionPaymentLink({
+    createRes = await createSubscriptionPaymentLink({
       square,
       displayName: tier.display_name,
       cadence,
@@ -709,21 +650,8 @@ export default defineEventHandler(async (event) => {
           firstName: memberCustomer?.first_name ?? undefined,
           lastName: memberCustomer?.last_name ?? undefined
         }
-      },
-      order: {
-        locationId,
-        referenceId: membershipId,
-        metadata: {
-          user_id: userId,
-          membership_id: membershipId,
-          tier: tierId,
-          cadence
-        },
-        buyerEmailAddress: user?.email ?? undefined,
-        customerId: resolvedSquareCustomerId ?? undefined
       }
     })
-    createRes = created.result
   } catch (error) {
     const errMsg = truncateErrorMessage(extractSquareErrorMessage(error))
     console.error('[checkout-session] failed to create member subscription checkout link', {

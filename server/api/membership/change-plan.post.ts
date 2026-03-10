@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { resolveServerUserRole } from '~~/server/utils/auth'
 import { useSquareClient } from '~~/server/utils/square'
+import { getServerConfig } from '~~/server/utils/config/secret'
 import {
   findPendingCancelAction,
   findPendingSwapAction,
@@ -25,6 +26,7 @@ type MembershipRow = {
   square_customer_id: string | null
   square_subscription_id: string | null
   square_plan_variation_id: string | null
+  current_period_end: string | null
 }
 
 function normalizeStatus(value: string | null | undefined) {
@@ -43,6 +45,13 @@ function readString(source: Record<string, unknown> | null | undefined, ...keys:
 function toRecordArray(value: unknown) {
   if (!Array.isArray(value)) return []
   return value.filter(item => item && typeof item === 'object') as Record<string, unknown>[]
+}
+
+function toDateOnly(value: string | null | undefined) {
+  if (!value) return null
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed.toISOString().slice(0, 10)
 }
 
 async function findManagedSquareSubscriptionId(
@@ -90,7 +99,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: membershipRaw, error: membershipErr } = await supabase
     .from('memberships')
-    .select('id,customer_id,tier,cadence,status,billing_provider,billing_customer_id,billing_subscription_id,square_customer_id,square_subscription_id,square_plan_variation_id')
+    .select('id,customer_id,tier,cadence,status,billing_provider,billing_customer_id,billing_subscription_id,square_customer_id,square_subscription_id,square_plan_variation_id,current_period_end')
     .eq('user_id', user.sub)
     .maybeSingle()
 
@@ -207,6 +216,62 @@ export default defineEventHandler(async (event) => {
       console.warn('[membership/change-plan] failed to recover Square subscription id', {
         membershipId: membership.id,
         message: recoveryError instanceof Error ? recoveryError.message : String(recoveryError)
+      })
+    }
+  }
+
+  if (!subscriptionId && customerId && currentPlanVariationId) {
+    try {
+      const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
+      const startDate = toDateOnly(membership.current_period_end) ?? new Date().toISOString().slice(0, 10)
+      const createRes = await square.subscriptions.create({
+        idempotencyKey: `mswap:${membership.id}`,
+        locationId,
+        customerId,
+        planVariationId: currentPlanVariationId,
+        startDate,
+        timezone: 'America/Los_Angeles',
+        source: { name: 'FO Studio plan swap bootstrap' }
+      } as never)
+
+      subscriptionId = readString(
+        (createRes as { subscription?: Record<string, unknown> | null }).subscription ?? null,
+        'id'
+      )
+
+      if (!subscriptionId) {
+        subscriptionId = await findManagedSquareSubscriptionId(square, customerId, currentPlanVariationId)
+      }
+
+      if (subscriptionId) {
+        const patch: Record<string, unknown> = {
+          billing_provider: 'square',
+          billing_subscription_id: subscriptionId
+        }
+        if (!membership.billing_customer_id && customerId) {
+          patch.billing_customer_id = customerId
+        }
+        if (!membership.square_customer_id && customerId) {
+          patch.square_customer_id = customerId
+        }
+        if (!membership.customer_id && mappedCustomerId) {
+          patch.customer_id = mappedCustomerId
+        }
+        const { error: bootstrapPatchErr } = await supabase
+          .from('memberships')
+          .update(patch)
+          .eq('id', membership.id)
+        if (bootstrapPatchErr) {
+          console.warn('[membership/change-plan] failed to persist bootstrapped Square subscription linkage', {
+            membershipId: membership.id,
+            message: bootstrapPatchErr.message
+          })
+        }
+      }
+    } catch (bootstrapError) {
+      console.warn('[membership/change-plan] failed to bootstrap managed Square subscription', {
+        membershipId: membership.id,
+        message: bootstrapError instanceof Error ? bootstrapError.message : String(bootstrapError)
       })
     }
   }
