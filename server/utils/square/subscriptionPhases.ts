@@ -77,10 +77,19 @@ export async function buildSubscriptionCreatePhasesFromPlanVariation(
         const phase = asRecord(entry)
         if (!phase) return null
 
+        const ordinal = readPositiveInt(phase.ordinal)
         const cadence = readString(phase, 'cadence')
+        const orderTemplateId = readString(
+          phase,
+          'orderTemplateId',
+          'order_template_id',
+          // Dashboard-created plan variations often expose only `uid`,
+          // which maps to the required order template identifier.
+          'uid'
+        )
         const pricingSource = asRecord(phase.pricing ?? phase.pricing_data)
         const pricingType = readString(pricingSource, 'type')?.toUpperCase()
-        if (!cadence || !pricingSource || !pricingType) return null
+        if (ordinal === null || !cadence || !pricingSource || !pricingType) return null
 
         const pricing: Record<string, unknown> = { type: pricingType }
         const discountIds = toStringArray(pricingSource.discountIds ?? pricingSource.discount_ids)
@@ -90,12 +99,14 @@ export async function buildSubscriptionCreatePhasesFromPlanVariation(
         if (priceMoney) pricing.priceMoney = priceMoney
 
         const phasePayload: Record<string, unknown> = {
+          ordinal,
           cadence,
           pricing
         }
 
         const periods = readPositiveInt(phase.periods)
         if (periods !== null) phasePayload.periods = periods
+        if (orderTemplateId) phasePayload.orderTemplateId = orderTemplateId
 
         return phasePayload
       })
@@ -110,6 +121,15 @@ export async function buildSubscriptionCreatePhasesFromPlanVariation(
 
     // Current Square API requires explicit phases when plan variation pricing is RELATIVE.
     if (!hasRelativePhase) return null
+
+    // RELATIVE pricing phases must include order template ids.
+    const hasMissingRelativeOrderTemplate = phases.some((phase) => {
+      const pricing = asRecord(phase.pricing)
+      const isRelative = readString(pricing, 'type')?.toUpperCase() === 'RELATIVE'
+      const orderTemplateId = readString(phase, 'orderTemplateId', 'order_template_id')
+      return isRelative && !orderTemplateId
+    })
+    if (hasMissingRelativeOrderTemplate) return null
 
     return phases
   } catch {
