@@ -130,7 +130,7 @@ export default defineEventHandler(async (event) => {
 
   const square = await useSquareClient(event)
   const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
-  const idempotencyBase = `hold-topup:${topup.id}`
+  const idempotencyBase = `htu:${topup.id}`
 
   let paymentSourceId = body.cardId?.trim() || null
   if (paymentSourceId) {
@@ -149,7 +149,7 @@ export default defineEventHandler(async (event) => {
   let paymentId: string | null = null
   try {
     const payRes = await square.payments.create({
-      idempotencyKey: `${idempotencyBase}:payment`,
+      idempotencyKey: `${idempotencyBase}:p`,
       sourceId: paymentSourceId,
       customerId: body.cardId ? squareCustomerId : undefined,
       autocomplete: true,

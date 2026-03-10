@@ -529,8 +529,8 @@ export default defineEventHandler(async (event) => {
       subscriptionProvisioningIssue = 'missing_location_id'
     } else {
       const createPayload: Record<string, unknown> = {
-        idempotencyKey: session.token
-          ? `${session.token}:${paymentState.paymentCardId ? 'card' : 'invoice'}`
+        idempotencyKey: session.id
+          ? `mcl:${session.id}:${paymentState.paymentCardId ? 'c' : 'i'}`
           : randomUUID(),
         locationId,
         customerId: squareCustomerId,

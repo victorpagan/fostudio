@@ -156,7 +156,7 @@ export default defineEventHandler(async (event) => {
 
   const square = await useSquareClient(event)
   const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
-  const idempotencyBase = `membership-checkout:${session.token}`
+  const idempotencyBase = `mco:${session.id}`
 
   let selectedCardId = body.cardId?.trim() || null
   if (selectedCardId) {
@@ -173,7 +173,7 @@ export default defineEventHandler(async (event) => {
     if (!sourceId) throw createError({ statusCode: 400, statusMessage: 'Card token is required.' })
     try {
       const cardRes = await square.cards.create({
-        idempotencyKey: `${idempotencyBase}:card`,
+        idempotencyKey: `${idempotencyBase}:c`,
         sourceId,
         card: {
           customerId: squareCustomerId
@@ -194,7 +194,7 @@ export default defineEventHandler(async (event) => {
   if (amountCents > 0) {
     try {
       const paymentRes = await square.payments.create({
-        idempotencyKey: `${idempotencyBase}:payment`,
+        idempotencyKey: `${idempotencyBase}:p`,
         sourceId: selectedCardId,
         customerId: squareCustomerId,
         autocomplete: true,
@@ -223,7 +223,7 @@ export default defineEventHandler(async (event) => {
     const startDate = addCadenceDate(session.cadence, paymentCreatedAt ?? new Date().toISOString())
     try {
       const subRes = await square.subscriptions.create({
-        idempotencyKey: `${idempotencyBase}:subscription`,
+        idempotencyKey: `${idempotencyBase}:s`,
         locationId,
         customerId: squareCustomerId,
         planVariationId,
