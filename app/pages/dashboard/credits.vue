@@ -102,6 +102,7 @@ const canBuyTopoff = computed(() => creditSummary.value?.canBuyTopoff ?? true)
 const topupLoadingKey = ref<string | null>(null)
 const topupClaimInFlight = ref(false)
 const topupClaimingFromRoute = ref(false)
+const dashboardHydrated = ref(false)
 
 function asNumber(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) return value
@@ -132,13 +133,23 @@ function formatDateLabel(value: string | null | undefined) {
   if (!value) return null
   const dt = new Date(value)
   if (Number.isNaN(dt.getTime())) return null
-  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  if (!dashboardHydrated.value) return dt.toISOString().slice(0, 10)
+  return dt.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'America/Los_Angeles'
+  })
 }
 
 function formatLedgerTimestamp(value: string) {
   const dt = new Date(value)
   if (Number.isNaN(dt.getTime())) return value
-  return dt.toLocaleString('en-US')
+  if (!dashboardHydrated.value) {
+    const iso = dt.toISOString()
+    return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
+  }
+  return dt.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })
 }
 
 function formatDelta(value: number | string) {
@@ -174,11 +185,19 @@ function formatLedgerTitle(row: LedgerRow) {
 }
 
 function formatSaleWindow(start: string | null, end: string | null) {
-  const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
+  const options: Intl.DateTimeFormatOptions = {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'America/Los_Angeles'
+  }
   const from = start ? new Date(start) : null
   const to = end ? new Date(end) : null
-  const fromLabel = from && !Number.isNaN(from.getTime()) ? from.toLocaleDateString('en-US', options) : null
-  const toLabel = to && !Number.isNaN(to.getTime()) ? to.toLocaleDateString('en-US', options) : null
+  const fromLabel = from && !Number.isNaN(from.getTime())
+    ? (dashboardHydrated.value ? from.toLocaleDateString('en-US', options) : from.toISOString().slice(0, 10))
+    : null
+  const toLabel = to && !Number.isNaN(to.getTime())
+    ? (dashboardHydrated.value ? to.toLocaleDateString('en-US', options) : to.toISOString().slice(0, 10))
+    : null
   if (fromLabel && toLabel) return `${fromLabel} to ${toLabel}`
   if (fromLabel) return `Starts ${fromLabel}`
   if (toLabel) return `Ends ${toLabel}`
@@ -307,6 +326,7 @@ async function claimTopupFromRoute() {
 }
 
 onMounted(async () => {
+  dashboardHydrated.value = true
   await refreshAll()
   await claimTopupFromRoute()
 })
