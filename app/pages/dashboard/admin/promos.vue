@@ -7,12 +7,17 @@ type PromoCode = {
   description: string | null
   discount_type: 'percent' | 'fixed_cents'
   discount_value: number
-  applies_to: 'all' | 'membership' | 'credits'
+  applies_to: 'all' | 'membership' | 'credits' | 'holds'
   active: boolean
   starts_at: string | null
   ends_at: string | null
   max_redemptions: number | null
   redemptions_count: number
+  square_discount_id?: string | null
+  square_sync?: {
+    valid: boolean
+    reason: string
+  }
   metadata?: {
     applies_tier_ids?: string[]
   } | null
@@ -34,7 +39,7 @@ const form = reactive({
   description: '',
   discountType: 'percent' as 'percent' | 'fixed_cents',
   discountValue: 10,
-  appliesTo: 'all' as 'all' | 'membership' | 'credits',
+  appliesTo: 'all' as 'all' | 'membership' | 'credits' | 'holds',
   appliesTierIds: [] as string[],
   active: true,
   startsAt: null as string | null,
@@ -125,7 +130,44 @@ watch(promos, (next) => {
   if (!stillExists) loadPromo(next[0]!.id)
 }, { immediate: true })
 
+const validationErrors = computed(() => {
+  const errors: string[] = []
+  const code = form.code.trim().toUpperCase()
+  if (!code) errors.push('Code is required.')
+  if (code.length < 2 || code.length > 64) errors.push('Code must be 2-64 characters.')
+  if (!/^[A-Z0-9_-]+$/.test(code)) errors.push('Code can only include letters, numbers, "_" or "-".')
+
+  if (!Number.isFinite(form.discountValue) || form.discountValue <= 0) {
+    errors.push('Discount value must be greater than zero.')
+  }
+  if (form.discountType === 'percent' && form.discountValue > 100) {
+    errors.push('Percent discount cannot exceed 100%.')
+  }
+
+  const startsAtMs = form.startsAt ? Date.parse(form.startsAt) : Number.NaN
+  const endsAtMs = form.endsAt ? Date.parse(form.endsAt) : Number.NaN
+  if (Number.isFinite(startsAtMs) && Number.isFinite(endsAtMs) && endsAtMs <= startsAtMs) {
+    errors.push('End date must be after start date.')
+  }
+
+  if (form.appliesTo === 'membership' && form.appliesTierIds.some(id => !id.trim())) {
+    errors.push('Membership tier scope contains an invalid tier id.')
+  }
+
+  return errors
+})
+
+const canSave = computed(() => !validationErrors.value.length && !saving.value)
+
 async function savePromo() {
+  if (validationErrors.value.length) {
+    toast.add({
+      title: 'Invalid promo configuration',
+      description: validationErrors.value[0],
+      color: 'error'
+    })
+    return
+  }
   saving.value = true
   try {
     await $fetch('/api/admin/promos.upsert', {
@@ -189,6 +231,17 @@ function formatPromoAppliesTo(promo: PromoCode) {
   const labels = tierIds.map(id => tierMap.get(id) ?? id)
   return `Memberships: ${labels.join(', ')}`
 }
+
+function formatSquareSyncReason(reason: string | null | undefined) {
+  if (!reason) return 'Not synced'
+  if (reason === 'ok') return 'Synced'
+  if (reason === 'missing_square_discount') return 'Not synced'
+  if (reason === 'not_found') return 'Missing in Square'
+  if (reason === 'deleted') return 'Deleted in Square'
+  if (reason === 'not_discount') return 'Invalid Square object'
+  if (reason === 'square_unavailable') return 'Square unavailable'
+  return reason
+}
 </script>
 
 <template>
@@ -250,6 +303,13 @@ function formatPromoAppliesTo(promo: PromoCode) {
                     >
                       {{ formatPromoAppliesTo(promo) }}
                     </UBadge>
+                    <UBadge
+                      size="xs"
+                      :color="promo.square_sync?.valid ? 'success' : 'warning'"
+                      variant="soft"
+                    >
+                      {{ formatSquareSyncReason(promo.square_sync?.reason) }}
+                    </UBadge>
                   </div>
                 </button>
                 <UButton
@@ -278,7 +338,8 @@ function formatPromoAppliesTo(promo: PromoCode) {
                   :items="[
                     { label: 'All', value: 'all' },
                     { label: 'Membership', value: 'membership' },
-                    { label: 'Credits', value: 'credits' }
+                    { label: 'Credits', value: 'credits' },
+                    { label: 'Holds', value: 'holds' }
                   ]"
                 />
               </UFormField>
@@ -375,8 +436,27 @@ function formatPromoAppliesTo(promo: PromoCode) {
               <UCheckbox v-model="form.active" label="Active" />
             </div>
 
+            <UAlert
+              v-if="validationErrors.length"
+              class="mt-4"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-circle-alert"
+              :title="validationErrors[0]"
+            />
+
+            <UAlert
+              v-if="selectedId && promos.find(p => p.id === selectedId)?.square_sync?.valid === false"
+              class="mt-3"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-link-2-off"
+              :title="`Square sync status: ${formatSquareSyncReason(promos.find(p => p.id === selectedId)?.square_sync?.reason)}`"
+              description="Save this promo to re-sync its Square discount object."
+            />
+
             <div class="mt-4">
-              <UButton :loading="saving" @click="savePromo">
+              <UButton :loading="saving" :disabled="!canSave" @click="savePromo">
                 Save promo
               </UButton>
             </div>

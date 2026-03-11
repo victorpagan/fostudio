@@ -55,20 +55,102 @@ function readSquareErrorMessage(error: unknown) {
   return 'Square request failed'
 }
 
-function addCadenceDate(cadence: Cadence, anchorIso: string) {
-  const date = new Date(anchorIso)
-  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10)
-  if (cadence === 'daily') {
-    date.setUTCDate(date.getUTCDate() + 1)
-    return date.toISOString().slice(0, 10)
+function isSquareInternalApiError(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+
+  const errors = (error as { errors?: unknown }).errors
+  if (Array.isArray(errors) && errors.length > 0) {
+    const first = errors[0]
+    if (first && typeof first === 'object') {
+      const code = (first as { code?: unknown }).code
+      const category = (first as { category?: unknown }).category
+      if (code === 'INTERNAL_SERVER_ERROR' || category === 'API_ERROR') return true
+    }
   }
-  if (cadence === 'weekly') {
-    date.setUTCDate(date.getUTCDate() + 7)
-    return date.toISOString().slice(0, 10)
-  }
-  const months = cadence === 'annual' ? 12 : cadence === 'quarterly' ? 3 : 1
-  date.setUTCMonth(date.getUTCMonth() + months)
-  return date.toISOString().slice(0, 10)
+
+  const message = error instanceof Error ? error.message : ''
+  return message.includes('INTERNAL_SERVER_ERROR') || message.includes('"category": "API_ERROR"')
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function asRecord(value: unknown) {
+  if (!value || typeof value !== 'object') return null
+  return value as Record<string, unknown>
+}
+
+async function createOrderTemplateIdForPlanVariation(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  square: any,
+  planVariationId: string,
+  locationId: string
+) {
+  const variationRes = await square.catalog.object.get({
+    objectId: planVariationId,
+    includeRelatedObjects: false
+  } as never)
+  const variationObject = asRecord((variationRes as { object?: unknown, catalogObject?: unknown }).object ?? (variationRes as { catalogObject?: unknown }).catalogObject)
+  const variationData = asRecord(variationObject?.subscriptionPlanVariationData ?? variationObject?.subscription_plan_variation_data)
+  const subscriptionPlanId = readString(variationData, 'subscriptionPlanId', 'subscription_plan_id')
+  if (!subscriptionPlanId) throw new Error(`Square variation ${planVariationId} is missing subscription plan id`)
+
+  const planRes = await square.catalog.object.get({
+    objectId: subscriptionPlanId,
+    includeRelatedObjects: false
+  } as never)
+  const planObject = asRecord((planRes as { object?: unknown, catalogObject?: unknown }).object ?? (planRes as { catalogObject?: unknown }).catalogObject)
+  const planData = asRecord(planObject?.subscriptionPlanData ?? planObject?.subscription_plan_data)
+  const eligibleIdsRaw = planData?.eligibleItemIds ?? planData?.eligible_item_ids
+  const eligibleItemIds = Array.isArray(eligibleIdsRaw)
+    ? eligibleIdsRaw
+      .map(entry => typeof entry === 'string' ? entry.trim() : '')
+      .filter(Boolean)
+    : []
+  const eligibleItemId = eligibleItemIds[0] ?? null
+  if (!eligibleItemId) throw new Error(`Square plan ${subscriptionPlanId} has no eligible item id`)
+
+  const itemRes = await square.catalog.object.get({
+    objectId: eligibleItemId,
+    includeRelatedObjects: false
+  } as never)
+  const itemObject = asRecord((itemRes as { object?: unknown, catalogObject?: unknown }).object ?? (itemRes as { catalogObject?: unknown }).catalogObject)
+  const itemData = asRecord(itemObject?.itemData ?? itemObject?.item_data)
+  const itemVariations = Array.isArray(itemData?.variations) ? itemData.variations : []
+  const firstItemVariation = itemVariations
+    .map(entry => asRecord(entry))
+    .find(Boolean) ?? null
+  const itemVariationId = readString(firstItemVariation, 'id')
+  if (!itemVariationId) throw new Error(`Square item ${eligibleItemId} has no item variation id`)
+
+  const orderRes = await square.orders.create({
+    idempotencyKey: randomUUID(),
+    order: {
+      locationId,
+      state: 'DRAFT',
+      lineItems: [
+        {
+          catalogObjectId: itemVariationId,
+          quantity: '1'
+        }
+      ]
+    }
+  } as never)
+
+  const order = asRecord((orderRes as { order?: unknown }).order)
+  const orderId = readString(order, 'id')
+  if (!orderId) throw new Error(`Could not create order template for variation ${planVariationId}`)
+  return orderId
+}
+
+function isSquareCardOnFileId(value: string | null | undefined) {
+  if (!value) return false
+  return value.trim().startsWith('ccof:')
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10)
 }
 
 function readMetadataPriceCents(metadata: Record<string, unknown> | null | undefined) {
@@ -79,6 +161,13 @@ function readMetadataPriceCents(metadata: Record<string, unknown> | null | undef
     if (Number.isFinite(parsed)) return Math.floor(parsed)
   }
   return null
+}
+
+function readMetadataPromoSquareDiscountId(metadata: Record<string, unknown> | null | undefined) {
+  const raw = metadata?.promo_square_discount_id
+  if (typeof raw !== 'string') return null
+  const value = raw.trim()
+  return value || null
 }
 
 export default defineEventHandler(async (event) => {
@@ -158,72 +247,186 @@ export default defineEventHandler(async (event) => {
   const square = await useSquareClient(event)
   const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
   const idempotencyBase = `mco:${session.id}`
+  const logPrefix = '[checkout/pay]'
+
+  console.info(logPrefix, 'start', {
+    sessionId: session.id,
+    token: session.token,
+    status: session.status,
+    tier: session.tier,
+    cadence: session.cadence,
+    planVariationId,
+    amountCents,
+    currency,
+    sourceIdPrefix: body.sourceId?.trim().slice(0, 5) ?? null,
+    hasSourceId: Boolean(body.sourceId?.trim()),
+    hasCardId: Boolean(body.cardId?.trim())
+  })
 
   let selectedCardId = body.cardId?.trim() || null
-  if (selectedCardId) {
-    const listRes = await square.cards.list({ customerId: squareCustomerId, includeDisabled: false } as never)
-    const cards = Array.isArray((listRes as { cards?: unknown }).cards)
-      ? ((listRes as { cards?: Array<Record<string, unknown>> }).cards ?? [])
-      : []
-    const exists = cards.some(card => readString(card, 'id') === selectedCardId)
-    if (!exists) throw createError({ statusCode: 400, statusMessage: 'Selected card is not available.' })
-  }
-
   if (!selectedCardId) {
     const sourceId = body.sourceId?.trim()
     if (!sourceId) throw createError({ statusCode: 400, statusMessage: 'Card token is required.' })
-    try {
-      const cardRes = await square.cards.create({
-        idempotencyKey: `${idempotencyBase}:c`,
-        sourceId,
-        card: {
-          customerId: squareCustomerId
+
+    if (isSquareCardOnFileId(sourceId)) {
+      selectedCardId = sourceId
+      console.info(logPrefix, 'using-source-card-id', {
+        sessionId: session.id,
+        cardIdSuffix: selectedCardId.slice(-6)
+      })
+    } else {
+      try {
+        const cardRes = await square.cards.create({
+          idempotencyKey: `${idempotencyBase}:c`,
+          sourceId,
+          card: {
+            customerId: squareCustomerId
+          }
+        } as never)
+        const createdCard = (cardRes as { card?: Record<string, unknown> | null }).card ?? null
+        selectedCardId = readString(createdCard, 'id')
+        if (!selectedCardId) {
+          throw createError({ statusCode: 502, statusMessage: 'Square did not return a card id.' })
         }
-      } as never)
-      const createdCard = (cardRes as { card?: Record<string, unknown> | null }).card ?? null
-      selectedCardId = readString(createdCard, 'id')
-      if (!selectedCardId) {
-        throw createError({ statusCode: 502, statusMessage: 'Square did not return a card id.' })
+        console.info(logPrefix, 'created-card', {
+          sessionId: session.id,
+          cardIdSuffix: selectedCardId.slice(-6)
+        })
+      } catch (error) {
+        console.error(logPrefix, 'create-card-failed', {
+          sessionId: session.id,
+          message: readSquareErrorMessage(error)
+        })
+        throw createError({ statusCode: 502, statusMessage: `Failed to save card: ${readSquareErrorMessage(error)}` })
       }
-    } catch (error) {
-      throw createError({ statusCode: 502, statusMessage: `Failed to save card: ${readSquareErrorMessage(error)}` })
     }
   }
 
-  let paymentId: string | null = null
-  let paymentCreatedAt: string | null = null
-  if (amountCents > 0) {
-    try {
-      const paymentRes = await square.payments.create({
-        idempotencyKey: `${idempotencyBase}:p`,
-        sourceId: selectedCardId,
-        customerId: squareCustomerId,
-        autocomplete: true,
-        locationId,
-        amountMoney: {
-          amount: BigInt(amountCents),
-          currency
-        },
-        note: `FO Studio membership checkout (${session.tier}/${session.cadence})`,
-        referenceId: session.id
-      } as never)
-      const payment = (paymentRes as { payment?: Record<string, unknown> | null }).payment ?? null
-      const paymentStatus = readString(payment, 'status')?.toUpperCase() ?? null
-      if (paymentStatus !== 'COMPLETED') {
-        throw createError({ statusCode: 402, statusMessage: 'Payment not completed.' })
-      }
-      paymentId = readString(payment, 'id')
-      paymentCreatedAt = readString(payment, 'createdAt', 'created_at')
-    } catch (error) {
-      throw createError({ statusCode: 402, statusMessage: `Card charge failed: ${readSquareErrorMessage(error)}` })
-    }
+  if (!selectedCardId) {
+    throw createError({ statusCode: 400, statusMessage: 'No payment method is available for this checkout.' })
   }
+
+  console.info(logPrefix, 'card-selected', {
+    sessionId: session.id,
+    cardIdSuffix: selectedCardId.slice(-6)
+  })
+
+  let paymentId: string | null = null
 
   let subscriptionId: string | null = session.square_subscription_id?.trim() || null
   if (!subscriptionId) {
-    const startDate = addCadenceDate(session.cadence, paymentCreatedAt ?? new Date().toISOString())
-    const subscriptionPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, planVariationId)
-    try {
+    const startDate = todayIsoDate()
+    let subscriptionPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, planVariationId)
+    const promoSquareDiscountId = readMetadataPromoSquareDiscountId(session.metadata)
+
+    if (promoSquareDiscountId) {
+      try {
+        const discountRes = await square.catalog.object.get({
+          objectId: promoSquareDiscountId,
+          includeRelatedObjects: false
+        } as never)
+        const discountObject = asRecord((discountRes as { object?: unknown, catalogObject?: unknown }).object ?? (discountRes as { catalogObject?: unknown }).catalogObject)
+        const discountType = typeof discountObject?.type === 'string' ? discountObject.type : null
+        const discountDeleted = discountObject?.isDeleted === true || discountObject?.is_deleted === true
+        if (discountType !== 'DISCOUNT' || discountDeleted) {
+          throw createError({
+            statusCode: 409,
+            statusMessage: 'Promo discount is no longer valid in Square. Re-save the promo and retry checkout.'
+          })
+        }
+      } catch (error) {
+        if ((error as { statusCode?: unknown })?.statusCode === 409) throw error
+        throw createError({
+          statusCode: 409,
+          statusMessage: `Promo discount is not available in Square: ${readSquareErrorMessage(error)}`
+        })
+      }
+
+      subscriptionPhases = (subscriptionPhases ?? []).map((phase) => {
+        const p = phase as Record<string, unknown>
+        const pricing = (p.pricing ?? null) as Record<string, unknown> | null
+        const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
+        if (pricingType !== 'RELATIVE') return p
+
+        const currentDiscountIds = Array.isArray(pricing?.discountIds)
+          ? pricing.discountIds.map(value => String(value)).filter(Boolean)
+          : []
+        if (!currentDiscountIds.includes(promoSquareDiscountId)) {
+          currentDiscountIds.push(promoSquareDiscountId)
+        }
+
+        return {
+          ...p,
+          pricing: {
+            ...(pricing ?? {}),
+            type: 'RELATIVE',
+            discountIds: currentDiscountIds
+          }
+        }
+      })
+    }
+
+    const hasRelativePhaseWithoutOrderTemplate = Array.isArray(subscriptionPhases) && subscriptionPhases.some((phase) => {
+      const p = phase as Record<string, unknown>
+      const pricing = (p.pricing ?? null) as Record<string, unknown> | null
+      const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
+      const orderTemplateId = typeof p.orderTemplateId === 'string' && p.orderTemplateId.trim()
+        ? p.orderTemplateId.trim()
+      : null
+      return pricingType === 'RELATIVE' && !orderTemplateId
+    })
+
+    if (hasRelativePhaseWithoutOrderTemplate) {
+      try {
+        const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId)
+        subscriptionPhases = (subscriptionPhases ?? []).map((phase) => {
+          const p = phase as Record<string, unknown>
+          const pricing = (p.pricing ?? null) as Record<string, unknown> | null
+          const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
+          const existingOrderTemplateId = typeof p.orderTemplateId === 'string' && p.orderTemplateId.trim()
+            ? p.orderTemplateId.trim()
+            : null
+          if (pricingType === 'RELATIVE' && !existingOrderTemplateId) {
+            return {
+              ...p,
+              orderTemplateId
+            }
+          }
+          return p
+        })
+        console.info(logPrefix, 'phase-order-template-injected', {
+          sessionId: session.id,
+          planVariationId,
+          orderTemplateId
+        })
+      } catch (error) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: `Square plan variation ${planVariationId} has RELATIVE phase pricing but no order template. Could not auto-create template: ${readSquareErrorMessage(error)}`
+        })
+      }
+    }
+
+    console.info(logPrefix, 'subscription-phase-resolution', {
+      sessionId: session.id,
+      planVariationId,
+      startDate,
+      phaseCount: Array.isArray(subscriptionPhases) ? subscriptionPhases.length : 0,
+      phases: Array.isArray(subscriptionPhases)
+        ? subscriptionPhases.map((phase) => {
+          const p = phase as Record<string, unknown>
+          const pricing = (p.pricing ?? null) as Record<string, unknown> | null
+          return {
+            ordinal: p.ordinal,
+            cadence: p.cadence,
+            orderTemplateId: p.orderTemplateId ?? null,
+            pricingType: pricing?.type ?? null,
+            discountIds: Array.isArray(pricing?.discountIds) ? pricing?.discountIds : []
+          }
+        })
+        : []
+    })
+    const buildCreatePayload = (phases: unknown) => {
       const createPayload: Record<string, unknown> = {
         idempotencyKey: `${idempotencyBase}:s`,
         locationId,
@@ -234,17 +437,74 @@ export default defineEventHandler(async (event) => {
         timezone: 'America/Los_Angeles',
         source: { name: 'FO Studio membership checkout pay' }
       }
+      if (Array.isArray(phases) && phases.length) createPayload.phases = phases
+      return createPayload
+    }
 
-      if (subscriptionPhases?.length) {
-        createPayload.phases = subscriptionPhases
+    let lastError: unknown = null
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        if (attempt > 1) {
+          await sleep(600 * attempt)
+          const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId)
+          subscriptionPhases = (subscriptionPhases ?? []).map((phase) => {
+            const p = phase as Record<string, unknown>
+            const pricing = (p.pricing ?? null) as Record<string, unknown> | null
+            const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
+            if (pricingType === 'RELATIVE') {
+              return {
+                ...p,
+                orderTemplateId
+              }
+            }
+            return p
+          })
+          console.info(logPrefix, 'subscription-retry-order-template-injected', {
+            sessionId: session.id,
+            attempt,
+            planVariationId,
+            orderTemplateId
+          })
+        }
+
+        const createPayload = buildCreatePayload(subscriptionPhases)
+
+        console.info(logPrefix, 'subscription-create-request', {
+          sessionId: session.id,
+          attempt,
+          customerId: squareCustomerId,
+          planVariationId,
+          cardIdSuffix: selectedCardId.slice(-6),
+          startDate,
+          timezone: 'America/Los_Angeles',
+          hasPhases: Boolean(subscriptionPhases?.length)
+        })
+
+        const subRes = await square.subscriptions.create(createPayload as never)
+        const subscription = (subRes as { subscription?: Record<string, unknown> | null }).subscription ?? null
+        subscriptionId = readString(subscription, 'id')
+        if (!subscriptionId) throw new Error('Square did not return a subscription id')
+        console.info(logPrefix, 'subscription-created', {
+          sessionId: session.id,
+          attempt,
+          subscriptionId
+        })
+        lastError = null
+        break
+      } catch (error) {
+        lastError = error
+        console.error(logPrefix, 'subscription-create-failed', {
+          sessionId: session.id,
+          attempt,
+          planVariationId,
+          message: readSquareErrorMessage(error)
+        })
+        if (!isSquareInternalApiError(error) || attempt === 3) break
       }
+    }
 
-      const subRes = await square.subscriptions.create(createPayload as never)
-      const subscription = (subRes as { subscription?: Record<string, unknown> | null }).subscription ?? null
-      subscriptionId = readString(subscription, 'id')
-      if (!subscriptionId) throw new Error('Square did not return a subscription id')
-    } catch (error) {
-      throw createError({ statusCode: 502, statusMessage: `Failed to create subscription: ${readSquareErrorMessage(error)}` })
+    if (!subscriptionId) {
+      throw createError({ statusCode: 502, statusMessage: `Failed to create subscription: ${readSquareErrorMessage(lastError)}` })
     }
   }
 
@@ -276,6 +536,12 @@ export default defineEventHandler(async (event) => {
     .eq('id', session.id)
 
   if (updateErr) throw createError({ statusCode: 500, statusMessage: updateErr.message })
+
+  console.info(logPrefix, 'session-updated', {
+    sessionId: session.id,
+    subscriptionId,
+    paymentId
+  })
 
   return {
     ok: true,

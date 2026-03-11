@@ -47,6 +47,14 @@ type CreditSummary = {
   membershipCreditExpiryDays: number
   topoffCreditExpiryDays: number
 }
+type SavedCardMethod = {
+  id: string
+  brand: string | null
+  last4: string | null
+  expMonth: number | null
+  expYear: number | null
+  cardholderName: string | null
+}
 
 const { data: membership } = await useAsyncData('dash:credits:membership', async () => {
   if (!user.value) return null
@@ -95,9 +103,16 @@ const { data: creditSummary, refresh: refreshCreditSummary } = await useAsyncDat
   const res = await $fetch<{ summary: CreditSummary | null }>('/api/credits/summary')
   return res.summary
 }, { watch: [user, hasActiveMembership] })
+const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAsyncData('dash:credits:payment-methods', async () => {
+  if (!user.value?.sub) return { methods: [] as SavedCardMethod[] }
+  return await $fetch<{ methods: SavedCardMethod[] }>('/api/payments/methods')
+}, { watch: [() => user.value?.sub] })
 
 const displayedCreditBalance = computed(() => creditSummary.value?.totalBalance ?? balance.value ?? 0)
 const canBuyTopoff = computed(() => creditSummary.value?.canBuyTopoff ?? true)
+const savedCards = computed(() => paymentMethodsData.value?.methods ?? [])
+const defaultSavedCardId = computed(() => savedCards.value[0]?.id ?? null)
+const hasSavedCardOnFile = computed(() => Boolean(defaultSavedCardId.value))
 
 const topupLoadingKey = ref<string | null>(null)
 const topupClaimInFlight = ref(false)
@@ -109,6 +124,7 @@ const pendingTopupToken = ref<string | null>(null)
 const pendingTopupAmountCents = ref(0)
 const pendingTopupCurrency = ref('USD')
 const pendingTopupLabel = ref('credits')
+const promoCode = ref('')
 const dashboardHydrated = ref(false)
 
 function asNumber(value: unknown) {
@@ -216,7 +232,8 @@ async function refreshAll() {
     refreshBalance(),
     refreshCreditSummary(),
     refreshLedger(),
-    refreshTopupOptions()
+    refreshTopupOptions(),
+    refreshPaymentMethods()
   ])
 }
 
@@ -231,7 +248,10 @@ async function startTopup(optionKey: string) {
       label?: string
     }>('/api/credits/topup/session', {
       method: 'POST',
-      body: { optionKey }
+      body: {
+        optionKey,
+        promo_code: promoCode.value.trim() || undefined
+      }
     })
     if (!res.topupToken) {
       throw new Error('Top-up session did not return a token.')
@@ -240,6 +260,10 @@ async function startTopup(optionKey: string) {
     pendingTopupAmountCents.value = Number(res.amountCents ?? 0)
     pendingTopupCurrency.value = String(res.currency ?? 'USD').toUpperCase()
     pendingTopupLabel.value = typeof res.label === 'string' && res.label.trim() ? res.label.trim() : 'credits'
+    if (defaultSavedCardId.value) {
+      await confirmTopupCardOnFile(defaultSavedCardId.value)
+      return
+    }
     paymentModalOpen.value = true
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
@@ -254,6 +278,14 @@ async function startTopup(optionKey: string) {
 }
 
 async function confirmTopupPayment(payload: { sourceId: string }) {
+  await processTopupPayment({ sourceId: payload.sourceId })
+}
+
+async function confirmTopupCardOnFile(cardId: string) {
+  await processTopupPayment({ cardId })
+}
+
+async function processTopupPayment(payload: { sourceId?: string, cardId?: string }) {
   if (!pendingTopupToken.value || paymentSubmitting.value) return
   paymentSubmitting.value = true
   paymentError.value = null
@@ -267,7 +299,8 @@ async function confirmTopupPayment(payload: { sourceId: string }) {
       method: 'POST',
       body: {
         token: pendingTopupToken.value,
-        sourceId: payload.sourceId
+        ...(payload.sourceId ? { sourceId: payload.sourceId } : {}),
+        ...(payload.cardId ? { cardId: payload.cardId } : {})
       }
     })
 
@@ -288,6 +321,10 @@ async function confirmTopupPayment(payload: { sourceId: string }) {
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
     paymentError.value = e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Could not complete top-up payment.'
+    if (payload.cardId) {
+      paymentModalOpen.value = true
+      await refreshPaymentMethods()
+    }
   } finally {
     paymentSubmitting.value = false
   }
@@ -521,6 +558,12 @@ watch(
                   <div class="mt-1 text-sm text-dimmed">
                     Top-off credits can be purchased anytime while membership is active.
                   </div>
+                  <div
+                    v-if="hasSavedCardOnFile"
+                    class="mt-1 text-xs text-dimmed"
+                  >
+                    Charges use your saved card on file by default.
+                  </div>
                 </div>
               </div>
 
@@ -538,6 +581,14 @@ watch(
                 icon="i-lucide-circle-alert"
                 :title="paymentError"
               />
+
+              <UFormField label="Promo code (optional)">
+                <UInput
+                  v-model="promoCode"
+                  placeholder="SPRING20"
+                  class="max-w-xs"
+                />
+              </UFormField>
 
               <div
                 v-if="topupOptionsPending"

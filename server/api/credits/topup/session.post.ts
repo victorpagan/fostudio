@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { getCreditOptionEffectivePriceCents, mapCreditOption } from '~~/server/utils/credits/topup'
+import { normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
 import type { CreditPricingOptionRow } from '~~/server/utils/credits/topup'
 
 const bodySchema = z.object({
-  optionKey: z.string().min(1)
+  optionKey: z.string().min(1),
+  promo_code: z.string().min(2).max(64).optional()
 })
 
 export default defineEventHandler(async (event) => {
@@ -28,7 +30,8 @@ export default defineEventHandler(async (event) => {
   if (!rawOption) throw createError({ statusCode: 400, statusMessage: 'Invalid credit option' })
 
   const option = rawOption as CreditPricingOptionRow
-  const effectivePriceCents = getCreditOptionEffectivePriceCents(option)
+  const promoCode = normalizePromoCode(body.promo_code)
+  const baseEffectivePriceCents = getCreditOptionEffectivePriceCents(option)
   const mappedOption = mapCreditOption(option)
 
   const { data: membership, error: membershipErr } = await supabase
@@ -44,6 +47,14 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'An active membership is required before purchasing additional credits.'
     })
   }
+
+  const promoPricing = await resolvePromoPricing({
+    supabase,
+    promoCode,
+    context: 'credits',
+    basePriceCents: baseEffectivePriceCents
+  })
+  const effectivePriceCents = promoPricing?.effectivePriceCents ?? baseEffectivePriceCents
 
   const token = randomUUID()
   const { data: topupSession, error: topupErr } = await db
@@ -63,7 +74,11 @@ export default defineEventHandler(async (event) => {
         option_label: mappedOption.label,
         base_price_cents: mappedOption.basePriceCents,
         effective_price_cents: effectivePriceCents,
-        sale_active: mappedOption.saleActive
+        sale_active: mappedOption.saleActive,
+        promo_code: promoPricing?.code ?? null,
+        promo_id: promoPricing?.promoId ?? null,
+        promo_discount_cents: promoPricing?.discountCents ?? null,
+        promo_square_discount_id: promoPricing?.squareDiscountId ?? null
       }
     })
     .select('id,token')
@@ -79,6 +94,12 @@ export default defineEventHandler(async (event) => {
     amountCents: effectivePriceCents,
     currency: 'USD',
     credits: mappedOption.credits,
-    label: mappedOption.label
+    label: mappedOption.label,
+    promo: promoPricing
+      ? {
+          code: promoPricing.code,
+          discountCents: promoPricing.discountCents
+        }
+      : null
   }
 })

@@ -1,15 +1,22 @@
 import { randomUUID } from 'node:crypto'
+import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
+import { normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
 
 const DEFAULT_HOLD_TOPUP_LABEL = 'Overnight hold add-on'
 const DEFAULT_HOLD_TOPUP_PRICE_CENTS = 2500
 const DEFAULT_HOLD_TOPUP_QUANTITY = 1
+const bodySchema = z.object({
+  promo_code: z.string().min(2).max(64).optional()
+})
 
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
 
   const supabase = serverSupabaseServiceRole(event)
+  const rawBody = await readBody(event).catch(() => ({}))
+  const body = bodySchema.parse(rawBody ?? {})
 
   const { data: membership, error: membershipErr } = await supabase
     .from('memberships')
@@ -49,6 +56,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 503, statusMessage: 'Hold top-up is not configured.' })
   }
 
+  const promoCode = normalizePromoCode(body.promo_code)
+  const promoPricing = await resolvePromoPricing({
+    supabase,
+    promoCode,
+    context: 'holds',
+    basePriceCents: amountCents
+  })
+  const effectiveAmountCents = promoPricing?.effectivePriceCents ?? amountCents
+
   const token = randomUUID()
   const { data: topupSession, error: topupErr } = await supabase
     .from('hold_topup_sessions')
@@ -57,14 +73,19 @@ export default defineEventHandler(async (event) => {
       user_id: user.sub,
       membership_id: membership.id,
       holds,
-      amount_cents: amountCents,
+      amount_cents: effectiveAmountCents,
       currency: 'USD',
       status: 'pending',
       payment_provider: 'square',
       metadata: {
         label,
         holds,
-        amount_cents: amountCents
+        amount_cents: effectiveAmountCents,
+        base_amount_cents: amountCents,
+        promo_code: promoPricing?.code ?? null,
+        promo_id: promoPricing?.promoId ?? null,
+        promo_discount_cents: promoPricing?.discountCents ?? null,
+        promo_square_discount_id: promoPricing?.squareDiscountId ?? null
       }
     })
     .select('id,token')
@@ -77,9 +98,15 @@ export default defineEventHandler(async (event) => {
   return {
     provider: 'square_web_payments',
     topupToken: topupSession.token,
-    amountCents,
+    amountCents: effectiveAmountCents,
     currency: 'USD',
     holds,
-    label
+    label,
+    promo: promoPricing
+      ? {
+          code: promoPricing.code,
+          discountCents: promoPricing.discountCents
+        }
+      : null
   }
 })

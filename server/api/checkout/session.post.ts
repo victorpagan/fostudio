@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { resolveServerUserRole } from '~~/server/utils/auth'
 import { getSingleTierCapacity, isPriorityMemberForWaitlist } from '~~/server/utils/membership/capacity'
+import { normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 
 const bodySchema = z.object({
@@ -19,27 +20,6 @@ type GuestCheckoutSessionInsertResult = {
   id: string
   token: string
 }
-type PromoRow = {
-  id: string
-  code: string
-  discount_type: 'percent' | 'fixed_cents'
-  discount_value: number | string
-  applies_to: 'all' | 'membership' | 'credits'
-  active: boolean
-  starts_at: string | null
-  ends_at: string | null
-  max_redemptions: number | null
-  redemptions_count: number
-  metadata: Record<string, unknown> | null
-}
-
-type PromoPricing = {
-  code: string
-  promoId: string
-  discountCents: number
-  effectivePriceCents: number
-}
-
 function normalizeReturnTo(value: string | undefined, fallback = '/dashboard/membership') {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return fallback
   return value
@@ -48,83 +28,6 @@ function normalizeReturnTo(value: string | undefined, fallback = '/dashboard/mem
 function normalizeEmail(value: string | undefined) {
   const normalized = (value ?? '').trim().toLowerCase()
   return normalized || null
-}
-
-function normalizePromoCode(value: string | undefined) {
-  const normalized = (value ?? '').trim().toUpperCase()
-  return normalized || null
-}
-
-function readPromoTierScope(metadata: Record<string, unknown> | null | undefined) {
-  const raw = metadata?.applies_tier_ids
-  if (!Array.isArray(raw)) return [] as string[]
-  return raw.map(entry => String(entry ?? '').trim()).filter(Boolean)
-}
-
-
-async function resolveMembershipPromoPricing(params: {
-  supabase: any
-  promoCode: string | null
-  tierId: string
-  basePriceCents: number
-}) {
-  if (!params.promoCode) return null
-
-  const { data: promoRaw, error } = await params.supabase
-    .from('promo_codes')
-    .select('*')
-    .eq('code', params.promoCode)
-    .maybeSingle()
-
-  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
-  if (!promoRaw) throw createError({ statusCode: 400, statusMessage: 'Invalid promo code.' })
-
-  const promo = promoRaw as PromoRow
-  if (!promo.active) throw createError({ statusCode: 400, statusMessage: 'Promo code is inactive.' })
-  if (promo.applies_to !== 'all' && promo.applies_to !== 'membership') {
-    throw createError({ statusCode: 400, statusMessage: 'Promo code is not valid for memberships.' })
-  }
-
-  const now = Date.now()
-  const startsAt = promo.starts_at ? Date.parse(promo.starts_at) : Number.NaN
-  const endsAt = promo.ends_at ? Date.parse(promo.ends_at) : Number.NaN
-  if (Number.isFinite(startsAt) && now < startsAt) throw createError({ statusCode: 400, statusMessage: 'Promo code is not active yet.' })
-  if (Number.isFinite(endsAt) && now >= endsAt) throw createError({ statusCode: 400, statusMessage: 'Promo code has expired.' })
-
-  const tierScope = readPromoTierScope(promo.metadata)
-  if (tierScope.length > 0 && !tierScope.includes(params.tierId)) {
-    throw createError({ statusCode: 400, statusMessage: 'Promo code does not apply to this membership tier.' })
-  }
-
-  const maxRedemptions = typeof promo.max_redemptions === 'number' ? promo.max_redemptions : null
-  if (maxRedemptions !== null && Number(promo.redemptions_count ?? 0) >= maxRedemptions) {
-    throw createError({ statusCode: 400, statusMessage: 'Promo code redemption limit reached.' })
-  }
-
-  const discountValue = Number(promo.discount_value ?? 0)
-  if (!Number.isFinite(discountValue) || discountValue <= 0) {
-    throw createError({ statusCode: 400, statusMessage: 'Promo code discount value is invalid.' })
-  }
-
-  let discountCents = 0
-  if (promo.discount_type === 'percent') {
-    discountCents = Math.round(params.basePriceCents * Math.min(100, Math.max(0, discountValue)) / 100)
-  } else {
-    discountCents = Math.round(discountValue)
-  }
-
-  discountCents = Math.max(0, Math.min(params.basePriceCents, discountCents))
-  const effectivePriceCents = Math.max(0, params.basePriceCents - discountCents)
-  if (effectivePriceCents > 0 && effectivePriceCents < 100) {
-    throw createError({ statusCode: 400, statusMessage: 'Promo reduces price below Square minimum ($1.00).' })
-  }
-
-  return {
-    code: promo.code,
-    promoId: promo.id,
-    discountCents,
-    effectivePriceCents
-  } as PromoPricing
 }
 
 function addCadenceInterval(startIso: string, cadence: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual') {
@@ -210,9 +113,10 @@ export default defineEventHandler(async (event) => {
   const planCurrency = typeof variation.currency === 'string' && variation.currency.trim()
     ? variation.currency.trim().toUpperCase()
     : 'USD'
-  const promoPricing = await resolveMembershipPromoPricing({
+  const promoPricing = await resolvePromoPricing({
     supabase,
     promoCode,
+    context: 'membership',
     tierId,
     basePriceCents: planPriceCents
   })
@@ -306,6 +210,7 @@ export default defineEventHandler(async (event) => {
               promo_code: promoPricing.code,
               promo_id: promoPricing.promoId,
               promo_discount_cents: promoPricing.discountCents,
+              promo_square_discount_id: promoPricing.squareDiscountId,
               base_price_cents: planPriceCents,
               effective_price_cents: effectivePlanPriceCents
             }
@@ -399,6 +304,7 @@ export default defineEventHandler(async (event) => {
               promo_code: promoPricing.code,
               promo_id: promoPricing.promoId,
               promo_discount_cents: promoPricing.discountCents,
+              promo_square_discount_id: promoPricing.squareDiscountId,
               base_price_cents: planPriceCents,
               effective_price_cents: effectivePlanPriceCents
             }

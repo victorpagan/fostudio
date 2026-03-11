@@ -515,6 +515,7 @@ const paymentToken = ref<string | null>(null)
 const paymentAmountCents = ref(0)
 const paymentCurrency = ref('USD')
 const paymentLabel = ref('purchase')
+const purchasePromoCode = ref('')
 const membershipCancelLoading = ref(false)
 const membershipUndoCancelLoading = ref(false)
 const doorCodeRequestLoading = ref(false)
@@ -756,7 +757,10 @@ async function startTopup(optionKey: string) {
       label?: string
     }>('/api/credits/topup/session', {
       method: 'POST',
-      body: { optionKey }
+      body: {
+        optionKey,
+        promo_code: purchasePromoCode.value.trim() || undefined
+      }
     })
     if (!res.topupToken) throw new Error('Top-up session did not return a token.')
     paymentFlow.value = 'credits'
@@ -791,7 +795,10 @@ async function startHoldTopup() {
       currency?: string
       label?: string
     }>('/api/holds/topup/session', {
-      method: 'POST'
+      method: 'POST',
+      body: {
+        promo_code: purchasePromoCode.value.trim() || undefined
+      }
     })
     if (!res.topupToken) throw new Error('Hold session did not return a token.')
     paymentFlow.value = 'holds'

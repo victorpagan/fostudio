@@ -5,6 +5,7 @@ import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
 import { buildExpiryIsoFromDays, resolveTopoffCreditExpiryDays } from '~~/server/utils/credits/buckets'
+import { markPromoRedemption } from '~~/server/utils/promos'
 
 const bodySchema = z.object({
   token: z.string().uuid(),
@@ -55,6 +56,11 @@ function readString(source: Record<string, unknown> | null | undefined, ...keys:
     if (typeof value === 'string' && value.trim()) return value.trim()
   }
   return null
+}
+
+function readPromoId(source: Record<string, unknown> | null | undefined) {
+  const value = readString(source, 'promo_id')
+  return value ?? null
 }
 
 async function readBalance(supabase: any, userId: string) {
@@ -153,29 +159,33 @@ export default defineEventHandler(async (event) => {
   if (!paymentSourceId) throw createError({ statusCode: 400, statusMessage: 'Card token is required.' })
 
   let paymentId: string | null = null
-  try {
-    const payRes = await square.payments.create({
-      idempotencyKey: `${idempotencyBase}:p`,
-      sourceId: paymentSourceId,
-      customerId: body.cardId ? squareCustomerId : undefined,
-      autocomplete: true,
-      locationId,
-      amountMoney: {
-        amount: BigInt(Math.round(Number(topup.amount_cents))),
-        currency: 'USD'
-      },
-      note: `FO Studio credit top-up (${topup.credits} credits)`,
-      referenceId: topup.id
-    } as never)
-    const payment = (payRes as { payment?: Record<string, unknown> | null }).payment ?? null
-    const paymentStatus = readString(payment, 'status')?.toUpperCase() ?? null
-    if (paymentStatus !== 'COMPLETED') {
-      throw createError({ statusCode: 402, statusMessage: 'Payment not completed.' })
+  if (Number(topup.amount_cents) <= 0) {
+    paymentId = `promo_free:${topup.id}`
+  } else {
+    try {
+      const payRes = await square.payments.create({
+        idempotencyKey: `${idempotencyBase}:p`,
+        sourceId: paymentSourceId,
+        customerId: body.cardId ? squareCustomerId : undefined,
+        autocomplete: true,
+        locationId,
+        amountMoney: {
+          amount: BigInt(Math.round(Number(topup.amount_cents))),
+          currency: 'USD'
+        },
+        note: `FO Studio credit top-up (${topup.credits} credits)`,
+        referenceId: topup.id
+      } as never)
+      const payment = (payRes as { payment?: Record<string, unknown> | null }).payment ?? null
+      const paymentStatus = readString(payment, 'status')?.toUpperCase() ?? null
+      if (paymentStatus !== 'COMPLETED') {
+        throw createError({ statusCode: 402, statusMessage: 'Payment not completed.' })
+      }
+      paymentId = readString(payment, 'id')
+      if (!paymentId) throw new Error('Square did not return a payment id')
+    } catch (error) {
+      throw createError({ statusCode: 402, statusMessage: `Card charge failed: ${readSquareErrorMessage(error)}` })
     }
-    paymentId = readString(payment, 'id')
-    if (!paymentId) throw new Error('Square did not return a payment id')
-  } catch (error) {
-    throw createError({ statusCode: 402, statusMessage: `Card charge failed: ${readSquareErrorMessage(error)}` })
   }
 
   let ledgerEntryId = topup.ledger_entry_id
@@ -228,6 +238,11 @@ export default defineEventHandler(async (event) => {
     .eq('id', topup.id)
 
   if (updateErr) throw createError({ statusCode: 500, statusMessage: updateErr.message })
+
+  const promoId = readPromoId(topup.metadata)
+  if (promoId) {
+    await markPromoRedemption(supabase, promoId, '[credits-topup-pay]')
+  }
 
   return {
     ok: true,
