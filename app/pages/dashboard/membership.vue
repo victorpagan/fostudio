@@ -70,6 +70,15 @@ type HoldTopupOffer = {
   currency: string
 }
 
+type SavedCardMethod = {
+  id: string
+  brand: string | null
+  last4: string | null
+  expMonth: number | null
+  expYear: number | null
+  cardholderName: string | null
+}
+
 type HoldSummary = {
   holdsIncluded: number
   activeHolds: number
@@ -288,6 +297,11 @@ const { data: holdTopupOffer, refresh: refreshHoldTopupOffer } = await useAsyncD
   return res.offer
 }, { watch: [user, membershipState] })
 
+const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAsyncData('dash:membership:payment-methods', async () => {
+  if (!user.value?.sub) return { methods: [] as SavedCardMethod[] }
+  return await $fetch<{ methods: SavedCardMethod[] }>('/api/payments/methods')
+}, { watch: [() => user.value?.sub] })
+
 const { data: doorCodeState, refresh: refreshDoorCodeState } = await useAsyncData('dash:membership:door-code', async () => {
   if (!user.value || !hasActiveMembership.value) return null
   return await $fetch<DoorCodeState>('/api/membership/door-code')
@@ -379,6 +393,8 @@ const currentVariation = computed(() =>
 
 const displayedCreditBalance = computed(() => creditSummary.value?.totalBalance ?? balance.value ?? 0)
 const canBuyTopoff = computed(() => creditSummary.value?.canBuyTopoff ?? true)
+const savedCards = computed(() => paymentMethodsData.value?.methods ?? [])
+const defaultSavedCardId = computed(() => savedCards.value[0]?.id ?? null)
 
 function formatPrice(cents: number | null, currency = 'USD') {
   if (cents === null) return '—'
@@ -623,6 +639,7 @@ async function refreshAll() {
     refreshCreditSummary(),
     refreshLedger(),
     refreshTopupOptions(),
+    refreshPaymentMethods(),
     refreshHoldSummary(),
     refreshHoldTopupOffer(),
     refreshDoorCodeState()
@@ -747,6 +764,10 @@ async function startTopup(optionKey: string) {
     paymentAmountCents.value = Number(res.amountCents ?? 0)
     paymentCurrency.value = String(res.currency ?? 'USD').toUpperCase()
     paymentLabel.value = typeof res.label === 'string' && res.label.trim() ? res.label.trim() : 'credit top-up'
+    if (defaultSavedCardId.value) {
+      await processPayment({ cardId: defaultSavedCardId.value })
+      return
+    }
     paymentModalOpen.value = true
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
@@ -778,6 +799,10 @@ async function startHoldTopup() {
     paymentAmountCents.value = Number(res.amountCents ?? 0)
     paymentCurrency.value = String(res.currency ?? 'USD').toUpperCase()
     paymentLabel.value = typeof res.label === 'string' && res.label.trim() ? res.label.trim() : 'hold purchase'
+    if (defaultSavedCardId.value) {
+      await processPayment({ cardId: defaultSavedCardId.value })
+      return
+    }
     paymentModalOpen.value = true
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
@@ -792,6 +817,15 @@ async function startHoldTopup() {
 }
 
 async function confirmModalPayment(payload: { sourceId: string }) {
+  await processPayment({ sourceId: payload.sourceId })
+}
+
+function getErrorMessage(error: unknown) {
+  const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+  return e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error'
+}
+
+async function processPayment(payload: { sourceId?: string, cardId?: string }) {
   if (!paymentFlow.value || !paymentToken.value || paymentSubmitting.value) return
 
   paymentSubmitting.value = true
@@ -806,7 +840,8 @@ async function confirmModalPayment(payload: { sourceId: string }) {
         method: 'POST',
         body: {
           token: paymentToken.value,
-          sourceId: payload.sourceId
+          ...(payload.sourceId ? { sourceId: payload.sourceId } : {}),
+          ...(payload.cardId ? { cardId: payload.cardId } : {})
         }
       })
 
@@ -833,7 +868,8 @@ async function confirmModalPayment(payload: { sourceId: string }) {
         method: 'POST',
         body: {
           token: paymentToken.value,
-          sourceId: payload.sourceId
+          ...(payload.sourceId ? { sourceId: payload.sourceId } : {}),
+          ...(payload.cardId ? { cardId: payload.cardId } : {})
         }
       })
 
@@ -855,10 +891,20 @@ async function confirmModalPayment(payload: { sourceId: string }) {
     paymentModalOpen.value = false
     await refreshAll()
   } catch (error: unknown) {
-    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
+    const message = getErrorMessage(error)
+    if (payload.cardId) {
+      await refreshPaymentMethods()
+      paymentModalOpen.value = true
+      toast.add({
+        title: 'Saved card charge failed',
+        description: `${message}. Enter a card to continue.`,
+        color: 'warning'
+      })
+      return
+    }
     toast.add({
       title: 'Payment failed',
-      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error',
+      description: message,
       color: 'error'
     })
   } finally {
