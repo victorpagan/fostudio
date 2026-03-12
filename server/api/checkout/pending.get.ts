@@ -15,6 +15,21 @@ export default defineEventHandler(async (event) => {
   if (!email) return { pending: null }
 
   const supabase = serverSupabaseServiceRole(event)
+
+  const { data: membershipRow, error: membershipErr } = await supabase
+    .from('memberships')
+    .select('status')
+    .eq('user_id', user.sub)
+    .in('status', ['active', 'past_due'])
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
+  if (membershipRow?.status) {
+    return { pending: null }
+  }
+
   const { data: rowsRaw, error } = await supabase
     .from('membership_checkout_sessions')
     .select('token,return_to,claimed_by_user_id,claimed_membership_id')
@@ -40,4 +55,3 @@ export default defineEventHandler(async (event) => {
     }
   }
 })
-

@@ -305,7 +305,7 @@ const { data: holdTopupOffer, refresh: refreshHoldTopupOffer } = await useAsyncD
 const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAsyncData('dash:membership:payment-methods', async () => {
   if (!user.value?.sub) return { methods: [] as SavedCardMethod[], defaultCardId: null }
   return await $fetch<PaymentMethodsResponse>('/api/payments/methods')
-}, { watch: [() => user.value?.sub] })
+}, { watch: [() => user.value?.sub], server: false })
 
 const { data: doorCodeState, refresh: refreshDoorCodeState } = await useAsyncData('dash:membership:door-code', async () => {
   if (!user.value || !hasActiveMembership.value) return null

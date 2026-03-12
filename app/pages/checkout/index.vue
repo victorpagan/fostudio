@@ -67,7 +67,8 @@ const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAs
   return await $fetch<PaymentMethodsResponse>('/api/payments/methods')
 }, {
   watch: [() => user.value?.sub],
-  default: () => ({ methods: [], defaultCardId: null })
+  default: () => ({ methods: [], defaultCardId: null }),
+  server: false
 })
 
 const tiers = computed(() => data.value?.tiers ?? [])

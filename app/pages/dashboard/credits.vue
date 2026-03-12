@@ -111,7 +111,7 @@ const { data: creditSummary, refresh: refreshCreditSummary } = await useAsyncDat
 const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAsyncData('dash:credits:payment-methods', async () => {
   if (!user.value?.sub) return { methods: [] as SavedCardMethod[], defaultCardId: null }
   return await $fetch<PaymentMethodsResponse>('/api/payments/methods')
-}, { watch: [() => user.value?.sub] })
+}, { watch: [() => user.value?.sub], server: false })
 
 const displayedCreditBalance = computed(() => creditSummary.value?.totalBalance ?? balance.value ?? 0)
 const canBuyTopoff = computed(() => creditSummary.value?.canBuyTopoff ?? true)

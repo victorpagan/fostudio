@@ -36,7 +36,7 @@ async function searchSquareCustomerId(event: H3Event, email: string | null, phon
   if (email) {
     const res = await square.customers.search({
       query: { filter: { emailAddress: { exact: email } } },
-      limit: 1
+      limit: 1n
     } as never)
     const found = (res as { customers?: Array<{ id?: string | null }> | null })?.customers?.[0]
     if (found?.id) return found.id
@@ -45,7 +45,7 @@ async function searchSquareCustomerId(event: H3Event, email: string | null, phon
   if (phone) {
     const res = await square.customers.search({
       query: { filter: { phoneNumber: { exact: phone } } },
-      limit: 1
+      limit: 1n
     } as never)
     const found = (res as { customers?: Array<{ id?: string | null }> | null })?.customers?.[0]
     if (found?.id) return found.id

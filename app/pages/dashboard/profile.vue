@@ -58,7 +58,7 @@ const { data: customer, refresh } = await useAsyncData('dash:profile', async () 
 const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAsyncData('dash:profile:payment-methods', async () => {
   if (!user.value?.sub) return { methods: [] as SavedCardMethod[], defaultCardId: null }
   return await $fetch<PaymentMethodsResponse>('/api/payments/methods')
-}, { watch: [() => user.value?.sub], default: () => ({ methods: [], defaultCardId: null }) })
+}, { watch: [() => user.value?.sub], default: () => ({ methods: [], defaultCardId: null }), server: false })
 const { data: subscriptionState, refresh: refreshSubscriptionState } = await useAsyncData('dash:profile:subscription-state', async () => {
   if (!user.value?.sub) return null
   return await $fetch<SubscriptionState>('/api/membership/subscription-state')
