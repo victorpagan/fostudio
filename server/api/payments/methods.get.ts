@@ -51,7 +51,11 @@ export default defineEventHandler(async (event) => {
   }
 
   const square = await useSquareClient(event)
-  const listRes = await square.cards.list({ customerId: squareCustomerId, includeDisabled: false } as never)
+  const listRes = await square.cards.list({
+    customerId: squareCustomerId,
+    includeDisabled: false,
+    sortOrder: 'ASC'
+  } as never)
   const cards = Array.isArray((listRes as { cards?: unknown }).cards)
     ? ((listRes as { cards?: Array<Record<string, unknown>> }).cards ?? [])
     : []

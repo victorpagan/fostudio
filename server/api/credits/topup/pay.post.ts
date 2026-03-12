@@ -146,7 +146,11 @@ export default defineEventHandler(async (event) => {
 
   let paymentSourceId = body.cardId?.trim() || null
   if (paymentSourceId) {
-    const listRes = await square.cards.list({ customerId: squareCustomerId, includeDisabled: false } as never)
+    const listRes = await square.cards.list({
+      customerId: squareCustomerId,
+      includeDisabled: false,
+      sortOrder: 'ASC'
+    } as never)
     const cards = Array.isArray((listRes as { cards?: unknown }).cards)
       ? ((listRes as { cards?: Array<Record<string, unknown>> }).cards ?? [])
       : []

@@ -175,7 +175,11 @@ async function findUsableCardId(
   customerId: string
 ) {
   try {
-    const listRes = await square.cards.list({ customerId, includeDisabled: false } as never)
+    const listRes = await square.cards.list({
+      customerId,
+      includeDisabled: false,
+      sortOrder: 'ASC'
+    } as never)
     const cards = toRecordArray((listRes as { cards?: unknown }).cards)
     if (!cards.length) return null
     const first = cards.find(card => readString(card, 'id')) ?? null
