@@ -3,6 +3,7 @@ import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { resolveServerUserRole } from '~~/server/utils/auth'
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
+import { extractSquareCards } from '~~/server/utils/square/cards'
 import { buildSubscriptionCreatePhasesFromPlanVariation } from '~~/server/utils/square/subscriptionPhases'
 import { markPromoRedemption, normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
 import {
@@ -32,6 +33,8 @@ type MembershipRow = {
   current_period_end: string | null
 }
 
+const INVALID_CARD_STATUS_MESSAGE = 'Your payment card on file is invalid or expired. Update card in Profile, then retry plan change.'
+
 function normalizeStatus(value: string | null | undefined) {
   return (value ?? '').trim().toLowerCase()
 }
@@ -57,6 +60,25 @@ function toDateOnly(value: string | null | undefined) {
   return parsed.toISOString().slice(0, 10)
 }
 
+function readNumber(source: Record<string, unknown> | null | undefined, ...keys: string[]) {
+  if (!source) return null
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.floor(value)
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value)
+      if (Number.isFinite(parsed)) return Math.floor(parsed)
+    }
+  }
+  return null
+}
+
+function normalizeExpiryYear(year: number | null) {
+  if (!year) return null
+  if (year < 100) return 2000 + year
+  return year
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object') return null
   return value as Record<string, unknown>
@@ -66,7 +88,8 @@ async function createOrderTemplateIdForPlanVariation(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   square: any,
   planVariationId: string,
-  locationId: string
+  locationId: string,
+  promoSquareDiscountId?: string | null
 ) {
   const variationRes = await square.catalog.object.get({
     objectId: planVariationId,
@@ -105,7 +128,7 @@ async function createOrderTemplateIdForPlanVariation(
   const itemVariationId = readString(firstItemVariation, 'id')
   if (!itemVariationId) throw new Error(`Square item ${eligibleItemId} has no item variation id`)
 
-  const orderRes = await square.orders.create({
+  const orderPayload: Record<string, unknown> = {
     idempotencyKey: `mpswap-order:${planVariationId}:${Date.now()}`,
     order: {
       locationId,
@@ -117,7 +140,33 @@ async function createOrderTemplateIdForPlanVariation(
         }
       ]
     }
-  } as never)
+  }
+  if (promoSquareDiscountId) {
+    const discountUid = 'swap_promo'
+    const orderRecord = asRecord(orderPayload.order) ?? {}
+    const lineItems = Array.isArray(orderRecord.lineItems) ? orderRecord.lineItems as Array<Record<string, unknown>> : []
+    if (lineItems.length > 0) {
+      lineItems[0] = {
+        ...lineItems[0],
+        appliedDiscounts: [
+          {
+            discountUid
+          }
+        ]
+      }
+      orderRecord.lineItems = lineItems
+    }
+    orderRecord.discounts = [
+      {
+        uid: discountUid,
+        catalogObjectId: promoSquareDiscountId,
+        scope: 'ORDER'
+      }
+    ]
+    orderPayload.order = orderRecord
+  }
+
+  const orderRes = await square.orders.create(orderPayload as never)
 
   const order = asRecord((orderRes as { order?: unknown }).order)
   const orderId = readString(order, 'id')
@@ -137,6 +186,24 @@ function readSquareErrorMessage(error: unknown) {
   const code = (first as { code?: unknown }).code
   if (typeof code === 'string' && code.trim()) return code.trim()
   return 'Square request failed'
+}
+
+function isSquareCardStateError(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+  const errors = (error as { errors?: unknown }).errors
+  if (Array.isArray(errors) && errors.length > 0) {
+    const first = errors[0]
+    if (first && typeof first === 'object') {
+      const code = String((first as { code?: unknown }).code ?? '').toUpperCase()
+      const category = String((first as { category?: unknown }).category ?? '').toUpperCase()
+      const detail = String((first as { detail?: unknown }).detail ?? '').toLowerCase()
+      if (category === 'PAYMENT_METHOD_ERROR') return true
+      if (code === 'INVALID_CARD' || code === 'CARD_DECLINED' || code === 'VERIFY_CVV_FAILURE') return true
+      if (detail.includes('card') && (detail.includes('expired') || detail.includes('disabled') || detail.includes('not active'))) return true
+    }
+  }
+  const message = error instanceof Error ? error.message.toLowerCase() : ''
+  return message.includes('invalid_card') || (message.includes('card') && (message.includes('expired') || message.includes('not active')))
 }
 
 function isSquareInternalApiError(error: unknown) {
@@ -192,10 +259,25 @@ async function ensureRelativeOrderTemplatesOnPhases(params: {
   planVariationId: string
   locationId: string
   phases: Array<Record<string, unknown>> | null
+  promoSquareDiscountId?: string | null
+  forceRegenerateRelativeTemplates?: boolean
 }) {
-  const { square, planVariationId, locationId } = params
+  const {
+    square,
+    planVariationId,
+    locationId,
+    promoSquareDiscountId,
+    forceRegenerateRelativeTemplates
+  } = params
   let { phases } = params
   if (!Array.isArray(phases) || !phases.length) return phases
+
+  const hasRelativePhases = phases.some((phase) => {
+    const pricing = asRecord(phase.pricing)
+    const pricingType = readString(pricing, 'type')?.toUpperCase()
+    return pricingType === 'RELATIVE'
+  })
+  if (!hasRelativePhases) return phases
 
   const hasMissingRelativeOrderTemplate = phases.some((phase) => {
     const pricing = asRecord(phase.pricing)
@@ -203,14 +285,20 @@ async function ensureRelativeOrderTemplatesOnPhases(params: {
     const orderTemplateId = readString(phase, 'orderTemplateId', 'order_template_id')
     return pricingType === 'RELATIVE' && !orderTemplateId
   })
-  if (!hasMissingRelativeOrderTemplate) return phases
+  const shouldRegenerate = Boolean(forceRegenerateRelativeTemplates)
+  if (!hasMissingRelativeOrderTemplate && !shouldRegenerate) return phases
 
-  const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId)
+  const orderTemplateId = await createOrderTemplateIdForPlanVariation(
+    square,
+    planVariationId,
+    locationId,
+    promoSquareDiscountId ?? null
+  )
   phases = phases.map((phase) => {
     const pricing = asRecord(phase.pricing)
     const pricingType = readString(pricing, 'type')?.toUpperCase()
     const existingOrderTemplateId = readString(phase, 'orderTemplateId', 'order_template_id')
-    if (pricingType === 'RELATIVE' && !existingOrderTemplateId) {
+    if (pricingType === 'RELATIVE' && (shouldRegenerate || !existingOrderTemplateId)) {
       return {
         ...phase,
         orderTemplateId
@@ -220,6 +308,36 @@ async function ensureRelativeOrderTemplatesOnPhases(params: {
   })
 
   return phases
+}
+
+function buildSwapPhases(
+  phases: Array<Record<string, unknown>> | null
+) {
+  if (!Array.isArray(phases) || !phases.length) return null
+  const swapPhases: Array<{ ordinal: string | number | bigint, orderTemplateId: string }> = []
+  for (const phase of phases) {
+    const orderTemplateId = readString(phase, 'orderTemplateId', 'order_template_id')
+    const ordinal = phase.ordinal
+    const hasOrdinal = typeof ordinal === 'bigint' || typeof ordinal === 'number' || typeof ordinal === 'string'
+    if (!orderTemplateId || !hasOrdinal) continue
+    swapPhases.push({
+      ordinal,
+      orderTemplateId
+    })
+  }
+  return swapPhases.length ? swapPhases : null
+}
+
+function isCardExpired(card: Record<string, unknown>) {
+  const expMonth = readNumber(card, 'expMonth', 'exp_month')
+  const expYear = normalizeExpiryYear(readNumber(card, 'expYear', 'exp_year'))
+  if (!expMonth || !expYear) return false
+  const now = new Date()
+  const currentYear = now.getUTCFullYear()
+  const currentMonth = now.getUTCMonth() + 1
+  if (expYear < currentYear) return true
+  if (expYear === currentYear && expMonth < currentMonth) return true
+  return false
 }
 
 async function findManagedSquareSubscriptionId(
@@ -257,11 +375,18 @@ async function findManagedSquareSubscriptionId(
 }
 
 export default defineEventHandler(async (event) => {
+  const logPrefix = '[membership/change-plan]'
   const user = await serverSupabaseUser(event).catch(() => null)
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
 
   const body = bodySchema.parse(await readBody(event))
   const { isAdmin } = await resolveServerUserRole(event, user)
+  console.info(logPrefix, 'request', {
+    userId: user.sub,
+    tier: body.tier,
+    cadence: body.cadence,
+    hasPromoCode: Boolean(body.promo_code?.trim())
+  })
 
   const supabase = serverSupabaseServiceRole(event)
 
@@ -284,20 +409,25 @@ export default defineEventHandler(async (event) => {
   const currentPlanVariationId = membership.square_plan_variation_id?.trim() || null
   let customerId = membership.billing_customer_id?.trim() || membership.square_customer_id?.trim() || null
   let mappedCustomerId = membership.customer_id?.trim() || null
+  let persistedDefaultCardId: string | null = null
+  const db = supabase as any
   if (mappedCustomerId) {
-    const { data: customerRow, error: customerRowErr } = await supabase
+    const { data: customerRow, error: customerRowErr } = await db
       .from('customers')
-      .select('id,square_customer_id')
+      .select('id,square_customer_id,default_square_card_id')
       .eq('id', mappedCustomerId)
       .maybeSingle()
     if (customerRowErr) throw createError({ statusCode: 500, statusMessage: customerRowErr.message })
     if (customerRow?.square_customer_id?.trim()) {
       customerId = customerRow.square_customer_id.trim()
     }
+    persistedDefaultCardId = typeof customerRow?.default_square_card_id === 'string'
+      ? (customerRow.default_square_card_id.trim() || null)
+      : null
   } else if (!customerId) {
-    const { data: customerRow, error: customerRowErr } = await supabase
+    const { data: customerRow, error: customerRowErr } = await db
       .from('customers')
-      .select('id,square_customer_id')
+      .select('id,square_customer_id,default_square_card_id')
       .eq('user_id', user.sub)
       .maybeSingle()
     if (customerRowErr) throw createError({ statusCode: 500, statusMessage: customerRowErr.message })
@@ -305,6 +435,9 @@ export default defineEventHandler(async (event) => {
     if (customerRow?.square_customer_id?.trim()) {
       customerId = customerRow.square_customer_id.trim()
     }
+    persistedDefaultCardId = typeof customerRow?.default_square_card_id === 'string'
+      ? (customerRow.default_square_card_id.trim() || null)
+      : null
   }
   let subscriptionId = membership.billing_subscription_id?.trim() || membership.square_subscription_id?.trim() || null
 
@@ -363,6 +496,18 @@ export default defineEventHandler(async (event) => {
       basePriceCents: Number(targetVariation.price_cents ?? 0)
     })
     : null
+  console.info(logPrefix, 'resolved-membership-and-target', {
+    membershipId: membership.id,
+    currentTier: membership.tier,
+    currentCadence: membership.cadence,
+    currentPlanVariationId,
+    targetPlanVariationId,
+    billingProvider,
+    hasSubscriptionId: Boolean(subscriptionId),
+    hasCustomerId: Boolean(customerId),
+    promoCode: promoPricing?.code ?? null,
+    promoSquareDiscountId: promoPricing?.squareDiscountId ?? null
+  })
 
   let targetPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, targetPlanVariationId) as Array<Record<string, unknown>> | null
   targetPhases = applyPromoDiscountToRelativePhases(targetPhases, promoPricing?.squareDiscountId ?? null)
@@ -370,11 +515,32 @@ export default defineEventHandler(async (event) => {
     square,
     planVariationId: targetPlanVariationId,
     locationId,
-    phases: targetPhases
+    phases: targetPhases,
+    promoSquareDiscountId: promoPricing?.squareDiscountId ?? null,
+    forceRegenerateRelativeTemplates: Boolean(promoPricing?.squareDiscountId)
+  })
+  console.info(logPrefix, 'target-phases-resolved', {
+    targetPlanVariationId,
+    phaseCount: targetPhases?.length ?? 0,
+    phases: (targetPhases ?? []).map((phase) => {
+      const pricing = asRecord(phase.pricing)
+      return {
+        ordinal: phase.ordinal ?? null,
+        cadence: phase.cadence ?? null,
+        pricingType: readString(pricing, 'type') ?? null,
+        orderTemplateId: readString(phase, 'orderTemplateId', 'order_template_id'),
+        discountIds: Array.isArray(pricing?.discountIds) ? pricing.discountIds : []
+      }
+    })
   })
   if (!subscriptionId && customerId) {
     try {
       subscriptionId = await findManagedSquareSubscriptionId(square, customerId, currentPlanVariationId)
+      console.info(logPrefix, 'managed-subscription-recovery', {
+        customerId,
+        currentPlanVariationId,
+        recoveredSubscriptionId: subscriptionId
+      })
       if (subscriptionId) {
         const patch: Record<string, unknown> = {
           billing_provider: 'square',
@@ -401,7 +567,7 @@ export default defineEventHandler(async (event) => {
         }
       }
     } catch (recoveryError) {
-      console.warn('[membership/change-plan] failed to recover Square subscription id', {
+      console.warn(logPrefix, 'failed to recover Square subscription id', {
         membershipId: membership.id,
         message: recoveryError instanceof Error ? recoveryError.message : String(recoveryError)
       })
@@ -431,8 +597,19 @@ export default defineEventHandler(async (event) => {
       if (subscriptionPhases?.length) {
         createPayload.phases = subscriptionPhases
       }
+      console.info(logPrefix, 'bootstrap-subscription-create-request', {
+        membershipId: membership.id,
+        customerId,
+        planVariationId: currentPlanVariationId,
+        startDate,
+        phaseCount: subscriptionPhases?.length ?? 0
+      })
 
       const createRes = await square.subscriptions.create(createPayload as never)
+      console.info(logPrefix, 'bootstrap-subscription-create-response', {
+        membershipId: membership.id,
+        responseSubscriptionId: readString((createRes as { subscription?: Record<string, unknown> | null }).subscription ?? null, 'id')
+      })
 
       subscriptionId = readString(
         (createRes as { subscription?: Record<string, unknown> | null }).subscription ?? null,
@@ -469,9 +646,10 @@ export default defineEventHandler(async (event) => {
         }
       }
     } catch (bootstrapError) {
-      console.warn('[membership/change-plan] failed to bootstrap managed Square subscription', {
+      console.warn(logPrefix, 'failed to bootstrap managed Square subscription', {
         membershipId: membership.id,
-        message: bootstrapError instanceof Error ? bootstrapError.message : String(bootstrapError)
+        message: bootstrapError instanceof Error ? bootstrapError.message : String(bootstrapError),
+        squareError: bootstrapError
       })
     }
   }
@@ -488,6 +666,84 @@ export default defineEventHandler(async (event) => {
   if (!currentSubscription) {
     throw createError({ statusCode: 502, statusMessage: 'Could not load subscription from Square.' })
   }
+  const subscriptionLocationId = readString(currentSubscription, 'locationId', 'location_id')
+  const swapLocationId = subscriptionLocationId || locationId
+  const subscriptionCustomerId = readString(currentSubscription, 'customerId', 'customer_id')
+  if (subscriptionCustomerId && customerId && subscriptionCustomerId !== customerId) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Membership billing customer is out of sync. Refresh account billing setup and retry.'
+    })
+  }
+  const effectiveSquareCustomerId = customerId || subscriptionCustomerId
+  if (!effectiveSquareCustomerId) {
+    throw createError({ statusCode: 409, statusMessage: INVALID_CARD_STATUS_MESSAGE })
+  }
+
+  const subscriptionCardId = readString(
+    currentSubscription,
+    'cardId',
+    'card_id',
+    'chargedThroughSquareCardId',
+    'charged_through_square_card_id'
+  ) ?? readString(asRecord(currentSubscription.source), 'cardId', 'card_id')
+  const listCardsRes = await square.cards.list({
+    customerId: effectiveSquareCustomerId,
+    includeDisabled: true,
+    sortOrder: 'ASC'
+  } as never)
+  const customerCards = extractSquareCards(listCardsRes)
+  const cardById = new Map(
+    customerCards
+      .map((card) => [readString(card, 'id'), card] as const)
+      .filter((entry): entry is [string, Record<string, unknown>] => Boolean(entry[0]))
+  )
+  const candidateCardId = subscriptionCardId || persistedDefaultCardId
+  const candidateCard = candidateCardId ? (cardById.get(candidateCardId) ?? null) : null
+  const candidateEnabled = candidateCard
+    ? (typeof candidateCard.enabled === 'boolean' ? candidateCard.enabled : true)
+    : false
+  const candidateExpired = candidateCard ? isCardExpired(candidateCard) : true
+  console.info(logPrefix, 'card-precheck', {
+    effectiveSquareCustomerId,
+    subscriptionCardId: subscriptionCardId ?? null,
+    persistedDefaultCardId,
+    candidateCardId,
+    candidateFound: Boolean(candidateCard),
+    candidateEnabled,
+    candidateExpired
+  })
+  if (!candidateCardId || !candidateCard || !candidateEnabled || candidateExpired) {
+    throw createError({ statusCode: 409, statusMessage: INVALID_CARD_STATUS_MESSAGE })
+  }
+
+  if (subscriptionLocationId && subscriptionLocationId !== locationId) {
+    console.warn(logPrefix, 'location-mismatch-using-subscription-location', {
+      configuredLocationId: locationId,
+      subscriptionLocationId
+    })
+  }
+
+  targetPhases = await ensureRelativeOrderTemplatesOnPhases({
+    square,
+    planVariationId: targetPlanVariationId,
+    locationId: swapLocationId,
+    phases: targetPhases,
+    promoSquareDiscountId: promoPricing?.squareDiscountId ?? null,
+    forceRegenerateRelativeTemplates: Boolean(promoPricing?.squareDiscountId)
+  })
+  console.info(logPrefix, 'target-phases-after-subscription-location-resolution', {
+    locationId: swapLocationId,
+    phaseCount: targetPhases?.length ?? 0,
+    phases: (targetPhases ?? []).map((phase) => {
+      const pricing = asRecord(phase.pricing)
+      return {
+        ordinal: phase.ordinal ?? null,
+        pricingType: readString(pricing, 'type') ?? null,
+        orderTemplateId: readString(phase, 'orderTemplateId', 'order_template_id')
+      }
+    })
+  })
 
   const actions = toRecordArray(currentSubscription.actions)
   const pendingCancel = findPendingCancelAction(actions)
@@ -502,6 +758,7 @@ export default defineEventHandler(async (event) => {
     if (normalizeSquareActionType(action.type) !== 'SWAP_PLAN') continue
     const actionId = typeof action.id === 'string' ? action.id : null
     if (!actionId) continue
+    console.info(logPrefix, 'deleting-existing-swap-action', { subscriptionId, actionId })
     await square.subscriptions.deleteAction({
       subscriptionId,
       actionId
@@ -517,26 +774,60 @@ export default defineEventHandler(async (event) => {
         targetPhases = await ensureRelativeOrderTemplatesOnPhases({
           square,
           planVariationId: targetPlanVariationId,
-          locationId,
-          phases: targetPhases
+          locationId: swapLocationId,
+          phases: targetPhases,
+          promoSquareDiscountId: promoPricing?.squareDiscountId ?? null,
+          forceRegenerateRelativeTemplates: Boolean(promoPricing?.squareDiscountId)
         })
       }
+      const swapPhases = buildSwapPhases(targetPhases)
+      console.info(logPrefix, 'swap-plan-attempt', {
+        attempt,
+        subscriptionId,
+        targetPlanVariationId,
+        hasPhases: Boolean(swapPhases?.length),
+        phaseCount: swapPhases?.length ?? 0,
+        phases: (swapPhases ?? []).map((phase) => {
+          return {
+            ordinal: phase.ordinal ?? null,
+            orderTemplateId: phase.orderTemplateId
+          }
+        })
+      })
       const swapPayload: Record<string, unknown> = {
         subscriptionId,
         newPlanVariationId: targetPlanVariationId
       }
-      if (targetPhases?.length) {
-        swapPayload.phases = targetPhases
+      if (swapPhases?.length) {
+        swapPayload.phases = swapPhases
       }
       await square.subscriptions.swapPlan(swapPayload as never)
+      console.info(logPrefix, 'swap-plan-success', {
+        attempt,
+        subscriptionId,
+        targetPlanVariationId
+      })
       swapError = null
       break
     } catch (error) {
       swapError = error
+      console.error(logPrefix, 'swap-plan-failed', {
+        attempt,
+        subscriptionId,
+        targetPlanVariationId,
+        message: readSquareErrorMessage(error),
+        error
+      })
       if (!isSquareInternalApiError(error) || attempt === 3) break
     }
   }
   if (swapError) {
+    if (isSquareCardStateError(swapError)) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: INVALID_CARD_STATUS_MESSAGE
+      })
+    }
     throw createError({
       statusCode: isSquareInternalApiError(swapError) ? 502 : 400,
       statusMessage: readSquareErrorMessage(swapError)
@@ -550,6 +841,10 @@ export default defineEventHandler(async (event) => {
   const refreshed = (refreshedRes as { subscription?: Record<string, unknown> | null }).subscription ?? null
   const refreshedActions = toRecordArray(refreshed?.actions)
   const pendingSwap = findPendingSwapAction(refreshedActions)
+  console.info(logPrefix, 'post-swap-state', {
+    subscriptionId,
+    pendingSwap: pendingSwap ?? null
+  })
 
   if (promoPricing?.promoId) {
     await markPromoRedemption(supabase, promoPricing.promoId, '[membership/change-plan]')
