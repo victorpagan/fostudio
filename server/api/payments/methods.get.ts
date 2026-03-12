@@ -35,6 +35,12 @@ function readNumber(source: Record<string, unknown> | null | undefined, ...keys:
   return null
 }
 
+function normalizeExpiryYear(year: number | null) {
+  if (!year) return null
+  if (year < 100) return 2000 + year
+  return year
+}
+
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
@@ -55,7 +61,7 @@ export default defineEventHandler(async (event) => {
   const square = await useSquareClient(event)
   const listRes = await square.cards.list({
     customerId: squareCustomerId,
-    includeDisabled: true,
+    includeDisabled: false,
     sortOrder: 'ASC'
   } as never)
   const cards = extractSquareCards(listRes)
@@ -66,17 +72,19 @@ export default defineEventHandler(async (event) => {
       if (!id) return null
       const enabledValue = card.enabled
       const enabled = typeof enabledValue === 'boolean' ? enabledValue : true
+      const expMonth = readNumber(card, 'expMonth', 'exp_month')
+      const expYear = normalizeExpiryYear(readNumber(card, 'expYear', 'exp_year'))
       return {
         id,
         brand: readString(card, 'cardBrand', 'card_brand'),
         last4: readString(card, 'last4'),
-        expMonth: readNumber(card, 'expMonth', 'exp_month'),
-        expYear: readNumber(card, 'expYear', 'exp_year'),
+        expMonth,
+        expYear,
         cardholderName: readString(card, 'cardholderName', 'cardholder_name'),
         enabled
       }
     })
-    .filter((card): card is SquareCardSummary => card !== null)
+    .filter((card): card is SquareCardSummary => card !== null && card.enabled)
 
   const primaryCustomer = await getPrimaryCustomerRowForUser(event, user.sub)
   const persistedDefaultCardId = typeof primaryCustomer?.default_square_card_id === 'string'

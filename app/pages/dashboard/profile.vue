@@ -317,13 +317,12 @@ async function setDefaultPaymentMethod(cardId: string) {
                     </div>
                     <div class="text-xs text-dimmed">
                       Expires {{ formatCardExpiry(card.expMonth, card.expYear) }}
-                      <span v-if="!card.enabled" class="text-error"> · unavailable</span>
                       <span v-if="isCardExpired(card.expMonth, card.expYear)" class="text-warning"> · expired</span>
                     </div>
                   </div>
                   <div class="flex items-center gap-2">
                     <UButton
-                      v-if="card.enabled && defaultCardId !== card.id"
+                      v-if="defaultCardId !== card.id"
                       size="xs"
                       color="neutral"
                       variant="soft"
@@ -336,7 +335,6 @@ async function setDefaultPaymentMethod(cardId: string) {
                       size="xs"
                       color="error"
                       variant="soft"
-                      :disabled="!card.enabled"
                       :loading="removingCardId === card.id"
                       @click="removePaymentMethod(card.id)"
                     >
