@@ -120,6 +120,7 @@ const loading = ref(false)
 const savingAndSyncing = ref(false)
 const deleting = ref(false)
 const reordering = ref(false)
+const repairingVariations = ref(false)
 const selectedTierId = ref<string | null>(null)
 const draggedTierId = ref<string | null>(null)
 
@@ -591,6 +592,52 @@ async function deleteTier() {
     deleting.value = false
   }
 }
+
+async function repairSquareVariations() {
+  const confirmed = window.confirm('Repair Square plan variations for all active tiers? This creates fresh cadence variations and remaps IDs in the database.')
+  if (!confirmed) return
+
+  repairingVariations.value = true
+  try {
+    const res = await $fetch<{
+      total: number
+      repaired: number
+      skipped: number
+      failed: number
+      items: Array<{ status?: string, message?: string }>
+    }>('/api/admin/membership/variation-repair', {
+      method: 'POST',
+      body: {
+        force: true,
+        dryRun: false
+      }
+    })
+
+    const firstFailure = res.items.find(item => item.status === 'failed')
+    toast.add({
+      title: 'Square variation repair complete',
+      description: `Repaired ${res.repaired}/${res.total}. Skipped ${res.skipped}. Failed ${res.failed}.`
+    })
+    if (firstFailure?.message) {
+      toast.add({
+        title: 'Repair warning',
+        description: firstFailure.message,
+        color: 'warning'
+      })
+    }
+
+    await reloadTiers()
+    if (selectedTierId.value) loadTier(selectedTierId.value)
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not repair Square variations',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    repairingVariations.value = false
+  }
+}
 </script>
 
 <template>
@@ -602,6 +649,16 @@ async function deleteTier() {
         </template>
 
         <template #right>
+          <UButton
+            size="sm"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-wrench"
+            :loading="repairingVariations"
+            @click="repairSquareVariations"
+          >
+            Repair Square Variations
+          </UButton>
           <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-refresh-cw" :loading="loading" @click="reloadTiers" />
         </template>
       </UDashboardNavbar>

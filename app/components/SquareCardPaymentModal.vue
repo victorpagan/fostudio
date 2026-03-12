@@ -36,7 +36,7 @@ const cardReady = ref(false)
 const containerId = computed(() => `square-card-container-${props.instanceKey}`)
 
 let cardHandle: {
-  tokenize: () => Promise<{ status: string, token?: string, errors?: Array<{ message?: string }> }>
+  tokenize: () => Promise<{ status: string, token?: string, errors?: Array<{ code?: string, message?: string, detail?: string }> }>
   destroy?: () => Promise<void> | void
 } | null = null
 
@@ -85,12 +85,25 @@ async function submit() {
   try {
     const result = await cardHandle.tokenize()
     if (result.status !== 'OK' || !result.token) {
-      const firstError = result.errors?.[0]?.message ?? 'Card tokenization failed.'
-      formError.value = firstError
+      const details = (result.errors ?? [])
+        .map((entry) => {
+          const code = entry.code?.trim() || 'UNKNOWN'
+          const message = entry.detail?.trim() || entry.message?.trim() || 'No message'
+          return `${code}: ${message}`
+        })
+        .join(' | ')
+
+      console.error('[square/tokenize] failed', {
+        status: result.status,
+        errors: result.errors ?? []
+      })
+
+      formError.value = details || `Card tokenization failed (${result.status}).`
       return
     }
     emit('confirm', { sourceId: result.token })
   } catch (error: unknown) {
+    console.error('[square/tokenize] exception', error)
     formError.value = error instanceof Error ? error.message : 'Payment failed.'
   } finally {
     submitLoading.value = false

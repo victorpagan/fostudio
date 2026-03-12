@@ -13,6 +13,10 @@ function readString(source: Record<string, unknown> | null | undefined, ...keys:
 }
 
 function readPositiveInt(value: unknown) {
+  if (typeof value === 'bigint') {
+    if (value > 0n && value <= BigInt(Number.MAX_SAFE_INTEGER)) return Number(value)
+    return null
+  }
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.floor(value)
   if (typeof value === 'string' && value.trim()) {
     const parsed = Number(value)
@@ -22,6 +26,10 @@ function readPositiveInt(value: unknown) {
 }
 
 function readNonNegativeInt(value: unknown) {
+  if (typeof value === 'bigint') {
+    if (value >= 0n && value <= BigInt(Number.MAX_SAFE_INTEGER)) return Number(value)
+    return null
+  }
   if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return Math.floor(value)
   if (typeof value === 'string' && value.trim()) {
     const parsed = Number(value)
@@ -62,40 +70,113 @@ function extractCatalogObject(response: unknown) {
   return asRecord(payload.catalogObject ?? payload.catalog_object ?? payload.object)
 }
 
+function extractRelatedObjects(response: unknown) {
+  const payload = asRecord(response)
+  if (!payload) return [] as Record<string, unknown>[]
+  const source = payload.relatedObjects ?? payload.related_objects
+  if (!Array.isArray(source)) return [] as Record<string, unknown>[]
+  return source
+    .map(entry => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+}
+
+function extractVariationData(object: Record<string, unknown> | null) {
+  return asRecord(
+    object?.subscriptionPlanVariationData
+    ?? object?.subscription_plan_variation_data
+  )
+}
+
+function extractPhasesFromVariationData(variationData: Record<string, unknown> | null) {
+  return Array.isArray(variationData?.phases) ? variationData.phases : []
+}
+
+async function fetchCatalogObjectWithRelated(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  square: any,
+  objectId: string
+) {
+  const res = await square.catalog.object.get({
+    objectId,
+    includeRelatedObjects: true
+  } as never)
+  return {
+    catalogObject: extractCatalogObject(res),
+    relatedObjects: extractRelatedObjects(res)
+  }
+}
+
 export async function buildSubscriptionCreatePhasesFromPlanVariation(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   square: any,
   planVariationId: string
 ) {
+  const logPrefix = '[checkout/phases]'
   try {
-    const res = await square.catalog.object.get({
-      objectId: planVariationId,
-      includeRelatedObjects: false
-    } as never)
+    const {
+      catalogObject: variationObject,
+      relatedObjects: variationRelatedObjects
+    } = await fetchCatalogObjectWithRelated(square, planVariationId)
 
-    const catalogObject = extractCatalogObject(res)
-    const variationData = asRecord(
-      catalogObject?.subscriptionPlanVariationData
-      ?? catalogObject?.subscription_plan_variation_data
-    )
-    const phasesSource = Array.isArray(variationData?.phases) ? variationData.phases : []
+    let variationData = extractVariationData(variationObject)
+    let phasesSource = extractPhasesFromVariationData(variationData)
+
+    let relatedOrderTemplateIds = variationRelatedObjects
+      .filter((object) => readString(object, 'type')?.toUpperCase() === 'ORDER_TEMPLATE')
+      .map(object => readString(object, 'id'))
+      .filter((id): id is string => Boolean(id))
+
+    const subscriptionPlanId = readString(variationData, 'subscriptionPlanId', 'subscription_plan_id')
+    if ((!phasesSource.length || !relatedOrderTemplateIds.length) && subscriptionPlanId) {
+      const {
+        catalogObject: planObject,
+        relatedObjects: planRelatedObjects
+      } = await fetchCatalogObjectWithRelated(square, subscriptionPlanId)
+
+      if (!phasesSource.length) {
+        const fromRelatedVariation = planRelatedObjects.find((object) => readString(object, 'id') === planVariationId) ?? null
+        const variationFromPlan = extractVariationData(fromRelatedVariation) ?? variationData
+        phasesSource = extractPhasesFromVariationData(variationFromPlan)
+        variationData = variationFromPlan
+      }
+
+      if (!relatedOrderTemplateIds.length) {
+        relatedOrderTemplateIds = planRelatedObjects
+          .filter((object) => readString(object, 'type')?.toUpperCase() === 'ORDER_TEMPLATE')
+          .map(object => readString(object, 'id'))
+          .filter((id): id is string => Boolean(id))
+      }
+
+      if (!phasesSource.length) {
+        // Fallback: some payloads embed variations under the plan object.
+        const planData = asRecord(planObject?.subscriptionPlanData ?? planObject?.subscription_plan_data)
+        const embeddedVariations = Array.isArray(planData?.subscriptionPlanVariations ?? planData?.subscription_plan_variations)
+          ? (planData?.subscriptionPlanVariations ?? planData?.subscription_plan_variations) as unknown[]
+          : []
+        const matchingEmbedded = embeddedVariations
+          .map(entry => asRecord(entry))
+          .find((object) => readString(object, 'id') === planVariationId) ?? null
+        phasesSource = extractPhasesFromVariationData(extractVariationData(matchingEmbedded))
+      }
+    }
+
     if (!phasesSource.length) return null
 
     const phases = phasesSource
-      .map((entry) => {
+      .map((entry, index) => {
         const phase = asRecord(entry)
         if (!phase) return null
 
         const ordinal = readNonNegativeInt(phase.ordinal)
         const cadence = readString(phase, 'cadence')
+        const phaseUid = readString(phase, 'uid')
+        const planPhaseUid = readString(phase, 'planPhaseUid', 'plan_phase_uid') ?? phaseUid
+        const orderTemplateFromRelated = relatedOrderTemplateIds[ordinal ?? index] ?? relatedOrderTemplateIds[index] ?? null
         const orderTemplateId = readString(
           phase,
           'orderTemplateId',
-          'order_template_id',
-          // Dashboard-created plan variations often expose only `uid`,
-          // which maps to the required order template identifier.
-          'uid'
-        )
+          'order_template_id'
+        ) ?? orderTemplateFromRelated ?? planPhaseUid ?? phaseUid
         const pricingSource = asRecord(phase.pricing ?? phase.pricing_data)
         const pricingType = readString(pricingSource, 'type')?.toUpperCase()
         if (ordinal === null || !cadence || !pricingSource || !pricingType) return null
@@ -108,13 +189,13 @@ export async function buildSubscriptionCreatePhasesFromPlanVariation(
         if (priceMoney) pricing.priceMoney = priceMoney
 
         const phasePayload: Record<string, unknown> = {
-          ordinal,
+          ordinal: BigInt(ordinal),
           cadence,
           pricing
         }
 
         const periods = readPositiveInt(phase.periods)
-        if (periods !== null) phasePayload.periods = periods
+        if (periods !== null) phasePayload.periods = BigInt(periods)
         if (orderTemplateId) phasePayload.orderTemplateId = orderTemplateId
 
         return phasePayload
@@ -131,17 +212,29 @@ export async function buildSubscriptionCreatePhasesFromPlanVariation(
     // Current Square API requires explicit phases when plan variation pricing is RELATIVE.
     if (!hasRelativePhase) return null
 
-    // RELATIVE pricing phases must include order template ids.
     const hasMissingRelativeOrderTemplate = phases.some((phase) => {
       const pricing = asRecord(phase.pricing)
       const isRelative = readString(pricing, 'type')?.toUpperCase() === 'RELATIVE'
       const orderTemplateId = readString(phase, 'orderTemplateId', 'order_template_id')
       return isRelative && !orderTemplateId
     })
-    if (hasMissingRelativeOrderTemplate) return null
+    if (hasMissingRelativeOrderTemplate) {
+      console.warn(logPrefix, 'relative-phase-missing-order-template', {
+        planVariationId,
+        phaseCount: phases.length,
+        phases: phases.map((phase) => ({
+          ordinal: phase.ordinal ?? null,
+          cadence: phase.cadence ?? null,
+          planPhaseUid: phase.planPhaseUid ?? null,
+          orderTemplateId: phase.orderTemplateId ?? null
+        }))
+      })
+    }
 
     return phases
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown error'
+    console.warn(logPrefix, 'phase-resolution-failed', { planVariationId, message })
     return null
   }
 }

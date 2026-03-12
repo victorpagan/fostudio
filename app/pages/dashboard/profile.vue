@@ -12,6 +12,33 @@ type CustomerRow = {
   email: string | null
   phone: string | null
 }
+type SavedCardMethod = {
+  id: string
+  brand: string | null
+  last4: string | null
+  expMonth: number | null
+  expYear: number | null
+  cardholderName: string | null
+}
+type SubscriptionState = {
+  hasManagedSubscription: boolean
+  subscriptionStatus?: string | null
+  currentPeriodEnd?: string | null
+  pendingSwap?: {
+    effectiveDate: string | null
+    target?: { displayName?: string | null, cadence?: string | null } | null
+  } | null
+  pendingCancel?: {
+    effectiveDate?: string | null
+  } | null
+}
+type MembershipSummary = {
+  tier: string | null
+  cadence: string | null
+  status: string | null
+  current_period_end: string | null
+  billing_provider: string | null
+}
 
 const { data: customer, refresh } = await useAsyncData('dash:profile', async () => {
   if (!user.value) return null
@@ -23,6 +50,24 @@ const { data: customer, refresh } = await useAsyncData('dash:profile', async () 
   if (error) throw error
   return data as CustomerRow | null
 })
+const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAsyncData('dash:profile:payment-methods', async () => {
+  if (!user.value?.sub) return { methods: [] as SavedCardMethod[] }
+  return await $fetch<{ methods: SavedCardMethod[] }>('/api/payments/methods')
+}, { watch: [() => user.value?.sub], default: () => ({ methods: [] }) })
+const { data: subscriptionState, refresh: refreshSubscriptionState } = await useAsyncData('dash:profile:subscription-state', async () => {
+  if (!user.value?.sub) return null
+  return await $fetch<SubscriptionState>('/api/membership/subscription-state')
+}, { watch: [() => user.value?.sub], default: () => null })
+const { data: membershipSummary, refresh: refreshMembershipSummary } = await useAsyncData('dash:profile:membership-summary', async () => {
+  if (!user.value?.sub) return null
+  const { data, error } = await supabase
+    .from('memberships')
+    .select('tier,cadence,status,current_period_end,billing_provider')
+    .eq('user_id', user.value.sub)
+    .maybeSingle()
+  if (error) throw error
+  return data as MembershipSummary | null
+}, { watch: [() => user.value?.sub], default: () => null })
 
 // Editable form — synced from customer data
 const form = reactive({
@@ -40,6 +85,9 @@ watch(customer, (c) => {
 
 const saving = ref(false)
 const saved = ref(false)
+const addingCard = ref(false)
+const removingCardId = ref<string | null>(null)
+const cardModalOpen = ref(false)
 
 async function saveProfile() {
   if (!customer.value?.id) return
@@ -101,6 +149,76 @@ const isDirty = computed(() =>
   form.last_name !== (customer.value?.last_name ?? '') ||
   form.phone !== (customer.value?.phone ?? '')
 )
+const savedCards = computed(() => paymentMethodsData.value?.methods ?? [])
+
+function formatExactDate(value: string | null | undefined) {
+  if (!value) return null
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  })
+}
+
+function formatCardExpiry(month: number | null, year: number | null) {
+  if (!month || !year) return '—'
+  return `${String(month).padStart(2, '0')}/${String(year).slice(-2)}`
+}
+
+function isCardExpired(month: number | null, year: number | null) {
+  if (!month || !year) return false
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const currentYear = now.getFullYear()
+  return year < currentYear || (year === currentYear && month < currentMonth)
+}
+
+async function addPaymentMethod(payload: { sourceId: string }) {
+  if (addingCard.value) return
+  addingCard.value = true
+  try {
+    await $fetch('/api/payments/methods.add', {
+      method: 'POST',
+      body: { sourceId: payload.sourceId }
+    })
+    cardModalOpen.value = false
+    toast.add({ title: 'Card saved', color: 'success' })
+    await refreshPaymentMethods()
+  } catch (error: any) {
+    toast.add({
+      title: 'Could not save card',
+      description: error?.data?.statusMessage ?? error?.message ?? 'Error',
+      color: 'error'
+    })
+  } finally {
+    addingCard.value = false
+  }
+}
+
+async function removePaymentMethod(cardId: string) {
+  if (removingCardId.value) return
+  removingCardId.value = cardId
+  try {
+    await $fetch('/api/payments/methods.remove', {
+      method: 'POST',
+      body: { cardId }
+    })
+    toast.add({ title: 'Card removed', color: 'success' })
+    await refreshPaymentMethods()
+  } catch (error: any) {
+    toast.add({
+      title: 'Could not remove card',
+      description: error?.data?.statusMessage ?? error?.message ?? 'Error',
+      color: 'error'
+    })
+  } finally {
+    removingCardId.value = null
+  }
+}
 </script>
 
 <template>
@@ -115,6 +233,79 @@ const isDirty = computed(() =>
 
     <template #body>
       <div class="p-4 space-y-4 max-w-xl">
+        <UCard>
+          <div class="space-y-4">
+            <div class="flex items-center justify-between gap-2">
+              <div class="text-sm font-medium">Billing</div>
+              <UButton size="xs" color="neutral" variant="soft" @click="refreshSubscriptionState(); refreshMembershipSummary(); refreshPaymentMethods()">
+                Refresh
+              </UButton>
+            </div>
+
+            <div class="rounded-lg border border-default p-3 space-y-2 text-sm">
+              <div class="flex justify-between">
+                <span class="text-dimmed">Tier</span>
+                <span class="font-medium">{{ membershipSummary?.tier ?? 'No active membership' }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-dimmed">Cadence</span>
+                <span>{{ membershipSummary?.cadence ?? '—' }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-dimmed">Status</span>
+                <span>{{ membershipSummary?.status ?? '—' }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-dimmed">Billing provider</span>
+                <span>{{ membershipSummary?.billing_provider ?? '—' }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-dimmed">Current period end</span>
+                <span>{{ formatExactDate(subscriptionState?.currentPeriodEnd ?? membershipSummary?.current_period_end) ?? '—' }}</span>
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <div class="flex items-center justify-between gap-2">
+                <div class="text-sm font-medium">Saved cards</div>
+                <UButton size="xs" @click="cardModalOpen = true">
+                  Add card
+                </UButton>
+              </div>
+
+              <div v-if="savedCards.length === 0" class="text-xs text-dimmed">
+                No saved cards yet.
+              </div>
+              <div v-else class="space-y-2">
+                <div
+                  v-for="card in savedCards"
+                  :key="card.id"
+                  class="rounded-lg border border-default p-3 flex items-center justify-between gap-3"
+                >
+                  <div class="min-w-0">
+                    <div class="text-sm font-medium truncate">
+                      {{ card.brand ?? 'Card' }} •••• {{ card.last4 ?? '----' }}
+                    </div>
+                    <div class="text-xs text-dimmed">
+                      Expires {{ formatCardExpiry(card.expMonth, card.expYear) }}
+                      <span v-if="isCardExpired(card.expMonth, card.expYear)" class="text-warning"> · expired</span>
+                    </div>
+                  </div>
+                  <UButton
+                    size="xs"
+                    color="error"
+                    variant="soft"
+                    :loading="removingCardId === card.id"
+                    @click="removePaymentMethod(card.id)"
+                  >
+                    Remove
+                  </UButton>
+                </div>
+              </div>
+            </div>
+          </div>
+        </UCard>
+
         <!-- Account info -->
         <UCard>
           <div class="space-y-4">
@@ -193,6 +384,18 @@ const isDirty = computed(() =>
           </div>
         </UCard>
       </div>
+
+      <SquareCardPaymentModal
+        v-model:open="cardModalOpen"
+        instance-key="profile-add-card"
+        title="Add payment method"
+        description="Save a card to use for membership billing, credits, and holds."
+        :amount-cents="0"
+        currency="USD"
+        confirm-label="Save card"
+        :busy="addingCard"
+        @confirm="addPaymentMethod"
+      />
     </template>
   </UDashboardPanel>
 </template>
