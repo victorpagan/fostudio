@@ -4,6 +4,7 @@ import {
   DEFAULT_MEMBERSHIP_CREDIT_EXPIRY_DAYS,
   DEFAULT_TOPUP_CREDIT_EXPIRY_DAYS
 } from '~~/server/utils/credits/buckets'
+import { syncMembershipCreditGrantsForUser } from '~~/server/utils/membership/grantsSync'
 
 function isSchemaMissingColumnError(message: string) {
   return /column .* does not exist/i.test(message) || /relation .* does not exist/i.test(message)
@@ -27,9 +28,7 @@ export default defineEventHandler(async (event) => {
 
   if (hasActiveMembership) {
     try {
-      await db.rpc('process_due_membership_credit_grants', {
-        p_limit: 24
-      })
+      await syncMembershipCreditGrantsForUser(event, user.sub, { processLimit: 24 })
     } catch (error) {
       console.error('[credits-summary] grant refresh failed', error)
     }

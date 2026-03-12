@@ -1,5 +1,6 @@
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
+import { syncMembershipCreditGrantsForUser } from '~~/server/utils/membership/grantsSync'
 import {
   findPendingCancelAction,
   findPendingSwapAction,
@@ -22,6 +23,12 @@ export default defineEventHandler(async (event) => {
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
 
   const supabase = serverSupabaseServiceRole(event)
+
+  try {
+    await syncMembershipCreditGrantsForUser(event, user.sub, { processLimit: 24 })
+  } catch (error) {
+    console.warn('[membership/subscription-state] grant sync failed', error instanceof Error ? error.message : String(error))
+  }
 
   const { data: membershipRaw, error: membershipErr } = await supabase
     .from('memberships')
