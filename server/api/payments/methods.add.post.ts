@@ -17,19 +17,6 @@ function readString(source: Record<string, unknown> | null | undefined, ...keys:
   return null
 }
 
-function readNumber(source: Record<string, unknown> | null | undefined, ...keys: string[]) {
-  if (!source) return null
-  for (const key of keys) {
-    const value = source[key]
-    if (typeof value === 'number' && Number.isFinite(value)) return Math.floor(value)
-    if (typeof value === 'string' && value.trim()) {
-      const parsed = Number(value)
-      if (Number.isFinite(parsed)) return Math.floor(parsed)
-    }
-  }
-  return null
-}
-
 function readSquareErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim()) return error.message.trim()
   if (!error || typeof error !== 'object') return 'Square request failed'
@@ -58,27 +45,21 @@ export default defineEventHandler(async (event) => {
 
   const square = await useSquareClient(event)
   try {
+    const userKey = user.sub.replace(/-/g, '').slice(0, 12)
+    const nonce = randomUUID().replace(/-/g, '').slice(0, 16)
     const cardRes = await square.cards.create({
-      idempotencyKey: randomUUID(),
+      idempotencyKey: `pm:add:${userKey}:${nonce}`,
       sourceId: body.sourceId.trim(),
       card: {
         customerId: squareCustomerId
       }
     } as never)
     const card = (cardRes as { card?: Record<string, unknown> | null }).card ?? null
-    const id = readString(card, 'id')
-    if (!id) throw createError({ statusCode: 502, statusMessage: 'Square did not return a card id.' })
-
+    const cardId = readString(card, 'id')
+    if (!cardId) throw createError({ statusCode: 502, statusMessage: 'Square did not return a card id.' })
     return {
-      method: {
-        id,
-        brand: readString(card, 'cardBrand', 'card_brand'),
-        last4: readString(card, 'last4'),
-        expMonth: readNumber(card, 'expMonth', 'exp_month'),
-        expYear: readNumber(card, 'expYear', 'exp_year'),
-        cardholderName: readString(card, 'cardholderName', 'cardholder_name'),
-        enabled: true
-      }
+      ok: true,
+      cardId
     }
   } catch (error) {
     throw createError({ statusCode: 502, statusMessage: `Failed to save card: ${readSquareErrorMessage(error)}` })
