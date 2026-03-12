@@ -1,5 +1,6 @@
 import { serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
+import { extractSquareCards } from '~~/server/utils/square/cards'
 import { ensureSquareCustomerForUser, getPrimaryCustomerRowForUser } from '~~/server/utils/square/customer'
 
 type SquareCardSummary = {
@@ -57,9 +58,19 @@ export default defineEventHandler(async (event) => {
     includeDisabled: true,
     sortOrder: 'ASC'
   } as never)
-  const cards = Array.isArray((listRes as { cards?: unknown }).cards)
-    ? ((listRes as { cards?: Array<Record<string, unknown>> }).cards ?? [])
-    : []
+  const cards = extractSquareCards(listRes)
+
+  console.info('[payments/methods] cards.list', {
+    userId: user.sub,
+    squareCustomerId,
+    returnedCount: cards.length,
+    cards: cards.map((card) => ({
+      id: readString(card, 'id'),
+      enabled: typeof card.enabled === 'boolean' ? card.enabled : null,
+      brand: readString(card, 'cardBrand', 'card_brand'),
+      last4: readString(card, 'last4')
+    }))
+  })
 
   const methods = cards
     .map((card): SquareCardSummary | null => {

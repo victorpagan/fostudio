@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
+import { extractSquareCards } from '~~/server/utils/square/cards'
 import { resolveMembershipBillingPeriod } from '~~/server/utils/square/billingPeriod'
 import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
 import { ensureDoorCodeForUser } from '~~/server/utils/membership/doorCode'
@@ -180,7 +181,7 @@ async function findUsableCardId(
       includeDisabled: false,
       sortOrder: 'ASC'
     } as never)
-    const cards = toRecordArray((listRes as { cards?: unknown }).cards)
+    const cards = extractSquareCards(listRes)
     if (!cards.length) return null
     const first = cards.find(card => readString(card, 'id')) ?? null
     return readString(first, 'id')

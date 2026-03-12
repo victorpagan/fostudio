@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
+import { extractSquareCards } from '~~/server/utils/square/cards'
 import { ensureSquareCustomerForUser, getPrimaryCustomerRowForUser } from '~~/server/utils/square/customer'
 
 const bodySchema = z.object({
@@ -49,9 +50,7 @@ export default defineEventHandler(async (event) => {
     includeDisabled: true,
     sortOrder: 'ASC'
   } as never)
-  const cards = Array.isArray((listRes as { cards?: unknown }).cards)
-    ? ((listRes as { cards?: Array<Record<string, unknown>> }).cards ?? [])
-    : []
+  const cards = extractSquareCards(listRes)
   const ownsCard = cards.some(card => readString(card, 'id') === body.cardId.trim())
   if (!ownsCard) throw createError({ statusCode: 404, statusMessage: 'Card not found for this account.' })
 
