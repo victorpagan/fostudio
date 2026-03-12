@@ -139,6 +139,27 @@ function readSquareErrorMessage(error: unknown) {
   return 'Square request failed'
 }
 
+function isSquareInternalApiError(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+
+  const errors = (error as { errors?: unknown }).errors
+  if (Array.isArray(errors) && errors.length > 0) {
+    const first = errors[0]
+    if (first && typeof first === 'object') {
+      const code = (first as { code?: unknown }).code
+      const category = (first as { category?: unknown }).category
+      if (code === 'INTERNAL_SERVER_ERROR' || category === 'API_ERROR') return true
+    }
+  }
+
+  const message = error instanceof Error ? error.message : ''
+  return message.includes('INTERNAL_SERVER_ERROR') || message.includes('"category": "API_ERROR"')
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 function applyPromoDiscountToRelativePhases(
   phases: Array<Record<string, unknown>> | null,
   promoSquareDiscountId: string | null
@@ -487,19 +508,38 @@ export default defineEventHandler(async (event) => {
     } as never)
   }
 
-  try {
-    const swapPayload: Record<string, unknown> = {
-      subscriptionId,
-      newPlanVariationId: targetPlanVariationId
+  let swapError: unknown = null
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      if (attempt > 1) {
+        await sleep(500 * attempt)
+        // Regenerate order template when retrying to avoid stale template edge cases.
+        targetPhases = await ensureRelativeOrderTemplatesOnPhases({
+          square,
+          planVariationId: targetPlanVariationId,
+          locationId,
+          phases: targetPhases
+        })
+      }
+      const swapPayload: Record<string, unknown> = {
+        subscriptionId,
+        newPlanVariationId: targetPlanVariationId
+      }
+      if (targetPhases?.length) {
+        swapPayload.phases = targetPhases
+      }
+      await square.subscriptions.swapPlan(swapPayload as never)
+      swapError = null
+      break
+    } catch (error) {
+      swapError = error
+      if (!isSquareInternalApiError(error) || attempt === 3) break
     }
-    if (targetPhases?.length) {
-      swapPayload.phases = targetPhases
-    }
-    await square.subscriptions.swapPlan(swapPayload as never)
-  } catch (error) {
+  }
+  if (swapError) {
     throw createError({
-      statusCode: 400,
-      statusMessage: readSquareErrorMessage(error)
+      statusCode: isSquareInternalApiError(swapError) ? 502 : 400,
+      statusMessage: readSquareErrorMessage(swapError)
     })
   }
 
