@@ -284,6 +284,9 @@ function openTierDetails(tierId: string) {
                   </li>
                 </ul>
 
+              </div>
+
+              <div class="mt-auto space-y-2 border-t border-default pt-4">
                 <UButton
                   size="xs"
                   variant="ghost"
@@ -293,9 +296,6 @@ function openTierDetails(tierId: string) {
                 >
                   See full plan breakdown
                 </UButton>
-              </div>
-
-              <div class="mt-auto space-y-2 border-t border-default pt-4">
                 <div
                   v-for="plan in tier.membership_plan_variations"
                   :key="`${tier.id}-${plan.cadence}`"
