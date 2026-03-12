@@ -232,9 +232,9 @@ function openTierDetails(tierId: string) {
             <UCard
               v-for="tier in tiers"
               :key="tier.id"
-              class="flex h-full flex-col"
+              :ui="{body:'h-full flex flex-col justify-between'}"
             >
-              <div class="space-y-3 flex-1">
+              <div class="space-y-3">
                 <div class="flex items-center gap-2">
                   <div class="font-semibold text-base">
                     {{ tier.display_name }}
@@ -283,10 +283,9 @@ function openTierDetails(tierId: string) {
                     </span>
                   </li>
                 </ul>
-
               </div>
 
-              <div class="mt-auto space-y-2 border-t border-default pt-4">
+              <div class="space-y-2 pt-4">
                 <UButton
                   size="xs"
                   variant="ghost"
@@ -296,6 +295,7 @@ function openTierDetails(tierId: string) {
                 >
                   See full plan breakdown
                 </UButton>
+                  <USeparator />
                 <div
                   v-for="plan in tier.membership_plan_variations"
                   :key="`${tier.id}-${plan.cadence}`"
