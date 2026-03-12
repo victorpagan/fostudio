@@ -60,18 +60,6 @@ export default defineEventHandler(async (event) => {
   } as never)
   const cards = extractSquareCards(listRes)
 
-  console.info('[payments/methods] cards.list', {
-    userId: user.sub,
-    squareCustomerId,
-    returnedCount: cards.length,
-    cards: cards.map((card) => ({
-      id: readString(card, 'id'),
-      enabled: typeof card.enabled === 'boolean' ? card.enabled : null,
-      brand: readString(card, 'cardBrand', 'card_brand'),
-      last4: readString(card, 'last4')
-    }))
-  })
-
   const methods = cards
     .map((card): SquareCardSummary | null => {
       const id = readString(card, 'id')

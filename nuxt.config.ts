@@ -20,6 +20,12 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
+  vite: {
+    optimizeDeps: {
+      include: []
+    }
+  },
+
   runtimeConfig: {
     contactWebhookUrl: process.env.NUXT_CONTACT_WEBHOOK_URL || '',
     resendApiKey: process.env.NUXT_RESEND_API_KEY || '',

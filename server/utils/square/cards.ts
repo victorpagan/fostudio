@@ -13,6 +13,14 @@ export function extractSquareCards(listRes: unknown) {
   const root = asRecord(listRes)
   if (!root) return [] as Array<Record<string, unknown>>
 
+  const response = asRecord(root.response)
+  const cardsFromResponse = toRecordArray(response?.cards)
+  if (cardsFromResponse.length) return cardsFromResponse
+
+  const responseData = asRecord(response?.data)
+  const cardsFromResponseData = toRecordArray(responseData?.cards)
+  if (cardsFromResponseData.length) return cardsFromResponseData
+
   const data = asRecord(root.data)
   const cardsFromData = toRecordArray(data?.cards)
   if (cardsFromData.length) return cardsFromData
