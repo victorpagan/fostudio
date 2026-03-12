@@ -30,6 +30,10 @@ type SavedCardMethod = {
   cardholderName: string | null
   enabled: boolean
 }
+type PaymentMethodsResponse = {
+  methods: SavedCardMethod[]
+  defaultCardId?: string | null
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -59,11 +63,11 @@ const { data } = await useFetch<{ tiers: Tier[] }>('/api/membership/catalog', {
   default: () => ({ tiers: [] })
 })
 const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAsyncData('checkout:payment-methods', async () => {
-  if (!user.value?.sub) return { methods: [] as SavedCardMethod[] }
-  return await $fetch<{ methods: SavedCardMethod[] }>('/api/payments/methods')
+  if (!user.value?.sub) return { methods: [] as SavedCardMethod[], defaultCardId: null }
+  return await $fetch<PaymentMethodsResponse>('/api/payments/methods')
 }, {
   watch: [() => user.value?.sub],
-  default: () => ({ methods: [] })
+  default: () => ({ methods: [], defaultCardId: null })
 })
 
 const tiers = computed(() => data.value?.tiers ?? [])
@@ -74,9 +78,13 @@ const savedCardItems = computed(() => savedCardMethods.value.map(card => ({
   value: card.id
 })))
 
-watch(savedCardMethods, (methods) => {
+watch([savedCardMethods, () => paymentMethodsData.value?.defaultCardId ?? null], ([methods, defaultCardId]) => {
   if (!methods.length) {
     selectedSavedCardId.value = undefined
+    return
+  }
+  if (defaultCardId && methods.some(method => method.id === defaultCardId)) {
+    selectedSavedCardId.value = defaultCardId
     return
   }
   if (!selectedSavedCardId.value || !methods.some(method => method.id === selectedSavedCardId.value)) {

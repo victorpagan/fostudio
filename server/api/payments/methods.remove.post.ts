@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { serverSupabaseUser } from '#supabase/server'
+import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
-import { ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
+import { ensureSquareCustomerForUser, getPrimaryCustomerRowForUser } from '~~/server/utils/square/customer'
 
 const bodySchema = z.object({
   cardId: z.string().min(5)
@@ -33,6 +33,7 @@ function readSquareErrorMessage(error: unknown) {
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
+  const supabase = serverSupabaseServiceRole(event)
 
   const body = bodySchema.parse(await readBody(event))
   const squareCustomerId = await ensureSquareCustomerForUser(event, {
@@ -45,7 +46,7 @@ export default defineEventHandler(async (event) => {
   const square = await useSquareClient(event)
   const listRes = await square.cards.list({
     customerId: squareCustomerId,
-    includeDisabled: false,
+    includeDisabled: true,
     sortOrder: 'ASC'
   } as never)
   const cards = Array.isArray((listRes as { cards?: unknown }).cards)
@@ -56,6 +57,24 @@ export default defineEventHandler(async (event) => {
 
   try {
     await square.cards.disable({ cardId: body.cardId.trim() } as never)
+
+    const primaryCustomer = await getPrimaryCustomerRowForUser(event, user.sub)
+    if (primaryCustomer?.id && primaryCustomer.default_square_card_id?.trim() === body.cardId.trim()) {
+      const nextDefault = cards
+        .map(card => {
+          const id = readString(card, 'id')
+          const enabled = typeof card.enabled === 'boolean' ? card.enabled : true
+          if (!id || id === body.cardId.trim() || !enabled) return null
+          return id
+        })
+        .find((value): value is string => Boolean(value)) ?? null
+
+      await supabase
+        .from('customers')
+        .update({ default_square_card_id: nextDefault } as never)
+        .eq('id', primaryCustomer.id)
+    }
+
     return { ok: true }
   } catch (error) {
     throw createError({ statusCode: 502, statusMessage: `Failed to remove card: ${readSquareErrorMessage(error)}` })

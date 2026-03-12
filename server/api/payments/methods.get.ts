@@ -1,6 +1,6 @@
 import { serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
-import { ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
+import { ensureSquareCustomerForUser, getPrimaryCustomerRowForUser } from '~~/server/utils/square/customer'
 
 type SquareCardSummary = {
   id: string
@@ -46,7 +46,8 @@ export default defineEventHandler(async (event) => {
   if (!squareCustomerId) {
     return {
       methods: [] as SquareCardSummary[],
-      squareCustomerId: null
+      squareCustomerId: null,
+      defaultCardId: null as string | null
     }
   }
 
@@ -78,8 +79,18 @@ export default defineEventHandler(async (event) => {
     })
     .filter((card): card is SquareCardSummary => card !== null)
 
+  const primaryCustomer = await getPrimaryCustomerRowForUser(event, user.sub)
+  const persistedDefaultCardId = typeof primaryCustomer?.default_square_card_id === 'string'
+    ? primaryCustomer.default_square_card_id.trim()
+    : ''
+  const enabledCardIds = new Set(methods.filter(method => method.enabled).map(method => method.id))
+  const defaultCardId = persistedDefaultCardId && enabledCardIds.has(persistedDefaultCardId)
+    ? persistedDefaultCardId
+    : (methods.find(method => method.enabled)?.id ?? null)
+
   return {
     methods,
-    squareCustomerId
+    squareCustomerId,
+    defaultCardId
   }
 })

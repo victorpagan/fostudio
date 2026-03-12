@@ -3,6 +3,18 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { sanitizeForJSON } from '~~/server/utils/sanitize'
 
+export type PrimaryCustomerRow = {
+  id: string
+  user_id?: string | null
+  email: string | null
+  phone: string | null
+  first_name: string | null
+  last_name: string | null
+  square_customer_id: string | null
+  square_customer_json: unknown
+  default_square_card_id?: string | null
+}
+
 function normEmail(email?: string | null) {
   const value = (email ?? '').trim().toLowerCase()
   return value || null
@@ -64,6 +76,19 @@ async function fetchSquareCustomer(event: H3Event, customerId: string) {
   return (res as { customer?: Record<string, unknown> | null }).customer ?? null
 }
 
+export async function getPrimaryCustomerRowForUser(event: H3Event, userId: string) {
+  const supabase = serverSupabaseServiceRole(event)
+  const { data: rows } = await supabase
+    .from('customers')
+    .select('id,user_id,email,phone,first_name,last_name,square_customer_id,square_customer_json,default_square_card_id')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  return Array.isArray(rows) ? ((rows[0] as PrimaryCustomerRow | undefined) ?? null) : null
+}
+
 export async function ensureSquareCustomerForUser(event: H3Event, params: {
   userId: string
   email?: string | null
@@ -73,15 +98,7 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
 
   // Multiple rows can exist for a single user due to legacy data/backfills.
   // Always pick one deterministic primary row so card add/list stays stable.
-  const { data: existingByUserRows } = await supabase
-    .from('customers')
-    .select('id,email,phone,first_name,last_name,square_customer_id,square_customer_json')
-    .eq('user_id', params.userId)
-    .order('updated_at', { ascending: false, nullsFirst: false })
-    .order('created_at', { ascending: false })
-    .limit(1)
-
-  const existingByUser = Array.isArray(existingByUserRows) ? (existingByUserRows[0] ?? null) : null
+  const existingByUser = await getPrimaryCustomerRowForUser(event, params.userId)
 
   let customerRow = existingByUser
 
@@ -97,7 +114,10 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
 
     if (byEmail?.id) {
       await supabase.from('customers').update({ user_id: params.userId }).eq('id', byEmail.id)
-      customerRow = byEmail
+      customerRow = {
+        ...byEmail,
+        user_id: params.userId
+      } as PrimaryCustomerRow
     }
   }
 
@@ -108,7 +128,7 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
         user_id: params.userId,
         email
       })
-      .select('id,email,phone,first_name,last_name,square_customer_id,square_customer_json')
+      .select('id,user_id,email,phone,first_name,last_name,square_customer_id,square_customer_json')
       .single()
 
     if (insertErr || !inserted) {
@@ -116,6 +136,7 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
     }
     customerRow = inserted
   }
+  if (!customerRow) throw new Error('Failed to resolve customer row')
 
   let squareCustomerId = (customerRow.square_customer_id ?? '').trim() || null
   if (!squareCustomerId) {

@@ -56,6 +56,10 @@ type SavedCardMethod = {
   cardholderName: string | null
   enabled: boolean
 }
+type PaymentMethodsResponse = {
+  methods: SavedCardMethod[]
+  defaultCardId?: string | null
+}
 
 const { data: membership } = await useAsyncData('dash:credits:membership', async () => {
   if (!user.value) return null
@@ -105,14 +109,18 @@ const { data: creditSummary, refresh: refreshCreditSummary } = await useAsyncDat
   return res.summary
 }, { watch: [user, hasActiveMembership] })
 const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAsyncData('dash:credits:payment-methods', async () => {
-  if (!user.value?.sub) return { methods: [] as SavedCardMethod[] }
-  return await $fetch<{ methods: SavedCardMethod[] }>('/api/payments/methods')
+  if (!user.value?.sub) return { methods: [] as SavedCardMethod[], defaultCardId: null }
+  return await $fetch<PaymentMethodsResponse>('/api/payments/methods')
 }, { watch: [() => user.value?.sub] })
 
 const displayedCreditBalance = computed(() => creditSummary.value?.totalBalance ?? balance.value ?? 0)
 const canBuyTopoff = computed(() => creditSummary.value?.canBuyTopoff ?? true)
 const savedCards = computed(() => (paymentMethodsData.value?.methods ?? []).filter(card => card.enabled))
-const defaultSavedCardId = computed(() => savedCards.value[0]?.id ?? null)
+const defaultSavedCardId = computed(() => {
+  const preferred = paymentMethodsData.value?.defaultCardId ?? null
+  if (preferred && savedCards.value.some(card => card.id === preferred)) return preferred
+  return savedCards.value[0]?.id ?? null
+})
 const hasSavedCardOnFile = computed(() => Boolean(defaultSavedCardId.value))
 
 const topupLoadingKey = ref<string | null>(null)

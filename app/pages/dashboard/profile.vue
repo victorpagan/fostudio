@@ -21,6 +21,10 @@ type SavedCardMethod = {
   cardholderName: string | null
   enabled: boolean
 }
+type PaymentMethodsResponse = {
+  methods: SavedCardMethod[]
+  defaultCardId?: string | null
+}
 type SubscriptionState = {
   hasManagedSubscription: boolean
   subscriptionStatus?: string | null
@@ -52,9 +56,9 @@ const { data: customer, refresh } = await useAsyncData('dash:profile', async () 
   return data as CustomerRow | null
 })
 const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAsyncData('dash:profile:payment-methods', async () => {
-  if (!user.value?.sub) return { methods: [] as SavedCardMethod[] }
-  return await $fetch<{ methods: SavedCardMethod[] }>('/api/payments/methods')
-}, { watch: [() => user.value?.sub], default: () => ({ methods: [] }) })
+  if (!user.value?.sub) return { methods: [] as SavedCardMethod[], defaultCardId: null }
+  return await $fetch<PaymentMethodsResponse>('/api/payments/methods')
+}, { watch: [() => user.value?.sub], default: () => ({ methods: [], defaultCardId: null }) })
 const { data: subscriptionState, refresh: refreshSubscriptionState } = await useAsyncData('dash:profile:subscription-state', async () => {
   if (!user.value?.sub) return null
   return await $fetch<SubscriptionState>('/api/membership/subscription-state')
@@ -88,6 +92,7 @@ const saving = ref(false)
 const saved = ref(false)
 const addingCard = ref(false)
 const removingCardId = ref<string | null>(null)
+const settingDefaultCardId = ref<string | null>(null)
 const cardModalOpen = ref(false)
 
 async function saveProfile() {
@@ -151,6 +156,7 @@ const isDirty = computed(() =>
   form.phone !== (customer.value?.phone ?? '')
 )
 const savedCards = computed(() => paymentMethodsData.value?.methods ?? [])
+const defaultCardId = computed(() => paymentMethodsData.value?.defaultCardId ?? null)
 
 function formatExactDate(value: string | null | undefined) {
   if (!value) return null
@@ -220,6 +226,27 @@ async function removePaymentMethod(cardId: string) {
     removingCardId.value = null
   }
 }
+
+async function setDefaultPaymentMethod(cardId: string) {
+  if (settingDefaultCardId.value) return
+  settingDefaultCardId.value = cardId
+  try {
+    await $fetch('/api/payments/methods.default', {
+      method: 'POST',
+      body: { cardId }
+    })
+    toast.add({ title: 'Default card updated', color: 'success' })
+    await refreshPaymentMethods()
+  } catch (error: any) {
+    toast.add({
+      title: 'Could not set default card',
+      description: error?.data?.statusMessage ?? error?.message ?? 'Error',
+      color: 'error'
+    })
+  } finally {
+    settingDefaultCardId.value = null
+  }
+}
 </script>
 
 <template>
@@ -284,8 +311,9 @@ async function removePaymentMethod(cardId: string) {
                   class="rounded-lg border border-default p-3 flex items-center justify-between gap-3"
                 >
                   <div class="min-w-0">
-                    <div class="text-sm font-medium truncate">
+                    <div class="text-sm font-medium truncate flex items-center gap-2">
                       {{ card.brand ?? 'Card' }} •••• {{ card.last4 ?? '----' }}
+                      <UBadge v-if="defaultCardId === card.id" size="xs" color="success" variant="soft" label="Default" />
                     </div>
                     <div class="text-xs text-dimmed">
                       Expires {{ formatCardExpiry(card.expMonth, card.expYear) }}
@@ -293,16 +321,28 @@ async function removePaymentMethod(cardId: string) {
                       <span v-if="isCardExpired(card.expMonth, card.expYear)" class="text-warning"> · expired</span>
                     </div>
                   </div>
-                  <UButton
-                    size="xs"
-                    color="error"
-                    variant="soft"
-                    :disabled="!card.enabled"
-                    :loading="removingCardId === card.id"
-                    @click="removePaymentMethod(card.id)"
-                  >
-                    Remove
-                  </UButton>
+                  <div class="flex items-center gap-2">
+                    <UButton
+                      v-if="card.enabled && defaultCardId !== card.id"
+                      size="xs"
+                      color="neutral"
+                      variant="soft"
+                      :loading="settingDefaultCardId === card.id"
+                      @click="setDefaultPaymentMethod(card.id)"
+                    >
+                      Make default
+                    </UButton>
+                    <UButton
+                      size="xs"
+                      color="error"
+                      variant="soft"
+                      :disabled="!card.enabled"
+                      :loading="removingCardId === card.id"
+                      @click="removePaymentMethod(card.id)"
+                    >
+                      Remove
+                    </UButton>
+                  </div>
                 </div>
               </div>
             </div>

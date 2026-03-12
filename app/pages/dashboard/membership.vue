@@ -79,6 +79,10 @@ type SavedCardMethod = {
   cardholderName: string | null
   enabled: boolean
 }
+type PaymentMethodsResponse = {
+  methods: SavedCardMethod[]
+  defaultCardId?: string | null
+}
 
 type HoldSummary = {
   holdsIncluded: number
@@ -299,8 +303,8 @@ const { data: holdTopupOffer, refresh: refreshHoldTopupOffer } = await useAsyncD
 }, { watch: [user, membershipState] })
 
 const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAsyncData('dash:membership:payment-methods', async () => {
-  if (!user.value?.sub) return { methods: [] as SavedCardMethod[] }
-  return await $fetch<{ methods: SavedCardMethod[] }>('/api/payments/methods')
+  if (!user.value?.sub) return { methods: [] as SavedCardMethod[], defaultCardId: null }
+  return await $fetch<PaymentMethodsResponse>('/api/payments/methods')
 }, { watch: [() => user.value?.sub] })
 
 const { data: doorCodeState, refresh: refreshDoorCodeState } = await useAsyncData('dash:membership:door-code', async () => {
@@ -395,7 +399,11 @@ const currentVariation = computed(() =>
 const displayedCreditBalance = computed(() => creditSummary.value?.totalBalance ?? balance.value ?? 0)
 const canBuyTopoff = computed(() => creditSummary.value?.canBuyTopoff ?? true)
 const savedCards = computed(() => (paymentMethodsData.value?.methods ?? []).filter(card => card.enabled))
-const defaultSavedCardId = computed(() => savedCards.value[0]?.id ?? null)
+const defaultSavedCardId = computed(() => {
+  const preferred = paymentMethodsData.value?.defaultCardId ?? null
+  if (preferred && savedCards.value.some(card => card.id === preferred)) return preferred
+  return savedCards.value[0]?.id ?? null
+})
 
 function formatPrice(cents: number | null, currency = 'USD') {
   if (cents === null) return '—'
