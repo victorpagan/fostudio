@@ -54,6 +54,7 @@ type SavedCardMethod = {
   expMonth: number | null
   expYear: number | null
   cardholderName: string | null
+  enabled: boolean
 }
 
 const { data: membership } = await useAsyncData('dash:credits:membership', async () => {
@@ -110,7 +111,7 @@ const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAs
 
 const displayedCreditBalance = computed(() => creditSummary.value?.totalBalance ?? balance.value ?? 0)
 const canBuyTopoff = computed(() => creditSummary.value?.canBuyTopoff ?? true)
-const savedCards = computed(() => paymentMethodsData.value?.methods ?? [])
+const savedCards = computed(() => (paymentMethodsData.value?.methods ?? []).filter(card => card.enabled))
 const defaultSavedCardId = computed(() => savedCards.value[0]?.id ?? null)
 const hasSavedCardOnFile = computed(() => Boolean(defaultSavedCardId.value))
 

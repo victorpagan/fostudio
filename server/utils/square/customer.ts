@@ -71,11 +71,17 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
   const supabase = serverSupabaseServiceRole(event)
   const email = normEmail(params.email)
 
-  const { data: existingByUser } = await supabase
+  // Multiple rows can exist for a single user due to legacy data/backfills.
+  // Always pick one deterministic primary row so card add/list stays stable.
+  const { data: existingByUserRows } = await supabase
     .from('customers')
     .select('id,email,phone,first_name,last_name,square_customer_id,square_customer_json')
     .eq('user_id', params.userId)
-    .maybeSingle()
+    .order('updated_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  const existingByUser = Array.isArray(existingByUserRows) ? (existingByUserRows[0] ?? null) : null
 
   let customerRow = existingByUser
 

@@ -19,6 +19,7 @@ type SavedCardMethod = {
   expMonth: number | null
   expYear: number | null
   cardholderName: string | null
+  enabled: boolean
 }
 type SubscriptionState = {
   hasManagedSubscription: boolean
@@ -288,6 +289,7 @@ async function removePaymentMethod(cardId: string) {
                     </div>
                     <div class="text-xs text-dimmed">
                       Expires {{ formatCardExpiry(card.expMonth, card.expYear) }}
+                      <span v-if="!card.enabled" class="text-error"> · unavailable</span>
                       <span v-if="isCardExpired(card.expMonth, card.expYear)" class="text-warning"> · expired</span>
                     </div>
                   </div>
@@ -295,6 +297,7 @@ async function removePaymentMethod(cardId: string) {
                     size="xs"
                     color="error"
                     variant="soft"
+                    :disabled="!card.enabled"
                     :loading="removingCardId === card.id"
                     @click="removePaymentMethod(card.id)"
                   >

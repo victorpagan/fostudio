@@ -77,6 +77,7 @@ type SavedCardMethod = {
   expMonth: number | null
   expYear: number | null
   cardholderName: string | null
+  enabled: boolean
 }
 
 type HoldSummary = {
@@ -393,7 +394,7 @@ const currentVariation = computed(() =>
 
 const displayedCreditBalance = computed(() => creditSummary.value?.totalBalance ?? balance.value ?? 0)
 const canBuyTopoff = computed(() => creditSummary.value?.canBuyTopoff ?? true)
-const savedCards = computed(() => paymentMethodsData.value?.methods ?? [])
+const savedCards = computed(() => (paymentMethodsData.value?.methods ?? []).filter(card => card.enabled))
 const defaultSavedCardId = computed(() => savedCards.value[0]?.id ?? null)
 
 function formatPrice(cents: number | null, currency = 'USD') {

@@ -28,6 +28,7 @@ type SavedCardMethod = {
   expMonth: number | null
   expYear: number | null
   cardholderName: string | null
+  enabled: boolean
 }
 
 const route = useRoute()
@@ -66,7 +67,7 @@ const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAs
 })
 
 const tiers = computed(() => data.value?.tiers ?? [])
-const savedCardMethods = computed(() => paymentMethodsData.value?.methods ?? [])
+const savedCardMethods = computed(() => (paymentMethodsData.value?.methods ?? []).filter(card => card.enabled))
 const hasSavedCards = computed(() => savedCardMethods.value.length > 0)
 const savedCardItems = computed(() => savedCardMethods.value.map(card => ({
   label: `${card.brand ?? 'Card'} •••• ${card.last4 ?? '----'}${card.expMonth && card.expYear ? ` (exp ${String(card.expMonth).padStart(2, '0')}/${String(card.expYear).slice(-2)})` : ''}`,

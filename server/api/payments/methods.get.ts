@@ -53,7 +53,7 @@ export default defineEventHandler(async (event) => {
   const square = await useSquareClient(event)
   const listRes = await square.cards.list({
     customerId: squareCustomerId,
-    includeDisabled: false,
+    includeDisabled: true,
     sortOrder: 'ASC'
   } as never)
   const cards = Array.isArray((listRes as { cards?: unknown }).cards)
@@ -76,7 +76,7 @@ export default defineEventHandler(async (event) => {
         enabled
       }
     })
-    .filter((card): card is SquareCardSummary => card !== null && card.enabled)
+    .filter((card): card is SquareCardSummary => card !== null)
 
   return {
     methods,
