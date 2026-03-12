@@ -20,12 +20,19 @@ type PromoCode = {
   }
   metadata?: {
     applies_tier_ids?: string[]
+    applies_credit_option_keys?: string[]
   } | null
 }
 
 type TierOption = {
   id: string
   display_name: string
+}
+
+type CreditOption = {
+  key: string
+  label: string
+  active: boolean
 }
 
 const toast = useToast()
@@ -41,6 +48,7 @@ const form = reactive({
   discountValue: 10,
   appliesTo: 'all' as 'all' | 'membership' | 'credits' | 'holds',
   appliesTierIds: [] as string[],
+  appliesCreditOptionKeys: [] as string[],
   active: true,
   startsAt: null as string | null,
   endsAt: null as string | null,
@@ -58,6 +66,11 @@ const { data: tierRows, pending: tiersPending, error: tiersError } = await useAs
   return res.tiers ?? []
 })
 const tierOptions = computed(() => tierRows.value ?? [])
+const { data: creditOptionRows, pending: creditOptionsPending, error: creditOptionsError } = await useAsyncData('admin:promo:credit-options', async () => {
+  const res = await $fetch<{ options: CreditOption[] }>('/api/admin/credits/options')
+  return (res.options ?? []).filter(option => option.active)
+})
+const creditOptions = computed(() => creditOptionRows.value ?? [])
 
 function readErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Unknown error'
@@ -93,6 +106,7 @@ function resetForm() {
   form.discountValue = 10
   form.appliesTo = 'all'
   form.appliesTierIds = []
+  form.appliesCreditOptionKeys = []
   form.active = true
   form.startsAt = null
   form.endsAt = null
@@ -113,6 +127,9 @@ function loadPromo(promoId: string) {
   form.appliesTo = promo.applies_to
   form.appliesTierIds = Array.isArray(promo.metadata?.applies_tier_ids)
     ? promo.metadata!.applies_tier_ids!.map(id => String(id))
+    : []
+  form.appliesCreditOptionKeys = Array.isArray(promo.metadata?.applies_credit_option_keys)
+    ? promo.metadata!.applies_credit_option_keys!.map(id => String(id))
     : []
   form.active = promo.active
   form.startsAt = promo.starts_at
@@ -180,6 +197,7 @@ async function savePromo() {
         discountValue: form.discountValue,
         appliesTo: form.appliesTo,
         appliesTierIds: form.appliesTierIds,
+        appliesCreditOptionKeys: form.appliesCreditOptionKeys,
         active: form.active,
         startsAt: form.startsAt,
         endsAt: form.endsAt,
@@ -224,6 +242,13 @@ function formatPromoValue(promo: PromoCode) {
 }
 
 function formatPromoAppliesTo(promo: PromoCode) {
+  if (promo.applies_to === 'credits') {
+    const optionKeys = Array.isArray(promo.metadata?.applies_credit_option_keys) ? promo.metadata!.applies_credit_option_keys! : []
+    if (!optionKeys.length) return 'Credits: all packages'
+    const optionMap = new Map((creditOptions.value ?? []).map(option => [option.key, option.label]))
+    const labels = optionKeys.map(key => optionMap.get(key) ?? key)
+    return `Credits: ${labels.join(', ')}`
+  }
   if (promo.applies_to !== 'membership') return `Applies to ${promo.applies_to}`
   const tierIds = Array.isArray(promo.metadata?.applies_tier_ids) ? promo.metadata!.applies_tier_ids! : []
   if (!tierIds.length) return 'Applies to all memberships'
@@ -385,6 +410,53 @@ function formatSquareSyncReason(reason: string | null | undefined) {
                       }"
                     />
                   </div>
+                </div>
+              </UFormField>
+              <UFormField
+                v-if="form.appliesTo === 'credits'"
+                label="Credit packages"
+                class="md:col-span-2"
+              >
+                <div class="rounded-lg border border-default p-3">
+                  <div
+                    v-if="creditOptionsPending"
+                    class="text-xs text-dimmed"
+                  >
+                    Loading credit packages...
+                  </div>
+                  <div
+                    v-else-if="creditOptionsError"
+                    class="text-xs text-error"
+                  >
+                    Could not load credit packages.
+                  </div>
+                  <div
+                    v-else-if="!creditOptions.length"
+                    class="text-xs text-dimmed"
+                  >
+                    No active credit packages found.
+                  </div>
+                  <div
+                    v-else
+                    class="grid gap-2 md:grid-cols-2"
+                  >
+                    <UCheckbox
+                      v-for="option in creditOptions"
+                      :key="option.key"
+                      :model-value="form.appliesCreditOptionKeys.includes(option.key)"
+                      :label="option.label"
+                      @update:model-value="(checked) => {
+                        if (checked) {
+                          if (!form.appliesCreditOptionKeys.includes(option.key)) form.appliesCreditOptionKeys.push(option.key)
+                        } else {
+                          form.appliesCreditOptionKeys = form.appliesCreditOptionKeys.filter(key => key !== option.key)
+                        }
+                      }"
+                    />
+                  </div>
+                  <p class="mt-2 text-xs text-dimmed">
+                    Leave empty to apply this promo to all credit packages.
+                  </p>
                 </div>
               </UFormField>
               <UFormField label="Description" class="md:col-span-2">

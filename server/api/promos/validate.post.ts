@@ -77,6 +77,7 @@ export default defineEventHandler(async (event) => {
     promoCode,
     context: body.context,
     tierId,
+    creditOptionKey: body.optionKey ?? null,
     basePriceCents
   })
 

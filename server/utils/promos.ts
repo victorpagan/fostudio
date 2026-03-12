@@ -34,6 +34,12 @@ function readPromoTierScope(metadata: Record<string, unknown> | null | undefined
   return raw.map(entry => String(entry ?? '').trim()).filter(Boolean)
 }
 
+function readPromoCreditScope(metadata: Record<string, unknown> | null | undefined) {
+  const raw = metadata?.applies_credit_option_keys
+  if (!Array.isArray(raw)) return [] as string[]
+  return raw.map(entry => String(entry ?? '').trim()).filter(Boolean)
+}
+
 function appliesToContext(appliesTo: PromoAppliesTo, context: 'membership' | 'credits' | 'holds') {
   if (appliesTo === 'all') return true
   return appliesTo === context
@@ -45,6 +51,7 @@ export async function resolvePromoPricing(params: {
   promoCode: string | null
   context: 'membership' | 'credits' | 'holds'
   tierId?: string | null
+  creditOptionKey?: string | null
   basePriceCents: number
   requireSquareDiscount?: boolean
 }) {
@@ -75,6 +82,12 @@ export async function resolvePromoPricing(params: {
     const tierScope = readPromoTierScope(promo.metadata)
     if (tierScope.length > 0 && params.tierId && !tierScope.includes(params.tierId)) {
       throw createError({ statusCode: 400, statusMessage: 'Promo code does not apply to this membership tier.' })
+    }
+  }
+  if (params.context === 'credits') {
+    const creditScope = readPromoCreditScope(promo.metadata)
+    if (creditScope.length > 0 && params.creditOptionKey && !creditScope.includes(params.creditOptionKey)) {
+      throw createError({ statusCode: 400, statusMessage: 'Promo code does not apply to this credit package.' })
     }
   }
 

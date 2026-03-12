@@ -52,6 +52,7 @@ export default defineEventHandler(async (event) => {
     supabase,
     promoCode,
     context: 'credits',
+    creditOptionKey: mappedOption.key,
     basePriceCents: baseEffectivePriceCents
   })
   const effectivePriceCents = promoPricing?.effectivePriceCents ?? baseEffectivePriceCents

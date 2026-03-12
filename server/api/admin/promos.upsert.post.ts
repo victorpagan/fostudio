@@ -11,6 +11,7 @@ const bodySchema = z.object({
   discountValue: z.number().positive(),
   appliesTo: z.enum(['all', 'membership', 'credits', 'holds']).default('all'),
   appliesTierIds: z.array(z.string().min(1)).optional().default([]),
+  appliesCreditOptionKeys: z.array(z.string().min(1)).optional().default([]),
   active: z.boolean().default(true),
   startsAt: z.string().datetime().optional().nullable(),
   endsAt: z.string().datetime().optional().nullable(),
@@ -131,6 +132,7 @@ export default defineEventHandler(async (event) => {
   const mergedMetadata = {
     ...(existing?.metadata ?? {}),
     applies_tier_ids: body.appliesTierIds,
+    applies_credit_option_keys: body.appliesCreditOptionKeys,
     square_discount_synced_at: new Date().toISOString(),
     square_discount_name: discountName
   }
