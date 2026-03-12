@@ -525,6 +525,7 @@ const paymentAmountCents = ref(0)
 const paymentCurrency = ref('USD')
 const paymentLabel = ref('purchase')
 const purchasePromoCode = ref('')
+const planChangePromoCode = ref('')
 const membershipCancelLoading = ref(false)
 const membershipUndoCancelLoading = ref(false)
 const doorCodeRequestLoading = ref(false)
@@ -682,18 +683,39 @@ async function requestDoorCodeChange() {
 
 async function schedulePlanChange(tierId: string, cadence: string) {
   try {
+    let validatedPromoCode: string | undefined
+    const promoCandidate = planChangePromoCode.value.trim().toUpperCase()
+    if (promoCandidate) {
+      const promoRes = await $fetch<{
+        valid: boolean
+        promo: {
+          code: string
+        }
+      }>('/api/promos/validate', {
+        method: 'POST',
+        body: {
+          context: 'membership',
+          promo_code: promoCandidate,
+          tier: tierId,
+          cadence
+        }
+      })
+      validatedPromoCode = promoRes.promo.code
+      planChangePromoCode.value = promoRes.promo.code
+    }
+
     const res = await $fetch<{
       effectiveDate: string | null
       target: { displayName: string, cadence: string }
       message: string
     }>('/api/membership/change-plan', {
       method: 'POST',
-      body: { tier: tierId, cadence }
+      body: { tier: tierId, cadence, promo_code: validatedPromoCode }
     })
     const effective = formatDateLabel(res.effectiveDate) ?? 'your next billing cycle'
     toast.add({
       title: 'Plan change scheduled',
-      description: `${res.target.displayName} (${formatCadence(res.target.cadence)}) starts ${effective}.`,
+      description: `${res.target.displayName} (${formatCadence(res.target.cadence)}) starts ${effective}.${validatedPromoCode ? ` Promo ${validatedPromoCode} applied.` : ''}`,
       color: 'success'
     })
     await refreshAll()
@@ -1470,6 +1492,29 @@ onUnmounted(() => {
                 <p class="text-xs text-dimmed">
                   Membership changes are scheduled for your next billing cycle. No prorated mid-cycle membership changes.
                 </p>
+                <UFormField
+                  label="Discount code (optional)"
+                  description="Applied to the selected scheduled cadence after validation."
+                >
+                  <div class="flex flex-wrap items-center gap-2">
+                    <UInput
+                      v-model="planChangePromoCode"
+                      placeholder="SPRING20"
+                      class="min-w-52"
+                      autocomplete="off"
+                    />
+                    <UButton
+                      v-if="planChangePromoCode.trim()"
+                      size="sm"
+                      color="neutral"
+                      variant="ghost"
+                      icon="i-lucide-x"
+                      @click="planChangePromoCode = ''"
+                    >
+                      Remove
+                    </UButton>
+                  </div>
+                </UFormField>
                 <div class="grid gap-2 sm:grid-cols-3">
                   <div
                     v-for="v in variations"

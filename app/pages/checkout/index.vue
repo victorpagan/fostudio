@@ -350,7 +350,8 @@ async function beginCheckout(options?: { useNewCard?: boolean }) {
           method: 'POST',
           body: {
             tier: selectedTier.value.id,
-            cadence: selectedPlan.value.cadence
+            cadence: selectedPlan.value.cadence,
+            promo_code: appliedPromo.value?.code || undefined
           }
         })
 
@@ -803,7 +804,7 @@ async function submitWaitlist() {
             </p>
           </div>
           <div
-            v-if="!isTestTier && !isPlanSwitchMode"
+            v-if="!isTestTier"
             class="mt-3"
           >
             <UFormField label="Promo code (optional)">

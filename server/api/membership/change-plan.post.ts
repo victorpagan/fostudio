@@ -4,6 +4,7 @@ import { resolveServerUserRole } from '~~/server/utils/auth'
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { buildSubscriptionCreatePhasesFromPlanVariation } from '~~/server/utils/square/subscriptionPhases'
+import { markPromoRedemption, normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
 import {
   findPendingCancelAction,
   findPendingSwapAction,
@@ -12,7 +13,8 @@ import {
 
 const bodySchema = z.object({
   tier: z.string().min(1),
-  cadence: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'annual'])
+  cadence: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'annual']),
+  promo_code: z.string().min(2).max(64).optional()
 })
 
 type MembershipRow = {
@@ -53,6 +55,150 @@ function toDateOnly(value: string | null | undefined) {
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return null
   return parsed.toISOString().slice(0, 10)
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object') return null
+  return value as Record<string, unknown>
+}
+
+async function createOrderTemplateIdForPlanVariation(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  square: any,
+  planVariationId: string,
+  locationId: string
+) {
+  const variationRes = await square.catalog.object.get({
+    objectId: planVariationId,
+    includeRelatedObjects: false
+  } as never)
+  const variationObject = asRecord((variationRes as { object?: unknown, catalogObject?: unknown }).object ?? (variationRes as { catalogObject?: unknown }).catalogObject)
+  const variationData = asRecord(variationObject?.subscriptionPlanVariationData ?? variationObject?.subscription_plan_variation_data)
+  const subscriptionPlanId = readString(variationData, 'subscriptionPlanId', 'subscription_plan_id')
+  if (!subscriptionPlanId) throw new Error(`Square variation ${planVariationId} is missing subscription plan id`)
+
+  const planRes = await square.catalog.object.get({
+    objectId: subscriptionPlanId,
+    includeRelatedObjects: false
+  } as never)
+  const planObject = asRecord((planRes as { object?: unknown, catalogObject?: unknown }).object ?? (planRes as { catalogObject?: unknown }).catalogObject)
+  const planData = asRecord(planObject?.subscriptionPlanData ?? planObject?.subscription_plan_data)
+  const eligibleIdsRaw = planData?.eligibleItemIds ?? planData?.eligible_item_ids
+  const eligibleItemIds = Array.isArray(eligibleIdsRaw)
+    ? eligibleIdsRaw
+      .map(entry => typeof entry === 'string' ? entry.trim() : '')
+      .filter(Boolean)
+    : []
+  const eligibleItemId = eligibleItemIds[0] ?? null
+  if (!eligibleItemId) throw new Error(`Square plan ${subscriptionPlanId} has no eligible item id`)
+
+  const itemRes = await square.catalog.object.get({
+    objectId: eligibleItemId,
+    includeRelatedObjects: false
+  } as never)
+  const itemObject = asRecord((itemRes as { object?: unknown, catalogObject?: unknown }).object ?? (itemRes as { catalogObject?: unknown }).catalogObject)
+  const itemData = asRecord(itemObject?.itemData ?? itemObject?.item_data)
+  const itemVariations = Array.isArray(itemData?.variations) ? itemData.variations : []
+  const firstItemVariation = itemVariations
+    .map(entry => asRecord(entry))
+    .find(Boolean) ?? null
+  const itemVariationId = readString(firstItemVariation, 'id')
+  if (!itemVariationId) throw new Error(`Square item ${eligibleItemId} has no item variation id`)
+
+  const orderRes = await square.orders.create({
+    idempotencyKey: `mpswap-order:${planVariationId}:${Date.now()}`,
+    order: {
+      locationId,
+      state: 'DRAFT',
+      lineItems: [
+        {
+          catalogObjectId: itemVariationId,
+          quantity: '1'
+        }
+      ]
+    }
+  } as never)
+
+  const order = asRecord((orderRes as { order?: unknown }).order)
+  const orderId = readString(order, 'id')
+  if (!orderId) throw new Error(`Could not create order template for variation ${planVariationId}`)
+  return orderId
+}
+
+function readSquareErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) return error.message.trim()
+  if (!error || typeof error !== 'object') return 'Square request failed'
+  const details = (error as { errors?: unknown }).errors
+  if (!Array.isArray(details) || details.length === 0) return 'Square request failed'
+  const first = details[0]
+  if (!first || typeof first !== 'object') return 'Square request failed'
+  const detail = (first as { detail?: unknown }).detail
+  if (typeof detail === 'string' && detail.trim()) return detail.trim()
+  const code = (first as { code?: unknown }).code
+  if (typeof code === 'string' && code.trim()) return code.trim()
+  return 'Square request failed'
+}
+
+function applyPromoDiscountToRelativePhases(
+  phases: Array<Record<string, unknown>> | null,
+  promoSquareDiscountId: string | null
+) {
+  if (!Array.isArray(phases) || !promoSquareDiscountId) return phases
+  return phases.map((phase) => {
+    const pricing = asRecord(phase.pricing)
+    const pricingType = readString(pricing, 'type')?.toUpperCase()
+    if (pricingType !== 'RELATIVE') return phase
+    const discountIds = Array.isArray(pricing?.discountIds)
+      ? pricing.discountIds.map(value => String(value)).filter(Boolean)
+      : []
+    if (!discountIds.includes(promoSquareDiscountId)) {
+      discountIds.push(promoSquareDiscountId)
+    }
+    return {
+      ...phase,
+      pricing: {
+        ...(pricing ?? {}),
+        type: 'RELATIVE',
+        discountIds
+      }
+    }
+  })
+}
+
+async function ensureRelativeOrderTemplatesOnPhases(params: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  square: any
+  planVariationId: string
+  locationId: string
+  phases: Array<Record<string, unknown>> | null
+}) {
+  const { square, planVariationId, locationId } = params
+  let { phases } = params
+  if (!Array.isArray(phases) || !phases.length) return phases
+
+  const hasMissingRelativeOrderTemplate = phases.some((phase) => {
+    const pricing = asRecord(phase.pricing)
+    const pricingType = readString(pricing, 'type')?.toUpperCase()
+    const orderTemplateId = readString(phase, 'orderTemplateId', 'order_template_id')
+    return pricingType === 'RELATIVE' && !orderTemplateId
+  })
+  if (!hasMissingRelativeOrderTemplate) return phases
+
+  const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId)
+  phases = phases.map((phase) => {
+    const pricing = asRecord(phase.pricing)
+    const pricingType = readString(pricing, 'type')?.toUpperCase()
+    const existingOrderTemplateId = readString(phase, 'orderTemplateId', 'order_template_id')
+    if (pricingType === 'RELATIVE' && !existingOrderTemplateId) {
+      return {
+        ...phase,
+        orderTemplateId
+      }
+    }
+    return phase
+  })
+
+  return phases
 }
 
 async function findManagedSquareSubscriptionId(
@@ -157,7 +303,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: targetVariation, error: targetVariationErr } = await supabase
     .from('membership_plan_variations')
-    .select('tier_id,cadence,provider,provider_plan_variation_id,active,visible')
+    .select('tier_id,cadence,provider,provider_plan_variation_id,price_cents,active,visible')
     .eq('tier_id', body.tier)
     .eq('cadence', body.cadence)
     .eq('provider', 'square')
@@ -185,6 +331,26 @@ export default defineEventHandler(async (event) => {
   }
 
   const square = await useSquareClient(event)
+  const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
+  const promoCode = normalizePromoCode(body.promo_code)
+  const promoPricing = promoCode
+    ? await resolvePromoPricing({
+      supabase,
+      promoCode,
+      context: 'membership',
+      tierId: body.tier,
+      basePriceCents: Number(targetVariation.price_cents ?? 0)
+    })
+    : null
+
+  let targetPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, targetPlanVariationId) as Array<Record<string, unknown>> | null
+  targetPhases = applyPromoDiscountToRelativePhases(targetPhases, promoPricing?.squareDiscountId ?? null)
+  targetPhases = await ensureRelativeOrderTemplatesOnPhases({
+    square,
+    planVariationId: targetPlanVariationId,
+    locationId,
+    phases: targetPhases
+  })
   if (!subscriptionId && customerId) {
     try {
       subscriptionId = await findManagedSquareSubscriptionId(square, customerId, currentPlanVariationId)
@@ -223,7 +389,6 @@ export default defineEventHandler(async (event) => {
 
   if (!subscriptionId && customerId && currentPlanVariationId) {
     try {
-      const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
       const startDate = toDateOnly(membership.current_period_end) ?? new Date().toISOString().slice(0, 10)
       const createPayload: Record<string, unknown> = {
         idempotencyKey: `mswap:${membership.id}`,
@@ -235,7 +400,13 @@ export default defineEventHandler(async (event) => {
         source: { name: 'FO Studio plan swap bootstrap' }
       }
 
-      const subscriptionPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, currentPlanVariationId)
+      let subscriptionPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, currentPlanVariationId) as Array<Record<string, unknown>> | null
+      subscriptionPhases = await ensureRelativeOrderTemplatesOnPhases({
+        square,
+        planVariationId: currentPlanVariationId,
+        locationId,
+        phases: subscriptionPhases
+      })
       if (subscriptionPhases?.length) {
         createPayload.phases = subscriptionPhases
       }
@@ -316,10 +487,21 @@ export default defineEventHandler(async (event) => {
     } as never)
   }
 
-  await square.subscriptions.swapPlan({
-    subscriptionId,
-    newPlanVariationId: targetPlanVariationId
-  } as never)
+  try {
+    const swapPayload: Record<string, unknown> = {
+      subscriptionId,
+      newPlanVariationId: targetPlanVariationId
+    }
+    if (targetPhases?.length) {
+      swapPayload.phases = targetPhases
+    }
+    await square.subscriptions.swapPlan(swapPayload as never)
+  } catch (error) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: readSquareErrorMessage(error)
+    })
+  }
 
   const refreshedRes = await square.subscriptions.get({
     subscriptionId,
@@ -328,6 +510,10 @@ export default defineEventHandler(async (event) => {
   const refreshed = (refreshedRes as { subscription?: Record<string, unknown> | null }).subscription ?? null
   const refreshedActions = toRecordArray(refreshed?.actions)
   const pendingSwap = findPendingSwapAction(refreshedActions)
+
+  if (promoPricing?.promoId) {
+    await markPromoRedemption(supabase, promoPricing.promoId, '[membership/change-plan]')
+  }
 
   return {
     ok: true,
