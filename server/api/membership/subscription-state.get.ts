@@ -23,11 +23,22 @@ export default defineEventHandler(async (event) => {
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
 
   const supabase = serverSupabaseServiceRole(event)
+  let grantSync: { ranAt: string | null, ok: boolean, membershipsChecked: number } | null = null
 
   try {
-    await syncMembershipCreditGrantsForUser(event, user.sub, { processLimit: 24 })
+    const result = await syncMembershipCreditGrantsForUser(event, user.sub, { processLimit: 24 })
+    grantSync = {
+      ranAt: result.ranAt,
+      ok: true,
+      membershipsChecked: result.membershipsChecked
+    }
   } catch (error) {
     console.warn('[membership/subscription-state] grant sync failed', error instanceof Error ? error.message : String(error))
+    grantSync = {
+      ranAt: new Date().toISOString(),
+      ok: false,
+      membershipsChecked: 0
+    }
   }
 
   const { data: membershipRaw, error: membershipErr } = await supabase
@@ -40,6 +51,7 @@ export default defineEventHandler(async (event) => {
   if (!membershipRaw) {
     return {
       ok: true,
+      grantSync,
       hasManagedSubscription: false,
       currentPeriodEnd: null,
       pendingSwap: null,
@@ -51,6 +63,7 @@ export default defineEventHandler(async (event) => {
   if ((membership.billing_provider ?? '').toLowerCase() !== 'square' || !membership.billing_subscription_id) {
     return {
       ok: true,
+      grantSync,
       hasManagedSubscription: false,
       currentPeriodEnd: membership.current_period_end ?? null,
       pendingSwap: null,
@@ -110,6 +123,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     ok: true,
+    grantSync,
     hasManagedSubscription: true,
     subscriptionStatus: readSquareString(subscription, 'status'),
     currentPeriodEnd: membership.current_period_end ?? null,

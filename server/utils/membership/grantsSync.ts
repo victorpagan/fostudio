@@ -17,6 +17,11 @@ type GrantSyncOptions = {
   processLimit?: number
 }
 
+type GrantSyncResult = {
+  ranAt: string
+  membershipsChecked: number
+}
+
 function readString(source: Record<string, unknown> | null | undefined, ...keys: string[]) {
   if (!source) return null
   for (const key of keys) {
@@ -50,7 +55,12 @@ export async function syncMembershipCreditGrantsForUser(event: H3Event, userId: 
   if (membershipsErr) throw new Error(membershipsErr.message)
 
   const memberships = (membershipsRaw ?? []) as MembershipGrantSyncRow[]
-  if (!memberships.length) return
+  if (!memberships.length) {
+    return {
+      ranAt: new Date().toISOString(),
+      membershipsChecked: 0
+    } satisfies GrantSyncResult
+  }
 
   const square = await useSquareClient(event)
 
@@ -122,4 +132,9 @@ export async function syncMembershipCreditGrantsForUser(event: H3Event, userId: 
   if (processErr) {
     throw new Error(processErr.message)
   }
+
+  return {
+    ranAt: new Date().toISOString(),
+    membershipsChecked: memberships.length
+  } satisfies GrantSyncResult
 }

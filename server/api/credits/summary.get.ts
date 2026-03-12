@@ -25,12 +25,23 @@ export default defineEventHandler(async (event) => {
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
 
   const hasActiveMembership = Boolean(membership && (membership.status ?? '').toLowerCase() === 'active')
+  let grantSync: { ranAt: string | null, ok: boolean, membershipsChecked: number } | null = null
 
   if (hasActiveMembership) {
     try {
-      await syncMembershipCreditGrantsForUser(event, user.sub, { processLimit: 24 })
+      const result = await syncMembershipCreditGrantsForUser(event, user.sub, { processLimit: 24 })
+      grantSync = {
+        ranAt: result.ranAt,
+        ok: true,
+        membershipsChecked: result.membershipsChecked
+      }
     } catch (error) {
       console.error('[credits-summary] grant refresh failed', error)
+      grantSync = {
+        ranAt: new Date().toISOString(),
+        ok: false,
+        membershipsChecked: 0
+      }
     }
   }
 
@@ -78,6 +89,7 @@ export default defineEventHandler(async (event) => {
   const topoffCreditExpiryDays = Number(tierRow?.topoff_credit_expiry_days ?? DEFAULT_TOPUP_CREDIT_EXPIRY_DAYS)
 
   return {
+    grantSync,
     summary: {
       totalBalance: summary.totalBalance,
       bankBalance: summary.bankBalance,
