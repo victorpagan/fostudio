@@ -24,6 +24,11 @@ type PromoExistingRow = {
   square_discount_id: string | null
 }
 
+type SquareCatalogUpsertResult = {
+  idMappings?: Array<{ clientObjectId?: string | null, objectId?: string | null }>
+  catalogObject?: { id?: string | null } | null
+}
+
 function extractSquareErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim()) return error.message.trim()
   if (!error || typeof error !== 'object') return 'Square sync failed'
@@ -36,6 +41,43 @@ function extractSquareErrorMessage(error: unknown) {
   const code = (first as { code?: unknown }).code
   if (typeof code === 'string' && code.trim()) return code.trim()
   return 'Square sync failed'
+}
+
+function extractSquareErrorCode(error: unknown) {
+  if (!error || typeof error !== 'object') return null
+  const details = (error as { errors?: unknown }).errors
+  if (!Array.isArray(details) || details.length === 0) return null
+  const first = details[0]
+  if (!first || typeof first !== 'object') return null
+  const code = (first as { code?: unknown }).code
+  return typeof code === 'string' && code.trim() ? code.trim() : null
+}
+
+function readSquareObject(response: unknown) {
+  if (!response || typeof response !== 'object') return null
+  const payload = response as {
+    object?: unknown
+    body?: { object?: unknown }
+    result?: { object?: unknown }
+    data?: { object?: unknown }
+    catalogObject?: unknown
+  }
+  const object = payload.object
+    ?? payload.body?.object
+    ?? payload.result?.object
+    ?? payload.data?.object
+    ?? payload.catalogObject
+    ?? null
+  return object && typeof object === 'object'
+    ? (object as Record<string, unknown>)
+    : null
+}
+
+function toSquareVersion(value: unknown) {
+  if (typeof value === 'bigint') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return BigInt(Math.trunc(value))
+  if (typeof value === 'string' && /^\d+$/.test(value)) return BigInt(value)
+  return undefined
 }
 
 function formatPercent(value: number) {
@@ -82,13 +124,24 @@ export default defineEventHandler(async (event) => {
   const discountTempId = `#promo_discount_${randomUUID().slice(0, 8)}`
   const discountObjectId = existingSquareDiscountId ?? discountTempId
   let squareDiscountId: string | null = null
+  let latestVersion: bigint | undefined
 
   try {
+    if (existingSquareDiscountId) {
+      const getRes = await square.catalog.object.get({
+        objectId: existingSquareDiscountId,
+        includeRelatedObjects: false
+      } as never)
+      const existingObject = readSquareObject(getRes)
+      latestVersion = toSquareVersion(existingObject?.version)
+    }
+
     const object = body.discountType === 'percent'
       ? {
           id: discountObjectId,
           type: 'DISCOUNT' as const,
           presentAtAllLocations: true,
+          ...(latestVersion !== undefined ? { version: latestVersion } : {}),
           discountData: {
             name: discountName,
             discountType: 'FIXED_PERCENTAGE' as const,
@@ -99,6 +152,7 @@ export default defineEventHandler(async (event) => {
           id: discountObjectId,
           type: 'DISCOUNT' as const,
           presentAtAllLocations: true,
+          ...(latestVersion !== undefined ? { version: latestVersion } : {}),
           discountData: {
             name: discountName,
             discountType: 'FIXED_AMOUNT' as const,
@@ -109,12 +163,33 @@ export default defineEventHandler(async (event) => {
           }
         }
 
-    const upsertRes = await square.catalog.object.upsert({
-      idempotencyKey: randomUUID(),
-      object
-    } as never) as {
-      idMappings?: Array<{ clientObjectId?: string | null, objectId?: string | null }>
-      catalogObject?: { id?: string | null } | null
+    let upsertRes: SquareCatalogUpsertResult
+    try {
+      upsertRes = await square.catalog.object.upsert({
+        idempotencyKey: randomUUID(),
+        object
+      } as never) as SquareCatalogUpsertResult
+    } catch (error) {
+      const code = extractSquareErrorCode(error)
+      if (code !== 'VERSION_MISMATCH' || !existingSquareDiscountId) throw error
+
+      const getRes = await square.catalog.object.get({
+        objectId: existingSquareDiscountId,
+        includeRelatedObjects: false
+      } as never)
+      const existingObject = readSquareObject(getRes)
+      const retryVersion = toSquareVersion(existingObject?.version)
+      const retryObject = retryVersion === undefined
+        ? object
+        : {
+            ...object,
+            version: retryVersion
+          }
+
+      upsertRes = await square.catalog.object.upsert({
+        idempotencyKey: randomUUID(),
+        object: retryObject
+      } as never) as SquareCatalogUpsertResult
     }
 
     squareDiscountId = upsertRes.idMappings?.find(entry => entry.clientObjectId === discountTempId)?.objectId
