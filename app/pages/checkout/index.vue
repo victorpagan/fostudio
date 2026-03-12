@@ -21,6 +21,14 @@ type Tier = {
   is_full: boolean
   membership_plan_variations: PlanOption[]
 }
+type SavedCardMethod = {
+  id: string
+  brand: string | null
+  last4: string | null
+  expMonth: number | null
+  expYear: number | null
+  cardholderName: string | null
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -30,20 +38,50 @@ const toast = useToast()
 const loading = ref(false)
 const paymentSubmitting = ref(false)
 const waitlistSubmitting = ref(false)
+const promoApplying = ref(false)
 const errorMsg = ref<string | null>(null)
 const promoCode = ref('')
+const appliedPromo = ref<{
+  code: string
+  discountCents: number
+  effectivePriceCents: number
+} | null>(null)
 const selectedCadence = ref<Cadence>('monthly')
 const guestEmail = ref('')
 const paymentModalOpen = ref(false)
 const checkoutToken = ref<string | null>(null)
 const checkoutAmountCents = ref(0)
 const checkoutCurrency = ref('USD')
+const selectedSavedCardId = ref<string | undefined>(undefined)
 
 const { data } = await useFetch<{ tiers: Tier[] }>('/api/membership/catalog', {
   default: () => ({ tiers: [] })
 })
+const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAsyncData('checkout:payment-methods', async () => {
+  if (!user.value?.sub) return { methods: [] as SavedCardMethod[] }
+  return await $fetch<{ methods: SavedCardMethod[] }>('/api/payments/methods')
+}, {
+  watch: [() => user.value?.sub],
+  default: () => ({ methods: [] })
+})
 
 const tiers = computed(() => data.value?.tiers ?? [])
+const savedCardMethods = computed(() => paymentMethodsData.value?.methods ?? [])
+const hasSavedCards = computed(() => savedCardMethods.value.length > 0)
+const savedCardItems = computed(() => savedCardMethods.value.map(card => ({
+  label: `${card.brand ?? 'Card'} •••• ${card.last4 ?? '----'}${card.expMonth && card.expYear ? ` (exp ${String(card.expMonth).padStart(2, '0')}/${String(card.expYear).slice(-2)})` : ''}`,
+  value: card.id
+})))
+
+watch(savedCardMethods, (methods) => {
+  if (!methods.length) {
+    selectedSavedCardId.value = undefined
+    return
+  }
+  if (!selectedSavedCardId.value || !methods.some(method => method.id === selectedSavedCardId.value)) {
+    selectedSavedCardId.value = methods[0]?.id
+  }
+}, { immediate: true })
 
 const tier = computed(() => {
   const queryTier = (route.query.tier as string | undefined)?.toLowerCase()
@@ -101,6 +139,16 @@ const getDiscountLabel = (label?: string | null) => normalizeDiscountLabel(label
 const selectedPlan = computed(() =>
   sortedOptions.value.find(option => option.cadence === selectedCadence.value) ?? sortedOptions.value[0] ?? null
 )
+const normalizedPromoInput = computed(() => promoCode.value.trim().toUpperCase())
+const promoNeedsApply = computed(() => {
+  if (!normalizedPromoInput.value) return false
+  return normalizedPromoInput.value !== (appliedPromo.value?.code ?? '')
+})
+const displayCyclePriceCents = computed(() => {
+  if (!selectedPlan.value) return 0
+  if (!appliedPromo.value) return billedCycleCents(selectedPlan.value)
+  return appliedPromo.value.effectivePriceCents
+})
 const monthlyOption = computed(() => sortedOptions.value.find(option => option.cadence === 'monthly') ?? null)
 const selectedSavingsCents = computed(() => {
   if (!selectedPlan.value || !monthlyOption.value) return 0
@@ -119,9 +167,77 @@ watch([sortedOptions, queryCadence], ([options, cadence]) => {
   selectedCadence.value = options.find(option => option.cadence === 'monthly')?.cadence ?? options[0]?.cadence ?? 'monthly'
 }, { immediate: true })
 
-async function beginCheckout() {
+watch([selectedCadence, tier], () => {
+  if (appliedPromo.value) {
+    appliedPromo.value = null
+  }
+})
+
+watch(normalizedPromoInput, (next) => {
+  if (!appliedPromo.value) return
+  if (next !== appliedPromo.value.code) {
+    appliedPromo.value = null
+  }
+})
+
+async function applyPromoCode() {
+  if (!selectedPlan.value || !selectedTier.value) {
+    errorMsg.value = 'Choose a plan before applying a promo code.'
+    return
+  }
+  if (!normalizedPromoInput.value) {
+    errorMsg.value = 'Enter a promo code first.'
+    return
+  }
+
+  promoApplying.value = true
+  errorMsg.value = null
+  try {
+    const res = await $fetch<{
+      valid: boolean
+      promo: {
+        code: string
+        discountCents: number
+        effectivePriceCents: number
+      }
+    }>('/api/promos/validate', {
+      method: 'POST',
+      body: {
+        context: 'membership',
+        promo_code: normalizedPromoInput.value,
+        tier: selectedTier.value.id,
+        cadence: selectedPlan.value.cadence
+      }
+    })
+
+    appliedPromo.value = {
+      code: res.promo.code,
+      discountCents: Number(res.promo.discountCents ?? 0),
+      effectivePriceCents: Number(res.promo.effectivePriceCents ?? billedCycleCents(selectedPlan.value))
+    }
+    promoCode.value = res.promo.code
+    toast.add({
+      title: 'Promo applied',
+      description: `${res.promo.code} saved ${formatMoney(appliedPromo.value.discountCents, selectedPlan.value.currency)}.`,
+      color: 'success'
+    })
+  } catch (error: unknown) {
+    appliedPromo.value = null
+    errorMsg.value = readErrorMessage(error)
+  } finally {
+    promoApplying.value = false
+  }
+}
+
+function removePromoCode() {
+  appliedPromo.value = null
+  promoCode.value = ''
+}
+
+async function beginCheckout(options?: { useNewCard?: boolean }) {
   errorMsg.value = null
   loading.value = true
+  const forceNewCard = Boolean(options?.useNewCard)
 
   async function startSquareCheckoutSession(guestEmailForCheckout?: string) {
     const res = await $fetch<{
@@ -137,7 +253,7 @@ async function beginCheckout() {
         cadence: selectedPlan.value!.cadence,
         returnTo: returnTo.value,
         guest_email: guestEmailForCheckout || undefined,
-        promo_code: promoCode.value.trim() || undefined
+        promo_code: appliedPromo.value?.code || undefined
       }
     })
 
@@ -154,6 +270,12 @@ async function beginCheckout() {
     checkoutToken.value = res.checkoutToken
     checkoutAmountCents.value = Number(res.amountCents ?? billedCycleCents(selectedPlan.value!))
     checkoutCurrency.value = String(res.currency ?? selectedPlan.value?.currency ?? 'USD').toUpperCase()
+
+    if (!forceNewCard && user.value?.sub && selectedSavedCardId.value) {
+      await confirmSavedCardPayment(selectedSavedCardId.value)
+      return
+    }
+
     paymentModalOpen.value = true
   }
 
@@ -166,6 +288,12 @@ async function beginCheckout() {
 
     if (tierAtCapacity.value) {
       errorMsg.value = `${selectedTier.value.display_name} is currently full. Join the waitlist to get notified when a spot opens.`
+      loading.value = false
+      return
+    }
+
+    if (promoNeedsApply.value) {
+      errorMsg.value = 'Apply or remove the promo code before continuing.'
       loading.value = false
       return
     }
@@ -254,6 +382,14 @@ async function beginCheckout() {
   }
 }
 
+async function beginCheckoutDefault() {
+  await beginCheckout()
+}
+
+async function beginCheckoutWithNewCard() {
+  await beginCheckout({ useNewCard: true })
+}
+
 async function confirmCardPayment(payload: { sourceId: string }) {
   if (!checkoutToken.value || paymentSubmitting.value) return
   paymentSubmitting.value = true
@@ -275,6 +411,33 @@ async function confirmCardPayment(payload: { sourceId: string }) {
     await router.push(`/checkout/success?${query.toString()}`)
   } catch (error: unknown) {
     errorMsg.value = readErrorMessage(error)
+  } finally {
+    paymentSubmitting.value = false
+  }
+}
+
+async function confirmSavedCardPayment(cardId: string) {
+  if (!checkoutToken.value || paymentSubmitting.value) return
+  paymentSubmitting.value = true
+  errorMsg.value = null
+  try {
+    await $fetch('/api/checkout/pay', {
+      method: 'POST',
+      body: {
+        token: checkoutToken.value,
+        cardId
+      }
+    })
+    paymentModalOpen.value = false
+
+    const query = new URLSearchParams({
+      checkout: checkoutToken.value,
+      returnTo: returnTo.value
+    })
+    await router.push(`/checkout/success?${query.toString()}`)
+  } catch (error: unknown) {
+    errorMsg.value = readErrorMessage(error)
+    await refreshPaymentMethods()
   } finally {
     paymentSubmitting.value = false
   }
@@ -482,7 +645,14 @@ async function submitWaitlist() {
               class="flex justify-between"
             >
               <span class="text-dimmed">Price</span>
-              <span class="font-medium">{{ formatMoney(billedCycleCents(selectedPlan), selectedPlan.currency) }} {{ cadencePriceSuffix(selectedPlan.cadence) }}</span>
+              <span class="font-medium">{{ formatMoney(displayCyclePriceCents, selectedPlan.currency) }} {{ cadencePriceSuffix(selectedPlan.cadence) }}</span>
+            </div>
+            <div
+              v-if="selectedPlan && appliedPromo"
+              class="flex justify-between text-[color:var(--gruv-accent)]"
+            >
+              <span>Promo ({{ appliedPromo.code }})</span>
+              <span>-{{ formatMoney(appliedPromo.discountCents, selectedPlan.currency) }}</span>
             </div>
             <div
               v-if="selectedPlan && effectiveMonthlyCents(selectedPlan) !== null"
@@ -605,15 +775,56 @@ async function submitWaitlist() {
             Payment is collected through Square’s secure in-app card form. After payment, you’ll create or sign in to your account to finish activation.
           </div>
           <div
+            v-if="!isTestTier && !isPlanSwitchMode && user && hasSavedCards"
+            class="mt-3 rounded-xl border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.06)] p-3 space-y-2"
+          >
+            <div class="text-sm font-medium">
+              Saved payment method
+            </div>
+            <USelect
+              v-model="selectedSavedCardId"
+              :items="savedCardItems"
+              value-key="value"
+              option-attribute="label"
+              class="w-full"
+            />
+            <p class="text-xs text-dimmed">
+              Continue to pay with the selected saved card, or choose “Use new card” below.
+            </p>
+          </div>
+          <div
             v-if="!isTestTier && !isPlanSwitchMode"
             class="mt-3"
           >
             <UFormField label="Promo code (optional)">
-              <UInput
-                v-model="promoCode"
-                placeholder="SPRING20"
-                autocomplete="off"
-              />
+              <div class="flex flex-wrap items-center gap-2">
+                <UInput
+                  v-model="promoCode"
+                  placeholder="SPRING20"
+                  autocomplete="off"
+                  class="min-w-52"
+                />
+                <UButton
+                  size="sm"
+                  color="neutral"
+                  variant="soft"
+                  :loading="promoApplying"
+                  :disabled="!promoNeedsApply || !selectedPlan || !selectedTier"
+                  @click="applyPromoCode"
+                >
+                  Apply
+                </UButton>
+                <UButton
+                  v-if="appliedPromo"
+                  size="sm"
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-x"
+                  @click="removePromoCode"
+                >
+                  Remove
+                </UButton>
+              </div>
             </UFormField>
           </div>
           <div
@@ -628,14 +839,23 @@ async function submitWaitlist() {
               v-if="!tierAtCapacity"
               :loading="loading"
                 :disabled="loading || !selectedPlan || (!user && isPlanSwitchMode) || (!isPlanSwitchMode && !user && !guestEmail.trim())"
-                @click="beginCheckout"
+                @click="beginCheckoutDefault"
               >
               {{ isPlanSwitchMode
                 ? 'Schedule plan change'
-                : (isTestTier ? 'Activate test membership' : 'Continue to payment') }}
+                : (isTestTier ? 'Activate test membership' : (hasSavedCards && user ? 'Pay membership' : 'Continue to payment')) }}
             </UButton>
             <UButton
-              v-else
+              v-if="!isTestTier && !isPlanSwitchMode && user && hasSavedCards"
+              color="neutral"
+              variant="soft"
+              :disabled="loading || !selectedPlan"
+              @click="beginCheckoutWithNewCard"
+            >
+              Use new card
+            </UButton>
+            <UButton
+              v-if="tierAtCapacity"
               :loading="waitlistSubmitting"
               :disabled="!user && !guestEmail.trim()"
               @click="submitWaitlist"
