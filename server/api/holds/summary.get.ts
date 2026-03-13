@@ -10,11 +10,16 @@ function asNumber(value: unknown) {
   return 0
 }
 
+function isSchemaMissingColumnError(message: string) {
+  return /column .* does not exist/i.test(message) || /relation .* does not exist/i.test(message)
+}
+
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
 
   const supabase = serverSupabaseServiceRole(event)
+  const db = supabase as any
 
   const { data: membership, error: membershipErr } = await supabase
     .from('memberships')
@@ -26,24 +31,38 @@ export default defineEventHandler(async (event) => {
   if (!membership || (membership.status ?? '').toLowerCase() !== 'active') {
     return {
       holdsIncluded: 0,
+      activeHoldCap: 0,
       activeHolds: 0,
       holdsUsedThisCycle: 0,
       cycleStartIso: null,
       cycleEndIso: null,
       paidHoldBalance: 0,
       includedHoldsRemaining: 0,
+      activeHoldSlotsRemaining: 0,
       canRequestHoldNow: false
     }
   }
 
-  const { data: tier, error: tierErr } = await supabase
+  const selectWithCap = 'holds_included,active_hold_cap'
+  const selectLegacy = 'holds_included'
+  let { data: tier, error: tierErr } = await db
     .from('membership_tiers')
-    .select('holds_included')
+    .select(selectWithCap)
     .eq('id', membership.tier)
     .maybeSingle()
+  if (tierErr && isSchemaMissingColumnError(tierErr.message)) {
+    const fallback = await db
+      .from('membership_tiers')
+      .select(selectLegacy)
+      .eq('id', membership.tier)
+      .maybeSingle()
+    tier = fallback.data
+    tierErr = fallback.error
+  }
 
   if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
   const holdsIncluded = Math.max(0, Math.floor(asNumber(tier?.holds_included)))
+  const activeHoldCap = Math.max(0, Math.floor(asNumber((tier as Record<string, unknown> | null)?.active_hold_cap)))
   const holdCycle = resolveHoldCycleWindow({
     periodStartIso: membership.current_period_start ?? null,
     periodEndIso: membership.current_period_end ?? null
@@ -83,15 +102,20 @@ export default defineEventHandler(async (event) => {
   if (holdBalanceErr) throw createError({ statusCode: 500, statusMessage: holdBalanceErr.message })
   const paidHoldBalance = Math.max(0, Math.floor(asNumber(holdBalanceRow?.balance)))
   const includedHoldsRemaining = Math.max(0, holdsIncluded - holdsUsedThisCycle)
+  const activeHoldSlotsRemaining = Math.max(0, activeHoldCap - activeHolds)
 
   return {
     holdsIncluded,
+    activeHoldCap,
     activeHolds,
     holdsUsedThisCycle,
     cycleStartIso: holdCycle.startIso,
     cycleEndIso: holdCycle.endIso,
     paidHoldBalance,
     includedHoldsRemaining,
-    canRequestHoldNow: includedHoldsRemaining > 0 || paidHoldBalance > 0
+    activeHoldSlotsRemaining,
+    canRequestHoldNow: activeHoldCap > 0
+      && activeHoldSlotsRemaining > 0
+      && (includedHoldsRemaining > 0 || paidHoldBalance > 0)
   }
 })

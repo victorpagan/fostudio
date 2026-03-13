@@ -19,6 +19,7 @@ export default defineEventHandler(async (event) => {
       topoff_credit_expiry_days,
       max_slots,
       holds_included,
+      active_hold_cap,
       active,
       visible,
       direct_access_only,
@@ -94,6 +95,7 @@ export default defineEventHandler(async (event) => {
   type TierRow = {
     credit_expiry_days?: number | null
     topoff_credit_expiry_days?: number | null
+    active_hold_cap?: number | null
     membership_plan_variations?: VariationRow[]
   } & Record<string, unknown>
 
@@ -101,6 +103,7 @@ export default defineEventHandler(async (event) => {
     ...tier,
     credit_expiry_days: Number(tier.credit_expiry_days ?? 90),
     topoff_credit_expiry_days: Number(tier.topoff_credit_expiry_days ?? 30),
+    active_hold_cap: Number(tier.active_hold_cap ?? 0),
     membership_plan_variations: (tier.membership_plan_variations ?? []).sort(
       (left, right) => Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0)
     )

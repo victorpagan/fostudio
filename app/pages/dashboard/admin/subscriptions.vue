@@ -31,6 +31,7 @@ type TierRecord = {
   topoff_credit_expiry_days: number
   max_slots: number | null
   holds_included: number
+  active_hold_cap: number
   active: boolean
   visible: boolean
   direct_access_only: boolean
@@ -49,6 +50,7 @@ type TierForm = {
   topoffCreditExpiryDays: number
   maxSlots: number | null
   holdsIncluded: number
+  activeHoldCap: number
   active: boolean
   visible: boolean
   directAccessOnly: boolean
@@ -135,6 +137,7 @@ const form = reactive<TierForm>({
   topoffCreditExpiryDays: 30,
   maxSlots: 10,
   holdsIncluded: 0,
+  activeHoldCap: 0,
   active: true,
   visible: true,
   directAccessOnly: false,
@@ -214,6 +217,7 @@ function resetForm() {
   form.topoffCreditExpiryDays = 30
   form.maxSlots = 10
   form.holdsIncluded = 0
+  form.activeHoldCap = 0
   form.active = true
   form.visible = true
   form.directAccessOnly = false
@@ -253,6 +257,7 @@ function loadTier(tierId: string) {
   form.topoffCreditExpiryDays = Number(tier.topoff_credit_expiry_days ?? 30)
   form.maxSlots = tier.max_slots
   form.holdsIncluded = Number(tier.holds_included)
+  form.activeHoldCap = Number(tier.active_hold_cap ?? 0)
   form.active = tier.active
   form.visible = tier.visible
   form.directAccessOnly = tier.direct_access_only
@@ -403,6 +408,7 @@ function getTierPayloadBase() {
     topoffCreditExpiryDays: form.topoffCreditExpiryDays,
     maxSlots: form.maxSlots,
     holdsIncluded: form.holdsIncluded,
+    activeHoldCap: form.activeHoldCap,
     sortOrder: form.sortOrder,
     active: form.active,
     visible: form.visible,
@@ -490,6 +496,7 @@ async function saveTier() {
           topoffCreditExpiryDays: tierPayloadBase.topoffCreditExpiryDays,
           maxSlots: tierPayloadBase.maxSlots,
           holdsIncluded: tierPayloadBase.holdsIncluded,
+          activeHoldCap: tierPayloadBase.activeHoldCap,
           sortOrder: tierPayloadBase.sortOrder,
           active: tierPayloadBase.active,
           visible: tierPayloadBase.visible,
@@ -527,6 +534,7 @@ async function saveTier() {
           topoffCreditExpiryDays: tierPayloadBase.topoffCreditExpiryDays,
           maxSlots: tierPayloadBase.maxSlots,
           holdsIncluded: tierPayloadBase.holdsIncluded,
+          activeHoldCap: tierPayloadBase.activeHoldCap,
           sortOrder: tierPayloadBase.sortOrder,
           active: tierPayloadBase.active,
           visible: tierPayloadBase.visible,
@@ -758,6 +766,9 @@ async function repairSquareVariations() {
                 </UFormField>
                 <UFormField label="Hold cap / month">
                   <UInput v-model.number="form.holdsIncluded" type="number" min="0" />
+                </UFormField>
+                <UFormField label="Active hold cap">
+                  <UInput v-model.number="form.activeHoldCap" type="number" min="0" max="50" />
                 </UFormField>
               </div>
 

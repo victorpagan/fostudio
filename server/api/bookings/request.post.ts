@@ -11,11 +11,16 @@ const schema = z.object({
   request_hold: z.boolean().optional().default(false)
 })
 
+function isSchemaMissingColumnError(message: string) {
+  return /column .* does not exist/i.test(message) || /relation .* does not exist/i.test(message)
+}
+
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
   if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
 
   const supabase = serverSupabaseServiceRole(event)
+  const db = supabase as any
   const peakWindow = await loadPeakWindowConfig(event)
   const body = schema.parse(await readBody(event))
 
@@ -39,12 +44,25 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Membership required' })
   }
 
-  const { data: tier } = await supabase
+  const selectWithCap = 'holds_included,active_hold_cap'
+  const selectLegacy = 'holds_included'
+  let { data: tier, error: tierErr } = await db
     .from('membership_tiers')
-    .select('holds_included')
+    .select(selectWithCap)
     .eq('id', membership.tier)
     .maybeSingle()
+  if (tierErr && isSchemaMissingColumnError(tierErr.message)) {
+    const fallback = await db
+      .from('membership_tiers')
+      .select(selectLegacy)
+      .eq('id', membership.tier)
+      .maybeSingle()
+    tier = fallback.data
+    tierErr = fallback.error
+  }
+  if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
   const holdsIncluded = Math.max(0, Number(tier?.holds_included ?? 0))
+  const activeHoldCap = Math.max(0, Number((tier as Record<string, unknown> | null)?.active_hold_cap ?? 0))
 
   const { data: bookingConflicts, error: bookingConflictErr } = await supabase
     .from('bookings')
@@ -75,6 +93,30 @@ export default defineEventHandler(async (event) => {
   let holdEndIso: string | null = null
 
   if (body.request_hold) {
+    if (activeHoldCap <= 0) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Your current membership does not allow active equipment holds.'
+      })
+    }
+
+    const nowIso = new Date().toISOString()
+    const { count: activeHoldCount, error: activeHoldCountErr } = await supabase
+      .from('booking_holds')
+      .select('id, bookings!inner(user_id,status)', { count: 'exact', head: true })
+      .eq('bookings.user_id', user.sub)
+      .in('bookings.status', ['confirmed', 'requested', 'pending_payment'])
+      .gt('hold_end', nowIso)
+
+    if (activeHoldCountErr) throw createError({ statusCode: 500, statusMessage: activeHoldCountErr.message })
+    const activeHolds = Math.max(0, activeHoldCount ?? 0)
+    if (activeHolds >= activeHoldCap) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: `Active hold cap reached (${activeHoldCap}). Wait for an existing hold to finish before adding another.`
+      })
+    }
+
     const holdCycle = resolveHoldCycleWindow({
       periodStartIso: membership.current_period_start ?? null,
       periodEndIso: membership.current_period_end ?? null

@@ -18,6 +18,11 @@ type TierRules = {
   booking_window_days: number
   peak_multiplier: number
   holds_included: number
+  active_hold_cap: number
+}
+
+function isSchemaMissingColumnError(message: string) {
+  return /column .* does not exist/i.test(message) || /relation .* does not exist/i.test(message)
 }
 
 // Credits: baseline 1 credit/hour off-peak; peak multiplier applies per 15-min bucket
@@ -51,6 +56,7 @@ export default defineEventHandler(async (event) => {
   if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
 
   const supabase = serverSupabaseServiceRole(event)
+  const db = supabase as any
   const body = schema.parse(await readBody(event))
   const peakWindow = await loadPeakWindowConfig(event)
 
@@ -85,11 +91,23 @@ export default defineEventHandler(async (event) => {
   }
 
   // Tier rules (DB catalog)
-  const { data: tierRow, error: tierErr } = await supabase
+  const selectWithCap = 'booking_window_days, peak_multiplier, holds_included, active_hold_cap'
+  const selectLegacy = 'booking_window_days, peak_multiplier, holds_included'
+  let { data: tierRow, error: tierErr } = await db
     .from('membership_tiers')
-    .select('booking_window_days, peak_multiplier, holds_included')
+    .select(selectWithCap)
     .eq('id', membership?.tier ?? '')
     .maybeSingle()
+
+  if (tierErr && isSchemaMissingColumnError(tierErr.message)) {
+    const fallback = await db
+      .from('membership_tiers')
+      .select(selectLegacy)
+      .eq('id', membership?.tier ?? '')
+      .maybeSingle()
+    tierRow = fallback.data
+    tierErr = fallback.error
+  }
 
   if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
 
@@ -99,19 +117,22 @@ export default defineEventHandler(async (event) => {
     ? {
         booking_window_days: Number(tierRow.booking_window_days ?? 30),
         peak_multiplier: Number(tierRow.peak_multiplier ?? 1.5),
-        holds_included: Number(tierRow.holds_included ?? 0)
+        holds_included: Number(tierRow.holds_included ?? 0),
+        active_hold_cap: Number((tierRow as Record<string, unknown>).active_hold_cap ?? 0)
       }
     : membership?.tier === TEST_TIER_ID
       ? {
           booking_window_days: 30,
           peak_multiplier: 1,
-          holds_included: 1
+          holds_included: 1,
+          active_hold_cap: 1
         }
       : !membership && remainingCredits > 0
         ? {
             booking_window_days: 30,
             peak_multiplier: 1.5,
-            holds_included: 0
+            holds_included: 0,
+            active_hold_cap: 0
           }
       : null
 
@@ -182,6 +203,31 @@ export default defineEventHandler(async (event) => {
   if (body.request_hold) {
     if (!hasActiveMembership) {
       throw createError({ statusCode: 403, statusMessage: 'Overnight holds require an active membership' })
+    }
+
+    const activeHoldCap = Math.max(0, Number(effectiveTier.active_hold_cap ?? 0))
+    if (activeHoldCap <= 0) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Your current membership does not allow active equipment holds.'
+      })
+    }
+
+    const nowIso = new Date().toISOString()
+    const { count: activeHoldCount, error: activeHoldCountErr } = await supabase
+      .from('booking_holds')
+      .select('id, bookings!inner(user_id,status)', { count: 'exact', head: true })
+      .eq('bookings.user_id', user.sub)
+      .in('bookings.status', ['confirmed', 'requested', 'pending_payment'])
+      .gt('hold_end', nowIso)
+
+    if (activeHoldCountErr) throw createError({ statusCode: 500, statusMessage: activeHoldCountErr.message })
+    const activeHolds = Math.max(0, activeHoldCount ?? 0)
+    if (activeHolds >= activeHoldCap) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: `Active hold cap reached (${activeHoldCap}). Wait for an existing hold to finish before adding another.`
+      })
     }
 
     const holdCycle = resolveHoldCycleWindow({

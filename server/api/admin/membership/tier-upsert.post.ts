@@ -29,6 +29,7 @@ const bodySchema = z.object({
   topoffCreditExpiryDays: z.number().int().min(1).max(3650).default(30),
   maxSlots: z.number().int().min(0).max(10000).optional().nullable().default(10),
   holdsIncluded: z.number().int().min(0).max(50),
+  activeHoldCap: z.number().int().min(0).max(50).default(0),
   active: z.boolean().default(true),
   visible: z.boolean().default(true),
   directAccessOnly: z.boolean().default(false),
@@ -119,8 +120,9 @@ function normalizeTierItemObject(
     itemData: {
       ...itemData,
       name: itemData.name ?? `${displayName} membership`,
-      productType: 'REGULAR',
+      productType: 'DIGITAL',
       isTaxable: false,
+      taxIds: [],
       variations: updatedVariations
     }
   }
@@ -230,6 +232,7 @@ export default defineEventHandler(async (event) => {
     topoff_credit_expiry_days: body.topoffCreditExpiryDays,
     max_slots: body.maxSlots ?? null,
     holds_included: body.holdsIncluded,
+    active_hold_cap: body.activeHoldCap,
     active: body.active,
     visible: body.directAccessOnly ? false : body.visible,
     direct_access_only: body.directAccessOnly,
@@ -242,10 +245,10 @@ export default defineEventHandler(async (event) => {
 
   if (tierErr) {
     const rawMessage = tierErr.message ?? ''
-    if (/credit_expiry_days|topoff_credit_expiry_days/i.test(rawMessage)) {
+    if (/credit_expiry_days|topoff_credit_expiry_days|active_hold_cap/i.test(rawMessage)) {
       throw createError({
         statusCode: 400,
-        statusMessage: 'Database schema is missing per-tier credit expiry columns. Apply migration 20240030_membership_credit_expiry_and_cap_split.sql and retry.'
+        statusMessage: 'Database schema is missing per-tier membership settings columns. Apply migrations 20240030_membership_credit_expiry_and_cap_split.sql and 20240041_membership_active_hold_cap.sql, then retry.'
       })
     }
     throw createError({ statusCode: 500, statusMessage: tierErr.message })

@@ -27,6 +27,7 @@ type CatalogTierRow = {
   max_bank: number
   max_slots: number | null
   holds_included: number
+  active_hold_cap?: number | null
   active: boolean
   visible: boolean | null
   direct_access_only?: boolean | null
@@ -55,6 +56,7 @@ export default defineEventHandler(async (event) => {
     max_bank,
     max_slots,
     holds_included,
+    active_hold_cap,
     active,
     visible,
     direct_access_only,
