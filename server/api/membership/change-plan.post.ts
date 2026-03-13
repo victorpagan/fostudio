@@ -6,6 +6,7 @@ import { getServerConfig } from '~~/server/utils/config/secret'
 import { extractSquareCards } from '~~/server/utils/square/cards'
 import { buildSubscriptionCreatePhasesFromPlanVariation } from '~~/server/utils/square/subscriptionPhases'
 import { markPromoRedemption, normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
+import { syncMembershipCreditGrantsForUser } from '~~/server/utils/membership/grantsSync'
 import {
   findPendingCancelAction,
   findPendingSwapAction,
@@ -848,6 +849,16 @@ export default defineEventHandler(async (event) => {
 
   if (promoPricing?.promoId) {
     await markPromoRedemption(supabase, promoPricing.promoId, '[membership/change-plan]')
+  }
+
+  try {
+    const grantSync = await syncMembershipCreditGrantsForUser(event, user.sub, { processLimit: 24 })
+    console.info(logPrefix, 'post-swap-grant-sync', grantSync)
+  } catch (error) {
+    console.warn(logPrefix, 'post-swap-grant-sync-failed', {
+      userId: user.sub,
+      message: error instanceof Error ? error.message : String(error)
+    })
   }
 
   return {

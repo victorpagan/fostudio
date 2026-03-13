@@ -5,10 +5,13 @@ import { resolveMembershipBillingPeriod } from '~~/server/utils/square/billingPe
 
 type MembershipGrantSyncRow = {
   id: string
+  tier: string | null
   cadence: string | null
   status: string | null
   billing_provider: string | null
   billing_subscription_id: string | null
+  square_subscription_id: string | null
+  square_plan_variation_id: string | null
   current_period_start: string | null
   current_period_end: string | null
 }
@@ -46,11 +49,10 @@ export async function syncMembershipCreditGrantsForUser(event: H3Event, userId: 
 
   const { data: membershipsRaw, error: membershipsErr } = await db
     .from('memberships')
-    .select('id,cadence,status,billing_provider,billing_subscription_id,current_period_start,current_period_end')
+    .select('id,tier,cadence,status,billing_provider,billing_subscription_id,square_subscription_id,square_plan_variation_id,current_period_start,current_period_end')
     .eq('user_id', userId)
     .in('status', ['active', 'past_due'])
     .eq('billing_provider', 'square')
-    .not('billing_subscription_id', 'is', null)
 
   if (membershipsErr) throw new Error(membershipsErr.message)
 
@@ -65,9 +67,12 @@ export async function syncMembershipCreditGrantsForUser(event: H3Event, userId: 
   const square = await useSquareClient(event)
 
   for (const membership of memberships) {
-    const subscriptionId = membership.billing_subscription_id?.trim() ?? ''
-    const cadence = membership.cadence?.trim() ?? ''
-    if (!subscriptionId || !cadence) continue
+    const subscriptionId = (
+      membership.billing_subscription_id?.trim()
+      || membership.square_subscription_id?.trim()
+      || ''
+    )
+    if (!subscriptionId) continue
 
     try {
       const subRes = await square.subscriptions.get({
@@ -79,13 +84,67 @@ export async function syncMembershipCreditGrantsForUser(event: H3Event, userId: 
       const subscriptionStatus = (readString(subscription, 'status') ?? '').toUpperCase()
       if (subscriptionStatus && subscriptionStatus !== 'ACTIVE') continue
 
+      const subscriptionPlanVariationId = readString(subscription, 'planVariationId', 'plan_variation_id')
+      let effectiveCadence = membership.cadence?.trim() ?? ''
+      const membershipPatch: Record<string, unknown> = {}
+
+      if (subscriptionPlanVariationId) {
+        const { data: variationRowRaw, error: variationErr } = await db
+          .from('membership_plan_variations')
+          .select('tier_id,cadence')
+          .eq('provider', 'square')
+          .eq('provider_plan_variation_id', subscriptionPlanVariationId)
+          .maybeSingle()
+
+        if (variationErr) {
+          console.warn('[membership-grant-sync] variation lookup failed', {
+            membershipId: membership.id,
+            planVariationId: subscriptionPlanVariationId,
+            message: variationErr.message
+          })
+        } else if (variationRowRaw) {
+          const variationRow = variationRowRaw as { tier_id: string | null, cadence: string | null }
+          const mappedTier = variationRow.tier_id?.trim() ?? null
+          const mappedCadence = variationRow.cadence?.trim() ?? null
+
+          if (mappedTier && mappedTier !== (membership.tier?.trim() ?? '')) {
+            membershipPatch.tier = mappedTier
+          }
+          if (mappedCadence && mappedCadence !== (membership.cadence?.trim() ?? '')) {
+            membershipPatch.cadence = mappedCadence
+            effectiveCadence = mappedCadence
+          }
+          if (subscriptionPlanVariationId !== (membership.square_plan_variation_id?.trim() ?? '')) {
+            membershipPatch.square_plan_variation_id = subscriptionPlanVariationId
+          }
+        }
+      }
+
+      if (!effectiveCadence) {
+        effectiveCadence = membership.cadence?.trim() ?? ''
+      }
+      if (!effectiveCadence) continue
+
       const resolved = resolveMembershipBillingPeriod({
-        cadence,
+        cadence: effectiveCadence,
         subscription,
         fallbackStart: membership.current_period_start,
         fallbackEnd: membership.current_period_end
       })
       if (!resolved) continue
+
+      if (Object.keys(membershipPatch).length > 0) {
+        const { error: patchErr } = await db
+          .from('memberships')
+          .update(membershipPatch)
+          .eq('id', membership.id)
+        if (patchErr) {
+          console.warn('[membership-grant-sync] membership plan sync update failed', {
+            membershipId: membership.id,
+            message: patchErr.message
+          })
+        }
+      }
 
       const { error: scheduleErr } = await db.rpc('schedule_membership_credit_grants', {
         p_membership_id: membership.id,
