@@ -133,8 +133,28 @@ const {
   reschedulingId,
   rescheduleOpen,
   rescheduleForm,
+  rescheduleSummaryLabel,
+  rescheduleHintsLoading,
+  rescheduleHintsError,
+  rescheduleMonthCells,
+  rescheduleMonthLabel,
+  selectedDayStartOptions,
+  selectedDayEndOptions,
+  selectedDayFitWindows,
+  selectedDayFitWindowsLabel,
+  rescheduleDurationMinutes,
+  holdEligibility,
+  holdMinEndLabel,
+  holdEndLabel,
+  canGoToPrevMonth,
+  canGoToNextMonth,
   openReschedule,
   closeReschedule,
+  onRescheduleStartChange,
+  onRescheduleEndChange,
+  applyRescheduleDay,
+  goToPrevRescheduleMonth,
+  goToNextRescheduleMonth,
   saveReschedule
 } = useAdminBookingReschedule({
   onSaved: async () => {
@@ -379,7 +399,27 @@ function goToPastPage(page: number) {
     v-model:open="rescheduleOpen"
     :loading="Boolean(reschedulingId)"
     :form="rescheduleForm"
+    :summary-label="rescheduleSummaryLabel"
+    :month-label="rescheduleMonthLabel"
+    :hints-loading="rescheduleHintsLoading"
+    :hints-error="rescheduleHintsError"
+    :month-cells="rescheduleMonthCells"
+    :start-options="selectedDayStartOptions"
+    :end-options="selectedDayEndOptions"
+    :fit-windows="selectedDayFitWindows"
+    :fit-windows-label="selectedDayFitWindowsLabel"
+    :duration-minutes="rescheduleDurationMinutes"
+    :hold-eligibility="holdEligibility"
+    :hold-min-end-label="holdMinEndLabel"
+    :hold-end-label="holdEndLabel"
+    :can-go-prev-month="canGoToPrevMonth"
+    :can-go-next-month="canGoToNextMonth"
     @close="closeReschedule"
+    @apply-day="applyRescheduleDay"
+    @start-change="onRescheduleStartChange"
+    @end-change="onRescheduleEndChange"
+    @prev-month="goToPrevRescheduleMonth"
+    @next-month="goToNextRescheduleMonth"
     @save="saveReschedule"
   />
 </template>
