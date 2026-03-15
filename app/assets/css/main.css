@@ -372,7 +372,7 @@ body {
 
 .availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness::before,
 .availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness::after {
-  content: 'Hold';
+  content: 'Equipement Hold';
   position: absolute;
   inset-inline-end: 0;
   padding: 0.1rem 0.35rem;
