@@ -519,6 +519,7 @@ body {
 }
 
 .availability-shell .fc .fc-event-note {
+  position: relative;
   margin-top: 0.32rem;
   font-size: 0.65rem;
   line-height: 1.1;
@@ -528,9 +529,11 @@ body {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: normal;
   word-break: break-word;
+  text-overflow: clip;
+  -webkit-mask-image: linear-gradient(180deg, #000 72%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 72%, transparent 100%);
 }
 
 .availability-shell .fc .fc-event.fc-event-hold.fc-event-past {
