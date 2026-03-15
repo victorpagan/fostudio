@@ -203,10 +203,14 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
   }
 }
 
-function eventDidMount(arg: { el: HTMLElement, event: { extendedProps?: CalendarEvent['extendedProps'] } }) {
+function eventDidMount(arg: { el: HTMLElement, event: { end?: Date | null, extendedProps?: CalendarEvent['extendedProps'] } }) {
   const type = arg.event.extendedProps?.type
   const harness = arg.el.closest('.fc-timegrid-event-harness')
   if (!harness) return
+  const eventEnd = arg.event.end
+  if (eventEnd && eventEnd.getTime() < Date.now()) {
+    harness.classList.add('fc-harness-past')
+  }
   if (type === 'hold') {
     harness.classList.add('fc-hold-harness')
     harness.classList.add(arg.event.extendedProps?.isOwn ? 'fc-hold-harness-own' : 'fc-hold-harness-other')

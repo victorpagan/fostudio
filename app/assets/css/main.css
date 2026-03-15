@@ -412,14 +412,14 @@ body {
 .availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness-other::before,
 .availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness-other::after {
   background:
-    linear-gradient(180deg, rgba(204, 36, 29, 0.95), rgba(157, 0, 6, 0.92)),
     repeating-linear-gradient(
       135deg,
-      rgba(251, 73, 52, 0.45) 0,
-      rgba(251, 73, 52, 0.45) 4px,
-      rgba(157, 0, 6, 0.22) 4px,
-      rgba(157, 0, 6, 0.22) 8px
-    );
+      rgba(254, 128, 25, 0.42) 0,
+      rgba(254, 128, 25, 0.42) 4px,
+      rgba(157, 0, 6, 0.16) 4px,
+      rgba(157, 0, 6, 0.16) 8px
+    ),
+    linear-gradient(180deg, rgba(204, 36, 29, 0.88), rgba(157, 0, 6, 0.84));
   color: #fff7f3;
   box-shadow: 0 4px 10px rgba(107, 6, 4, 0.3);
   opacity: 1;
@@ -464,14 +464,14 @@ body {
 
 .availability-shell .fc .fc-event.fc-event-hold.fc-event-hold-other {
   background:
-    linear-gradient(180deg, rgba(204, 36, 29, 0.95), rgba(157, 0, 6, 0.92)),
     repeating-linear-gradient(
       135deg,
-      rgba(251, 73, 52, 0.45) 0,
-      rgba(251, 73, 52, 0.45) 4px,
-      rgba(157, 0, 6, 0.22) 4px,
-      rgba(157, 0, 6, 0.22) 8px
-    );
+      rgba(254, 128, 25, 0.42) 0,
+      rgba(254, 128, 25, 0.42) 4px,
+      rgba(157, 0, 6, 0.16) 4px,
+      rgba(157, 0, 6, 0.16) 8px
+    ),
+    linear-gradient(180deg, rgba(204, 36, 29, 0.9), rgba(157, 0, 6, 0.86));
   opacity: 1;
 }
 
@@ -497,6 +497,11 @@ body {
 }
 
 .availability-shell .fc .fc-event.fc-event-past {
+  opacity: 0.5;
+}
+
+.availability-shell .fc .fc-timegrid-event-harness.fc-harness-past::before,
+.availability-shell .fc .fc-timegrid-event-harness.fc-harness-past::after {
   opacity: 0.5;
 }
 
