@@ -178,6 +178,7 @@ async function cancelBooking(bookingId: string) {
             <UFormField label="Status filter">
               <USelect
                 v-model="statusFilter"
+                class="min-w-44"
                 :items="[
                   { label: 'All', value: 'all' },
                   { label: 'Confirmed', value: 'confirmed' },
