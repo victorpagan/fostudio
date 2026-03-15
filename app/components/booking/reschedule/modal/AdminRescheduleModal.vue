@@ -9,33 +9,28 @@ type AdminRescheduleForm = {
 }
 
 const props = defineProps<{
-  open: boolean
   loading: boolean
   form: AdminRescheduleForm
 }>()
 
+const open = defineModel<boolean>('open', { default: false })
+
 const emit = defineEmits<{
-  'update:open': [value: boolean]
   close: []
   save: []
 }>()
 
 function handleClose() {
   emit('close')
-  emit('update:open', false)
-}
-
-function handleOpenUpdate(value: boolean) {
-  emit('update:open', value)
-  if (!value) emit('close')
+  open.value = false
 }
 </script>
 
 <template>
   <UModal
-    :open="props.open"
+    v-model:open="open"
     :dismissible="!props.loading"
-    @update:open="handleOpenUpdate"
+    @update:open="(value) => { if (!value) emit('close') }"
   >
     <template #content>
       <UCard v-if="props.form.bookingId">
