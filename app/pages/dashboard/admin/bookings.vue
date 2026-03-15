@@ -43,7 +43,9 @@ const rescheduleForm = reactive({
   bookingId: '' as string,
   startTime: '',
   endTime: '',
-  notes: '' as string
+  notes: '' as string,
+  hadHold: false,
+  keepHold: false
 })
 
 const { data: bookingRows, refresh, pending } = await useAsyncData('admin:bookings', async () => {
@@ -156,6 +158,8 @@ function openReschedule(booking: AdminBooking) {
   rescheduleForm.startTime = toLocalInputValue(booking.start_time)
   rescheduleForm.endTime = toLocalInputValue(booking.end_time)
   rescheduleForm.notes = booking.notes ?? ''
+  rescheduleForm.hadHold = hasHold(booking)
+  rescheduleForm.keepHold = rescheduleForm.hadHold
   rescheduleOpen.value = true
 }
 
@@ -166,6 +170,8 @@ function closeReschedule() {
   rescheduleForm.startTime = ''
   rescheduleForm.endTime = ''
   rescheduleForm.notes = ''
+  rescheduleForm.hadHold = false
+  rescheduleForm.keepHold = false
 }
 
 async function saveReschedule() {
@@ -181,6 +187,7 @@ async function saveReschedule() {
         bookingId: rescheduleForm.bookingId,
         startTime: start,
         endTime: end,
+        keepHold: rescheduleForm.hadHold ? rescheduleForm.keepHold : false,
         notes: rescheduleForm.notes || null
       }
     })
@@ -470,10 +477,24 @@ function goToPastPage(page: number) {
               type="datetime-local"
             />
           </UFormField>
-          <UFormField label="Notes">
-            <UInput v-model="rescheduleForm.notes" placeholder="Optional update notes" />
-          </UFormField>
-        </div>
+            <UFormField label="Notes">
+              <UInput v-model="rescheduleForm.notes" placeholder="Optional update notes" />
+            </UFormField>
+          </div>
+        <UAlert
+          v-if="rescheduleForm.hadHold"
+          class="mt-3"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-package"
+          :description="rescheduleForm.keepHold ? 'This booking has a hold. Reschedule will try to keep and satisfy it by default.' : 'Hold will be removed on save, and any hold credits/tokens used for this booking will be refunded.'"
+        />
+        <UCheckbox
+          v-if="rescheduleForm.hadHold"
+          v-model="rescheduleForm.keepHold"
+          class="mt-3"
+          label="Keep overnight hold after reschedule"
+        />
         <template #footer>
           <div class="flex justify-end gap-2">
             <UButton
