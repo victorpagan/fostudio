@@ -190,7 +190,7 @@ body {
 .availability-chip-gradient {
   background:
     linear-gradient(135deg, rgba(7, 102, 120, 0.92) 0%, rgba(181, 118, 20, 0.9) 100%);
-  color: var(--gruv-bg-0);
+  color: #fbf1c7;
   border: 0;
   box-shadow: 0 10px 22px rgba(60, 56, 54, 0.14);
 }
@@ -483,7 +483,7 @@ body {
 
 .availability-shell .fc .fc-event.fc-event-member {
   background: rgba(102, 92, 84, 0.82);
-  color: var(--gruv-bg-0);
+  color: #fbf1c7;
   border: 0;
   cursor: default;
   pointer-events: none;
@@ -492,6 +492,7 @@ body {
 .availability-shell .fc .fc-event.fc-event-own {
   background:
     linear-gradient(135deg, rgba(7, 102, 120, 0.92) 0%, rgba(181, 118, 20, 0.9) 100%);
+  color: #fbf1c7;
   border: 0;
   box-shadow: 0 10px 22px rgba(60, 56, 54, 0.18);
   cursor: pointer;
