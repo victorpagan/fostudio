@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
 
   let builder = supabase
     .from('bookings')
-    .select('id,user_id,customer_id,start_time,end_time,status,credits_burned,guest_name,guest_email,notes,created_at,updated_at')
+    .select('id,user_id,customer_id,start_time,end_time,status,credits_burned,guest_name,guest_email,notes,created_at,updated_at,booking_holds(id,hold_start,hold_end,hold_type)')
     .order('start_time', { ascending: false })
     .limit(query.limit)
 

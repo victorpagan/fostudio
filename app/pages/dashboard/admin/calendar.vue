@@ -23,31 +23,10 @@ type CalendarBlock = {
   active: boolean
 }
 
-type AdminHold = {
-  id: string
-  booking_id: string
-  hold_start: string
-  hold_end: string
-  hold_type: string
-  created_at: string
-  booking: {
-    id: string
-    user_id: string | null
-    status: string | null
-    start_time: string
-    end_time: string
-    notes: string | null
-  } | null
-  member_name: string | null
-  member_email: string | null
-}
-
 const toast = useToast()
 const savingSettings = ref(false)
 const savingBlock = ref(false)
 const deletingBlockId = ref<string | null>(null)
-const removingHoldBookingId = ref<string | null>(null)
-const cancelingHoldBookingId = ref<string | null>(null)
 
 const calendarSettings = reactive<CalendarSettings>({
   peakDays: [1, 2, 3, 4],
@@ -101,13 +80,7 @@ const { data: calendarBlocks, refresh: refreshBlocks } = await useAsyncData('adm
   return res.blocks
 })
 
-const { data: calendarHolds, refresh: refreshHolds } = await useAsyncData('admin:calendar:holds', async () => {
-  const res = await $fetch<{ holds: AdminHold[] }>('/api/admin/calendar/holds')
-  return res.holds
-})
-
 const blocks = computed(() => calendarBlocks.value ?? [])
-const holds = computed(() => calendarHolds.value ?? [])
 
 function readErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Unknown error'
@@ -238,55 +211,6 @@ async function deleteBlock(id: string) {
   }
 }
 
-async function removeHoldOnly(hold: AdminHold) {
-  removingHoldBookingId.value = hold.booking_id
-  try {
-    const res = await $fetch<{ message?: string }>(`/api/bookings/${hold.booking_id}/hold`, {
-      method: 'DELETE'
-    })
-    toast.add({
-      title: 'Hold removed',
-      description: res?.message ?? 'The hold was removed from this booking.',
-      color: 'success'
-    })
-    await Promise.all([refreshHolds(), refreshBlocks()])
-  } catch (error: unknown) {
-    toast.add({
-      title: 'Could not remove hold',
-      description: readErrorMessage(error),
-      color: 'error'
-    })
-  } finally {
-    removingHoldBookingId.value = null
-  }
-}
-
-async function cancelBookingFromHold(hold: AdminHold) {
-  cancelingHoldBookingId.value = hold.booking_id
-  try {
-    await $fetch('/api/admin/bookings/cancel', {
-      method: 'POST',
-      body: {
-        bookingId: hold.booking_id,
-        refundCredits: true
-      }
-    })
-    toast.add({
-      title: 'Booking canceled',
-      description: 'The linked booking and hold were canceled.',
-      color: 'success'
-    })
-    await Promise.all([refreshHolds(), refreshBlocks()])
-  } catch (error: unknown) {
-    toast.add({
-      title: 'Could not cancel booking',
-      description: readErrorMessage(error),
-      color: 'error'
-    })
-  } finally {
-    cancelingHoldBookingId.value = null
-  }
-}
 </script>
 
 <template>
@@ -421,78 +345,6 @@ async function cancelBookingFromHold(hold: AdminHold) {
           </div>
         </UCard>
 
-        <UCard>
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div class="font-medium">
-                Active equipment holds
-              </div>
-              <div class="text-sm text-dimmed">
-                Review and modify overnight holds linked to bookings.
-              </div>
-            </div>
-            <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-refresh-cw" @click="() => refreshHolds()">
-              Refresh holds
-            </UButton>
-          </div>
-
-          <div
-            v-if="!holds.length"
-            class="mt-4 rounded-lg border border-default p-3 text-sm text-dimmed"
-          >
-            No active holds.
-          </div>
-
-          <div
-            v-else
-            class="mt-4 space-y-2"
-          >
-            <div
-              v-for="hold in holds"
-              :key="hold.id"
-              class="rounded-lg border border-default p-3"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div class="text-sm">
-                  <div class="font-medium">
-                    {{ hold.member_name || hold.member_email || 'Member booking' }}
-                  </div>
-                  <div class="text-dimmed">
-                    Hold: {{ formatDate(hold.hold_start) }} → {{ formatDate(hold.hold_end) }} (LA)
-                  </div>
-                  <div class="text-dimmed">
-                    Booking: {{ formatDate(hold.booking?.start_time || hold.hold_start) }} → {{ formatDate(hold.booking?.end_time || hold.hold_end) }} (LA)
-                  </div>
-                </div>
-                <div class="flex items-center gap-2">
-                  <UBadge color="warning" size="xs" variant="soft">
-                    {{ hold.hold_type || 'overnight' }}
-                  </UBadge>
-                  <UButton
-                    size="xs"
-                    color="warning"
-                    variant="soft"
-                    :loading="removingHoldBookingId === hold.booking_id"
-                    :disabled="cancelingHoldBookingId === hold.booking_id"
-                    @click="removeHoldOnly(hold)"
-                  >
-                    Remove hold
-                  </UButton>
-                  <UButton
-                    size="xs"
-                    color="error"
-                    variant="soft"
-                    :loading="cancelingHoldBookingId === hold.booking_id"
-                    :disabled="removingHoldBookingId === hold.booking_id"
-                    @click="cancelBookingFromHold(hold)"
-                  >
-                    Cancel booking
-                  </UButton>
-                </div>
-              </div>
-            </div>
-          </div>
-        </UCard>
       </div>
     </template>
   </UDashboardPanel>

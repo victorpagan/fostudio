@@ -19,13 +19,24 @@ type AdminBooking = {
   member_name: string | null
   member_email: string | null
   is_guest: boolean
+  booking_holds?: {
+    id: string
+    hold_start: string
+    hold_end: string
+    hold_type: string
+  }[] | null
 }
+
+const PAST_BOOKINGS_PAGE_SIZE = 10
+type AdminBookingTab = 'active' | 'holds' | 'past'
 
 const toast = useToast()
 const statusFilter = ref<string>('all')
 const refundCredits = ref(true)
 const cancelingId = ref<string | null>(null)
 const reschedulingId = ref<string | null>(null)
+const bookingTab = ref<AdminBookingTab>('active')
+const pastPage = ref(1)
 
 const rescheduleForm = reactive({
   bookingId: '' as string,
@@ -43,6 +54,29 @@ const { data: bookingRows, refresh, pending } = await useAsyncData('admin:bookin
 }, { watch: [statusFilter] })
 
 const bookings = computed(() => bookingRows.value ?? [])
+const activeBookings = computed(() =>
+  bookings.value.filter(booking => booking.status !== 'canceled' && new Date(booking.end_time).getTime() >= Date.now())
+)
+const activeHoldBookings = computed(() =>
+  activeBookings.value.filter(booking => hasHold(booking))
+)
+const pastBookings = computed(() =>
+  bookings.value.filter(booking => booking.status === 'canceled' || new Date(booking.end_time).getTime() < Date.now())
+)
+const pastTotalPages = computed(() => Math.max(1, Math.ceil(pastBookings.value.length / PAST_BOOKINGS_PAGE_SIZE)))
+const paginatedPastBookings = computed(() => {
+  const page = Math.min(Math.max(1, pastPage.value), pastTotalPages.value)
+  const start = (page - 1) * PAST_BOOKINGS_PAGE_SIZE
+  return pastBookings.value.slice(start, start + PAST_BOOKINGS_PAGE_SIZE)
+})
+
+watch([statusFilter, bookingTab], () => {
+  pastPage.value = 1
+})
+
+watch(pastTotalPages, (value) => {
+  if (pastPage.value > value) pastPage.value = value
+})
 
 function readErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Unknown error'
@@ -63,6 +97,16 @@ function formatDate(value: string) {
     dateStyle: 'medium',
     timeStyle: 'short'
   })
+}
+
+function hasHold(booking: AdminBooking) {
+  return (booking.booking_holds?.length ?? 0) > 0
+}
+
+function holdRangeLabel(booking: AdminBooking) {
+  const hold = booking.booking_holds?.[0]
+  if (!hold) return null
+  return `${formatDate(hold.hold_start)} → ${formatDate(hold.hold_end)} (LA)`
 }
 
 function toLocalInputValue(value: string | null | undefined) {
@@ -147,6 +191,10 @@ async function cancelBooking(bookingId: string) {
     cancelingId.value = null
   }
 }
+
+function goToPastPage(page: number) {
+  pastPage.value = Math.min(Math.max(1, page), pastTotalPages.value)
+}
 </script>
 
 <template>
@@ -191,49 +239,155 @@ async function cancelBooking(bookingId: string) {
           </div>
         </UCard>
 
-        <div class="space-y-3">
-          <UCard v-for="booking in bookings" :key="booking.id">
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="flex items-center gap-2">
-                  <div class="font-medium truncate">
-                    {{ bookingLabel(booking) }}
-                  </div>
-                  <UBadge :color="booking.status === 'confirmed' ? 'success' : booking.status === 'requested' ? 'warning' : 'neutral'" size="xs" variant="soft">
-                    {{ booking.status }}
-                  </UBadge>
-                  <UBadge :color="booking.is_guest ? 'neutral' : 'primary'" size="xs" variant="soft">
-                    {{ booking.is_guest ? 'guest' : 'member' }}
-                  </UBadge>
-                </div>
-                <div class="mt-1 text-sm text-dimmed">
-                  {{ formatDate(booking.start_time) }} → {{ formatDate(booking.end_time) }} (LA)
-                </div>
-                <div class="mt-1 text-xs text-dimmed">
-                  Credits burned: {{ booking.credits_burned ?? 0 }} · Created {{ formatDate(booking.created_at) }}
-                </div>
-                <div v-if="booking.notes" class="mt-2 text-xs text-dimmed">
-                  {{ booking.notes }}
-                </div>
-              </div>
+        <div class="space-y-4">
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              size="sm"
+              :variant="bookingTab === 'active' ? 'solid' : 'soft'"
+              :color="bookingTab === 'active' ? 'primary' : 'neutral'"
+              @click="bookingTab = 'active'"
+            >
+              Active bookings
+            </UButton>
+            <UButton
+              size="sm"
+              :variant="bookingTab === 'holds' ? 'solid' : 'soft'"
+              :color="bookingTab === 'holds' ? 'primary' : 'neutral'"
+              @click="bookingTab = 'holds'"
+            >
+              Active holds
+            </UButton>
+            <UButton
+              size="sm"
+              :variant="bookingTab === 'past' ? 'solid' : 'soft'"
+              :color="bookingTab === 'past' ? 'primary' : 'neutral'"
+              @click="bookingTab = 'past'"
+            >
+              Past bookings
+            </UButton>
+          </div>
 
-              <div class="flex flex-wrap items-center gap-2">
-                <UButton color="neutral" variant="soft" size="sm" @click="openReschedule(booking)">
-                  Edit time
-                </UButton>
-                <UButton
-                  color="error"
-                  variant="soft"
-                  size="sm"
-                  :loading="cancelingId === booking.id"
-                  :disabled="booking.status === 'canceled'"
-                  @click="cancelBooking(booking.id)"
-                >
-                  Cancel booking
-                </UButton>
+          <div
+            v-if="bookingTab === 'active' && !activeBookings.length"
+            class="rounded-lg border border-default p-3 text-sm text-dimmed"
+          >
+            No active bookings.
+          </div>
+
+          <div
+            v-else-if="bookingTab === 'holds' && !activeHoldBookings.length"
+            class="rounded-lg border border-default p-3 text-sm text-dimmed"
+          >
+            No active holds.
+          </div>
+
+          <div
+            v-else-if="bookingTab === 'past' && !pastBookings.length"
+            class="rounded-lg border border-default p-3 text-sm text-dimmed"
+          >
+            No past bookings.
+          </div>
+
+          <div
+            v-else
+            class="space-y-3"
+          >
+            <UCard
+              v-for="booking in bookingTab === 'active' ? activeBookings : bookingTab === 'holds' ? activeHoldBookings : paginatedPastBookings"
+              :key="`${booking.id}-${bookingTab}`"
+            >
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <div class="font-medium truncate">
+                      {{ bookingLabel(booking) }}
+                    </div>
+                    <UBadge :color="booking.status === 'confirmed' ? 'success' : booking.status === 'requested' ? 'warning' : 'neutral'" size="xs" variant="soft">
+                      {{ booking.status }}
+                    </UBadge>
+                    <UBadge :color="booking.is_guest ? 'neutral' : 'primary'" size="xs" variant="soft">
+                      {{ booking.is_guest ? 'guest' : 'member' }}
+                    </UBadge>
+                    <UBadge
+                      v-if="bookingTab === 'holds' || hasHold(booking)"
+                      color="warning"
+                      size="xs"
+                      variant="soft"
+                    >
+                      hold
+                    </UBadge>
+                  </div>
+                  <div class="mt-1 text-sm text-dimmed">
+                    {{ formatDate(booking.start_time) }} → {{ formatDate(booking.end_time) }} (LA)
+                  </div>
+                  <div
+                    v-if="hasHold(booking)"
+                    class="mt-1 text-xs text-dimmed"
+                  >
+                    Hold: {{ holdRangeLabel(booking) }}
+                  </div>
+                  <div class="mt-1 text-xs text-dimmed">
+                    Credits burned: {{ booking.credits_burned ?? 0 }} · Created {{ formatDate(booking.created_at) }}
+                  </div>
+                  <div v-if="booking.notes" class="mt-2 text-xs text-dimmed">
+                    {{ booking.notes }}
+                  </div>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2">
+                  <UButton
+                    v-if="bookingTab !== 'past'"
+                    color="neutral"
+                    variant="soft"
+                    size="sm"
+                    @click="openReschedule(booking)"
+                  >
+                    Edit time
+                  </UButton>
+                  <UButton
+                    v-if="bookingTab !== 'past'"
+                    color="error"
+                    variant="soft"
+                    size="sm"
+                    :loading="cancelingId === booking.id"
+                    :disabled="booking.status === 'canceled'"
+                    @click="cancelBooking(booking.id)"
+                  >
+                    Cancel booking
+                  </UButton>
+                </div>
               </div>
+            </UCard>
+          </div>
+
+          <div
+            v-if="bookingTab === 'past' && pastBookings.length > 0"
+            class="flex items-center justify-between gap-2"
+          >
+            <p class="text-xs text-dimmed">
+              Page {{ pastPage }} of {{ pastTotalPages }}
+            </p>
+            <div class="flex items-center gap-2">
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="soft"
+                :disabled="pastPage <= 1"
+                @click="goToPastPage(pastPage - 1)"
+              >
+                Previous
+              </UButton>
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="soft"
+                :disabled="pastPage >= pastTotalPages"
+                @click="goToPastPage(pastPage + 1)"
+              >
+                Next
+              </UButton>
             </div>
-          </UCard>
+          </div>
         </div>
 
         <UCard v-if="rescheduleForm.bookingId">
