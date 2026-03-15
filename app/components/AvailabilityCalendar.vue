@@ -171,9 +171,13 @@ const ownBookingCount = computed(() =>
 )
 const isMemberFeed = computed(() => props.endpoint.includes('/member'))
 
-function eventClassNames(arg: { event: { display: string, extendedProps: CalendarEvent['extendedProps'] } }) {
+function eventClassNames(arg: { event: { display: string, end?: Date | null, extendedProps: CalendarEvent['extendedProps'] } }) {
   const classes = ['fc-event-block']
   const type = arg.event.extendedProps?.type
+  const eventEnd = arg.event.end
+  if (eventEnd && eventEnd.getTime() < Date.now()) {
+    classes.push('fc-event-past')
+  }
 
   if (type === 'hold') {
     classes.push('fc-event-hold')

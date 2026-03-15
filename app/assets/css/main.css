@@ -491,6 +491,15 @@ body {
   cursor: pointer;
 }
 
+.availability-shell .fc .fc-event.fc-event-own:hover {
+  outline: 2px solid rgba(69, 133, 136, 0.95);
+  outline-offset: 1px;
+}
+
+.availability-shell .fc .fc-event.fc-event-past {
+  opacity: 0.5;
+}
+
 .availability-shell .fc .fc-event-main-frame {
   gap: 0.1rem;
 }
