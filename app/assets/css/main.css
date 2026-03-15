@@ -354,12 +354,14 @@ body {
   margin-inline: 0.2rem;
 }
 
-.availability-shell .fc .fc-timegrid-event-harness.fc-booking-harness {
+.availability-shell .fc .fc-timegrid-event-harness.fc-booking-harness,
+.availability-shell .fc .fc-timegrid-event-harness:has(.fc-event.fc-event-booked) {
   inset-inline-start: 0.2rem !important;
   inset-inline-end: 0.2rem !important;
 }
 
-.availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness {
+.availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness,
+.availability-shell .fc .fc-timegrid-event-harness:has(.fc-event.fc-event-hold) {
   inset-inline-start: auto !important;
   inset-inline-end: 0.2rem !important;
   width: 10% !important;
@@ -394,7 +396,9 @@ body {
 }
 
 .availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness-own::before,
-.availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness-own::after {
+.availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness-own::after,
+.availability-shell .fc .fc-timegrid-event-harness:has(.fc-event.fc-event-hold-own)::before,
+.availability-shell .fc .fc-timegrid-event-harness:has(.fc-event.fc-event-hold-own)::after {
   background:
     repeating-linear-gradient(
       135deg,
@@ -410,7 +414,9 @@ body {
 }
 
 .availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness-other::before,
-.availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness-other::after {
+.availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness-other::after,
+.availability-shell .fc .fc-timegrid-event-harness:has(.fc-event.fc-event-hold-other)::before,
+.availability-shell .fc .fc-timegrid-event-harness:has(.fc-event.fc-event-hold-other)::after {
   background:
     repeating-linear-gradient(
       135deg,
@@ -505,7 +511,9 @@ body {
 }
 
 .availability-shell .fc .fc-timegrid-event-harness.fc-harness-past::before,
-.availability-shell .fc .fc-timegrid-event-harness.fc-harness-past::after {
+.availability-shell .fc .fc-timegrid-event-harness.fc-harness-past::after,
+.availability-shell .fc .fc-timegrid-event-harness:has(.fc-event.fc-event-past)::before,
+.availability-shell .fc .fc-timegrid-event-harness:has(.fc-event.fc-event-past)::after {
   opacity: 0.5;
 }
 

@@ -196,10 +196,10 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
   if (arg.event.display === 'background') return undefined
 
   const isHold = arg.event.extendedProps?.type === 'hold'
-  const label = isHold ? 'Equipement Hold' : arg.event.title
-  const time = !isHold && arg.timeText ? `<div class="fc-event-time">${arg.timeText}</div>` : ''
+  const label = isHold ? '<div class="fc-event-label">Equipement Hold</div>' : ''
+  const time = arg.timeText ? `<div class="fc-event-time">${arg.timeText}</div>` : ''
   return {
-    html: `<div class="fc-event-label">${label}</div>${time}`
+    html: `${label}${time}`
   }
 }
 
@@ -400,7 +400,7 @@ onMounted(() => loadEvents())
           v-if="isMemberFeed && ownBookingCount"
           class="availability-chip availability-chip-gradient"
         >
-          {{ ownBookingCount }} of yours on the board
+          My Bookings ({{ ownBookingCount }})
         </div>
         <div
           v-if="peakChip"
