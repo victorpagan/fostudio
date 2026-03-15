@@ -1483,7 +1483,8 @@ watch(
     >
       <template #content>
         <UCard
-            :ui="{body:'overflow-y-scroll'}"
+          class="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-h-[calc(100dvh-4rem)]"
+          :ui="{body:'overflow-y-scroll'}"
         >
           <template #header>
             <div class="flex items-center justify-between gap-3">
