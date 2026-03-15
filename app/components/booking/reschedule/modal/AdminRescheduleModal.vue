@@ -103,7 +103,7 @@ function handleEndSelectChange(event: Event) {
           </div>
         </template>
 
-        <div class="grid gap-3 md:grid-cols-3">
+        <div class="grid gap-3 md:grid-cols-2">
           <UFormField label="Start">
             <select
               class="w-full rounded-md border border-default bg-default px-3 py-2 text-sm"
@@ -148,7 +148,10 @@ function handleEndSelectChange(event: Event) {
               </option>
             </select>
           </UFormField>
-          <UFormField label="Notes">
+          <UFormField
+            label="Notes"
+            class="md:col-span-2"
+          >
             <UInput v-model="props.form.notes" placeholder="Optional update notes" />
           </UFormField>
         </div>

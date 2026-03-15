@@ -646,7 +646,23 @@ export function useAdminBookingReschedule(options: UseAdminBookingRescheduleOpti
       })
       toast.add({ title: 'Booking rescheduled' })
       await options.onSaved()
-      closeReschedule()
+      rescheduleOpen.value = false
+      rescheduleForm.bookingId = ''
+      rescheduleForm.startTime = ''
+      rescheduleForm.endTime = ''
+      rescheduleForm.notes = ''
+      rescheduleForm.hadHold = false
+      rescheduleForm.keepHold = false
+      rescheduleDurationMinutes.value = 0
+      rescheduleAutoSyncEnd.value = true
+      rescheduleHintsLoading.value = false
+      rescheduleHintsError.value = null
+      rescheduleHintMonth.value = ''
+      rescheduleMonthCursor.value = null
+      rescheduleDayCycleIndex.value = {}
+      reschedulePreferredStartMinute.value = null
+      dayOccupiedMinutes.value = {}
+      dayOccupiedIntervals.value = {}
     } catch (error: unknown) {
       toast.add({
         title: 'Could not reschedule booking',
