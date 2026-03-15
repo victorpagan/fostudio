@@ -211,9 +211,14 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
 
   const isHold = arg.event.extendedProps?.type === 'hold'
   const isOwnBooking = arg.event.extendedProps?.type === 'booking' && arg.event.extendedProps?.isOwn
+  const isUnownedBooking = arg.event.extendedProps?.type === 'booking' && !arg.event.extendedProps?.isOwn
   const noteRaw = isOwnBooking ? (arg.event.extendedProps?.notes ?? '').trim() : ''
   const note = noteRaw ? `<div class="fc-event-note">${formatNoteHtml(noteRaw)}</div>` : ''
-  const label = isHold ? '<div class="fc-event-label">Equipement Hold</div>' : ''
+  const label = isHold
+    ? '<div class="fc-event-label">Equipement Hold</div>'
+    : isUnownedBooking
+      ? '<div class="fc-event-label">Blocked</div>'
+      : ''
   const time = arg.timeText ? `<div class="fc-event-time">${arg.timeText}</div>` : ''
   return {
     html: `${label}${time}${note}`
