@@ -205,6 +205,7 @@ function eventDidMount(arg: { el: HTMLElement, event: { extendedProps?: Calendar
   if (!harness) return
   if (type === 'hold') {
     harness.classList.add('fc-hold-harness')
+    harness.classList.add(arg.event.extendedProps?.isOwn ? 'fc-hold-harness-own' : 'fc-hold-harness-other')
   } else if (type === 'booking') {
     harness.classList.add('fc-booking-harness')
   }
