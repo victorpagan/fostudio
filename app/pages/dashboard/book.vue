@@ -106,6 +106,7 @@ const clickedBooking = ref<{
   status?: string
   notes?: string
 } | null>(null)
+const clickedBookingNoteDraft = ref('')
 
 // Form fields inside the modal
 const form = reactive({
@@ -267,6 +268,7 @@ function onOwnBookingClick(payload: {
   notes?: string
 }) {
   clickedBooking.value = payload
+  clickedBookingNoteDraft.value = payload.notes ?? ''
   ownBookingActionOpen.value = true
 }
 
@@ -298,6 +300,11 @@ const ownBookingCanCancel = computed(() => {
   return !ownBookingWithinNoticeWindow.value
 })
 
+const ownBookingCanEditNote = computed(() => !ownBookingHasPassed.value)
+const ownBookingNoteDirty = computed(() =>
+  (clickedBookingNoteDraft.value ?? '').trim() !== (clickedBooking.value?.notes ?? '').trim()
+)
+
 const ownBookingLockReason = computed(() => {
   if (ownBookingHasPassed.value) return 'This booking has already started or passed and can no longer be modified or canceled.'
   if (!isAdmin.value && ownBookingWithinNoticeWindow.value) return `Members cannot modify/cancel within ${memberRescheduleNoticeHours.value} hours of start.`
@@ -307,7 +314,42 @@ const ownBookingLockReason = computed(() => {
 function closeOwnBookingActions() {
   if (ownBookingActionLoading.value) return
   ownBookingActionOpen.value = false
+  clickedBookingNoteDraft.value = ''
   clickedBooking.value = null
+}
+
+async function saveClickedBookingNote() {
+  if (!clickedBooking.value?.bookingId) return
+  if (!ownBookingCanEditNote.value) {
+    toast.add({ title: 'Cannot update note', description: 'Past bookings cannot be updated.', color: 'warning' })
+    return
+  }
+  if (!ownBookingNoteDirty.value) return
+  ownBookingActionLoading.value = true
+  try {
+    const result = await $fetch<{ ok: boolean, notes: string | null }>(`/api/bookings/${clickedBooking.value.bookingId}/notes`, {
+      method: 'PATCH',
+      body: {
+        notes: clickedBookingNoteDraft.value || null
+      }
+    })
+    clickedBooking.value = {
+      ...clickedBooking.value,
+      notes: result.notes ?? ''
+    }
+    clickedBookingNoteDraft.value = result.notes ?? ''
+    calendarKey.value++
+    toast.add({ title: 'Booking note updated', color: 'success' })
+  } catch (error: unknown) {
+    const maybe = error as ApiErrorLike
+    toast.add({
+      title: 'Could not update note',
+      description: maybe.data?.statusMessage ?? maybe.message ?? 'Unknown error',
+      color: 'error'
+    })
+  } finally {
+    ownBookingActionLoading.value = false
+  }
 }
 
 async function cancelClickedBooking() {
@@ -699,17 +741,33 @@ function formatPeakCredits(value: number) {
               <div>
                 {{ formatDateTime(new Date(clickedBooking.start)) }} to {{ formatDateTime(new Date(clickedBooking.end)) }}
               </div>
-              <div
-                v-if="clickedBooking.notes"
-                class="mt-1 whitespace-pre-line break-words text-xs text-dimmed"
+              <UFormField
+                class="mt-2"
+                label="Booking note"
+                :description="ownBookingCanEditNote ? 'Visible in your booking block on the calendar.' : 'Past bookings cannot be updated.'"
               >
-                {{ clickedBooking.notes }}
-              </div>
+                <UTextarea
+                  v-model="clickedBookingNoteDraft"
+                  :rows="3"
+                  :maxlength="500"
+                  placeholder="Add a note for this booking"
+                  :disabled="ownBookingActionLoading || !ownBookingCanEditNote"
+                />
+              </UFormField>
             </div>
           </div>
 
           <template #footer>
             <div class="flex justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                :loading="ownBookingActionLoading && ownBookingNoteDirty"
+                :disabled="ownBookingActionLoading || !ownBookingCanEditNote || !ownBookingNoteDirty"
+                @click="saveClickedBookingNote"
+              >
+                Save note
+              </UButton>
               <UButton
                 color="neutral"
                 variant="soft"
