@@ -54,14 +54,39 @@ const { data: bookingRows, refresh, pending } = await useAsyncData('admin:bookin
 }, { watch: [statusFilter] })
 
 const bookings = computed(() => bookingRows.value ?? [])
+
+function parseBookingTime(value: string | null | undefined) {
+  if (!value) return null
+  const parsedIso = DateTime.fromISO(value, { setZone: true })
+  if (parsedIso.isValid) return parsedIso
+  const parsedSql = DateTime.fromSQL(value, { zone: 'utc' })
+  if (parsedSql.isValid) return parsedSql
+  return null
+}
+
+function bookingEndsAtMillis(booking: AdminBooking) {
+  const parsed = parseBookingTime(booking.end_time)
+  if (parsed?.isValid) return parsed.toMillis()
+  const fallback = new Date(booking.end_time).getTime()
+  return Number.isFinite(fallback) ? fallback : Number.NaN
+}
+
 const activeBookings = computed(() =>
-  bookings.value.filter(booking => booking.status !== 'canceled' && new Date(booking.end_time).getTime() >= Date.now())
+  bookings.value.filter((booking) => {
+    if (booking.status === 'canceled') return false
+    const endMillis = bookingEndsAtMillis(booking)
+    return Number.isFinite(endMillis) ? endMillis >= Date.now() : true
+  })
 )
 const activeHoldBookings = computed(() =>
   activeBookings.value.filter(booking => hasHold(booking))
 )
 const pastBookings = computed(() =>
-  bookings.value.filter(booking => booking.status === 'canceled' || new Date(booking.end_time).getTime() < Date.now())
+  bookings.value.filter((booking) => {
+    if (booking.status === 'canceled') return true
+    const endMillis = bookingEndsAtMillis(booking)
+    return Number.isFinite(endMillis) ? endMillis < Date.now() : false
+  })
 )
 const pastTotalPages = computed(() => Math.max(1, Math.ceil(pastBookings.value.length / PAST_BOOKINGS_PAGE_SIZE)))
 const paginatedPastBookings = computed(() => {
@@ -90,9 +115,9 @@ function bookingLabel(booking: AdminBooking) {
 }
 
 function formatDate(value: string) {
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return value
-  return dt.toLocaleString('en-US', {
+  const parsed = parseBookingTime(value)
+  if (!parsed?.isValid) return value
+  return parsed.setZone('America/Los_Angeles').toJSDate().toLocaleString('en-US', {
     timeZone: 'America/Los_Angeles',
     dateStyle: 'medium',
     timeStyle: 'short'
