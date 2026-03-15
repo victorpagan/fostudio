@@ -482,11 +482,25 @@ body {
 }
 
 .availability-shell .fc .fc-event.fc-event-member {
+  position: relative;
   background: rgba(60, 56, 54, 0.9);
   color: #fbf1c7;
   border: 0;
   cursor: default;
   pointer-events: none;
+}
+
+.availability-shell .fc .fc-event.fc-event-member::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0.2rem;
+  top: 50%;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(251, 241, 199, 0.75);
+  transform: translateY(-50%) rotate(-24deg);
+  pointer-events: none;
+  z-index: 2;
 }
 
 .availability-shell .fc .fc-event.fc-event-own {
