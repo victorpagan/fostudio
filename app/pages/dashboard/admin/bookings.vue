@@ -37,6 +37,7 @@ const cancelingId = ref<string | null>(null)
 const reschedulingId = ref<string | null>(null)
 const bookingTab = ref<AdminBookingTab>('active')
 const pastPage = ref(1)
+const rescheduleOpen = ref(false)
 
 const rescheduleForm = reactive({
   bookingId: '' as string,
@@ -155,6 +156,16 @@ function openReschedule(booking: AdminBooking) {
   rescheduleForm.startTime = toLocalInputValue(booking.start_time)
   rescheduleForm.endTime = toLocalInputValue(booking.end_time)
   rescheduleForm.notes = booking.notes ?? ''
+  rescheduleOpen.value = true
+}
+
+function closeReschedule() {
+  if (reschedulingId.value) return
+  rescheduleOpen.value = false
+  rescheduleForm.bookingId = ''
+  rescheduleForm.startTime = ''
+  rescheduleForm.endTime = ''
+  rescheduleForm.notes = ''
 }
 
 async function saveReschedule() {
@@ -175,6 +186,7 @@ async function saveReschedule() {
     })
     toast.add({ title: 'Booking rescheduled' })
     await refresh()
+    closeReschedule()
   } catch (error: unknown) {
     toast.add({
       title: 'Could not reschedule booking',
@@ -415,7 +427,17 @@ function goToPastPage(page: number) {
           </div>
         </div>
 
-        <UCard v-if="rescheduleForm.bookingId">
+      </div>
+    </template>
+  </UDashboardPanel>
+
+  <UModal
+    v-model:open="rescheduleOpen"
+    :dismissible="!reschedulingId"
+  >
+    <template #content>
+      <UCard v-if="rescheduleForm.bookingId">
+        <template #header>
           <div class="flex items-center justify-between gap-3">
             <div>
               <div class="font-medium">
@@ -425,34 +447,49 @@ function goToPastPage(page: number) {
                 Rescheduling does not auto-recalculate burned credits. Use member credit adjustments when needed.
               </div>
             </div>
-            <UButton color="neutral" variant="soft" @click="rescheduleForm.bookingId = ''">
+            <UButton
+              color="neutral"
+              variant="soft"
+              :disabled="Boolean(reschedulingId)"
+              @click="closeReschedule"
+            >
               Close
             </UButton>
           </div>
-          <div class="mt-4 grid gap-3 md:grid-cols-3">
-            <UFormField label="Start">
-              <UInput
-                v-model="rescheduleForm.startTime"
-                type="datetime-local"
-              />
-            </UFormField>
-            <UFormField label="End">
-              <UInput
-                v-model="rescheduleForm.endTime"
-                type="datetime-local"
-              />
-            </UFormField>
-            <UFormField label="Notes">
-              <UInput v-model="rescheduleForm.notes" placeholder="Optional update notes" />
-            </UFormField>
-          </div>
-          <div class="mt-4">
+        </template>
+        <div class="grid gap-3 md:grid-cols-3">
+          <UFormField label="Start">
+            <UInput
+              v-model="rescheduleForm.startTime"
+              type="datetime-local"
+            />
+          </UFormField>
+          <UFormField label="End">
+            <UInput
+              v-model="rescheduleForm.endTime"
+              type="datetime-local"
+            />
+          </UFormField>
+          <UFormField label="Notes">
+            <UInput v-model="rescheduleForm.notes" placeholder="Optional update notes" />
+          </UFormField>
+        </div>
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton
+              color="neutral"
+              variant="soft"
+              :disabled="Boolean(reschedulingId)"
+              @click="closeReschedule"
+            >
+              Cancel
+            </UButton>
             <UButton :loading="reschedulingId === rescheduleForm.bookingId" @click="saveReschedule">
               Save new time
             </UButton>
           </div>
-        </UCard>
-      </div>
+        </template>
+      </UCard>
     </template>
-  </UDashboardPanel>
+  </UModal>
 </template>
