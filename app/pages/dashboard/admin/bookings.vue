@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { DateTime } from 'luxon'
+
 definePageMeta({ middleware: ['admin'] })
 
 type AdminBooking = {
@@ -65,27 +67,24 @@ function formatDate(value: string) {
 
 function toLocalInputValue(value: string | null | undefined) {
   if (!value) return ''
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return ''
-  const year = dt.getFullYear()
-  const month = `${dt.getMonth() + 1}`.padStart(2, '0')
-  const day = `${dt.getDate()}`.padStart(2, '0')
-  const hour = `${dt.getHours()}`.padStart(2, '0')
-  const minute = `${dt.getMinutes()}`.padStart(2, '0')
-  return `${year}-${month}-${day}T${hour}:${minute}`
+  const parsedIso = DateTime.fromISO(value, { setZone: true })
+  if (parsedIso.isValid) return parsedIso.setZone('America/Los_Angeles').toFormat("yyyy-LL-dd'T'HH:mm")
+  const parsedSql = DateTime.fromSQL(value, { zone: 'utc' })
+  if (parsedSql.isValid) return parsedSql.setZone('America/Los_Angeles').toFormat("yyyy-LL-dd'T'HH:mm")
+  return ''
 }
 
 function fromLocalInputValue(value: string) {
   if (!value.trim()) return null
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return null
-  return dt.toISOString()
+  const dt = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm", { zone: 'America/Los_Angeles' })
+  if (!dt.isValid) return null
+  return dt.toUTC().toISO()
 }
 
 function openReschedule(booking: AdminBooking) {
   rescheduleForm.bookingId = booking.id
-  rescheduleForm.startTime = booking.start_time
-  rescheduleForm.endTime = booking.end_time
+  rescheduleForm.startTime = toLocalInputValue(booking.start_time)
+  rescheduleForm.endTime = toLocalInputValue(booking.end_time)
   rescheduleForm.notes = booking.notes ?? ''
 }
 
@@ -253,16 +252,14 @@ async function cancelBooking(bookingId: string) {
           <div class="mt-4 grid gap-3 md:grid-cols-3">
             <UFormField label="Start">
               <UInput
-                :model-value="toLocalInputValue(rescheduleForm.startTime)"
+                v-model="rescheduleForm.startTime"
                 type="datetime-local"
-                @update:model-value="(value) => { rescheduleForm.startTime = String(value ?? '') }"
               />
             </UFormField>
             <UFormField label="End">
               <UInput
-                :model-value="toLocalInputValue(rescheduleForm.endTime)"
+                v-model="rescheduleForm.endTime"
                 type="datetime-local"
-                @update:model-value="(value) => { rescheduleForm.endTime = String(value ?? '') }"
               />
             </UFormField>
             <UFormField label="Notes">
