@@ -2,7 +2,14 @@ import { z } from 'zod'
 import { DateTime } from 'luxon'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
-import { computeOvernightHoldWindow, resolveHoldCycleWindow } from '~~/server/utils/booking/holds'
+import {
+  computeOvernightHoldWindow,
+  DEFAULT_HOLD_END_HOUR,
+  DEFAULT_HOLD_MIN_END_HOUR,
+  DEFAULT_MIN_HOLD_BOOKING_HOURS,
+  resolveHoldCycleWindow,
+  validateOvernightHoldWindow
+} from '~~/server/utils/booking/holds'
 
 const schema = z.object({
   start_time: z.string(),
@@ -13,7 +20,6 @@ const schema = z.object({
 })
 
 const TEST_TIER_ID = 'test'
-
 type TierRules = {
   booking_window_days: number
   peak_multiplier: number
@@ -60,14 +66,17 @@ export default defineEventHandler(async (event) => {
   const body = schema.parse(await readBody(event))
   const peakWindow = await loadPeakWindowConfig(event)
 
-  const { data: holdCreditCostRow, error: holdCreditCostErr } = await supabase
+  const { data: holdConfigRows, error: holdConfigErr } = await supabase
     .from('system_config')
-    .select('value')
-    .eq('key', 'hold_credit_cost')
-    .maybeSingle()
+    .select('key,value')
+    .in('key', ['hold_credit_cost', 'min_hold_booking_hours', 'hold_min_end_hour', 'hold_end_hour'])
 
-  if (holdCreditCostErr) throw createError({ statusCode: 500, statusMessage: holdCreditCostErr.message })
-  const holdCreditCost = Math.max(0, Number(holdCreditCostRow?.value ?? 2))
+  if (holdConfigErr) throw createError({ statusCode: 500, statusMessage: holdConfigErr.message })
+  const holdConfig = new Map((holdConfigRows ?? []).map(row => [String(row.key), row.value]))
+  const holdCreditCost = Math.max(0, Number(holdConfig.get('hold_credit_cost') ?? 2))
+  const minHoldBookingHours = Math.max(1, Number(holdConfig.get('min_hold_booking_hours') ?? DEFAULT_MIN_HOLD_BOOKING_HOURS))
+  const holdMinEndHour = Math.max(0, Math.min(23, Math.floor(Number(holdConfig.get('hold_min_end_hour') ?? DEFAULT_HOLD_MIN_END_HOUR))))
+  const holdEndHour = Math.max(0, Math.min(23, Math.floor(Number(holdConfig.get('hold_end_hour') ?? DEFAULT_HOLD_END_HOUR))))
 
   // Membership + tier id (membership can be missing for legacy/admin accounts with credits)
   const { data: membership, error: memErr } = await supabase
@@ -143,8 +152,12 @@ export default defineEventHandler(async (event) => {
   if (!start.isValid || !end.isValid) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
   if (!(start < end)) throw createError({ statusCode: 400, statusMessage: 'Invalid time range' })
 
-  // Booking window enforcement
   const now = DateTime.now().setZone(STUDIO_TZ)
+  if (start < now) {
+    throw createError({ statusCode: 400, statusMessage: 'Cannot book in the past' })
+  }
+
+  // Booking window enforcement
   const maxStart = now.plus({ days: effectiveTier.booking_window_days })
   if (start > maxStart) {
     throw createError({
@@ -188,9 +201,10 @@ export default defineEventHandler(async (event) => {
 
   const { data: holdConflicts, error: holdErr } = await supabase
     .from('booking_holds')
-    .select('id')
+    .select('id,bookings!inner(user_id)')
     .lt('hold_start', endIso)
     .gt('hold_end', startIso)
+    .neq('bookings.user_id', user.sub)
     .limit(1)
 
   if (holdErr) throw createError({ statusCode: 500, statusMessage: holdErr.message })
@@ -201,6 +215,11 @@ export default defineEventHandler(async (event) => {
   let consumePaidHold = false
   let holdCreditCharge = 0
   if (body.request_hold) {
+    const holdWindowValidation = validateOvernightHoldWindow(start, end, minHoldBookingHours, holdMinEndHour)
+    if (!holdWindowValidation.ok) {
+      throw createError({ statusCode: 409, statusMessage: holdWindowValidation.message })
+    }
+
     if (!hasActiveMembership) {
       throw createError({ statusCode: 403, statusMessage: 'Overnight holds require an active membership' })
     }
@@ -287,7 +306,7 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    const { holdStartIso, holdEndIso } = computeOvernightHoldWindow(end, peakWindow.startHour)
+    const { holdStartIso, holdEndIso } = computeOvernightHoldWindow(end, holdEndHour)
     if (!holdStartIso || !holdEndIso) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
 
     const { data: holdWindowBookingConflicts, error: holdWindowBookingErr } = await supabase
@@ -296,11 +315,12 @@ export default defineEventHandler(async (event) => {
       .in('status', ['confirmed', 'requested', 'pending_payment'])
       .lt('start_time', holdEndIso)
       .gt('end_time', holdStartIso)
+      .neq('user_id', user.sub)
       .limit(1)
 
     if (holdWindowBookingErr) throw createError({ statusCode: 500, statusMessage: holdWindowBookingErr.message })
     if (holdWindowBookingConflicts && holdWindowBookingConflicts.length > 0) {
-      throw createError({ statusCode: 409, statusMessage: 'Requested hold conflicts with another booking' })
+      throw createError({ statusCode: 409, statusMessage: 'Requested hold conflicts with another member booking in the hold window' })
     }
 
     const { data: holdWindowHoldConflicts, error: holdWindowHoldErr } = await supabase

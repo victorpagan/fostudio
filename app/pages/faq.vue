@@ -47,7 +47,7 @@ const faqs = computed(() => [
   },
   {
     question: 'Can I hold equipment or keep a setup overnight?',
-    answer: 'Membership tiers include a monthly overnight-hold cap. Each hold runs until the earlier of 10:00am next day or peak-hours start, and once the monthly cap is used you can still buy extra hold add-ons.'
+    answer: 'Membership tiers include a monthly overnight-hold cap. Holds require a minimum booking length and a late-enough booking end time based on studio policy. Hold time does not count toward booking hours, and door locks do not work during hold hours unless staff is contacted first.'
   },
   {
     question: 'Do you support film shooters?',

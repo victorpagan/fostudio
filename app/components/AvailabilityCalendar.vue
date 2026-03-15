@@ -166,9 +166,6 @@ async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
   }
 }
 
-const bookingCount = computed(() =>
-  events.value.filter(event => event.extendedProps?.type === 'booking').length
-)
 const ownBookingCount = computed(() =>
   events.value.filter(event => event.extendedProps?.isOwn).length
 )
@@ -194,9 +191,10 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
   if (arg.event.display === 'background') return undefined
 
   const isHold = arg.event.extendedProps?.type === 'hold'
+  const label = isHold ? 'Equipment Hold' : arg.event.title
   const time = !isHold && arg.timeText ? `<div class="fc-event-time">${arg.timeText}</div>` : ''
   return {
-    html: `<div class="fc-event-label">${arg.event.title}</div>${time}`
+    html: `<div class="fc-event-label">${label}</div>${time}`
   }
 }
 
@@ -215,6 +213,13 @@ const peakChip = computed(() => {
     ? peakWindow.value.multiplier.toString()
     : peakWindow.value.multiplier.toFixed(2).replace(/\.?0+$/, '')
   return `Peak ${base} · ${multiplier} credits/hr`
+})
+
+const visibleRangeLabel = computed(() => {
+  if (isMemberFeed.value && bookingWindowDays.value) {
+    return `${visibleRange.value} (${bookingWindowDays.value}-day booking reach)`
+  }
+  return visibleRange.value
 })
 
 function hourToTimeLabel(hour: number) {
@@ -248,8 +253,14 @@ const calendarEvents = computed<CalendarEvent[]>(() => [
 ])
 
 const memberValidRange = computed(() => {
-  if (!isMemberFeed.value || !bookingWindowDays.value) return undefined
+  if (!canSelect.value) return undefined
   const now = new Date()
+  if (!bookingWindowDays.value) {
+    return {
+      start: studioInstantToCalendarIso(now)
+    }
+  }
+
   const end = new Date(now.getTime() + bookingWindowDays.value * 24 * 60 * 60 * 1000)
   return {
     start: studioInstantToCalendarIso(now),
@@ -263,14 +274,22 @@ const calendarOptions = computed(() => ({
   timeZone: 'UTC',
   selectable: canSelect.value,
   validRange: memberValidRange.value,
-  selectOverlap: (event: { display: string, classNames?: string[] }) => {
+  selectOverlap: (event: { display: string, classNames?: string[], extendedProps?: CalendarEvent['extendedProps'] }) => {
     // Allow selecting over visual-only peak shading; keep real booking/hold overlaps blocked.
-    return event.display === 'background' && (event.classNames ?? []).includes('fc-peak-window')
+    if (event.display === 'background' && (event.classNames ?? []).includes('fc-peak-window')) return true
+    if (event.extendedProps?.type === 'hold' && event.extendedProps?.isOwn) return true
+    return false
   },
-  selectAllow: (selectionInfo: { start: Date, end: Date }) => {
-    if (!isMemberFeed.value || !bookingWindowDays.value) return true
+  selectAllow: (selectionInfo: { start: Date, end: Date, allDay?: boolean }) => {
+    const selectionStart = calendarDateToStudioDate(selectionInfo.start)
+    if (selectionStart < new Date()) return false
+
+    // In month view, require users to pick an actual time slot in day/week view.
+    if (selectionInfo.allDay) return false
+
+    if (!bookingWindowDays.value) return true
     const maxStart = new Date(Date.now() + bookingWindowDays.value * 24 * 60 * 60 * 1000)
-    return calendarDateToStudioDate(selectionInfo.start) <= maxStart
+    return selectionStart <= maxStart
   },
   selectMirror: true,
   nowIndicator: true,
@@ -297,6 +316,12 @@ const calendarOptions = computed(() => ({
   events: calendarEvents.value,
   eventClassNames,
   eventContent,
+  dateClick: (info: { view: { type: string, calendar: { changeView: (viewName: string, date: Date) => void } }, date: Date }) => {
+    if (!canSelect.value) return
+    if (info.view.type !== 'dayGridMonth') return
+    const calendar = info.view.calendar
+    if (calendar) calendar.changeView('timeGridDay', info.date)
+  },
   eventClick: (info: { event: { extendedProps?: CalendarEvent['extendedProps'], start: Date | null, end: Date | null } }) => {
     const ext = info.event.extendedProps
     if (ext?.type !== 'booking' || !ext.isOwn || !ext.bookingId) return
@@ -311,10 +336,15 @@ const calendarOptions = computed(() => ({
       notes: ext.notes
     })
   },
-  select: (info: DateSelectArg) => emit('select', {
-    start: calendarDateToStudioDate(info.start),
-    end: calendarDateToStudioDate(info.end)
-  }),
+  select: (info: DateSelectArg) => {
+    if (info.allDay) return
+    const start = calendarDateToStudioDate(info.start)
+    if (start < new Date()) return
+    emit('select', {
+      start,
+      end: calendarDateToStudioDate(info.end)
+    })
+  },
   datesSet: (info: DatesSetArg) => {
     // Called when the visible range changes
     visibleTitle.value = info.view.title
@@ -334,24 +364,14 @@ onMounted(() => loadEvents())
           {{ visibleTitle }}
         </div>
         <div class="text-sm text-[color:var(--gruv-ink-2)]">
-          {{ visibleRange }}
+          {{ visibleRangeLabel }}
         </div>
       </div>
 
       <div class="availability-meta">
-        <div class="availability-chip">
-          <span class="availability-dot bg-[color:var(--gruv-ink-2)]" />
-          {{ bookingCount }} confirmed session{{ bookingCount === 1 ? '' : 's' }}
-        </div>
-        <div
-          v-if="isMemberFeed && bookingWindowDays"
-          class="availability-chip"
-        >
-          {{ bookingWindowDays }}-day booking reach
-        </div>
         <div
           v-if="isMemberFeed && ownBookingCount"
-          class="availability-chip"
+          class="availability-chip availability-chip-gradient"
         >
           {{ ownBookingCount }} of yours on the board
         </div>

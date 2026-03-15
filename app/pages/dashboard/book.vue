@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { DateTime } from 'luxon'
+
 definePageMeta({ middleware: ['auth', 'membership-required'] })
 
 const toast = useToast()
@@ -10,9 +12,14 @@ const currentUserId = computed(() => user.value?.sub ?? user.value?.id ?? null)
 type BookingPolicy = {
   memberRescheduleNoticeHours: number
   holdCreditCost: number
+  minHoldBookingHours: number
+  holdMinEndHour: number
+  holdEndHour: number
 }
 
 type HoldSummary = {
+  activeHoldCap?: number
+  activeHoldSlotsRemaining?: number
   holdsIncluded: number
   activeHolds: number
   holdsUsedThisCycle?: number
@@ -31,6 +38,8 @@ const { data: holdSummary, refresh: refreshHoldSummary } = await useAsyncData('b
     return await $fetch<HoldSummary>('/api/holds/summary')
   } catch {
     return {
+      activeHoldCap: 0,
+      activeHoldSlotsRemaining: 0,
       holdsIncluded: 0,
       activeHolds: 0,
       holdsUsedThisCycle: 0,
@@ -44,6 +53,15 @@ const { data: holdSummary, refresh: refreshHoldSummary } = await useAsyncData('b
 })
 const memberRescheduleNoticeHours = computed(() => Number(bookingPolicy.value?.memberRescheduleNoticeHours ?? 24))
 const holdCreditCost = computed(() => Number(bookingPolicy.value?.holdCreditCost ?? 2))
+const minHoldBookingHours = computed(() => Math.max(1, Number(bookingPolicy.value?.minHoldBookingHours ?? 4)))
+const holdMinEndHour = computed(() => {
+  const raw = Number(bookingPolicy.value?.holdMinEndHour ?? 18)
+  return Number.isFinite(raw) ? Math.max(0, Math.min(23, Math.floor(raw))) : 18
+})
+const holdEndHour = computed(() => {
+  const raw = Number(bookingPolicy.value?.holdEndHour ?? 8)
+  return Number.isFinite(raw) ? Math.max(0, Math.min(23, Math.floor(raw))) : 8
+})
 
 type BookingPreview = {
   creditsNeeded: number
@@ -109,6 +127,44 @@ const holdPaymentOptions = computed(() => {
   return options
 })
 
+function validateHoldWindowForSelection(start: Date, end: Date) {
+  const startLa = DateTime.fromJSDate(start).setZone('America/Los_Angeles')
+  const endLa = DateTime.fromJSDate(end).setZone('America/Los_Angeles')
+  if (!startLa.isValid || !endLa.isValid || endLa <= startLa) {
+    return { eligible: false, reasons: ['Select a valid time range to request a hold.'] }
+  }
+  const reasons: string[] = []
+  const durationHours = endLa.diff(startLa, 'hours').hours
+  if (durationHours < minHoldBookingHours.value) {
+    reasons.push(`Booking must be at least ${minHoldBookingHours.value} hours.`)
+  }
+  const requiredEnd = endLa.startOf('day').set({ hour: holdMinEndHour.value, minute: 0, second: 0, millisecond: 0 })
+  if (endLa < requiredEnd) {
+    const label = DateTime.fromObject({ hour: holdMinEndHour.value, minute: 0 }, { zone: 'America/Los_Angeles' }).toFormat('h:mm a')
+    reasons.push(`Booking must end at or after ${label}.`)
+  }
+  return { eligible: reasons.length === 0, reasons }
+}
+
+const holdSelectionEligibility = computed(() => {
+  if (!selected.value) return { eligible: false, reasons: ['Select a time slot to check hold eligibility.'] }
+  const base = validateHoldWindowForSelection(selected.value.start, selected.value.end)
+  if (!base.eligible) return base
+  const activeSlotsRemaining = Math.max(0, Number(holdSummary.value?.activeHoldSlotsRemaining ?? 0))
+  if (activeSlotsRemaining <= 0) {
+    return { eligible: false, reasons: ['Active hold cap reached. Wait for an existing hold to finish before adding another.'] }
+  }
+  const paymentPathAvailable = Number(holdSummary.value?.includedHoldsRemaining ?? 0) > 0
+    || Number(holdSummary.value?.paidHoldBalance ?? 0) > 0
+    || holdCreditCost.value > 0
+  if (!paymentPathAvailable) {
+    return { eligible: false, reasons: ['No hold payment path is currently available for this booking.'] }
+  }
+  return { eligible: true, reasons: [] as string[] }
+})
+
+const canShowHoldOption = computed(() => holdSelectionEligibility.value.eligible)
+
 watch(holdSelectionRequired, (required) => {
   if (!required) {
     form.holdPaymentMethod = 'auto'
@@ -116,6 +172,13 @@ watch(holdSelectionRequired, (required) => {
   }
   const first = holdPaymentOptions.value[0]?.value
   form.holdPaymentMethod = first ?? 'auto'
+})
+
+watch(canShowHoldOption, (allowed) => {
+  if (!allowed) {
+    form.request_hold = false
+    form.holdPaymentMethod = 'auto'
+  }
 })
 
 // Credit preview — fetched when a time slot is selected
@@ -181,11 +244,19 @@ function onSelect(payload: { start: Date, end: Date }) {
   fetchPreview(payload.start, payload.end)
 }
 
-function closeModal() {
-  if (confirming.value) return
+function closeModal(force = false) {
+  if (confirming.value && !force) return
   open.value = false
+  selected.value = null
+  form.notes = ''
+  form.request_hold = false
+  form.holdPaymentMethod = 'auto'
   preview.value = null
   previewError.value = null
+}
+
+function handleCloseModal() {
+  closeModal()
 }
 
 function onOwnBookingClick(payload: {
@@ -301,7 +372,7 @@ async function confirmBooking() {
       description: `${res.burned} credits used. New balance: ${res.newBalance} credits.`,
       color: 'success'
     })
-    closeModal()
+    closeModal(true)
     calendarKey.value++ // refresh calendar events
     await refreshCreditBalance()
   } catch (error: unknown) {
@@ -433,7 +504,7 @@ function formatPeakCredits(value: number) {
                 variant="ghost"
                 size="sm"
                 :disabled="confirming"
-                @click="closeModal"
+                @click="handleCloseModal"
               />
             </div>
           </template>
@@ -524,18 +595,7 @@ function formatPeakCredits(value: number) {
               icon="i-lucide-wallet-cards"
               title="Insufficient credits"
               :description="`This booking needs ${requiredCredits} credits, but you currently have ${creditBalance}.`"
-            >
-              <template #actions>
-                <UButton
-                  size="sm"
-                  color="warning"
-                  variant="soft"
-                  @click="goToBuyCredits"
-                >
-                  Buy credits
-                </UButton>
-              </template>
-            </UAlert>
+            />
 
             <!-- Notes -->
             <UFormField
@@ -551,10 +611,18 @@ function formatPeakCredits(value: number) {
             </UFormField>
 
             <!-- Overnight hold -->
+            <UAlert
+              v-if="!canShowHoldOption"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-circle-alert"
+              :description="holdSelectionEligibility.reasons.join(' ')"
+            />
             <UCheckbox
+              v-if="canShowHoldOption"
               v-model="form.request_hold"
               label="Request overnight equipment hold"
-              description="Extends your reservation until the earlier of 10am next day or peak-hours start. Monthly hold cap is used first, then paid hold add-ons or credits."
+              :description="`Extends your reservation until ${DateTime.fromObject({ hour: holdEndHour, minute: 0 }, { zone: 'America/Los_Angeles' }).toFormat('h:mm a')} next day. Hold time does not count as booking hours, and door locks do not work during hold hours unless staff is contacted first.`"
             />
 
             <UFormField
@@ -580,7 +648,7 @@ function formatPeakCredits(value: number) {
                 color="neutral"
                 variant="soft"
                 :disabled="confirming"
-                @click="closeModal"
+                @click="handleCloseModal"
               >
                 Cancel
               </UButton>

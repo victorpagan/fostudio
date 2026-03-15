@@ -88,7 +88,7 @@ export default defineEventHandler(async (event) => {
   // All holds in the window
   const { data: holds, error: holdsErr } = await supabase
     .from('booking_holds')
-    .select('id, hold_start, hold_end')
+    .select('id, hold_start, hold_end, bookings!inner(user_id)')
     .lt('hold_start', to.toISOString())
     .gt('hold_end', from.toISOString())
     .order('hold_start', { ascending: true })
@@ -127,15 +127,22 @@ export default defineEventHandler(async (event) => {
         }
       }
     }),
-    ...(holds ?? []).map(h => ({
+    ...(holds ?? []).map((h: any) => {
+      const bookingRel = h?.bookings
+      const holdOwnerId = Array.isArray(bookingRel) ? bookingRel[0]?.user_id : bookingRel?.user_id
+      return ({
       id: `h_${h.id}`,
       start: normalizeIso(h.hold_start),
       end: normalizeIso(h.hold_end),
       title: 'Hold',
       display: 'auto',
       color: '#f59e0b',
-      extendedProps: { type: 'hold' }
-    })),
+      extendedProps: {
+        type: 'hold',
+        isOwn: holdOwnerId === user.sub
+      }
+      })
+    }),
     ...(blocks ?? []).map(block => ({
       id: `x_${block.id}`,
       start: normalizeIso(block.start_time),

@@ -51,7 +51,37 @@ type Tier = {
 
 type BookingPolicy = {
   memberRescheduleNoticeHours: number
+  holdCreditCost: number
+  minHoldBookingHours: number
+  holdMinEndHour: number
+  holdEndHour: number
+  peakStartHour: number
 }
+
+type HoldSummary = {
+  paidHoldBalance: number
+  includedHoldsRemaining: number
+  canRequestHoldNow: boolean
+}
+
+type CalendarLoadEvent = {
+  id?: string
+  start?: string
+  end?: string
+  display?: string
+  extendedProps?: {
+    type?: 'booking' | 'hold'
+    bookingId?: string
+    isOwn?: boolean
+  }
+}
+
+type CalendarLoadResponse = {
+  bookingWindowDays?: number
+  events?: CalendarLoadEvent[]
+}
+
+const STUDIO_TZ = 'America/Los_Angeles'
 
 const nowIso = useState('dashboard:bookings:now-iso', () => new Date().toISOString())
 
@@ -110,6 +140,41 @@ const { data: bookingPolicy } = await useAsyncData('bookings:policy', async () =
   return await $fetch<BookingPolicy>('/api/bookings/policy')
 })
 const memberRescheduleNoticeHours = computed(() => Number(bookingPolicy.value?.memberRescheduleNoticeHours ?? 24))
+const holdCreditCost = computed(() => Number(bookingPolicy.value?.holdCreditCost ?? 2))
+const minHoldBookingHours = computed(() => Math.max(1, Number(bookingPolicy.value?.minHoldBookingHours ?? 4)))
+const holdMinEndHour = computed(() => {
+  const raw = Number(bookingPolicy.value?.holdMinEndHour ?? 18)
+  return Number.isFinite(raw) ? Math.max(0, Math.min(23, Math.floor(raw))) : 18
+})
+const holdEndHour = computed(() => {
+  const raw = Number(bookingPolicy.value?.holdEndHour ?? 8)
+  return Number.isFinite(raw) ? Math.max(0, Math.min(23, Math.floor(raw))) : 8
+})
+const holdMinEndLabel = computed(() =>
+  DateTime.fromObject({ hour: holdMinEndHour.value, minute: 0 }, { zone: STUDIO_TZ }).toFormat('h:mm a')
+)
+const holdEndLabel = computed(() =>
+  DateTime.fromObject({ hour: holdEndHour.value, minute: 0 }, { zone: STUDIO_TZ }).toFormat('h:mm a')
+)
+
+const { data: holdSummary, refresh: refreshHoldSummary } = await useAsyncData('bookings:hold-summary', async () => {
+  if (!hasMembership.value) {
+    return {
+      paidHoldBalance: 0,
+      includedHoldsRemaining: 0,
+      canRequestHoldNow: false
+    } as HoldSummary
+  }
+  try {
+    return await $fetch<HoldSummary>('/api/holds/summary')
+  } catch {
+    return {
+      paidHoldBalance: 0,
+      includedHoldsRemaining: 0,
+      canRequestHoldNow: false
+    } as HoldSummary
+  }
+}, { watch: [hasMembership] })
 
 function getDiscountLabel(label?: string | null) {
   return normalizeDiscountLabel(label)
@@ -125,11 +190,24 @@ const cancelConfirmOpen = ref(false)
 const cancelTarget = ref<Booking | null>(null)
 const reschedulingId = ref<string | null>(null)
 const rescheduleOpen = ref(false)
+const rescheduleDurationMinutes = ref(0)
+const rescheduleAutoSyncEnd = ref(true)
+const rescheduleHintsLoading = ref(false)
+const rescheduleHintsError = ref<string | null>(null)
+const rescheduleHintMonth = ref<string>('')
+const rescheduleMonthCursor = ref<DateTime | null>(null)
+const rescheduleBookingWindowDays = ref<number>(30)
+const rescheduleDayCycleIndex = ref<Record<string, number>>({})
+const reschedulePreferredStartMinute = ref<number | null>(null)
+const dayOccupiedMinutes = ref<Record<string, number>>({})
+const dayOccupiedIntervals = ref<Record<string, Array<{ startMinute: number, endMinute: number }>>>({})
 const rescheduleForm = reactive({
   bookingId: '',
   startTime: '',
   endTime: '',
-  notes: ''
+  notes: '',
+  requestHold: false,
+  holdPaymentMethod: 'auto' as 'auto' | 'token' | 'credits'
 })
 
 async function cancelBooking(id: string) {
@@ -208,21 +286,26 @@ async function confirmCancel() {
 
 function toLocalInputValue(value: string | null | undefined) {
   if (!value) return ''
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return ''
-  const year = dt.getFullYear()
-  const month = `${dt.getMonth() + 1}`.padStart(2, '0')
-  const day = `${dt.getDate()}`.padStart(2, '0')
-  const hour = `${dt.getHours()}`.padStart(2, '0')
-  const minute = `${dt.getMinutes()}`.padStart(2, '0')
-  return `${year}-${month}-${day}T${hour}:${minute}`
+  const parsedIso = DateTime.fromISO(value, { setZone: true })
+  if (parsedIso.isValid) return parsedIso.setZone(STUDIO_TZ).toFormat("yyyy-LL-dd'T'HH:mm")
+  const parsedSql = DateTime.fromSQL(value, { zone: 'utc' })
+  if (parsedSql.isValid) return parsedSql.setZone(STUDIO_TZ).toFormat("yyyy-LL-dd'T'HH:mm")
+  return ''
+}
+
+function localInputToDateTime(value: string | null | undefined) {
+  if (!value) return null
+  const parsed = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm", { zone: STUDIO_TZ })
+  if (parsed.isValid) return parsed
+  const fallback = DateTime.fromISO(value, { zone: STUDIO_TZ })
+  return fallback.isValid ? fallback : null
 }
 
 function fromLocalInputValue(value: string) {
   if (!value.trim()) return null
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return null
-  return dt.toISOString()
+  const dt = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm", { zone: STUDIO_TZ })
+  if (!dt.isValid) return null
+  return dt.toUTC().toISO()
 }
 
 function formatRange(start: string, end: string) {
@@ -321,16 +404,50 @@ function openReschedule(booking: Booking) {
   rescheduleForm.startTime = toLocalInputValue(booking.start_time)
   rescheduleForm.endTime = toLocalInputValue(booking.end_time)
   rescheduleForm.notes = booking.notes ?? ''
+  rescheduleForm.requestHold = false
+  rescheduleForm.holdPaymentMethod = 'auto'
+  const startMs = new Date(booking.start_time).getTime()
+  const endMs = new Date(booking.end_time).getTime()
+  const duration = Number.isFinite(startMs) && Number.isFinite(endMs) ? Math.max(0, Math.round((endMs - startMs) / 60000)) : 0
+  rescheduleDurationMinutes.value = duration > 0 ? duration : 60
+  const startDt = DateTime.fromISO(booking.start_time, { setZone: true }).setZone(STUDIO_TZ)
+  reschedulePreferredStartMinute.value = startDt.isValid ? (startDt.hour * 60 + startDt.minute) : null
+  rescheduleAutoSyncEnd.value = true
+  rescheduleDayCycleIndex.value = {}
+  const cursor = localInputToDateTime(rescheduleForm.startTime)?.setZone(STUDIO_TZ) ?? DateTime.now().setZone(STUDIO_TZ)
+  rescheduleMonthCursor.value = cursor.startOf('month')
+  void loadRescheduleMonthHints(rescheduleForm.startTime)
   rescheduleOpen.value = true
 }
 
-function closeReschedule() {
-  if (reschedulingId.value) return
+function resetRescheduleState() {
   rescheduleOpen.value = false
   rescheduleForm.bookingId = ''
   rescheduleForm.startTime = ''
   rescheduleForm.endTime = ''
   rescheduleForm.notes = ''
+  rescheduleForm.requestHold = false
+  rescheduleForm.holdPaymentMethod = 'auto'
+  rescheduleDurationMinutes.value = 0
+  rescheduleAutoSyncEnd.value = true
+  rescheduleHintsLoading.value = false
+  rescheduleHintsError.value = null
+  rescheduleHintMonth.value = ''
+  rescheduleMonthCursor.value = null
+  rescheduleBookingWindowDays.value = 30
+  rescheduleDayCycleIndex.value = {}
+  reschedulePreferredStartMinute.value = null
+  dayOccupiedMinutes.value = {}
+  dayOccupiedIntervals.value = {}
+}
+
+function closeReschedule() {
+  if (reschedulingId.value) return
+  resetRescheduleState()
+}
+
+function forceCloseReschedule() {
+  resetRescheduleState()
 }
 
 async function clearRescheduleQuery() {
@@ -366,18 +483,51 @@ async function saveReschedule() {
     const start = fromLocalInputValue(rescheduleForm.startTime)
     const end = fromLocalInputValue(rescheduleForm.endTime)
     if (!start || !end) throw new Error('Start and end time are required')
+    if (new Date(start).getTime() < Date.now()) throw new Error('Cannot reschedule into the past')
+    const startDt = localInputToDateTime(rescheduleForm.startTime)
+    const endDt = localInputToDateTime(rescheduleForm.endTime)
+    if (startDt && endDt && shouldAccountForHold.value) {
+      const duration = endDt.diff(startDt, 'hours').hours
+      if (duration < minHoldBookingHours.value) {
+        throw new Error(`Overnight holds require a minimum booking length of ${minHoldBookingHours.value} hours.`)
+      }
+    }
 
-    await $fetch(`/api/bookings/${rescheduleForm.bookingId}/reschedule`, {
+    const result = await $fetch<{
+      creditDelta?: number
+      oldCreditsBurned?: number
+      newCreditsBurned?: number
+    }>(`/api/bookings/${rescheduleForm.bookingId}/reschedule`, {
       method: 'POST',
       body: {
         start_time: start,
         end_time: end,
-        notes: rescheduleForm.notes || null
+        notes: rescheduleForm.notes || null,
+        request_hold: rescheduleForm.requestHold,
+        hold_payment_method: rescheduleForm.holdPaymentMethod
       }
     })
-    toast.add({ title: 'Booking rescheduled', color: 'success' })
-    closeReschedule()
-    await refreshUpcoming()
+    const delta = Number(result?.creditDelta ?? 0)
+    const changeDescription = delta > 0
+      ? `Charged ${delta} additional credit${delta === 1 ? '' : 's'} for the longer session.`
+      : delta < 0
+        ? `Refunded ${Math.abs(delta)} credit${Math.abs(delta) === 1 ? '' : 's'} from the shorter session.`
+        : undefined
+    toast.add({ title: 'Booking rescheduled', description: changeDescription, color: 'success' })
+    forceCloseReschedule()
+    await clearRescheduleQuery()
+    const refreshResults = await Promise.allSettled([
+      refreshUpcoming(),
+      refreshPast(),
+      refreshHoldSummary()
+    ])
+    if (refreshResults.some(result => result.status === 'rejected')) {
+      toast.add({
+        title: 'Booking was rescheduled',
+        description: 'Could not fully refresh the page data. Please refresh once.',
+        color: 'warning'
+      })
+    }
   } catch (error: unknown) {
     const maybe = error as { data?: { statusMessage?: string }, message?: string }
     toast.add({
@@ -388,6 +538,540 @@ async function saveReschedule() {
   } finally {
     reschedulingId.value = null
   }
+}
+
+const rescheduleTarget = computed(() =>
+  (upcoming.value ?? []).find(booking => booking.id === rescheduleForm.bookingId) ?? null
+)
+
+const rescheduleTargetHasHold = computed(() => Boolean(rescheduleTarget.value && hasHold(rescheduleTarget.value)))
+const shouldAccountForHold = computed(() => rescheduleForm.requestHold)
+
+function holdEligibilityFromLocalInputs(startValue: string, endValue: string) {
+  const start = localInputToDateTime(startValue)?.setZone(STUDIO_TZ)
+  const end = localInputToDateTime(endValue)?.setZone(STUDIO_TZ)
+  if (!start || !end || !start.isValid || !end.isValid || end <= start) {
+    return { eligible: false, reasons: ['Select a valid start and end time to check hold eligibility.'] }
+  }
+  const reasons: string[] = []
+  const durationHours = end.diff(start, 'hours').hours
+  if (durationHours < minHoldBookingHours.value) {
+    reasons.push(`Booking must be at least ${minHoldBookingHours.value} hours.`)
+  }
+  const requiredEnd = end.startOf('day').set({ hour: holdMinEndHour.value, minute: 0, second: 0, millisecond: 0 })
+  if (end < requiredEnd) {
+    const label = DateTime.fromObject({ hour: holdMinEndHour.value, minute: 0 }, { zone: STUDIO_TZ }).toFormat('h:mm a')
+    reasons.push(`Booking must end at or after ${label}.`)
+  }
+  return {
+    eligible: reasons.length === 0,
+    reasons
+  }
+}
+
+const rescheduleHoldEligibility = computed(() =>
+  holdEligibilityFromLocalInputs(rescheduleForm.startTime, rescheduleForm.endTime)
+)
+const canShowRescheduleHoldOption = computed(() => rescheduleHoldEligibility.value.eligible)
+
+const holdSelectionRequired = computed(() =>
+  rescheduleForm.requestHold
+  && Number(holdSummary.value?.includedHoldsRemaining ?? 0) <= 0
+)
+
+const canUseHoldToken = computed(() => Number(holdSummary.value?.paidHoldBalance ?? 0) > 0)
+const canUseHoldCredits = computed(() => holdCreditCost.value > 0)
+const holdPaymentOptions = computed(() => {
+  const options: { label: string, value: 'auto' | 'token' | 'credits' }[] = []
+  if (canUseHoldToken.value) options.push({ label: `Use hold token (${holdSummary.value?.paidHoldBalance ?? 0} available)`, value: 'token' })
+  if (canUseHoldCredits.value) options.push({ label: `Use ${holdCreditCost.value} credit${holdCreditCost.value === 1 ? '' : 's'}`, value: 'credits' })
+  return options
+})
+
+watch(holdSelectionRequired, (required) => {
+  if (!required) {
+    rescheduleForm.holdPaymentMethod = 'auto'
+    return
+  }
+  const first = holdPaymentOptions.value[0]?.value
+  rescheduleForm.holdPaymentMethod = first ?? 'auto'
+})
+
+watch(canShowRescheduleHoldOption, (allowed) => {
+  if (!allowed) {
+    rescheduleForm.requestHold = false
+    rescheduleForm.holdPaymentMethod = 'auto'
+  }
+})
+
+function normalizeLocalInputValue(value: unknown) {
+  if (typeof value === 'string') return value
+  if (value && typeof value === 'object' && 'value' in (value as Record<string, unknown>)) {
+    const raw = (value as Record<string, unknown>).value
+    return typeof raw === 'string' ? raw : String(raw ?? '')
+  }
+  if (value === null || value === undefined) return ''
+  return String(value)
+}
+
+function onRescheduleStartChange(value: unknown) {
+  const next = normalizeLocalInputValue(value)
+  rescheduleForm.startTime = next
+
+  const nextStart = localInputToDateTime(next)?.setZone(STUDIO_TZ)
+  if (rescheduleAutoSyncEnd.value && nextStart) {
+    const alignedEnd = nextStart.plus({ minutes: rescheduleDurationMinutes.value > 0 ? rescheduleDurationMinutes.value : 60 })
+    rescheduleForm.endTime = alignedEnd.toFormat("yyyy-LL-dd'T'HH:mm")
+  }
+
+  if (nextStart) {
+    const monthCursor = nextStart.startOf('month')
+    if (!rescheduleMonthCursor.value || !rescheduleMonthCursor.value.hasSame(monthCursor, 'month')) {
+      rescheduleMonthCursor.value = monthCursor
+    }
+  }
+
+  void loadRescheduleMonthHints(next)
+}
+
+function setRescheduleStartFromOption(value: unknown) {
+  onRescheduleStartChange(value)
+}
+
+function onRescheduleStartSelectChange(event: Event) {
+  const target = event.target as HTMLSelectElement | null
+  setRescheduleStartFromOption(target?.value ?? '')
+}
+
+function onRescheduleEndChange(value: unknown) {
+  const next = normalizeLocalInputValue(value)
+  rescheduleForm.endTime = next
+  const start = localInputToDateTime(rescheduleForm.startTime)
+  const end = localInputToDateTime(next)
+  if (start && end && end > start) {
+    rescheduleDurationMinutes.value = Math.max(1, Math.round(end.diff(start, 'minutes').minutes))
+    rescheduleAutoSyncEnd.value = false
+  }
+}
+
+function onRescheduleEndSelectChange(event: Event) {
+  const target = event.target as HTMLSelectElement | null
+  onRescheduleEndChange(target?.value ?? '')
+}
+
+function toDayKey(dt: DateTime) {
+  return dt.toFormat('yyyy-LL-dd')
+}
+
+function dayKeyToDateTime(key: string) {
+  const parsed = DateTime.fromFormat(key, 'yyyy-LL-dd', { zone: STUDIO_TZ })
+  return parsed.isValid ? parsed : null
+}
+
+function mergeIntervals(intervals: Array<{ startMinute: number, endMinute: number }>) {
+  if (!intervals.length) return []
+  const ordered = [...intervals].sort((a, b) => a.startMinute - b.startMinute)
+  const first = ordered[0]
+  if (!first) return []
+  const merged: Array<{ startMinute: number, endMinute: number }> = [{ ...first }]
+  for (let i = 1; i < ordered.length; i++) {
+    const last = merged[merged.length - 1]
+    const current = ordered[i]
+    if (!last || !current) continue
+    if (current.startMinute <= last.endMinute) {
+      last.endMinute = Math.max(last.endMinute, current.endMinute)
+      continue
+    }
+    merged.push({ ...current })
+  }
+  return merged
+}
+
+function getOpenWindowsForDay(key: string) {
+  const intervals = dayOccupiedIntervals.value[key] ?? []
+  if (!intervals.length) {
+    return [{ startMinute: 0, endMinute: 24 * 60 }]
+  }
+  const windows: Array<{ startMinute: number, endMinute: number }> = []
+  let cursor = 0
+  for (const interval of intervals) {
+    if (interval.startMinute > cursor) {
+      windows.push({ startMinute: cursor, endMinute: interval.startMinute })
+    }
+    cursor = Math.max(cursor, interval.endMinute)
+  }
+  if (cursor < 24 * 60) {
+    windows.push({ startMinute: cursor, endMinute: 24 * 60 })
+  }
+  return windows.filter(window => (window.endMinute - window.startMinute) >= 30)
+}
+
+function minuteToAligned30(minute: number) {
+  return Math.ceil(minute / 30) * 30
+}
+
+function possibleStartMinutesForDay(key: string) {
+  const windows = getOpenWindowsForDay(key)
+  const duration = Math.max(1, rescheduleDurationMinutes.value || 60)
+  const day = dayKeyToDateTime(key)
+  const nowLa = DateTime.now().setZone(STUDIO_TZ)
+  const nowMinute = day && day.hasSame(nowLa, 'day')
+    ? (nowLa.hour * 60 + nowLa.minute)
+    : 0
+
+  const starts: number[] = []
+  for (const window of windows) {
+    const minStart = Math.max(window.startMinute, nowMinute)
+    const maxStart = window.endMinute - duration
+    if (maxStart < minStart) continue
+
+    let slot = minuteToAligned30(minStart)
+    if (slot > maxStart && minStart <= maxStart) {
+      slot = minStart
+    }
+    while (slot <= maxStart) {
+      starts.push(slot)
+      slot += 30
+    }
+
+    const fallback = maxStart
+    if (fallback >= minStart && !starts.includes(fallback)) starts.push(fallback)
+  }
+
+  const unique = Array.from(new Set(starts)).sort((a, b) => a - b)
+  if (!shouldAccountForHold.value) return unique
+  return unique.filter((minute) => canFitHoldWindowForStart(key, minute, duration))
+}
+
+function toLocalInputForDayMinute(key: string, minute: number) {
+  const day = dayKeyToDateTime(key)
+  if (!day) return ''
+  return day.plus({ minutes: minute }).toFormat("yyyy-LL-dd'T'HH:mm")
+}
+
+function rangesOverlap(startA: number, endA: number, startB: number, endB: number) {
+  return startA < endB && endA > startB
+}
+
+function computeHoldEndFromBookingEnd(bookingEnd: DateTime) {
+  const nextDay = bookingEnd.plus({ days: 1 }).startOf('day')
+  return nextDay.set({ hour: holdEndHour.value, minute: 0, second: 0, millisecond: 0 })
+}
+
+function canFitHoldWindowForStart(dayKey: string, startMinute: number, durationMinutes: number) {
+  const day = dayKeyToDateTime(dayKey)
+  if (!day) return false
+  const bookingStart = day.plus({ minutes: startMinute })
+  const bookingEnd = bookingStart.plus({ minutes: durationMinutes })
+  const holdStart = bookingEnd
+  const holdEnd = computeHoldEndFromBookingEnd(bookingEnd)
+  if (!(holdEnd > holdStart)) return false
+
+  let cursor = holdStart
+  while (cursor < holdEnd) {
+    const currentDay = cursor.startOf('day')
+    const dayEnd = currentDay.plus({ days: 1 })
+    const segmentEnd = holdEnd < dayEnd ? holdEnd : dayEnd
+    const key = toDayKey(currentDay)
+    const segmentStartMinute = Math.max(0, Math.round(cursor.diff(currentDay, 'minutes').minutes))
+    const segmentEndMinute = Math.min(24 * 60, Math.round(segmentEnd.diff(currentDay, 'minutes').minutes))
+    const intervals = dayOccupiedIntervals.value[key] ?? []
+    if (intervals.some(interval => rangesOverlap(segmentStartMinute, segmentEndMinute, interval.startMinute, interval.endMinute))) {
+      return false
+    }
+    cursor = segmentEnd
+  }
+
+  return true
+}
+
+async function loadRescheduleMonthHints(anchorValue: string) {
+  const anchor = localInputToDateTime(anchorValue)?.setZone(STUDIO_TZ)
+    ?? DateTime.now().setZone(STUDIO_TZ)
+  const monthStart = (rescheduleMonthCursor.value ?? anchor.startOf('month')).setZone(STUDIO_TZ).startOf('month')
+  const monthKey = monthStart.toFormat('yyyy-LL')
+  if (rescheduleHintMonth.value === monthKey && Object.keys(dayOccupiedMinutes.value).length > 0) return
+
+  rescheduleHintsLoading.value = true
+  rescheduleHintsError.value = null
+
+  try {
+    const monthEndExclusive = monthStart.plus({ months: 1 })
+    const res = await $fetch<CalendarLoadResponse>('/api/calendar/member', {
+      query: {
+        from: monthStart.toUTC().toISO(),
+        to: monthEndExclusive.toUTC().toISO()
+      }
+    })
+    rescheduleBookingWindowDays.value = Math.max(1, Number(res.bookingWindowDays ?? rescheduleBookingWindowDays.value ?? 30))
+    const targetBookingId = rescheduleForm.bookingId || null
+    const targetHold = rescheduleTarget.value?.booking_holds?.[0] ?? null
+    const targetHoldStartMs = targetHold ? new Date(targetHold.hold_start).getTime() : Number.NaN
+    const targetHoldEndMs = targetHold ? new Date(targetHold.hold_end).getTime() : Number.NaN
+
+    const intervalsByDay: Record<string, Array<{ startMinute: number, endMinute: number }>> = {}
+    for (const rawEvent of (res.events ?? [])) {
+      if (rawEvent.extendedProps?.bookingId && targetBookingId && rawEvent.extendedProps.bookingId === targetBookingId) {
+        continue
+      }
+      const type = rawEvent.extendedProps?.type
+      if (type === 'hold' && rawEvent.extendedProps?.isOwn) {
+        continue
+      }
+      const isOccupied = type === 'booking' || type === 'hold' || rawEvent.display === 'background'
+      if (!isOccupied) continue
+      if (!rawEvent.start || !rawEvent.end) continue
+
+      let start = DateTime.fromISO(rawEvent.start, { setZone: true }).setZone(STUDIO_TZ)
+      let end = DateTime.fromISO(rawEvent.end, { setZone: true }).setZone(STUDIO_TZ)
+      if (!start.isValid || !end.isValid || end <= start) continue
+      if (type === 'hold' && Number.isFinite(targetHoldStartMs) && Number.isFinite(targetHoldEndMs)) {
+        const eventStartMs = start.toUTC().toMillis()
+        const eventEndMs = end.toUTC().toMillis()
+        if (eventStartMs === targetHoldStartMs && eventEndMs === targetHoldEndMs) {
+          continue
+        }
+      }
+
+      while (start < end) {
+        const dayStart = start.startOf('day')
+        const dayEnd = dayStart.plus({ days: 1 })
+        const segmentEnd = end < dayEnd ? end : dayEnd
+        const key = toDayKey(dayStart)
+        const startMinute = Math.max(0, Math.round(start.diff(dayStart, 'minutes').minutes))
+        const endMinute = Math.min(24 * 60, Math.round(segmentEnd.diff(dayStart, 'minutes').minutes))
+        if (endMinute > startMinute) {
+          if (!intervalsByDay[key]) intervalsByDay[key] = []
+          intervalsByDay[key].push({ startMinute, endMinute })
+        }
+        start = segmentEnd
+      }
+    }
+
+    const occupiedMinutesByDay: Record<string, number> = {}
+    const mergedByDay: Record<string, Array<{ startMinute: number, endMinute: number }>> = {}
+    for (const [key, intervals] of Object.entries(intervalsByDay)) {
+      const merged = mergeIntervals(intervals)
+      mergedByDay[key] = merged
+      occupiedMinutesByDay[key] = merged.reduce((sum, segment) => sum + Math.max(0, segment.endMinute - segment.startMinute), 0)
+    }
+
+    dayOccupiedIntervals.value = mergedByDay
+    dayOccupiedMinutes.value = occupiedMinutesByDay
+    rescheduleHintMonth.value = monthKey
+  } catch (error: unknown) {
+    const maybe = error as { data?: { statusMessage?: string }, message?: string }
+    rescheduleHintsError.value = maybe.data?.statusMessage ?? maybe.message ?? 'Could not load monthly load hints'
+  } finally {
+    rescheduleHintsLoading.value = false
+  }
+}
+
+const selectedRescheduleDay = computed(() => {
+  const start = localInputToDateTime(rescheduleForm.startTime)?.setZone(STUDIO_TZ)
+  return start ? toDayKey(start) : null
+})
+
+function formatMinuteOfDay(minute: number) {
+  const clamped = Math.max(0, Math.min(24 * 60, minute))
+  const hour = Math.floor(clamped / 60)
+  const minutes = clamped % 60
+  const dt = DateTime.fromObject({ year: 2000, month: 1, day: 1, hour, minute: minutes })
+  return dt.toFormat('h:mm a')
+}
+
+const selectedDayWindows = computed(() => {
+  const key = selectedRescheduleDay.value
+  if (!key) return []
+  return getOpenWindowsForDay(key)
+})
+
+const selectedDayFitWindows = computed(() => {
+  const duration = Math.max(1, rescheduleDurationMinutes.value || 60)
+  return selectedDayWindows.value.filter(window => (window.endMinute - window.startMinute) >= duration)
+})
+
+const selectedDayStartOptions = computed(() => {
+  const key = selectedRescheduleDay.value
+  if (!key) return [] as Array<{ label: string, value: string }>
+  const starts = possibleStartMinutesForDay(key)
+  return starts
+    .map((minute) => {
+      const value = toLocalInputForDayMinute(key, minute)
+      if (!value) return null
+      const labelDate = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm")
+      return {
+        value,
+        label: labelDate.isValid ? labelDate.toFormat('EEE, LLL d · h:mm a') : value
+      }
+    })
+    .filter((option): option is { label: string, value: string } => Boolean(option))
+})
+
+const selectedStartMinute = computed(() => {
+  const start = localInputToDateTime(rescheduleForm.startTime)?.setZone(STUDIO_TZ)
+  if (!start || !start.isValid) return null
+  return start.hour * 60 + start.minute
+})
+
+const selectedDayEndOptions = computed(() => {
+  const key = selectedRescheduleDay.value
+  const startMinute = selectedStartMinute.value
+  if (!key || startMinute === null) return [] as Array<{ label: string, value: string }>
+
+  const intervals = dayOccupiedIntervals.value[key] ?? []
+  const containingWindow = getOpenWindowsForDay(key).find(window =>
+    startMinute >= window.startMinute && startMinute < window.endMinute
+  )
+  if (!containingWindow) return [] as Array<{ label: string, value: string }>
+
+  const values: number[] = []
+  let minute = minuteToAligned30(startMinute + 30)
+  while (minute <= containingWindow.endMinute) {
+    values.push(minute)
+    minute += 30
+  }
+  if (!values.includes(containingWindow.endMinute)) {
+    values.push(containingWindow.endMinute)
+  }
+
+  // If the selected start is inside an occupied interval due to stale state, keep empty.
+  const overlapsOccupied = intervals.some(interval => startMinute >= interval.startMinute && startMinute < interval.endMinute)
+  if (overlapsOccupied) return [] as Array<{ label: string, value: string }>
+
+  return Array.from(new Set(values))
+    .sort((a, b) => a - b)
+    .map((endMinute) => {
+      const value = toLocalInputForDayMinute(key, endMinute)
+      if (!value) return null
+      const labelDate = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm", { zone: STUDIO_TZ })
+      return {
+        value,
+        label: labelDate.isValid ? labelDate.toFormat('EEE, LLL d · h:mm a') : value
+      }
+    })
+    .filter((option): option is { label: string, value: string } => Boolean(option))
+})
+
+watch(selectedDayEndOptions, (options) => {
+  if (!options.length) return
+  const current = rescheduleForm.endTime
+  if (!options.some(option => option.value === current)) {
+    rescheduleForm.endTime = options[0]?.value ?? ''
+  }
+})
+
+const rescheduleMonthCells = computed(() => {
+  const anchor = localInputToDateTime(rescheduleForm.startTime)?.setZone(STUDIO_TZ)
+    ?? DateTime.now().setZone(STUDIO_TZ)
+  const monthStart = (rescheduleMonthCursor.value ?? anchor.startOf('month')).setZone(STUDIO_TZ).startOf('month')
+  const monthEnd = monthStart.endOf('month')
+  const leading = monthStart.weekday % 7
+  const cells: Array<{ key: string, day: number, status: 'clear' | 'medium' | 'heavy', selected: boolean, disabled: boolean } | null> = []
+  const nowLa = DateTime.now().setZone(STUDIO_TZ).startOf('day')
+  const reachEnd = DateTime.now().setZone(STUDIO_TZ).plus({ days: Math.max(1, rescheduleBookingWindowDays.value || 30) }).endOf('day')
+
+  for (let i = 0; i < leading; i++) cells.push(null)
+
+  let cursor = monthStart
+  while (cursor <= monthEnd) {
+    const key = toDayKey(cursor)
+    const occupied = Number(dayOccupiedMinutes.value[key] ?? 0)
+    const status: 'clear' | 'medium' | 'heavy' = occupied === 0
+      ? 'clear'
+      : occupied >= 10 * 60
+        ? 'heavy'
+        : 'medium'
+    const possibleStarts = possibleStartMinutesForDay(key)
+    const disabled = cursor.startOf('day') < nowLa || cursor.startOf('day') > reachEnd || possibleStarts.length === 0
+    cells.push({
+      key,
+      day: cursor.day,
+      status,
+      selected: selectedRescheduleDay.value === key,
+      disabled
+    })
+    cursor = cursor.plus({ days: 1 })
+  }
+
+  return cells
+})
+
+function applyRescheduleDay(key: string) {
+  const possibleStarts = possibleStartMinutesForDay(key)
+  if (!possibleStarts.length) return
+
+  const current = localInputToDateTime(rescheduleForm.startTime)?.setZone(STUDIO_TZ)
+    ?? DateTime.now().setZone(STUDIO_TZ).set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
+  const [year, month, day] = key.split('-').map(Number)
+  const dayBase = DateTime.fromObject({
+    year,
+    month,
+    day
+  }, { zone: STUDIO_TZ })
+  if (!dayBase.isValid) return
+
+  let minute: number
+  if (selectedRescheduleDay.value === key) {
+    const index = (rescheduleDayCycleIndex.value[key] ?? 0) + 1
+    rescheduleDayCycleIndex.value[key] = index
+    minute = possibleStarts[index % possibleStarts.length] ?? possibleStarts[0] ?? (current.hour * 60 + current.minute)
+  } else {
+    const preferred = reschedulePreferredStartMinute.value
+    if (preferred === null) {
+      minute = possibleStarts[0] ?? (current.hour * 60 + current.minute)
+    } else {
+      const sortedByDistance = [...possibleStarts].sort((a, b) => Math.abs(a - preferred) - Math.abs(b - preferred))
+      minute = sortedByDistance[0] ?? possibleStarts[0] ?? (current.hour * 60 + current.minute)
+    }
+    const chosenIndex = possibleStarts.findIndex(value => value === minute)
+    rescheduleDayCycleIndex.value[key] = Math.max(0, chosenIndex)
+  }
+  const next = dayBase.plus({ minutes: minute })
+  if (!next.isValid) return
+  rescheduleAutoSyncEnd.value = true
+  onRescheduleStartChange(next.toFormat("yyyy-LL-dd'T'HH:mm"))
+}
+
+const rescheduleSummaryLabel = computed(() => {
+  const minutes = Math.max(1, Math.round(rescheduleDurationMinutes.value || 60))
+  const hours = Math.round((minutes / 60) * 100) / 100
+  const hoursLabel = Number.isInteger(hours) ? `${hours.toFixed(0)}hr` : `${hours}hr`
+  const holdLabel = shouldAccountForHold.value ? ' + hold' : ''
+  return `${hoursLabel} booking${holdLabel}`
+})
+
+const rescheduleMonthLabel = computed(() => {
+  const cursor = (rescheduleMonthCursor.value ?? DateTime.now().setZone(STUDIO_TZ)).setZone(STUDIO_TZ)
+  return cursor.toFormat('LLLL yyyy')
+})
+
+const canGoToPrevMonth = computed(() => {
+  const cursor = (rescheduleMonthCursor.value ?? DateTime.now().setZone(STUDIO_TZ)).setZone(STUDIO_TZ).startOf('month')
+  const currentMonth = DateTime.now().setZone(STUDIO_TZ).startOf('month')
+  return cursor > currentMonth
+})
+
+const canGoToNextMonth = computed(() => {
+  const cursor = (rescheduleMonthCursor.value ?? DateTime.now().setZone(STUDIO_TZ)).setZone(STUDIO_TZ).startOf('month')
+  const reachEnd = DateTime.now().setZone(STUDIO_TZ).plus({ days: Math.max(1, rescheduleBookingWindowDays.value || 30) }).endOf('day')
+  return cursor.plus({ months: 1 }).startOf('month') <= reachEnd.startOf('month')
+})
+
+function goToPrevRescheduleMonth() {
+  if (!canGoToPrevMonth.value) return
+  const cursor = (rescheduleMonthCursor.value ?? DateTime.now().setZone(STUDIO_TZ)).setZone(STUDIO_TZ).startOf('month').minus({ months: 1 })
+  rescheduleMonthCursor.value = cursor
+  rescheduleHintMonth.value = ''
+  void loadRescheduleMonthHints(rescheduleForm.startTime)
+}
+
+function goToNextRescheduleMonth() {
+  if (!canGoToNextMonth.value) return
+  const cursor = (rescheduleMonthCursor.value ?? DateTime.now().setZone(STUDIO_TZ)).setZone(STUDIO_TZ).startOf('month').plus({ months: 1 })
+  rescheduleMonthCursor.value = cursor
+  rescheduleHintMonth.value = ''
+  void loadRescheduleMonthHints(rescheduleForm.startTime)
 }
 
 function formatMoney(cents: number, currency: string) {
@@ -798,7 +1482,9 @@ watch(
       :dismissible="!reschedulingId"
     >
       <template #content>
-        <UCard>
+        <UCard
+            :ui="{body:'overflow-y-scroll'}"
+        >
           <template #header>
             <div class="flex items-center justify-between gap-3">
               <h3 class="text-base font-semibold">
@@ -816,18 +1502,182 @@ watch(
           </template>
 
           <div class="space-y-3">
+            <div class="text-sm text-dimmed">
+              {{ rescheduleSummaryLabel }}
+            </div>
             <UFormField label="Start">
-              <UInput
-                v-model="rescheduleForm.startTime"
-                type="datetime-local"
-              />
+              <select
+                class="w-full rounded-md border border-default bg-default px-3 py-2 text-sm"
+                :value="rescheduleForm.startTime"
+                @change="onRescheduleStartSelectChange"
+              >
+                <option
+                  v-if="!selectedDayStartOptions.length"
+                  disabled
+                  value=""
+                >
+                  No available start times for selected day
+                </option>
+                <option
+                  v-for="option in selectedDayStartOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
             </UFormField>
             <UFormField label="End">
-              <UInput
-                v-model="rescheduleForm.endTime"
-                type="datetime-local"
-              />
+              <select
+                class="w-full rounded-md border border-default bg-default px-3 py-2 text-sm"
+                :value="rescheduleForm.endTime"
+                @change="onRescheduleEndSelectChange"
+              >
+                <option
+                  v-if="!selectedDayEndOptions.length"
+                  disabled
+                  value=""
+                >
+                  No available end times for selected start
+                </option>
+                <option
+                  v-for="option in selectedDayEndOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
             </UFormField>
+            <p class="text-xs text-dimmed">
+              End time follows the original booking length by default when you move start time. Edit end time directly to override.
+            </p>
+            <div class="rounded-lg border border-default p-3 space-y-3">
+              <div class="flex items-center justify-between gap-3">
+                <div class="space-y-1">
+                  <p class="text-sm font-medium">
+                    Day load
+                  </p>
+                  <p class="text-xs text-dimmed">
+                    Slashed days cannot fit this booking length.
+                  </p>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <UButton
+                    icon="i-lucide-chevron-left"
+                    color="neutral"
+                    variant="soft"
+                    size="xs"
+                    :disabled="!canGoToPrevMonth"
+                    @click="goToPrevRescheduleMonth"
+                  />
+                  <span class="min-w-28 text-center text-xs font-medium">
+                    {{ rescheduleMonthLabel }}
+                  </span>
+                  <UButton
+                    icon="i-lucide-chevron-right"
+                    color="neutral"
+                    variant="soft"
+                    size="xs"
+                    :disabled="!canGoToNextMonth"
+                    @click="goToNextRescheduleMonth"
+                  />
+                </div>
+              </div>
+              <div class="flex items-center gap-3 text-xs text-dimmed">
+                <span class="inline-flex items-center gap-1.5">
+                  <span class="size-2 rounded-full border border-default" />
+                  Clear
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                  <span class="size-2 rounded-full bg-amber-500" />
+                  Medium
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                  <span class="size-2 rounded-full bg-red-500" />
+                  Heavy
+                </span>
+              </div>
+              <p
+                v-if="rescheduleHintsLoading"
+                class="text-xs text-dimmed"
+              >
+                Refreshing day load hints…
+              </p>
+              <p
+                v-if="rescheduleHintsError"
+                class="text-xs text-red-500 dark:text-red-400"
+              >
+                {{ rescheduleHintsError }}
+              </p>
+              <div
+                class="relative"
+              >
+                <div
+                  class="grid grid-cols-7 gap-1.5 transition-opacity"
+                  :class="rescheduleHintsLoading ? 'opacity-70' : 'opacity-100'"
+                >
+                <button
+                  v-for="(cell, idx) in rescheduleMonthCells"
+                  :key="cell?.key ?? `blank-${idx}`"
+                  type="button"
+                  class="relative h-9 rounded-md border text-xs"
+                  :class="cell
+                    ? (cell.selected
+                      ? (cell.disabled ? 'border-black bg-black text-white/50' : 'border-primary bg-primary/10')
+                      : (cell.disabled ? 'border-black bg-black text-white/40' : 'border-default hover:bg-elevated'))
+                    : 'border-transparent opacity-0 pointer-events-none'"
+                  :disabled="!cell || cell.disabled"
+                  @click="cell && applyRescheduleDay(cell.key)"
+                >
+                  <span
+                    v-if="cell"
+                    class="inline-flex w-full items-center justify-center gap-1.5"
+                  >
+                    <span>{{ cell.day }}</span>
+                    <span
+                      class="size-1.5 rounded-full"
+                      :class="cell.status === 'heavy'
+                        ? 'bg-red-500'
+                        : cell.status === 'medium'
+                          ? 'bg-amber-500'
+                          : 'border border-default'"
+                    />
+                  </span>
+                  <span
+                    v-if="cell?.disabled"
+                    class="pointer-events-none absolute inset-0"
+                  >
+                    <span class="absolute left-1 right-1 top-1/2 -translate-y-1/2 border-t border-dimmed rotate-[-20deg]" />
+                  </span>
+                </button>
+                </div>
+                <div
+                  v-if="rescheduleHintsLoading"
+                  class="pointer-events-none absolute inset-0 rounded-md"
+                />
+              </div>
+              <div
+                v-if="selectedRescheduleDay"
+                class="space-y-1"
+              >
+                <p class="text-xs font-medium">
+                  Open windows for selected day
+                </p>
+                <p
+                  v-if="!selectedDayFitWindows.length"
+                  class="text-xs text-dimmed"
+                >
+                  No windows can fit {{ Math.max(1, Math.round(rescheduleDurationMinutes || 60)) }} minutes.
+                </p>
+                <p
+                  v-else
+                  class="text-xs text-dimmed"
+                >
+                  {{ selectedDayFitWindows.slice(0, 4).map(window => `${formatMinuteOfDay(window.startMinute)}–${formatMinuteOfDay(window.endMinute)}`).join(' · ') }}
+                </p>
+              </div>
+            </div>
             <UFormField
               label="Notes"
               hint="Optional"
@@ -836,6 +1686,49 @@ watch(
                 v-model="rescheduleForm.notes"
                 placeholder="Optional update notes"
               />
+            </UFormField>
+            <UFormField
+              label="Overnight hold"
+              :description="`Requires a minimum booking length and an end time of ${holdMinEndLabel} or later.`"
+            >
+              <div class="space-y-2">
+                <UAlert
+                  v-if="rescheduleTargetHasHold"
+                  color="warning"
+                  variant="soft"
+                  icon="i-lucide-package"
+                  description="This booking currently has an overnight hold. Saving this reschedule releases it; re-enable hold below to add it again."
+                />
+                <UAlert
+                  v-if="!canShowRescheduleHoldOption"
+                  color="warning"
+                  variant="soft"
+                  icon="i-lucide-circle-alert"
+                  :description="rescheduleHoldEligibility.reasons.join(' ')"
+                />
+                <UCheckbox
+                  v-if="canShowRescheduleHoldOption"
+                  v-model="rescheduleForm.requestHold"
+                  label="Request overnight hold"
+                />
+                <UFormField
+                  v-if="rescheduleForm.requestHold && holdSelectionRequired"
+                  label="Hold payment method"
+                >
+                  <USelect
+                    v-model="rescheduleForm.holdPaymentMethod"
+                    :items="holdPaymentOptions"
+                    option-attribute="label"
+                    value-attribute="value"
+                  />
+                </UFormField>
+                <p
+                  v-if="rescheduleForm.requestHold"
+                  class="text-xs text-dimmed"
+                >
+                  Holds use included allowance first. If none remain, a paid hold token is used, or {{ holdCreditCost }} credit{{ holdCreditCost === 1 ? '' : 's' }} based on your selection. Holds run until {{ holdEndLabel }} the next day. Hold time does not count as booking hours, and door locks do not work during hold hours unless staff is contacted first.
+                </p>
+              </div>
             </UFormField>
             <p class="text-xs text-dimmed">
               Reschedules are available until {{ memberRescheduleNoticeHours }} hours before the session start.
