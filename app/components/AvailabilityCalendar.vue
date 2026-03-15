@@ -175,13 +175,14 @@ function eventClassNames(arg: { event: { display: string, extendedProps: Calenda
   const classes = ['fc-event-block']
   const type = arg.event.extendedProps?.type
 
-  if (type === 'hold') classes.push('fc-event-hold')
-  if (type === 'booking') classes.push('fc-event-booked')
-
-  if (arg.event.extendedProps?.isOwn) {
-    classes.push('fc-event-own')
-  } else if (type === 'booking') {
-    classes.push('fc-event-member')
+  if (type === 'hold') {
+    classes.push('fc-event-hold')
+    classes.push(arg.event.extendedProps?.isOwn ? 'fc-event-hold-own' : 'fc-event-hold-other')
+  }
+  if (type === 'booking') {
+    classes.push('fc-event-booked')
+    if (arg.event.extendedProps?.isOwn) classes.push('fc-event-own')
+    else classes.push('fc-event-member')
   }
 
   return classes
@@ -195,6 +196,17 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
   const time = !isHold && arg.timeText ? `<div class="fc-event-time">${arg.timeText}</div>` : ''
   return {
     html: `<div class="fc-event-label">${label}</div>${time}`
+  }
+}
+
+function eventDidMount(arg: { el: HTMLElement, event: { extendedProps?: CalendarEvent['extendedProps'] } }) {
+  const type = arg.event.extendedProps?.type
+  const harness = arg.el.closest('.fc-timegrid-event-harness')
+  if (!harness) return
+  if (type === 'hold') {
+    harness.classList.add('fc-hold-harness')
+  } else if (type === 'booking') {
+    harness.classList.add('fc-booking-harness')
   }
 }
 
@@ -316,6 +328,7 @@ const calendarOptions = computed(() => ({
   events: calendarEvents.value,
   eventClassNames,
   eventContent,
+  eventDidMount,
   dateClick: (info: { view: { type: string, calendar: { changeView: (viewName: string, date: Date) => void } }, date: Date }) => {
     if (!canSelect.value) return
     if (info.view.type !== 'dayGridMonth') return

@@ -354,22 +354,69 @@ body {
   margin-inline: 0.2rem;
 }
 
+.availability-shell .fc .fc-timegrid-event-harness.fc-booking-harness {
+  inset-inline-start: 0.2rem !important;
+  inset-inline-end: 0.2rem !important;
+}
+
+.availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness {
+  inset-inline-start: auto !important;
+  inset-inline-end: 0.2rem !important;
+  width: 10% !important;
+  min-width: 12px;
+  max-width: 16px;
+  margin-inline: 0 !important;
+  z-index: 4;
+}
+
 .availability-shell .fc .fc-event-block.fc-event-booked {
   background: rgba(102, 92, 84, 0.22);
 }
 
 .availability-shell .fc .fc-event-block.fc-event-hold {
-  background: rgba(204, 36, 29, 0.2);
+  background: transparent;
 }
 
 .availability-shell .fc .fc-event.fc-event-hold {
-  background:
-    linear-gradient(135deg, rgba(204, 36, 29, 0.9) 0%, rgba(157, 0, 6, 0.88) 100%);
-  color: #fff7f3;
   border: 0;
-  box-shadow: 0 10px 22px rgba(157, 0, 6, 0.18);
+  border-radius: 0.45rem;
+  padding: 0.08rem 0.1rem;
+  min-height: 0 !important;
+  box-shadow: none;
   cursor: default;
   pointer-events: none;
+  overflow: hidden;
+}
+
+.availability-shell .fc .fc-event.fc-event-hold .fc-event-label,
+.availability-shell .fc .fc-event.fc-event-hold .fc-event-time {
+  display: none;
+}
+
+.availability-shell .fc .fc-event.fc-event-hold.fc-event-hold-own {
+  background:
+    linear-gradient(180deg, rgba(69, 133, 136, 0.68), rgba(69, 133, 136, 0.62)),
+    repeating-linear-gradient(
+      135deg,
+      rgba(131, 165, 152, 0.42) 0,
+      rgba(131, 165, 152, 0.42) 4px,
+      rgba(69, 133, 136, 0.2) 4px,
+      rgba(69, 133, 136, 0.2) 8px
+    );
+  opacity: 0.78;
+}
+
+.availability-shell .fc .fc-event.fc-event-hold.fc-event-hold-other {
+  background:
+    linear-gradient(180deg, rgba(204, 36, 29, 0.95), rgba(157, 0, 6, 0.92)),
+    repeating-linear-gradient(
+      135deg,
+      rgba(251, 73, 52, 0.45) 0,
+      rgba(251, 73, 52, 0.45) 4px,
+      rgba(157, 0, 6, 0.22) 4px,
+      rgba(157, 0, 6, 0.22) 8px
+    );
+  opacity: 1;
 }
 
 .availability-shell .fc .fc-event.fc-event-member {
