@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { DateTime } from 'luxon'
+import type { AdminBookingForReschedule } from '~~/app/composables/booking/reschedule/useAdminBookingReschedule'
+import { useAdminBookingReschedule } from '~~/app/composables/booking/reschedule/useAdminBookingReschedule'
+import AdminRescheduleModal from '~~/app/components/booking/reschedule/modal/AdminRescheduleModal.vue'
 
 definePageMeta({ middleware: ['admin'] })
 
@@ -34,19 +37,8 @@ const toast = useToast()
 const statusFilter = ref<string>('all')
 const refundCredits = ref(true)
 const cancelingId = ref<string | null>(null)
-const reschedulingId = ref<string | null>(null)
 const bookingTab = ref<AdminBookingTab>('active')
 const pastPage = ref(1)
-const rescheduleOpen = ref(false)
-
-const rescheduleForm = reactive({
-  bookingId: '' as string,
-  startTime: '',
-  endTime: '',
-  notes: '' as string,
-  hadHold: false,
-  keepHold: false
-})
 
 const { data: bookingRows, refresh, pending } = await useAsyncData('admin:bookings', async () => {
   const query = statusFilter.value === 'all'
@@ -137,73 +129,18 @@ function holdRangeLabel(booking: AdminBooking) {
   return `${formatDate(hold.hold_start)} → ${formatDate(hold.hold_end)} (LA)`
 }
 
-function toLocalInputValue(value: string | null | undefined) {
-  if (!value) return ''
-  const parsedIso = DateTime.fromISO(value, { setZone: true })
-  if (parsedIso.isValid) return parsedIso.setZone('America/Los_Angeles').toFormat("yyyy-LL-dd'T'HH:mm")
-  const parsedSql = DateTime.fromSQL(value, { zone: 'utc' })
-  if (parsedSql.isValid) return parsedSql.setZone('America/Los_Angeles').toFormat("yyyy-LL-dd'T'HH:mm")
-  return ''
-}
-
-function fromLocalInputValue(value: string) {
-  if (!value.trim()) return null
-  const dt = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm", { zone: 'America/Los_Angeles' })
-  if (!dt.isValid) return null
-  return dt.toUTC().toISO()
-}
-
-function openReschedule(booking: AdminBooking) {
-  rescheduleForm.bookingId = booking.id
-  rescheduleForm.startTime = toLocalInputValue(booking.start_time)
-  rescheduleForm.endTime = toLocalInputValue(booking.end_time)
-  rescheduleForm.notes = booking.notes ?? ''
-  rescheduleForm.hadHold = hasHold(booking)
-  rescheduleForm.keepHold = rescheduleForm.hadHold
-  rescheduleOpen.value = true
-}
-
-function closeReschedule() {
-  if (reschedulingId.value) return
-  rescheduleOpen.value = false
-  rescheduleForm.bookingId = ''
-  rescheduleForm.startTime = ''
-  rescheduleForm.endTime = ''
-  rescheduleForm.notes = ''
-  rescheduleForm.hadHold = false
-  rescheduleForm.keepHold = false
-}
-
-async function saveReschedule() {
-  if (!rescheduleForm.bookingId) return
-  reschedulingId.value = rescheduleForm.bookingId
-  try {
-    const start = fromLocalInputValue(rescheduleForm.startTime)
-    const end = fromLocalInputValue(rescheduleForm.endTime)
-    if (!start || !end) throw new Error('Start and end time are required')
-    await $fetch('/api/admin/bookings/reschedule', {
-      method: 'POST',
-      body: {
-        bookingId: rescheduleForm.bookingId,
-        startTime: start,
-        endTime: end,
-        keepHold: rescheduleForm.hadHold ? rescheduleForm.keepHold : false,
-        notes: rescheduleForm.notes || null
-      }
-    })
-    toast.add({ title: 'Booking rescheduled' })
+const {
+  reschedulingId,
+  rescheduleOpen,
+  rescheduleForm,
+  openReschedule,
+  closeReschedule,
+  saveReschedule
+} = useAdminBookingReschedule({
+  onSaved: async () => {
     await refresh()
-    closeReschedule()
-  } catch (error: unknown) {
-    toast.add({
-      title: 'Could not reschedule booking',
-      description: readErrorMessage(error),
-      color: 'error'
-    })
-  } finally {
-    reschedulingId.value = null
   }
-}
+})
 
 async function cancelBooking(bookingId: string) {
   cancelingId.value = bookingId
@@ -384,7 +321,7 @@ function goToPastPage(page: number) {
                     color="neutral"
                     variant="soft"
                     size="sm"
-                    @click="openReschedule(booking)"
+                    @click="openReschedule(booking as AdminBookingForReschedule)"
                   >
                     Edit time
                   </UButton>
@@ -438,79 +375,11 @@ function goToPastPage(page: number) {
     </template>
   </UDashboardPanel>
 
-  <UModal
+  <AdminRescheduleModal
     v-model:open="rescheduleOpen"
-    :dismissible="!reschedulingId"
-  >
-    <template #content>
-      <UCard v-if="rescheduleForm.bookingId">
-        <template #header>
-          <div class="flex items-center justify-between gap-3">
-            <div>
-              <div class="font-medium">
-                Adjust booking time
-              </div>
-              <div class="text-sm text-dimmed">
-                Rescheduling does not auto-recalculate burned credits. Use member credit adjustments when needed.
-              </div>
-            </div>
-            <UButton
-              color="neutral"
-              variant="soft"
-              :disabled="Boolean(reschedulingId)"
-              @click="closeReschedule"
-            >
-              Close
-            </UButton>
-          </div>
-        </template>
-        <div class="grid gap-3 md:grid-cols-3">
-          <UFormField label="Start">
-            <UInput
-              v-model="rescheduleForm.startTime"
-              type="datetime-local"
-            />
-          </UFormField>
-          <UFormField label="End">
-            <UInput
-              v-model="rescheduleForm.endTime"
-              type="datetime-local"
-            />
-          </UFormField>
-            <UFormField label="Notes">
-              <UInput v-model="rescheduleForm.notes" placeholder="Optional update notes" />
-            </UFormField>
-          </div>
-        <UAlert
-          v-if="rescheduleForm.hadHold"
-          class="mt-3"
-          color="warning"
-          variant="soft"
-          icon="i-lucide-package"
-          :description="rescheduleForm.keepHold ? 'This booking has a hold. Reschedule will try to keep and satisfy it by default.' : 'Hold will be removed on save, and any hold credits/tokens used for this booking will be refunded.'"
-        />
-        <UCheckbox
-          v-if="rescheduleForm.hadHold"
-          v-model="rescheduleForm.keepHold"
-          class="mt-3"
-          label="Keep overnight hold after reschedule"
-        />
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <UButton
-              color="neutral"
-              variant="soft"
-              :disabled="Boolean(reschedulingId)"
-              @click="closeReschedule"
-            >
-              Cancel
-            </UButton>
-            <UButton :loading="reschedulingId === rescheduleForm.bookingId" @click="saveReschedule">
-              Save new time
-            </UButton>
-          </div>
-        </template>
-      </UCard>
-    </template>
-  </UModal>
+    :loading="Boolean(reschedulingId)"
+    :form="rescheduleForm"
+    @close="closeReschedule"
+    @save="saveReschedule"
+  />
 </template>
