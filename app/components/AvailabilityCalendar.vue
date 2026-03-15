@@ -320,6 +320,11 @@ const calendarOptions = computed(() => ({
   slotMaxTime: '24:00:00',
   slotDuration: '01:00:00',
   slotLabelInterval: '02:00:00',
+  eventTimeFormat: {
+    hour: 'numeric',
+    minute: '2-digit',
+    meridiem: 'short'
+  } as const,
   expandRows: true,
   stickyHeaderDates: true,
   headerToolbar: {
