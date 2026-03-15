@@ -242,7 +242,7 @@ function goToPastPage(page: number) {
   pastPage.value = Math.min(Math.max(1, page), pastTotalPages.value)
 }
 
-async function cancelBooking(id: string) {
+async function cancelBooking(id: string): Promise<boolean> {
   cancellingId.value = id
   try {
     const result = await $fetch<{
@@ -260,9 +260,15 @@ async function cancelBooking(id: string) {
 
     toast.add({ title: 'Booking canceled', description: msg, color: 'success' })
     await refreshUpcoming()
+    if (cancelTarget.value?.id === id) {
+      cancelConfirmOpen.value = false
+      cancelTarget.value = null
+    }
+    return true
   } catch (error: unknown) {
     const maybe = error as { message?: string }
     toast.add({ title: 'Could not cancel', description: maybe?.message ?? 'Error', color: 'error' })
+    return false
   } finally {
     cancellingId.value = null
   }
@@ -311,9 +317,6 @@ function closeCancelConfirm() {
 async function confirmCancel() {
   if (!cancelTarget.value) return
   await cancelBooking(cancelTarget.value.id)
-  if (!cancellingId.value) {
-    closeCancelConfirm()
-  }
 }
 
 function toLocalInputValue(value: string | null | undefined) {
