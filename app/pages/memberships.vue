@@ -334,7 +334,7 @@ async function submitWaitlist() {
           </div>
           <div class="plan-stat text-center">
             <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
-              {{ tier.cap === null ? '∞' : `${tier.active_members}/${tier.cap}` }}
+              {{ tier.cap === null ? 'Unlimited' : `${Math.max(0, tier.spots_left ?? 0)} available` }}
             </div>
             <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
               members

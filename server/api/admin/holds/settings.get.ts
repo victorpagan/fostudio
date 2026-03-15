@@ -1,7 +1,11 @@
 import { requireServerAdmin } from '~~/server/utils/auth'
+import { DEFAULT_HOLD_END_HOUR, DEFAULT_HOLD_MIN_END_HOUR } from '~~/server/utils/booking/holds'
 
 const SETTINGS_KEYS = [
   'hold_credit_cost',
+  'min_hold_booking_hours',
+  'hold_min_end_hour',
+  'hold_end_hour',
   'hold_topup_price_cents',
   'hold_topup_quantity',
   'hold_topup_label',
@@ -24,6 +28,9 @@ export default defineEventHandler(async (event) => {
   return {
     settings: {
       holdCreditCost: Number(map.get('hold_credit_cost') ?? 2),
+      minHoldBookingHours: Number(map.get('min_hold_booking_hours') ?? 4),
+      holdMinEndHour: Number(map.get('hold_min_end_hour') ?? DEFAULT_HOLD_MIN_END_HOUR),
+      holdEndHour: Number(map.get('hold_end_hour') ?? DEFAULT_HOLD_END_HOUR),
       holdTopupPriceCents: Number(map.get('hold_topup_price_cents') ?? 2500),
       holdTopupQuantity: Number(map.get('hold_topup_quantity') ?? 1),
       holdTopupLabel: typeof map.get('hold_topup_label') === 'string' ? String(map.get('hold_topup_label')) : 'Overnight hold add-on',

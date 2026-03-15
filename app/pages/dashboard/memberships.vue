@@ -279,7 +279,7 @@ function openTierDetails(tierId: string) {
                   <li class="flex justify-between">
                     <span>Capacity</span>
                     <span class="font-medium text-default">
-                      {{ tier.cap === null ? 'Unlimited' : `${tier.active_members}/${tier.cap}` }}
+                      {{ tier.cap === null ? 'Unlimited' : `${Math.max(0, tier.spots_left ?? 0)} available` }}
                     </span>
                   </li>
                 </ul>

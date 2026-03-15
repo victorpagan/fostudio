@@ -3,6 +3,9 @@ definePageMeta({ middleware: ['admin'] })
 
 type HoldSettings = {
   holdCreditCost: number
+  minHoldBookingHours: number
+  holdMinEndHour: number
+  holdEndHour: number
   holdTopupPriceCents: number
   holdTopupQuantity: number
   holdTopupLabel: string
@@ -12,10 +15,12 @@ type HoldSettings = {
 
 const toast = useToast()
 const saving = ref(false)
-const savingAndSyncing = ref(false)
 
 const form = reactive<HoldSettings>({
   holdCreditCost: 2,
+  minHoldBookingHours: 4,
+  holdMinEndHour: 18,
+  holdEndHour: 8,
   holdTopupPriceCents: 2500,
   holdTopupQuantity: 1,
   holdTopupLabel: 'Overnight hold add-on',
@@ -26,12 +31,23 @@ const form = reactive<HoldSettings>({
 const { pending, refresh } = await useAsyncData('admin:holds:settings', async () => {
   const res = await $fetch<{ settings: HoldSettings }>('/api/admin/holds/settings')
   form.holdCreditCost = Number(res.settings.holdCreditCost ?? 2)
+  form.minHoldBookingHours = Number(res.settings.minHoldBookingHours ?? 4)
+  form.holdMinEndHour = Number(res.settings.holdMinEndHour ?? 18)
+  form.holdEndHour = Number(res.settings.holdEndHour ?? 8)
   form.holdTopupPriceCents = Number(res.settings.holdTopupPriceCents ?? 2500)
   form.holdTopupQuantity = Number(res.settings.holdTopupQuantity ?? 1)
   form.holdTopupLabel = String(res.settings.holdTopupLabel ?? 'Overnight hold add-on')
   form.holdTopupSquareItemId = String(res.settings.holdTopupSquareItemId ?? '')
   form.holdTopupSquareVariationId = String(res.settings.holdTopupSquareVariationId ?? '')
   return res.settings
+})
+
+const holdTopupPriceDollars = computed({
+  get: () => Number((form.holdTopupPriceCents / 100).toFixed(2)),
+  set: (value: number) => {
+    if (!Number.isFinite(value)) return
+    form.holdTopupPriceCents = Math.max(0, Math.round(value * 100))
+  }
 })
 
 function readErrorMessage(error: unknown) {
@@ -47,31 +63,9 @@ async function saveSettings() {
       method: 'POST',
       body: {
         holdCreditCost: form.holdCreditCost,
-        holdTopupPriceCents: form.holdTopupPriceCents,
-        holdTopupQuantity: form.holdTopupQuantity,
-        holdTopupLabel: form.holdTopupLabel
-      }
-    })
-    toast.add({ title: 'Hold settings saved' })
-    await refresh()
-  } catch (error: unknown) {
-    toast.add({
-      title: 'Could not save hold settings',
-      description: readErrorMessage(error),
-      color: 'error'
-    })
-  } finally {
-    saving.value = false
-  }
-}
-
-async function saveAndSyncSquare() {
-  savingAndSyncing.value = true
-  try {
-    await $fetch('/api/admin/holds/settings.upsert', {
-      method: 'POST',
-      body: {
-        holdCreditCost: form.holdCreditCost,
+        minHoldBookingHours: form.minHoldBookingHours,
+        holdMinEndHour: form.holdMinEndHour,
+        holdEndHour: form.holdEndHour,
         holdTopupPriceCents: form.holdTopupPriceCents,
         holdTopupQuantity: form.holdTopupQuantity,
         holdTopupLabel: form.holdTopupLabel
@@ -86,16 +80,16 @@ async function saveAndSyncSquare() {
     form.holdTopupSquareItemId = syncRes.squareItemId
     form.holdTopupSquareVariationId = syncRes.squareVariationId
 
-    toast.add({ title: 'Saved and synced hold item to Square' })
+    toast.add({ title: 'Hold settings saved and synced' })
     await refresh()
   } catch (error: unknown) {
     toast.add({
-      title: 'Could not save and sync',
+      title: 'Could not save hold settings',
       description: readErrorMessage(error),
       color: 'error'
     })
   } finally {
-    savingAndSyncing.value = false
+    saving.value = false
   }
 }
 </script>
@@ -136,14 +130,23 @@ async function saveAndSyncSquare() {
             <UFormField label="Hold credit fallback cost">
               <UInput v-model.number="form.holdCreditCost" type="number" min="0" max="50" />
             </UFormField>
+            <UFormField label="Minimum booking hours for hold">
+              <UInput v-model.number="form.minHoldBookingHours" type="number" min="1" max="24" />
+            </UFormField>
+            <UFormField label="Hold requires booking end hour (LA)">
+              <UInput v-model.number="form.holdMinEndHour" type="number" min="0" max="23" />
+            </UFormField>
+            <UFormField label="Hold ends next day at hour (LA)">
+              <UInput v-model.number="form.holdEndHour" type="number" min="0" max="23" />
+            </UFormField>
             <UFormField label="Hold top-up label">
               <UInput v-model="form.holdTopupLabel" />
             </UFormField>
             <UFormField label="Holds granted per purchase">
               <UInput v-model.number="form.holdTopupQuantity" type="number" min="1" max="50" />
             </UFormField>
-            <UFormField label="Hold top-up price (cents)">
-              <UInput v-model.number="form.holdTopupPriceCents" type="number" min="100" max="100000" />
+            <UFormField label="Hold top-up price ($)">
+              <UInput v-model.number="holdTopupPriceDollars" type="number" min="1" max="1000" step="0.01" />
             </UFormField>
           </div>
 
@@ -155,9 +158,6 @@ async function saveAndSyncSquare() {
           <div class="mt-4 flex flex-wrap gap-2">
             <UButton :loading="saving" @click="saveSettings">
               Save settings
-            </UButton>
-            <UButton color="primary" variant="soft" :loading="savingAndSyncing" @click="saveAndSyncSquare">
-              Save + Sync Square
             </UButton>
           </div>
         </UCard>

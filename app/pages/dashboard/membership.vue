@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { getMembershipPlanDetails } from '~~/app/utils/membershipPlanDetails'
 import { normalizeDiscountLabel } from '~~/app/utils/membershipDiscount'
+import { formatMembershipTierLabel } from '~~/app/utils/membershipTierLabel'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -382,9 +383,13 @@ const pendingSwapSummary = computed(() => {
   const pendingSwap = subscriptionState.value?.pendingSwap
   if (!pendingSwap) return null
 
-  const currentName = tier.value?.display_name ?? membership.value?.tier ?? 'Current plan'
+  const currentName = tier.value?.display_name
+    ?? formatMembershipTierLabel(membership.value?.tier)
+    ?? 'Current plan'
   const currentCadence = formatCadence(membership.value?.cadence ?? null)
-  const targetName = pendingSwap.target?.displayName ?? pendingSwap.target?.tier ?? 'new plan'
+  const targetName = pendingSwap.target?.displayName
+    ?? formatMembershipTierLabel(pendingSwap.target?.tier)
+    ?? 'new plan'
   const targetCadence = pendingSwap.target?.cadence ? formatCadence(pendingSwap.target.cadence) : null
   const targetLabel = targetCadence ? `${targetName} (${targetCadence})` : String(targetName)
   const effective = formatDateLabel(pendingSwap.effectiveDate) ?? 'your next billing cycle'
@@ -1416,7 +1421,7 @@ onUnmounted(() => {
                         Current plan
                       </div>
                       <div class="mt-1 text-xl font-semibold">
-                        {{ tier?.display_name ?? membership?.tier ?? '—' }}
+                        {{ tier?.display_name ?? formatMembershipTierLabel(membership?.tier) ?? '—' }}
                       </div>
                     </div>
                     <UBadge

@@ -9,6 +9,58 @@ function readConfigValue(rows: ConfigRow[] | null | undefined, key: string) {
   return rows?.find(row => row.key === key)?.value
 }
 
+function toSquareVersion(value: unknown) {
+  if (typeof value === 'bigint') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return BigInt(Math.trunc(value))
+  if (typeof value === 'string' && /^\d+$/.test(value)) return BigInt(value)
+  return undefined
+}
+
+function readSquareErrorCode(error: unknown): string | null {
+  if (!(error instanceof Error)) return null
+  const bodyIndex = error.message.indexOf('Body:')
+  if (bodyIndex < 0) return null
+  const jsonPart = error.message.slice(bodyIndex + 5).trim()
+  try {
+    const parsed = JSON.parse(jsonPart) as { errors?: Array<{ code?: string }> }
+    const code = parsed.errors?.[0]?.code
+    return typeof code === 'string' ? code : null
+  } catch {
+    return null
+  }
+}
+
+async function upsertWithLatestVersion(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  square: any,
+  object: Record<string, unknown>
+) {
+  try {
+    await square.catalog.object.upsert({
+      idempotencyKey: randomUUID(),
+      object
+    } as never)
+    return
+  } catch (error) {
+    if (readSquareErrorCode(error) !== 'VERSION_MISMATCH') throw error
+    const objectId = typeof object.id === 'string' ? object.id.trim() : ''
+    if (!objectId) throw error
+    const latest = await square.catalog.object.get({
+      objectId,
+      includeRelatedObjects: false
+    } as never)
+    const latestVersion = toSquareVersion((latest as { object?: { version?: unknown } }).object?.version)
+    if (latestVersion === undefined) throw error
+    await square.catalog.object.upsert({
+      idempotencyKey: randomUUID(),
+      object: {
+        ...object,
+        version: latestVersion
+      }
+    } as never)
+  }
+}
+
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
 
@@ -52,7 +104,7 @@ export default defineEventHandler(async (event) => {
             name: label,
             isTaxable: false,
             taxIds: [],
-            productType: 'REGULAR',
+            productType: 'DIGITAL',
             variations: [
               {
                 id: variationTempId,
@@ -85,38 +137,48 @@ export default defineEventHandler(async (event) => {
         throw new Error('Could not resolve Square item IDs from upsert response.')
       }
     } else {
-      await square.catalog.object.upsert({
-        idempotencyKey: randomUUID(),
-        object: {
-          id: squareVariationId,
-          type: 'ITEM_VARIATION',
-          presentAtAllLocations: true,
-          itemVariationData: {
-            itemId: squareItemId,
-            name: 'Default',
-            pricingType: 'FIXED_PRICING',
-            priceMoney: {
-              amount: BigInt(amountCents),
-              currency: 'USD'
-            }
+      await upsertWithLatestVersion(square, {
+        id: squareVariationId,
+        type: 'ITEM_VARIATION',
+        presentAtAllLocations: true,
+        itemVariationData: {
+          itemId: squareItemId,
+          name: 'Default',
+          pricingType: 'FIXED_PRICING',
+          priceMoney: {
+            amount: BigInt(amountCents),
+            currency: 'USD'
           }
         }
-      } as never)
+      })
 
-      await square.catalog.object.upsert({
-        idempotencyKey: randomUUID(),
-        object: {
-          id: squareItemId,
-          type: 'ITEM',
-          presentAtAllLocations: true,
-          itemData: {
-            name: label,
-            isTaxable: false,
-            taxIds: [],
-            productType: 'REGULAR'
-          }
-        }
+      const latestItemRes = await square.catalog.object.get({
+        objectId: squareItemId,
+        includeRelatedObjects: false
       } as never)
+      const latestItem = (latestItemRes as { object?: Record<string, unknown> }).object
+      if (!latestItem) throw new Error('Could not load latest Square hold item before update.')
+
+      const itemData = (latestItem.itemData ?? {}) as Record<string, unknown>
+      const existingVariations = Array.isArray(itemData.variations) ? itemData.variations : []
+      if (existingVariations.length === 0) {
+        throw new Error('Square hold item is missing variations; re-create this item in Square and retry.')
+      }
+
+      await upsertWithLatestVersion(square, {
+        ...latestItem,
+        id: squareItemId,
+        type: 'ITEM',
+        presentAtAllLocations: true,
+        itemData: {
+          ...itemData,
+          name: label,
+          isTaxable: false,
+          taxIds: [],
+          productType: 'DIGITAL',
+          variations: existingVariations
+        }
+      })
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Square catalog sync failed'

@@ -23,6 +23,8 @@ const savingAndSyncing = ref(false)
 const deleting = ref(false)
 const reconcilingTopups = ref(false)
 const savingCreditPolicy = ref(false)
+const reordering = ref(false)
+const draggedOptionId = ref<string | null>(null)
 
 const creditPolicy = reactive({
   creditExpiryDays: 90,
@@ -71,6 +73,7 @@ const { refresh: refreshCreditPolicy } = await useAsyncData('admin:credits:setti
 })
 
 const options = computed(() => optionRows.value ?? [])
+const reorderedOptions = ref<CreditOption[]>([])
 
 function readErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Unknown error'
@@ -130,6 +133,7 @@ function loadOption(optionId: string) {
 }
 
 watch(options, (next) => {
+  reorderedOptions.value = [...next]
   if (!next.length) return
   if (!selectedId.value) {
     loadOption(next[0]!.id)
@@ -138,6 +142,71 @@ watch(options, (next) => {
   const stillExists = next.find(row => row.id === selectedId.value)
   if (!stillExists) loadOption(next[0]!.id)
 }, { immediate: true })
+
+function buildOptionReorderPayload(rows: CreditOption[]) {
+  return rows.map((option, index) => ({
+    id: option.id,
+    sortOrder: (index + 1) * 10
+  }))
+}
+
+async function persistOptionReorder(nextOptions: CreditOption[]) {
+  if (!nextOptions.length) return
+  reordering.value = true
+  try {
+    await $fetch('/api/admin/credits/options.reorder', {
+      method: 'POST',
+      body: {
+        options: buildOptionReorderPayload(nextOptions)
+      }
+    })
+    await refresh()
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not save option order',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+    reorderedOptions.value = [...options.value]
+  } finally {
+    reordering.value = false
+  }
+}
+
+function onOptionDragStart(event: DragEvent, optionId: string) {
+  draggedOptionId.value = optionId
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', optionId)
+  }
+}
+
+function onOptionDragOver(event: DragEvent) {
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+}
+
+async function onOptionDrop(event: DragEvent, targetOptionId: string) {
+  event.preventDefault()
+  const sourceOptionId = event.dataTransfer?.getData('text/plain') || draggedOptionId.value
+  draggedOptionId.value = null
+  if (!sourceOptionId || sourceOptionId === targetOptionId) return
+
+  const nextOrder = [...reorderedOptions.value]
+  const fromIndex = nextOrder.findIndex(option => option.id === sourceOptionId)
+  const toIndex = nextOrder.findIndex(option => option.id === targetOptionId)
+  if (fromIndex < 0 || toIndex < 0) return
+
+  const [moved] = nextOrder.splice(fromIndex, 1)
+  if (!moved) return
+  nextOrder.splice(toIndex, 0, moved)
+  reorderedOptions.value = nextOrder
+  await persistOptionReorder(nextOrder)
+}
+
+function onOptionDragEnd() {
+  draggedOptionId.value = null
+}
 
 async function saveAndSyncSquare() {
   savingAndSyncing.value = true
@@ -363,14 +432,25 @@ async function saveCreditPolicy() {
             </div>
             <div class="mt-3 space-y-2">
               <button
-                v-for="option in options"
+                v-for="option in reorderedOptions"
                 :key="option.id"
                 class="w-full rounded-lg border border-default p-2 text-left text-sm transition hover:bg-elevated"
                 :class="selectedId === option.id ? 'border-primary bg-elevated' : ''"
+                draggable="true"
+                @dragstart="onOptionDragStart($event, option.id)"
+                @dragover="onOptionDragOver"
+                @drop="onOptionDrop($event, option.id)"
+                @dragend="onOptionDragEnd"
                 @click="loadOption(option.id)"
               >
                 <div class="flex items-center justify-between gap-2">
-                  <span class="font-medium">{{ option.label }}</span>
+                  <span class="inline-flex items-center gap-2 font-medium">
+                    <UIcon
+                      name="i-lucide-grip-vertical"
+                      class="h-4 w-4 text-dimmed"
+                    />
+                    <span>{{ option.label }}</span>
+                  </span>
                   <UBadge :color="option.active ? 'success' : 'neutral'" size="xs" variant="soft">
                     {{ option.active ? 'active' : 'inactive' }}
                   </UBadge>
@@ -403,7 +483,7 @@ async function saveCreditPolicy() {
                 <UInput v-model="form.salePriceDollars" type="text" inputmode="decimal" placeholder="35.00" />
               </UFormField>
               <UFormField label="Sort order">
-                <UInput v-model.number="form.sortOrder" type="number" />
+                <UInput v-model.number="form.sortOrder" type="number" :disabled="reordering" />
               </UFormField>
               <UFormField label="Sale starts">
                 <UInput

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatMembershipTierLabel } from '~~/app/utils/membershipTierLabel'
 definePageMeta({ middleware: ['auth'] })
 
 const supabase = useSupabaseClient()
@@ -157,6 +158,7 @@ const isDirty = computed(() =>
 )
 const savedCards = computed(() => paymentMethodsData.value?.methods ?? [])
 const defaultCardId = computed(() => paymentMethodsData.value?.defaultCardId ?? null)
+const membershipTierLabel = computed(() => formatMembershipTierLabel(membershipSummary.value?.tier) ?? null)
 
 function formatExactDate(value: string | null | undefined) {
   if (!value) return null
@@ -273,7 +275,7 @@ async function setDefaultPaymentMethod(cardId: string) {
             <div class="rounded-lg border border-default p-3 space-y-2 text-sm">
               <div class="flex justify-between">
                 <span class="text-dimmed">Tier</span>
-                <span class="font-medium">{{ membershipSummary?.tier ?? 'No active membership' }}</span>
+                <span class="font-medium">{{ membershipTierLabel ?? 'No active membership' }}</span>
               </div>
               <div class="flex justify-between">
                 <span class="text-dimmed">Cadence</span>

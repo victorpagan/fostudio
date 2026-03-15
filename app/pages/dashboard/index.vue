@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
+import { formatMembershipTierLabel } from '~~/app/utils/membershipTierLabel'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -101,7 +102,8 @@ const membershipCta = computed(() => {
 
 const tierLabel = computed(() => {
   if (!membership.value) return null
-  return [membership.value.tier, membership.value.cadence].filter(Boolean).join(' · ')
+  const tierName = formatMembershipTierLabel(membership.value.tier)
+  return [tierName, membership.value.cadence].filter(Boolean).join(' · ')
 })
 
 function formatStatus(status: string | null | undefined) {
@@ -128,9 +130,11 @@ const pendingSwapSummary = computed(() => {
   const pendingSwap = subscriptionState.value?.pendingSwap
   if (!pendingSwap || !membership.value) return null
 
-  const currentTier = membership.value.tier ?? 'current plan'
+  const currentTier = formatMembershipTierLabel(membership.value.tier) ?? 'current plan'
   const currentCadence = formatCadence(membership.value.cadence)
-  const targetName = pendingSwap.target?.displayName ?? pendingSwap.target?.tier ?? 'new plan'
+  const targetName = pendingSwap.target?.displayName
+    ?? formatMembershipTierLabel(pendingSwap.target?.tier)
+    ?? 'new plan'
   const targetCadence = formatCadence(pendingSwap.target?.cadence)
   const effectiveDate = formatExactDate(pendingSwap.effectiveDate) ?? 'next billing cycle'
 
@@ -240,7 +244,7 @@ const pendingSwapSummary = computed(() => {
               Membership
             </div>
             <div class="mt-2 text-lg font-semibold truncate">
-              <span v-if="membership">{{ membership.tier }}</span>
+              <span v-if="membership">{{ formatMembershipTierLabel(membership.tier) ?? membership.tier }}</span>
               <span
                 v-else
                 class="text-dimmed"
