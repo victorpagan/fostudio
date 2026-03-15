@@ -500,6 +500,10 @@ body {
   opacity: 0.5;
 }
 
+.availability-shell .fc .fc-event.fc-event-hold.fc-event-past {
+  opacity: 0.5;
+}
+
 .availability-shell .fc .fc-timegrid-event-harness.fc-harness-past::before,
 .availability-shell .fc .fc-timegrid-event-harness.fc-harness-past::after {
   opacity: 0.5;
