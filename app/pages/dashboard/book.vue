@@ -688,9 +688,6 @@ function formatPeakCredits(value: number) {
           </template>
 
           <div class="space-y-2 text-sm">
-            <div class="text-dimmed">
-              You already own this booking slot.
-            </div>
             <UAlert
               v-if="ownBookingLockReason"
               color="warning"
@@ -704,7 +701,7 @@ function formatPeakCredits(value: number) {
               </div>
               <div
                 v-if="clickedBooking.notes"
-                class="mt-1 text-xs text-dimmed"
+                class="mt-1 whitespace-pre-line break-words text-xs text-dimmed"
               >
                 {{ clickedBooking.notes }}
               </div>

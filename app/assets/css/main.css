@@ -519,14 +519,18 @@ body {
 }
 
 .availability-shell .fc .fc-event-note {
-  margin-top: 0.12rem;
+  margin-top: 0.32rem;
   font-size: 0.65rem;
   line-height: 1.1;
   color: #fbf1c7;
   opacity: 0.92;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .availability-shell .fc .fc-event.fc-event-hold.fc-event-past {

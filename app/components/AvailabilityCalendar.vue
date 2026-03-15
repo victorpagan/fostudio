@@ -154,6 +154,11 @@ function escapeHtml(value: string) {
     .replaceAll("'", '&#39;')
 }
 
+function formatNoteHtml(value: string) {
+  const normalized = value.replaceAll('\\n', '\n')
+  return escapeHtml(normalized).replaceAll('\n', '<br />')
+}
+
 async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
   loading.value = true
   try {
@@ -207,7 +212,7 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
   const isHold = arg.event.extendedProps?.type === 'hold'
   const isOwnBooking = arg.event.extendedProps?.type === 'booking' && arg.event.extendedProps?.isOwn
   const noteRaw = isOwnBooking ? (arg.event.extendedProps?.notes ?? '').trim() : ''
-  const note = noteRaw ? `<div class="fc-event-note">${escapeHtml(noteRaw)}</div>` : ''
+  const note = noteRaw ? `<div class="fc-event-note">${formatNoteHtml(noteRaw)}</div>` : ''
   const label = isHold ? '<div class="fc-event-label">Equipement Hold</div>' : ''
   const time = arg.timeText ? `<div class="fc-event-time">${arg.timeText}</div>` : ''
   return {
