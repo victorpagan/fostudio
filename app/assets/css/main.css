@@ -482,7 +482,7 @@ body {
 }
 
 .availability-shell .fc .fc-event.fc-event-member {
-  background: rgba(102, 92, 84, 0.82);
+  background: rgba(60, 56, 54, 0.9);
   color: #fbf1c7;
   border: 0;
   cursor: default;
@@ -505,6 +505,28 @@ body {
 
 .availability-shell .fc .fc-event.fc-event-past {
   opacity: 0.5;
+}
+
+.availability-shell .fc .fc-event.fc-event-own .fc-event-main,
+.availability-shell .fc .fc-event.fc-event-member .fc-event-main,
+.availability-shell .fc .fc-event.fc-event-own .fc-event-time,
+.availability-shell .fc .fc-event.fc-event-member .fc-event-time,
+.availability-shell .fc .fc-event.fc-event-own .fc-event-label,
+.availability-shell .fc .fc-event.fc-event-member .fc-event-label,
+.availability-shell .fc .fc-event.fc-event-own .fc-event-title,
+.availability-shell .fc .fc-event.fc-event-member .fc-event-title {
+  color: #fbf1c7 !important;
+}
+
+.availability-shell .fc .fc-event-note {
+  margin-top: 0.12rem;
+  font-size: 0.65rem;
+  line-height: 1.1;
+  color: #fbf1c7;
+  opacity: 0.92;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .availability-shell .fc .fc-event.fc-event-hold.fc-event-past {
@@ -534,7 +556,19 @@ body {
 }
 
 .availability-shell .fc .fc-day-today {
-  box-shadow: inset 0 0 0 1px rgba(181, 118, 20, 0.22);
+  box-shadow: none;
+}
+
+.availability-shell .fc .fc-daygrid-day.fc-day-today,
+.availability-shell .fc .fc-timegrid-col.fc-day-today,
+.availability-shell .fc .fc-col-header-cell.fc-day-today {
+  background: rgba(244, 244, 244, 0.78) !important;
+}
+
+.dark .availability-shell .fc .fc-daygrid-day.fc-day-today,
+.dark .availability-shell .fc .fc-timegrid-col.fc-day-today,
+.dark .availability-shell .fc .fc-col-header-cell.fc-day-today {
+  background: rgba(170, 170, 170, 0.18) !important;
 }
 
 .availability-shell .fc .fc-scrollgrid,

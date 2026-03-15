@@ -145,6 +145,15 @@ function mapApiEventsToCalendar(events: CalendarEvent[]) {
   }))
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
 async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
   loading.value = true
   try {
@@ -196,10 +205,13 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
   if (arg.event.display === 'background') return undefined
 
   const isHold = arg.event.extendedProps?.type === 'hold'
+  const isOwnBooking = arg.event.extendedProps?.type === 'booking' && arg.event.extendedProps?.isOwn
+  const noteRaw = isOwnBooking ? (arg.event.extendedProps?.notes ?? '').trim() : ''
+  const note = noteRaw ? `<div class="fc-event-note">${escapeHtml(noteRaw)}</div>` : ''
   const label = isHold ? '<div class="fc-event-label">Equipement Hold</div>' : ''
   const time = arg.timeText ? `<div class="fc-event-time">${arg.timeText}</div>` : ''
   return {
-    html: `${label}${time}`
+    html: `${label}${time}${note}`
   }
 }
 
