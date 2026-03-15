@@ -396,14 +396,14 @@ body {
 .availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness-own::before,
 .availability-shell .fc .fc-timegrid-event-harness.fc-hold-harness-own::after {
   background:
-    linear-gradient(180deg, rgba(121, 80, 242, 0.95), rgba(92, 59, 199, 0.92)),
     repeating-linear-gradient(
       135deg,
-      rgba(177, 144, 255, 0.44) 0,
-      rgba(177, 144, 255, 0.44) 4px,
-      rgba(92, 59, 199, 0.24) 4px,
-      rgba(92, 59, 199, 0.24) 8px
-    );
+      rgba(211, 188, 255, 0.5) 0,
+      rgba(211, 188, 255, 0.5) 4px,
+      rgba(92, 59, 199, 0.08) 4px,
+      rgba(92, 59, 199, 0.08) 8px
+    ),
+    linear-gradient(180deg, rgba(121, 80, 242, 0.9), rgba(92, 59, 199, 0.86));
   color: #f9f5ff;
   box-shadow: 0 4px 10px rgba(49, 27, 105, 0.24);
   opacity: 0.84;
@@ -451,14 +451,14 @@ body {
 
 .availability-shell .fc .fc-event.fc-event-hold.fc-event-hold-own {
   background:
-    linear-gradient(180deg, rgba(121, 80, 242, 0.93), rgba(92, 59, 199, 0.9)),
     repeating-linear-gradient(
       135deg,
-      rgba(177, 144, 255, 0.48) 0,
-      rgba(177, 144, 255, 0.48) 4px,
-      rgba(92, 59, 199, 0.24) 4px,
-      rgba(92, 59, 199, 0.24) 8px
-    );
+      rgba(211, 188, 255, 0.52) 0,
+      rgba(211, 188, 255, 0.52) 4px,
+      rgba(92, 59, 199, 0.08) 4px,
+      rgba(92, 59, 199, 0.08) 8px
+    ),
+    linear-gradient(180deg, rgba(121, 80, 242, 0.9), rgba(92, 59, 199, 0.86));
   opacity: 0.84;
 }
 
