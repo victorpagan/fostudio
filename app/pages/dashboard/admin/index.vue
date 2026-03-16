@@ -45,6 +45,12 @@ const sections = [
     to: '/dashboard/admin/calendar'
   },
   {
+    title: 'Google Calendar',
+    description: 'Connect and sync the external Peerspace Google Calendar into booking availability blocks.',
+    icon: 'i-lucide-calendar-sync',
+    to: '/dashboard/admin/google-calendar'
+  },
+  {
     title: 'Holds',
     description: 'Configure hold fallback, hold top-up settings, and sync the hold item to Square.',
     icon: 'i-lucide-package-plus',

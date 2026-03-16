@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
 import { requireServerAdmin } from '~~/server/utils/auth'
+import { ensureNoExternalCalendarConflict } from '~~/server/utils/booking/externalCalendar'
 import {
   computeOvernightHoldWindow,
   DEFAULT_HOLD_END_HOUR,
@@ -32,9 +33,21 @@ export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
   const body = bodySchema.parse(await readBody(event))
 
-  if (new Date(body.endTime).getTime() <= new Date(body.startTime).getTime()) {
+  const nextStartUtc = DateTime.fromISO(body.startTime, { setZone: true }).toUTC()
+  const nextEndUtc = DateTime.fromISO(body.endTime, { setZone: true }).toUTC()
+  if (!nextStartUtc.isValid || !nextEndUtc.isValid) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
+  }
+  if (nextEndUtc <= nextStartUtc) {
     throw createError({ statusCode: 400, statusMessage: 'End time must be after start time' })
   }
+  const nextStartIso = nextStartUtc.toISO()
+  const nextEndIso = nextEndUtc.toISO()
+  if (!nextStartIso || !nextEndIso) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
+  }
+
+  await ensureNoExternalCalendarConflict(supabase, nextStartIso, nextEndIso)
 
   const { data: booking, error: bookingErr } = await supabase
     .from('bookings')
@@ -53,8 +66,8 @@ export default defineEventHandler(async (event) => {
     .select('id')
     .neq('id', body.bookingId)
     .in('status', ['confirmed', 'requested', 'pending_payment'])
-    .lt('start_time', body.endTime)
-    .gt('end_time', body.startTime)
+    .lt('start_time', nextEndIso)
+    .gt('end_time', nextStartIso)
     .limit(1)
 
   if (conflictErr) throw createError({ statusCode: 500, statusMessage: conflictErr.message })
@@ -74,8 +87,8 @@ export default defineEventHandler(async (event) => {
     .from('calendar_blocks')
     .select('id')
     .eq('active', true)
-    .lt('start_time', body.endTime)
-    .gt('end_time', body.startTime)
+    .lt('start_time', nextEndIso)
+    .gt('end_time', nextStartIso)
     .limit(1)
 
   if (blockErr) throw createError({ statusCode: 500, statusMessage: blockErr.message })
@@ -140,8 +153,8 @@ export default defineEventHandler(async (event) => {
       .from('booking_holds')
       .select('id')
       .neq('booking_id', body.bookingId)
-      .lt('hold_start', body.endTime)
-      .gt('hold_end', body.startTime)
+      .lt('hold_start', nextEndIso)
+      .gt('hold_end', nextStartIso)
       .limit(1)
 
     if (holdErr) throw createError({ statusCode: 500, statusMessage: holdErr.message })
@@ -153,8 +166,8 @@ export default defineEventHandler(async (event) => {
   const { data: updated, error: updateErr } = await supabase
     .from('bookings')
     .update({
-      start_time: body.startTime,
-      end_time: body.endTime,
+      start_time: nextStartIso,
+      end_time: nextEndIso,
       notes: body.notes ?? null
     })
     .eq('id', body.bookingId)

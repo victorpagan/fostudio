@@ -16,11 +16,13 @@ type CalendarEvent = EventInput & {
   end?: string
   title?: string
   extendedProps?: {
-    type?: 'booking' | 'hold'
+    type?: 'booking' | 'hold' | 'external'
     isOwn?: boolean
     status?: string
     bookingId?: string
     notes?: string
+    provider?: string
+    location?: string
   }
 }
 
@@ -197,6 +199,9 @@ function eventClassNames(arg: { event: { display: string, end?: Date | null, ext
     classes.push('fc-event-hold')
     classes.push(arg.event.extendedProps?.isOwn ? 'fc-event-hold-own' : 'fc-event-hold-other')
   }
+  if (type === 'external') {
+    classes.push('fc-event-external')
+  }
   if (type === 'booking') {
     classes.push('fc-event-booked')
     if (arg.event.extendedProps?.isOwn) classes.push('fc-event-own')
@@ -210,12 +215,15 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
   if (arg.event.display === 'background') return undefined
 
   const isHold = arg.event.extendedProps?.type === 'hold'
+  const isExternal = arg.event.extendedProps?.type === 'external'
   const isOwnBooking = arg.event.extendedProps?.type === 'booking' && arg.event.extendedProps?.isOwn
   const isUnownedBooking = arg.event.extendedProps?.type === 'booking' && !arg.event.extendedProps?.isOwn
   const noteRaw = isOwnBooking ? (arg.event.extendedProps?.notes ?? '').trim() : ''
   const note = noteRaw ? `<div class="fc-event-note">${formatNoteHtml(noteRaw)}</div>` : ''
   const label = isHold
     ? '<div class="fc-event-label">Equipement Hold</div>'
+    : isExternal
+      ? `<div class="fc-event-label">${escapeHtml(arg.event.title || 'External Booking')}</div>`
     : isUnownedBooking
       ? '<div class="fc-event-label">Blocked</div>'
       : ''
@@ -236,6 +244,9 @@ function eventDidMount(arg: { el: HTMLElement, event: { end?: Date | null, exten
   if (type === 'hold') {
     harness.classList.add('fc-hold-harness')
     harness.classList.add(arg.event.extendedProps?.isOwn ? 'fc-hold-harness-own' : 'fc-hold-harness-other')
+  } else if (type === 'external') {
+    harness.classList.add('fc-booking-harness')
+    harness.classList.add('fc-external-harness')
   } else if (type === 'booking') {
     harness.classList.add('fc-booking-harness')
   }

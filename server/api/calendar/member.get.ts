@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { serverSupabaseClient, serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
+import { getExternalCalendarEventsInRange } from '~~/server/utils/booking/externalCalendar'
+import { maybeAutoSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -31,6 +33,12 @@ export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient(event)
   const q = qSchema.parse(getQuery(event))
   const peakWindowConfig = await loadPeakWindowConfig(event)
+
+  try {
+    await maybeAutoSyncGoogleCalendar(event, 'calendar_member')
+  } catch (error) {
+    console.error('[calendar/member] google sync failed', error)
+  }
 
   // Fetch membership + tier so we can enforce booking window
   const { data: membership, error: memErr } = await supabase
@@ -105,6 +113,28 @@ export default defineEventHandler(async (event) => {
 
   if (blocksErr) throw createError({ statusCode: 500, statusMessage: blocksErr.message })
 
+  let externalEvents: Array<{
+    id: string
+    title: string | null
+    description: string | null
+    location: string | null
+    start_time: string
+    end_time: string
+    provider: string
+    calendar_id: string
+  }> = []
+
+  try {
+    const serviceRole = serverSupabaseServiceRole(event) as any
+    externalEvents = await getExternalCalendarEventsInRange(
+      serviceRole,
+      from.toISOString(),
+      to.toISOString()
+    )
+  } catch (error) {
+    console.error('[calendar/member] failed to load external calendar events', error)
+  }
+
   // Shape events for FullCalendar — distinguish own bookings from others
   const events = [
     ...(bookings ?? []).map((b) => {
@@ -151,6 +181,19 @@ export default defineEventHandler(async (event) => {
       display: 'background',
       color: '#dc2626',
       extendedProps: { type: 'hold' }
+    })),
+    ...externalEvents.map((ext) => ({
+      id: `g_${ext.id}`,
+      start: normalizeIso(ext.start_time),
+      end: normalizeIso(ext.end_time),
+      title: ext.title || 'External booking',
+      display: 'auto',
+      color: '#111827',
+      extendedProps: {
+        type: 'external',
+        provider: ext.provider,
+        location: ext.location
+      }
     }))
   ]
 

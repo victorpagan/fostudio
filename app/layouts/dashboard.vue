@@ -59,6 +59,12 @@ const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
         onSelect: () => { open.value = false }
       },
       {
+        label: 'Google Calendar',
+        icon: 'i-lucide-calendar-sync',
+        to: '/dashboard/admin/google-calendar',
+        onSelect: () => { open.value = false }
+      },
+      {
         label: 'Holds',
         icon: 'i-lucide-package-plus',
         to: '/dashboard/admin/holds',

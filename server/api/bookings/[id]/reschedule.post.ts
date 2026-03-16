@@ -3,6 +3,7 @@ import { DateTime } from 'luxon'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { isAdminRole, readUserRole } from '~~/server/utils/auth'
 import type { RoleCarrier } from '~~/server/utils/auth'
+import { ensureNoExternalCalendarConflict } from '~~/server/utils/booking/externalCalendar'
 import {
   computeOvernightHoldWindow,
   DEFAULT_HOLD_END_HOUR,
@@ -122,6 +123,8 @@ export default defineEventHandler(async (event) => {
   if (!startIso || !endIso) {
     throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
   }
+
+  await ensureNoExternalCalendarConflict(supabase, startIso, endIso)
 
   const { data: linkedHolds, error: linkedHoldsErr } = await supabase
     .from('booking_holds')
