@@ -3,7 +3,12 @@ definePageMeta({ middleware: ['admin'] })
 
 type GoogleCalendarSettings = {
   enabled: boolean
+  pushEnabled: boolean
   calendarId: string
+  oauthClientId: string
+  oauthClientSecretName: string
+  oauthConnected: boolean
+  oauthConnectedEmail: string | null
   serviceAccountSecretName: string
   lookbackDays: number
   lookaheadDays: number
@@ -18,13 +23,19 @@ type GoogleCalendarStats = {
 }
 
 const toast = useToast()
+const route = useRoute()
 const saving = ref(false)
 const syncing = ref(false)
 const testing = ref(false)
 
 const form = reactive<GoogleCalendarSettings>({
   enabled: false,
+  pushEnabled: false,
   calendarId: '',
+  oauthClientId: '',
+  oauthClientSecretName: 'GOOGLE_OAUTH_CLIENT_SECRET',
+  oauthConnected: false,
+  oauthConnectedEmail: null,
   serviceAccountSecretName: 'GOOGLE_SERVICE_ACCOUNT_JSON',
   lookbackDays: 14,
   lookaheadDays: 180,
@@ -41,7 +52,12 @@ const stats = reactive<GoogleCalendarStats>({
 const { pending, refresh } = await useAsyncData('admin:gcal:settings', async () => {
   const res = await $fetch<{ settings: GoogleCalendarSettings, stats: GoogleCalendarStats }>('/api/admin/google-calendar/settings')
   form.enabled = Boolean(res.settings.enabled)
+  form.pushEnabled = Boolean(res.settings.pushEnabled)
   form.calendarId = String(res.settings.calendarId ?? '')
+  form.oauthClientId = String(res.settings.oauthClientId ?? '')
+  form.oauthClientSecretName = String(res.settings.oauthClientSecretName ?? 'GOOGLE_OAUTH_CLIENT_SECRET')
+  form.oauthConnected = Boolean(res.settings.oauthConnected)
+  form.oauthConnectedEmail = res.settings.oauthConnectedEmail ?? null
   form.serviceAccountSecretName = String(res.settings.serviceAccountSecretName ?? 'GOOGLE_SERVICE_ACCOUNT_JSON')
   form.lookbackDays = Number(res.settings.lookbackDays ?? 14)
   form.lookaheadDays = Number(res.settings.lookaheadDays ?? 180)
@@ -86,6 +102,32 @@ const lastSyncSummary = computed(() => {
   return `Fetched ${fetched} events · upserted ${written} rows`
 })
 
+const oauthConnectedLabel = computed(() => {
+  if (!form.oauthConnected) return 'Not connected'
+  if (form.oauthConnectedEmail) return `Connected as ${form.oauthConnectedEmail}`
+  return 'Connected'
+})
+
+onMounted(() => {
+  const oauth = typeof route.query.oauth === 'string' ? route.query.oauth : ''
+  const message = typeof route.query.message === 'string' ? route.query.message : ''
+  const email = typeof route.query.email === 'string' ? route.query.email : ''
+  if (!oauth) return
+  if (oauth === 'connected') {
+    toast.add({
+      title: 'Google Calendar connected',
+      description: email ? `Connected as ${email}` : 'OAuth connection completed.',
+      color: 'success'
+    })
+  } else if (oauth === 'error') {
+    toast.add({
+      title: 'Google Calendar connect failed',
+      description: message || 'Could not complete OAuth connect.',
+      color: 'error'
+    })
+  }
+})
+
 async function saveSettings() {
   saving.value = true
   try {
@@ -93,7 +135,10 @@ async function saveSettings() {
       method: 'POST',
       body: {
         enabled: form.enabled,
+        pushEnabled: form.pushEnabled,
         calendarId: form.calendarId,
+        oauthClientId: form.oauthClientId,
+        oauthClientSecretName: form.oauthClientSecretName,
         serviceAccountSecretName: form.serviceAccountSecretName,
         lookbackDays: form.lookbackDays,
         lookaheadDays: form.lookaheadDays,
@@ -217,11 +262,41 @@ async function syncNow() {
               <USwitch v-model="form.enabled" />
             </UFormField>
 
+            <UFormField label="Push FO Studio busy blocks to Google">
+              <USwitch v-model="form.pushEnabled" />
+            </UFormField>
+
             <UFormField label="Google Calendar ID">
               <UInput v-model="form.calendarId" placeholder="your-calendar-id@group.calendar.google.com" />
             </UFormField>
 
-            <UFormField label="Service account secret key name">
+            <UFormField label="Google OAuth Client ID">
+              <UInput v-model="form.oauthClientId" placeholder="1234567890-xxxx.apps.googleusercontent.com" />
+            </UFormField>
+
+            <UFormField label="OAuth client secret key name">
+              <UInput v-model="form.oauthClientSecretName" placeholder="GOOGLE_OAUTH_CLIENT_SECRET" />
+            </UFormField>
+
+            <UFormField label="OAuth connection">
+              <div class="flex items-center gap-2">
+                <UBadge
+                  :color="form.oauthConnected ? 'success' : 'neutral'"
+                  variant="soft"
+                  :label="oauthConnectedLabel"
+                />
+                <UButton
+                  color="neutral"
+                  variant="soft"
+                  to="/api/admin/google-calendar/oauth/start"
+                  icon="i-lucide-link"
+                >
+                  Connect to Google Calendar
+                </UButton>
+              </div>
+            </UFormField>
+
+            <UFormField label="Service account secret key name (fallback)">
               <UInput v-model="form.serviceAccountSecretName" placeholder="GOOGLE_SERVICE_ACCOUNT_JSON" />
             </UFormField>
 

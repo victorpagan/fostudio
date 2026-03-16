@@ -1,6 +1,6 @@
-import { createSign } from 'node:crypto'
+import { createSign, randomUUID } from 'node:crypto'
 import { DateTime } from 'luxon'
-import type { H3Event } from 'h3'
+import { getRequestURL, type H3Event } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { getKey, getServerConfigMap, refreshServerConfig } from '~~/server/utils/config/secret'
 import { STUDIO_TZ } from '~~/server/utils/booking/peak'
@@ -25,18 +25,27 @@ type GoogleCalendarEvent = {
   summary?: string
   description?: string
   location?: string
+  transparency?: string
+  extendedProperties?: {
+    private?: Record<string, string>
+  }
   start?: GoogleCalendarEventTime
   end?: GoogleCalendarEventTime
 }
 
-const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly'
+const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar'
 const GOOGLE_TOKEN_AUD = 'https://oauth2.googleapis.com/token'
 const GOOGLE_EVENTS_API = 'https://www.googleapis.com/calendar/v3/calendars'
 
 export type GoogleCalendarSyncSettings = {
   enabled: boolean
+  pushEnabled: boolean
   calendarId: string
   serviceAccountSecretName: string
+  oauthClientId: string
+  oauthClientSecretName: string
+  oauthConnected: boolean
+  oauthConnectedEmail: string | null
   lookbackDays: number
   lookaheadDays: number
   syncIntervalMinutes: number
@@ -51,6 +60,8 @@ export type GoogleCalendarSyncResult = {
   fetchedEvents: number
   upsertedRows: number
   deactivatedRows: number
+  pushedRows: number
+  deletedManagedRows: number
   windowStart: string | null
   windowEnd: string | null
   syncedAt: string
@@ -59,8 +70,17 @@ export type GoogleCalendarSyncResult = {
 
 const SETTINGS_KEYS = [
   'gcal_sync_enabled',
+  'gcal_push_enabled',
   'gcal_calendar_id',
   'gcal_service_account_secret_name',
+  'gcal_oauth_client_id',
+  'gcal_oauth_client_secret_name',
+  'gcal_oauth_refresh_token',
+  'gcal_oauth_access_token',
+  'gcal_oauth_access_token_expires_at',
+  'gcal_oauth_connected_email',
+  'gcal_oauth_state',
+  'gcal_oauth_state_expires_at',
   'gcal_sync_lookback_days',
   'gcal_sync_lookahead_days',
   'gcal_sync_interval_minutes',
@@ -91,6 +111,45 @@ function asInteger(value: unknown, fallback: number, min: number, max: number) {
 function asString(value: unknown, fallback = '') {
   if (typeof value !== 'string') return fallback
   return value.trim() || fallback
+}
+
+function toManagedGoogleEventId(sourceKey: string) {
+  const normalized = sourceKey.toLowerCase().replace(/[^a-z0-9-_]/g, '-')
+  return `fo-${normalized}`.slice(0, 120)
+}
+
+function decodeJwtPayload(idToken: string): Record<string, unknown> | null {
+  try {
+    const parts = idToken.split('.')
+    if (parts.length < 2) return null
+    const payload = parts[1]
+    if (!payload) return null
+    const normalized = payload.replaceAll('-', '+').replaceAll('_', '/')
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+    const decoded = Buffer.from(padded, 'base64').toString('utf8')
+    const parsed = JSON.parse(decoded)
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null
+  } catch {
+    return null
+  }
+}
+
+async function setSystemConfigValues(db: SupabaseLike, rows: Array<{ key: string, value: unknown }>) {
+  for (const row of rows) {
+    const updateRes = await db
+      .from('system_config')
+      .update({ value: row.value })
+      .eq('key', row.key)
+      .select('key')
+
+    if (updateRes.error) throw new Error(updateRes.error.message)
+    if ((updateRes.data?.length ?? 0) > 0) continue
+
+    const insertRes = await db
+      .from('system_config')
+      .insert(row)
+    if (insertRes.error) throw new Error(insertRes.error.message)
+  }
 }
 
 function base64UrlEncode(input: string | Buffer) {
@@ -186,6 +245,76 @@ async function exchangeGoogleAccessToken(serviceAccount: GoogleServiceAccount) {
   return accessToken
 }
 
+async function exchangeGoogleOauthCode(
+  clientId: string,
+  clientSecret: string,
+  code: string,
+  redirectUri: string
+) {
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code,
+    client_id: clientId,
+    client_secret: clientSecret,
+    redirect_uri: redirectUri
+  })
+
+  const response = await fetch(GOOGLE_TOKEN_AUD, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded'
+    },
+    body
+  })
+
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(`Google OAuth code exchange failed (${response.status}): ${text}`)
+  }
+
+  return await response.json() as {
+    access_token?: string
+    refresh_token?: string
+    expires_in?: number
+    id_token?: string
+    scope?: string
+  }
+}
+
+async function refreshGoogleOauthAccessToken(
+  clientId: string,
+  clientSecret: string,
+  refreshToken: string
+) {
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    client_id: clientId,
+    client_secret: clientSecret
+  })
+
+  const response = await fetch(GOOGLE_TOKEN_AUD, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded'
+    },
+    body
+  })
+
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(`Google OAuth token refresh failed (${response.status}): ${text}`)
+  }
+
+  return await response.json() as {
+    access_token?: string
+    expires_in?: number
+    refresh_token?: string
+    scope?: string
+    id_token?: string
+  }
+}
+
 async function fetchGoogleCalendarEvents(
   accessToken: string,
   calendarId: string,
@@ -229,19 +358,79 @@ async function fetchGoogleCalendarEvents(
   return allEvents
 }
 
+async function insertGoogleCalendarEvent(
+  accessToken: string,
+  calendarId: string,
+  payload: Record<string, unknown>
+) {
+  const url = `${GOOGLE_EVENTS_API}/${encodeURIComponent(calendarId)}/events`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  })
+
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(`Google event create failed (${response.status}): ${text}`)
+  }
+
+  return await response.json() as GoogleCalendarEvent
+}
+
+async function patchGoogleCalendarEvent(
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+  payload: Record<string, unknown>
+) {
+  const url = `${GOOGLE_EVENTS_API}/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  })
+
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(`Google event patch failed (${response.status}): ${text}`)
+  }
+}
+
+async function deleteGoogleCalendarEvent(
+  accessToken: string,
+  calendarId: string,
+  eventId: string
+) {
+  const url = `${GOOGLE_EVENTS_API}/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  })
+
+  if (!response.ok && response.status !== 404) {
+    const text = await response.text()
+    throw new Error(`Google event delete failed (${response.status}): ${text}`)
+  }
+}
+
 async function writeSyncStatus(
   db: SupabaseLike,
   syncedAt: string,
   statusValue: Record<string, unknown>
 ) {
-  const { error } = await db
-    .from('system_config')
-    .upsert([
-      { key: 'gcal_last_sync_at', value: syncedAt },
-      { key: 'gcal_last_sync_status', value: statusValue }
-    ], { onConflict: 'key' })
-
-  if (error) throw new Error(error.message)
+  await setSystemConfigValues(db, [
+    { key: 'gcal_last_sync_at', value: syncedAt },
+    { key: 'gcal_last_sync_status', value: statusValue }
+  ])
   await refreshServerConfig()
 }
 
@@ -256,17 +445,205 @@ function splitIntoChunks<T>(items: T[], size: number) {
 
 export async function getGoogleCalendarSyncSettings(event: H3Event): Promise<GoogleCalendarSyncSettings> {
   const config = await getServerConfigMap(event, [...SETTINGS_KEYS])
+  const connectedEmail = asString(config.gcal_oauth_connected_email) || null
 
   return {
     enabled: asBoolean(config.gcal_sync_enabled, false),
+    pushEnabled: asBoolean(config.gcal_push_enabled, false),
     calendarId: asString(config.gcal_calendar_id),
     serviceAccountSecretName: asString(config.gcal_service_account_secret_name, 'GOOGLE_SERVICE_ACCOUNT_JSON'),
+    oauthClientId: asString(config.gcal_oauth_client_id),
+    oauthClientSecretName: asString(config.gcal_oauth_client_secret_name, 'GOOGLE_OAUTH_CLIENT_SECRET'),
+    oauthConnected: Boolean(asString(config.gcal_oauth_refresh_token)),
+    oauthConnectedEmail: connectedEmail,
     lookbackDays: asInteger(config.gcal_sync_lookback_days, 14, 0, 365),
     lookaheadDays: asInteger(config.gcal_sync_lookahead_days, 180, 1, 730),
     syncIntervalMinutes: asInteger(config.gcal_sync_interval_minutes, 5, 1, 1440),
     lastSyncAt: typeof config.gcal_last_sync_at === 'string' ? config.gcal_last_sync_at : null,
     lastSyncStatus: config.gcal_last_sync_status ?? null
   }
+}
+
+async function collectLocalBusyWindows(db: SupabaseLike, windowStartIso: string, windowEndIso: string) {
+  const [bookingsRes, blocksRes] = await Promise.all([
+    db
+      .from('bookings')
+      .select('id,start_time,end_time,status,notes')
+      .in('status', ['confirmed', 'requested', 'pending_payment'])
+      .lt('start_time', windowEndIso)
+      .gt('end_time', windowStartIso),
+    db
+      .from('calendar_blocks')
+      .select('id,start_time,end_time,reason')
+      .eq('active', true)
+      .lt('start_time', windowEndIso)
+      .gt('end_time', windowStartIso)
+  ])
+
+  if (bookingsRes.error) throw new Error(bookingsRes.error.message)
+  if (blocksRes.error) throw new Error(blocksRes.error.message)
+
+  const localEvents: Array<{
+    sourceKey: string
+    summary: string
+    description: string
+    startTime: string
+    endTime: string
+  }> = []
+
+  for (const booking of (bookingsRes.data ?? [])) {
+    localEvents.push({
+      sourceKey: `booking:${booking.id}`,
+      summary: 'FO Studio Booking',
+      description: booking.notes ? String(booking.notes) : 'Studio booking (managed by FO Studio)',
+      startTime: String(booking.start_time),
+      endTime: String(booking.end_time)
+    })
+  }
+
+  for (const block of (blocksRes.data ?? [])) {
+    localEvents.push({
+      sourceKey: `block:${block.id}`,
+      summary: 'FO Studio Block',
+      description: block.reason ? String(block.reason) : 'Studio block (managed by FO Studio)',
+      startTime: String(block.start_time),
+      endTime: String(block.end_time)
+    })
+  }
+
+  return localEvents
+}
+
+export async function buildGoogleOauthConnectUrl(event: H3Event) {
+  const settings = await getGoogleCalendarSyncSettings(event)
+  if (!settings.oauthClientId) {
+    throw new Error('Google OAuth client ID is missing. Set gcal_oauth_client_id in admin settings first.')
+  }
+  if (!settings.oauthClientSecretName) {
+    throw new Error('Google OAuth client secret key name is missing. Set gcal_oauth_client_secret_name first.')
+  }
+
+  const origin = getRequestURL(event).origin
+  const redirectUri = `${origin}/api/admin/google-calendar/oauth/callback`
+  const state = randomUUID()
+  const stateExpiresAt = new Date(Date.now() + 10 * 60_000).toISOString()
+  const db = serverSupabaseServiceRole(event) as any
+  await setSystemConfigValues(db, [
+    { key: 'gcal_oauth_state', value: state },
+    { key: 'gcal_oauth_state_expires_at', value: stateExpiresAt }
+  ])
+  await refreshServerConfig()
+
+  const qs = new URLSearchParams({
+    client_id: settings.oauthClientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'https://www.googleapis.com/auth/calendar openid email',
+    access_type: 'offline',
+    include_granted_scopes: 'true',
+    prompt: 'consent',
+    state
+  })
+
+  return `https://accounts.google.com/o/oauth2/v2/auth?${qs.toString()}`
+}
+
+export async function completeGoogleOauthConnect(event: H3Event, params: { code: string, state: string }) {
+  const { code, state } = params
+  const settings = await getGoogleCalendarSyncSettings(event)
+  if (!settings.oauthClientId) {
+    throw new Error('Google OAuth client ID is missing. Set gcal_oauth_client_id first.')
+  }
+
+  const config = await getServerConfigMap(event, ['gcal_oauth_state', 'gcal_oauth_state_expires_at'])
+  const expectedState = asString(config.gcal_oauth_state)
+  const stateExpiryRaw = asString(config.gcal_oauth_state_expires_at)
+  const stateExpiryMs = stateExpiryRaw ? Date.parse(stateExpiryRaw) : Number.NaN
+  if (!expectedState || expectedState !== state) {
+    throw new Error('OAuth state mismatch. Start the Google connect flow again.')
+  }
+  if (!Number.isNaN(stateExpiryMs) && Date.now() > stateExpiryMs) {
+    throw new Error('OAuth connect state expired. Start the flow again.')
+  }
+
+  const clientSecretRaw = await getKey(event, settings.oauthClientSecretName || 'GOOGLE_OAUTH_CLIENT_SECRET')
+  const clientSecret = asString(clientSecretRaw)
+  if (!clientSecret) {
+    throw new Error('Google OAuth client secret is missing in secrets store.')
+  }
+
+  const origin = getRequestURL(event).origin
+  const redirectUri = `${origin}/api/admin/google-calendar/oauth/callback`
+  const tokenRes = await exchangeGoogleOauthCode(settings.oauthClientId, clientSecret, code, redirectUri)
+  const refreshToken = asString(tokenRes.refresh_token)
+  if (!refreshToken) {
+    throw new Error('Google OAuth did not return a refresh token. Reconnect and consent again.')
+  }
+  const accessToken = asString(tokenRes.access_token)
+  const expiresIn = Number(tokenRes.expires_in ?? 3600)
+  const expiresAtIso = new Date(Date.now() + Math.max(60, expiresIn) * 1000).toISOString()
+  const idPayload = tokenRes.id_token ? decodeJwtPayload(tokenRes.id_token) : null
+  const email = asString(idPayload?.email) || null
+
+  const db = serverSupabaseServiceRole(event) as any
+  await setSystemConfigValues(db, [
+    { key: 'gcal_oauth_refresh_token', value: refreshToken },
+    { key: 'gcal_oauth_access_token', value: accessToken || null },
+    { key: 'gcal_oauth_access_token_expires_at', value: expiresAtIso },
+    { key: 'gcal_oauth_connected_email', value: email ?? '' },
+    { key: 'gcal_oauth_state', value: null },
+    { key: 'gcal_oauth_state_expires_at', value: null }
+  ])
+  await refreshServerConfig()
+
+  return {
+    email
+  }
+}
+
+async function resolveGoogleAccessTokenForSync(event: H3Event, settings: GoogleCalendarSyncSettings) {
+  const config = await getServerConfigMap(event, [
+    'gcal_oauth_refresh_token',
+    'gcal_oauth_access_token',
+    'gcal_oauth_access_token_expires_at'
+  ])
+  const refreshToken = asString(config.gcal_oauth_refresh_token)
+  const cachedAccessToken = asString(config.gcal_oauth_access_token)
+  const cachedExpiry = asString(config.gcal_oauth_access_token_expires_at)
+  const cachedExpiryMs = cachedExpiry ? Date.parse(cachedExpiry) : Number.NaN
+  const bufferMs = 60_000
+
+  if (settings.oauthClientId && refreshToken) {
+    if (cachedAccessToken && !Number.isNaN(cachedExpiryMs) && cachedExpiryMs > Date.now() + bufferMs) {
+      return cachedAccessToken
+    }
+
+    const clientSecretRaw = await getKey(event, settings.oauthClientSecretName || 'GOOGLE_OAUTH_CLIENT_SECRET')
+    const clientSecret = asString(clientSecretRaw)
+    if (!clientSecret) {
+      throw new Error('Google OAuth client secret is missing in secrets store.')
+    }
+
+    const refreshed = await refreshGoogleOauthAccessToken(settings.oauthClientId, clientSecret, refreshToken)
+    const nextAccessToken = asString(refreshed.access_token)
+    if (!nextAccessToken) throw new Error('Google OAuth refresh did not return access_token')
+    const nextExpiresIn = Number(refreshed.expires_in ?? 3600)
+    const nextExpiry = new Date(Date.now() + Math.max(60, nextExpiresIn) * 1000).toISOString()
+    const nextRefreshToken = asString(refreshed.refresh_token) || refreshToken
+
+    const db = serverSupabaseServiceRole(event) as any
+    await setSystemConfigValues(db, [
+      { key: 'gcal_oauth_access_token', value: nextAccessToken },
+      { key: 'gcal_oauth_access_token_expires_at', value: nextExpiry },
+      { key: 'gcal_oauth_refresh_token', value: nextRefreshToken }
+    ])
+    await refreshServerConfig()
+    return nextAccessToken
+  }
+
+  const serviceSecretRaw = await getKey(event, settings.serviceAccountSecretName)
+  const serviceAccount = normalizeServiceAccount(serviceSecretRaw)
+  return await exchangeGoogleAccessToken(serviceAccount)
 }
 
 export async function syncGoogleCalendarToExternalBlocks(
@@ -291,6 +668,8 @@ export async function syncGoogleCalendarToExternalBlocks(
       fetchedEvents: 0,
       upsertedRows: 0,
       deactivatedRows: 0,
+      pushedRows: 0,
+      deletedManagedRows: 0,
       windowStart: null,
       windowEnd: null,
       syncedAt,
@@ -314,6 +693,8 @@ export async function syncGoogleCalendarToExternalBlocks(
           fetchedEvents: 0,
           upsertedRows: 0,
           deactivatedRows: 0,
+          pushedRows: 0,
+          deletedManagedRows: 0,
           windowStart: null,
           windowEnd: null,
           syncedAt,
@@ -323,9 +704,7 @@ export async function syncGoogleCalendarToExternalBlocks(
     }
   }
 
-  const serviceSecretRaw = await getKey(event, settings.serviceAccountSecretName)
-  const serviceAccount = normalizeServiceAccount(serviceSecretRaw)
-  const accessToken = await exchangeGoogleAccessToken(serviceAccount)
+  const accessToken = await resolveGoogleAccessTokenForSync(event, settings)
 
   const nowStudio = DateTime.now().setZone(STUDIO_TZ)
   const windowStart = nowStudio.minus({ days: settings.lookbackDays }).startOf('day').toUTC()
@@ -341,13 +720,75 @@ export async function syncGoogleCalendarToExternalBlocks(
     windowEndIso
   )
 
+  const managedGoogleEvents = new Map<string, GoogleCalendarEvent>()
+  for (const entry of googleEvents) {
+    const privateMeta = entry.extendedProperties?.private ?? {}
+    const sourceKey = asString(privateMeta.fostudio_source_key)
+    if (!sourceKey) continue
+    managedGoogleEvents.set(sourceKey, entry)
+  }
+
+  let pushedRows = 0
+  let deletedManagedRows = 0
+  const db = serverSupabaseServiceRole(event) as any
+
+  if (!dryRun && settings.pushEnabled) {
+    const localBusyWindows = await collectLocalBusyWindows(db, windowStartIso, windowEndIso)
+    const sourceKeys = new Set(localBusyWindows.map(item => item.sourceKey))
+
+    for (const localItem of localBusyWindows) {
+      const payload = {
+        id: toManagedGoogleEventId(localItem.sourceKey),
+        summary: localItem.summary,
+        description: localItem.description,
+        transparency: 'opaque',
+        start: { dateTime: localItem.startTime },
+        end: { dateTime: localItem.endTime },
+        extendedProperties: {
+          private: {
+            fostudio_managed: 'true',
+            fostudio_source_key: localItem.sourceKey
+          }
+        }
+      }
+
+      const existing = managedGoogleEvents.get(localItem.sourceKey)
+      if (existing?.id) {
+        await patchGoogleCalendarEvent(accessToken, settings.calendarId, existing.id, payload)
+      } else {
+        try {
+          await insertGoogleCalendarEvent(accessToken, settings.calendarId, payload)
+        } catch {
+          // idempotent retry path
+          await patchGoogleCalendarEvent(
+            accessToken,
+            settings.calendarId,
+            toManagedGoogleEventId(localItem.sourceKey),
+            payload
+          )
+        }
+      }
+      pushedRows += 1
+    }
+
+    for (const [sourceKey, eventItem] of managedGoogleEvents) {
+      if (sourceKeys.has(sourceKey)) continue
+      if (!eventItem.id) continue
+      await deleteGoogleCalendarEvent(accessToken, settings.calendarId, eventItem.id)
+      deletedManagedRows += 1
+    }
+  }
+
   const rows = googleEvents
     .map((entry) => {
+      const privateMeta = entry.extendedProperties?.private ?? {}
+      if (asString(privateMeta.fostudio_managed) === 'true') return null
       const externalEventId = asString(entry.id)
       const startIso = normalizeEventTime(entry.start, false)
       const endIso = normalizeEventTime(entry.end, true)
       if (!externalEventId || !startIso || !endIso) return null
       if (Date.parse(endIso) <= Date.parse(startIso)) return null
+      if (asString(entry.transparency, 'opaque').toLowerCase() === 'transparent') return null
       const status = asString(entry.status, 'confirmed')
       const title = asString(entry.summary, 'Peerspace booking')
       const description = asString(entry.description) || null
@@ -371,7 +812,6 @@ export async function syncGoogleCalendarToExternalBlocks(
     .filter(Boolean) as Array<Record<string, unknown>>
 
   let deactivatedRows = 0
-  const db = serverSupabaseServiceRole(event) as any
 
   if (!dryRun) {
     const deactivateRes = await db
@@ -402,9 +842,12 @@ export async function syncGoogleCalendarToExternalBlocks(
     await writeSyncStatus(db, syncedAt, {
       ok: true,
       reason,
+      pushEnabled: settings.pushEnabled,
       fetchedEvents: googleEvents.length,
       upsertedRows: rows.length,
       deactivatedRows,
+      pushedRows,
+      deletedManagedRows,
       dryRun: false,
       windowStart: windowStartIso,
       windowEnd: windowEndIso,
@@ -419,6 +862,8 @@ export async function syncGoogleCalendarToExternalBlocks(
     fetchedEvents: googleEvents.length,
     upsertedRows: rows.length,
     deactivatedRows,
+    pushedRows,
+    deletedManagedRows,
     windowStart: windowStartIso,
     windowEnd: windowEndIso,
     syncedAt,
