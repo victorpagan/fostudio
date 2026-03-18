@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
 
@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
   if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
 
-  const supabase = await serverSupabaseClient(event)
+  const supabase = serverSupabaseServiceRole(event)
   const q = qSchema.parse(getQuery(event))
   const peakWindowConfig = await loadPeakWindowConfig(event)
 
