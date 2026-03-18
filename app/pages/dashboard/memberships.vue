@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { getMembershipPlanDetails } from '~~/app/utils/membershipPlanDetails'
 import { normalizeDiscountLabel } from '~~/app/utils/membershipDiscount'
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -13,6 +14,8 @@ type MembershipRow = {
   tier: string | null
   cadence: string | null
   status: string | null
+  current_period_end: string | null
+  canceled_at: string | null
 }
 
 type PlanVariation = {
@@ -44,7 +47,7 @@ const { data: membership } = await useAsyncData('dash:browse:membership', async 
   if (!user.value) return null
   const { data, error } = await supabase
     .from('memberships')
-    .select('tier,cadence,status')
+    .select('tier,cadence,status,current_period_end,canceled_at')
     .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
@@ -57,9 +60,10 @@ const { data: catalog, refresh, pending: catalogPending, error: catalogError } =
 })
 
 const tiers = computed(() => catalog.value ?? [])
-const hasActiveMembership = computed(() => (membership.value?.status ?? '').toLowerCase() === 'active')
+const membershipState = computed(() => resolveMembershipUiState(membership.value))
+const hasActiveMembership = computed(() => membershipState.value === 'active')
 const hasPriorityMembership = computed(() => {
-  const status = (membership.value?.status ?? '').toLowerCase()
+  const status = membershipState.value
   return status === 'active' || status === 'past_due'
 })
 const detailsOpen = ref(false)

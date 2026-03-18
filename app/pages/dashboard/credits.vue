@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 definePageMeta({ middleware: ['auth'] })
 
 const supabase = useSupabaseClient()
@@ -9,6 +10,8 @@ const toast = useToast()
 
 type MembershipRow = {
   status: string | null
+  current_period_end: string | null
+  canceled_at: string | null
 }
 
 type LedgerRow = {
@@ -65,14 +68,14 @@ const { data: membership } = await useAsyncData('dash:credits:membership', async
   if (!user.value) return null
   const { data, error } = await supabase
     .from('memberships')
-    .select('status')
+    .select('status,current_period_end,canceled_at')
     .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
   return data as MembershipRow | null
 })
 
-const hasActiveMembership = computed(() => (membership.value?.status ?? '').toLowerCase() === 'active')
+const hasActiveMembership = computed(() => resolveMembershipUiState(membership.value) === 'active')
 
 const { data: balance, refresh: refreshBalance } = await useAsyncData('dash:credits:balance', async () => {
   if (!user.value) return 0
