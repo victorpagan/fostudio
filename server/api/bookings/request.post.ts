@@ -10,6 +10,7 @@ import {
   validateOvernightHoldWindow
 } from '~~/server/utils/booking/holds'
 import { STUDIO_TZ } from '~~/server/utils/booking/peak'
+import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
 
 const schema = z.object({
   start_time: z.string(),
@@ -42,32 +43,45 @@ export default defineEventHandler(async (event) => {
   const endIso = end.toUTC().toISO()
   if (!startIso || !endIso) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
 
-  // membership active check
+  // membership/credits access check
   const { data: membership } = await supabase
     .from('memberships')
     .select('status,tier,current_period_start,current_period_end')
     .eq('user_id', user.sub)
     .maybeSingle()
 
-  if (!membership || (membership.status || '').toLowerCase() !== 'active') {
+  let remainingCredits = 0
+  try {
+    remainingCredits = await resolveAvailableCreditBalance(supabase, user.sub)
+  } catch (error: any) {
+    throw createError({ statusCode: 500, statusMessage: error?.message ?? 'Failed to load credits' })
+  }
+  const hasActiveMembership = (membership?.status || '').toLowerCase() === 'active'
+  if (!hasActiveMembership && remainingCredits <= 0) {
     throw createError({ statusCode: 403, statusMessage: 'Membership required' })
   }
 
   const selectWithCap = 'holds_included,active_hold_cap'
   const selectLegacy = 'holds_included'
-  let { data: tier, error: tierErr } = await db
-    .from('membership_tiers')
-    .select(selectWithCap)
-    .eq('id', membership.tier)
-    .maybeSingle()
-  if (tierErr && isSchemaMissingColumnError(tierErr.message)) {
-    const fallback = await db
+  let tier: Record<string, unknown> | null = null
+  let tierErr: { message: string } | null = null
+  if (membership?.tier) {
+    const primary = await db
       .from('membership_tiers')
-      .select(selectLegacy)
+      .select(selectWithCap)
       .eq('id', membership.tier)
       .maybeSingle()
-    tier = fallback.data
-    tierErr = fallback.error
+    tier = primary.data
+    tierErr = primary.error
+    if (tierErr && isSchemaMissingColumnError(tierErr.message)) {
+      const fallback = await db
+        .from('membership_tiers')
+        .select(selectLegacy)
+        .eq('id', membership.tier)
+        .maybeSingle()
+      tier = fallback.data
+      tierErr = fallback.error
+    }
   }
   if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
   const holdsIncluded = Math.max(0, Number(tier?.holds_included ?? 0))
@@ -122,6 +136,10 @@ export default defineEventHandler(async (event) => {
         statusCode: 409,
         statusMessage: 'Your current membership does not allow active equipment holds.'
       })
+    }
+
+    if (!membership || !hasActiveMembership) {
+      throw createError({ statusCode: 403, statusMessage: 'Overnight holds require an active membership' })
     }
 
     const nowIso = new Date().toISOString()

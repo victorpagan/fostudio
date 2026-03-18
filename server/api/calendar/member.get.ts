@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { DateTime } from 'luxon'
 import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
 import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
+import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -41,14 +42,12 @@ export default defineEventHandler(async (event) => {
 
   if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
 
-  const { data: balanceRow, error: balanceErr } = await supabase
-    .from('credit_balance')
-    .select('balance')
-    .eq('user_id', user.sub)
-    .maybeSingle()
-
-  if (balanceErr) throw createError({ statusCode: 500, statusMessage: balanceErr.message })
-  const remainingCredits = Number(balanceRow?.balance ?? 0)
+  let remainingCredits = 0
+  try {
+    remainingCredits = await resolveAvailableCreditBalance(supabase, user.sub)
+  } catch (error: any) {
+    throw createError({ statusCode: 500, statusMessage: error?.message ?? 'Failed to load credits' })
+  }
 
   const hasActiveMembership = (membership?.status || '').toLowerCase() === 'active'
   const canBookFromCredits = remainingCredits > 0
