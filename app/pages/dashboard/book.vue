@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { DateTime } from 'luxon'
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
 definePageMeta({ middleware: ['auth', 'membership-required'] })
 
@@ -9,6 +10,16 @@ const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const { isAdmin } = useCurrentUser()
 const currentUserId = computed(() => user.value?.sub ?? user.value?.id ?? null)
+const { data: membershipData } = await useAsyncData('book:membership-state', async () => {
+  if (!user.value) return null
+  const { data } = await supabase
+    .from('memberships')
+    .select('status,current_period_end,canceled_at')
+    .eq('user_id', user.value.sub)
+    .maybeSingle()
+  return data
+})
+const hasActiveMembership = computed(() => resolveMembershipUiState(membershipData.value) === 'active')
 type BookingPolicy = {
   memberRescheduleNoticeHours: number
   holdCreditCost: number
@@ -518,6 +529,26 @@ function formatPeakCredits(value: number) {
 
       <template #body>
         <div class="p-4">
+          <UAlert
+            v-if="!hasActiveMembership"
+            color="warning"
+            variant="soft"
+            title="No active membership"
+            description="You can still book with remaining unexpired credits. Renew or switch plans to restore full membership access."
+            class="mb-4"
+          >
+            <template #actions>
+              <UButton
+                color="warning"
+                variant="soft"
+                size="sm"
+                to="/memberships"
+              >
+                View memberships
+              </UButton>
+            </template>
+          </UAlert>
+
           <AvailabilityCalendar
             :key="calendarKey"
             endpoint="/api/calendar/member"

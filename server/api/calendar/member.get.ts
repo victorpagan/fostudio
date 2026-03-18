@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
-import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
+import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
 import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
 
@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
   if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
 
-  const supabase = serverSupabaseServiceRole(event)
+  const supabase = await serverSupabaseClient(event)
   const q = qSchema.parse(getQuery(event))
   const peakWindowConfig = await loadPeakWindowConfig(event)
 
@@ -51,9 +51,6 @@ export default defineEventHandler(async (event) => {
 
   const hasActiveMembership = (membership?.status || '').toLowerCase() === 'active'
   const canBookFromCredits = remainingCredits > 0
-  if (!hasActiveMembership && !canBookFromCredits) {
-    throw createError({ statusCode: 403, statusMessage: 'Membership required' })
-  }
 
   const { data: tierRow, error: tierErr } = await supabase
     .from('membership_tiers')
@@ -157,6 +154,9 @@ export default defineEventHandler(async (event) => {
     from: from.toISOString(),
     to: to.toISOString(),
     bookingWindowDays: windowDays,
+    canBook: hasActiveMembership || canBookFromCredits,
+    hasActiveMembership,
+    remainingCredits,
     peakWindow: toPeakWindowPayload(peakWindowConfig, Number(tierRow?.peak_multiplier ?? 1.5)),
     events
   }
