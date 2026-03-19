@@ -1,21 +1,13 @@
-const studioEnabled = process.env.NUXT_STUDIO_ENABLED === 'true'
-const contentEnabled = studioEnabled || process.env.NUXT_CONTENT_ENABLED === 'true'
 const modules = [
   '@nuxt/eslint',
   '@nuxt/image',
   '@nuxt/ui',
+  '@nuxt/content',
+  'nuxt-studio',
   '@vueuse/nuxt',
   'nuxt-og-image',
   '@nuxtjs/supabase'
 ]
-
-if (contentEnabled) {
-  modules.splice(3, 0, '@nuxt/content')
-}
-
-if (studioEnabled) {
-  modules.splice(contentEnabled ? 4 : 3, 0, 'nuxt-studio')
-}
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
