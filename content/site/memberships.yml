@@ -1,4 +1,20 @@
-# File: content/site/memberships.yml
+hero:
+  kicker: "Memberships"
+  title: "Pick the studio rhythm that fits the way you actually work."
+  description: "This is a 24/7 turnkey studio built for photographers and small-to-mid crews. Book the plan that matches your volume, then use the space like it was made for production days, not paperwork."
+  badges:
+    - "24/7 member access"
+    - "Gear + consumables included"
+    - "No startup fees"
+
+infoPanel:
+  title: "What changes with membership"
+  paragraphs:
+    - "Every membership includes studio equipment, backdrop paper, and day-to-day consumables. Book, pay, and show up ready to shoot."
+    - "The space is 24/7 access with a 25x30 ft cyc, 20+ ft ceilings, makeup area, client seating, and props for product or fashion sessions."
+    - "You can upgrade or downgrade as your workload changes. Priority booking and equipment holds scale with the plan level."
+    - "Memberships are intentionally limited so the calendar stays usable for everyone."
+
 tiers:
   - id: "creator"
     name: "Creator"

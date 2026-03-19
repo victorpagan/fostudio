@@ -1,17 +1,51 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'default' })
 
-const includedGear = [
-  'All in-house lighting, grip, and core studio equipment are included for member sessions.',
-  'Backdrop paper and day-to-day consumables are included, so you can arrive ready to shoot.',
-  'Membership keeps production simple: book, pay, and show up without separate equipment rentals.'
-]
+type SiteEquipmentContent = {
+  heroTitle: string
+  heroBody: string
+  includedHeader: string
+  includedGear: string[]
+  guidelinesHeader: string
+  sessionGuidelines: string[]
+  cta: {
+    title: string
+    body: string
+    primaryCta: { label: string, to: string }
+    secondaryCta: { label: string, to: string }
+  }
+}
 
-const sessionGuidelines = [
-  'Bring any specialty gear, props, or production-specific tools your session depends on.',
-  'Plan extra setup time for larger sets, multi-subject sessions, or custom lighting diagrams.',
-  'Compare membership tiers before booking so your lead time and hold access match the way you work.'
-]
+const fallbackContent: SiteEquipmentContent = {
+  heroTitle: 'Studio Setup',
+  heroBody: 'FO Studio is built for fast, reliable sessions. Memberships include the in-house gear and consumables, so your main focus is choosing the right plan and getting on set quickly.',
+  includedHeader: 'What members can expect',
+  includedGear: [
+    'All in-house lighting, grip, and core studio equipment are included for member sessions.',
+    'Backdrop paper and day-to-day consumables are included, so you can arrive ready to shoot.',
+    'Membership keeps production simple: book, pay, and show up without separate equipment rentals.'
+  ],
+  guidelinesHeader: 'Before you book',
+  sessionGuidelines: [
+    'Bring any specialty gear, props, or production-specific tools your session depends on.',
+    'Plan extra setup time for larger sets, multi-subject sessions, or custom lighting diagrams.',
+    'Compare membership tiers before booking so your lead time and hold access match the way you work.'
+  ],
+  cta: {
+    title: 'Ready to book?',
+    body: 'Use the memberships page to compare access levels, then check the public calendar before you reserve your next session.',
+    primaryCta: { label: 'Compare memberships', to: '/memberships' },
+    secondaryCta: { label: 'View calendar', to: '/calendar' }
+  }
+}
+
+const { data: siteEquipment } = await useAsyncData('site:equipment', async () => {
+  return await queryCollection('siteEquipment').first()
+})
+
+const content = computed<SiteEquipmentContent>(() => {
+  return (siteEquipment.value as SiteEquipmentContent | null) ?? fallbackContent
+})
 </script>
 
 <template>
@@ -19,11 +53,10 @@ const sessionGuidelines = [
     <div class="mx-auto max-w-5xl space-y-10">
       <div class="max-w-3xl">
         <h1 class="text-3xl font-semibold tracking-tight sm:text-5xl">
-          Studio Setup
+          {{ content.heroTitle }}
         </h1>
         <p class="mt-4 text-base text-gray-600 dark:text-gray-300 sm:text-lg">
-          FO Studio is built for fast, reliable sessions. Memberships include the in-house gear and consumables,
-          so your main focus is choosing the right plan and getting on set quickly.
+          {{ content.heroBody }}
         </p>
       </div>
 
@@ -31,13 +64,13 @@ const sessionGuidelines = [
         <UCard>
           <template #header>
             <div class="text-lg font-semibold">
-              What members can expect
+              {{ content.includedHeader }}
             </div>
           </template>
 
           <ul class="space-y-3 text-sm text-gray-600 dark:text-gray-300">
             <li
-              v-for="item in includedGear"
+              v-for="item in content.includedGear"
               :key="item"
               class="flex gap-3"
             >
@@ -53,13 +86,13 @@ const sessionGuidelines = [
         <UCard>
           <template #header>
             <div class="text-lg font-semibold">
-              Before you book
+              {{ content.guidelinesHeader }}
             </div>
           </template>
 
           <ul class="space-y-3 text-sm text-gray-600 dark:text-gray-300">
             <li
-              v-for="item in sessionGuidelines"
+              v-for="item in content.sessionGuidelines"
               :key="item"
               class="flex gap-3"
             >
@@ -77,23 +110,23 @@ const sessionGuidelines = [
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div class="text-sm font-medium">
-              Ready to book?
+              {{ content.cta.title }}
             </div>
             <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
-              Use the memberships page to compare access levels, then check the public calendar before you reserve your next session.
+              {{ content.cta.body }}
             </p>
           </div>
 
           <div class="flex flex-wrap gap-2">
-            <UButton to="/memberships">
-              Compare memberships
+            <UButton :to="content.cta.primaryCta.to">
+              {{ content.cta.primaryCta.label }}
             </UButton>
             <UButton
               color="neutral"
               variant="soft"
-              to="/calendar"
+              :to="content.cta.secondaryCta.to"
             >
-              View calendar
+              {{ content.cta.secondaryCta.label }}
             </UButton>
           </div>
         </div>
