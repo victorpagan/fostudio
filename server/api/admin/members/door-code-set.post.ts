@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { setDoorCodeForUser } from '~~/server/utils/membership/doorCode'
+import { enqueueMemberActiveRefresh } from '~~/server/utils/access/jobs'
 
 const bodySchema = z.object({
   userId: z.string().uuid(),
@@ -39,6 +40,16 @@ export default defineEventHandler(async (event) => {
   if (resolveRequestsErr) {
     throw createError({ statusCode: 500, statusMessage: resolveRequestsErr.message })
   }
+
+  await enqueueMemberActiveRefresh(event, {
+    userId: body.userId,
+    reason: 'admin_member_pin_set'
+  }).catch((error) => {
+    console.warn('[access/sync] failed to queue member active refresh', {
+      userId: body.userId,
+      error: (error as Error)?.message ?? String(error)
+    })
+  })
 
   return {
     ok: true,

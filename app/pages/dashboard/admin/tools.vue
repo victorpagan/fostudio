@@ -8,6 +8,9 @@ type AdminOpsResponse = {
     membershipsNeedingAttention: number
     guestBookings: number
     membershipsMissingFutureSchedule: number
+    pendingLockJobs: number
+    deadLockJobs: number
+    openLockIncidents: number
   }
   dueGrants: Array<{
     id: string
@@ -61,6 +64,17 @@ type AdminOpsResponse = {
     created_at: string
     square_order_id: string | null
   }>
+  recentLockIncidents: Array<{
+    id: string
+    incident_type: string
+    severity: string
+    status: string
+    title: string
+    message: string | null
+    booking_id: string | null
+    user_id: string | null
+    created_at: string
+  }>
 }
 
 type ProcessGrantsResult = {
@@ -69,10 +83,21 @@ type ProcessGrantsResult = {
   canceled_count: number
 }
 
+type ProcessAccessResult = {
+  enabled: boolean
+  queued: number
+  processed: number
+  succeeded: number
+  failed: number
+  dead: number
+  message?: string
+}
+
 const toast = useToast()
 const pending = ref(false)
 const processing = ref(false)
 const backfilling = ref(false)
+const processingAccess = ref(false)
 const data = ref<AdminOpsResponse | null>(null)
 const dashboardHydrated = ref(false)
 
@@ -132,6 +157,39 @@ async function backfillSchedules() {
     })
   } finally {
     backfilling.value = false
+  }
+}
+
+async function processAccessQueue() {
+  processingAccess.value = true
+  try {
+    const res = await $fetch<{ result: ProcessAccessResult }>('/api/admin/access/process', {
+      method: 'POST',
+      body: {}
+    })
+
+    if (!res.result.enabled) {
+      toast.add({
+        title: 'Access sync is disabled',
+        description: res.result.message ?? 'Enable LOCK_SYNC_ENABLED to process the lock queue.',
+        color: 'warning'
+      })
+      return
+    }
+
+    toast.add({
+      title: 'Processed access sync queue',
+      description: `${res.result.succeeded} succeeded, ${res.result.failed} failed (${res.result.dead} dead).`
+    })
+    await loadOps()
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not process access sync queue',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    processingAccess.value = false
   }
 }
 
@@ -209,6 +267,51 @@ onMounted(() => {
             </div>
           </div>
         </UCard>
+
+        <UCard>
+          <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div class="font-medium">
+                Lock access operations
+              </div>
+              <p class="mt-1 text-sm text-dimmed">
+                Process due lock access jobs for booking-window activation/deactivation and Abode automation follow-up.
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <UButton color="neutral" variant="soft" :loading="processingAccess" @click="processAccessQueue">
+                Process access queue
+              </UButton>
+            </div>
+          </div>
+        </UCard>
+
+        <div class="grid gap-4 md:grid-cols-3">
+          <UCard>
+            <div class="text-xs uppercase tracking-wide text-dimmed">
+              Pending lock jobs
+            </div>
+            <div class="mt-2 text-2xl font-semibold">
+              {{ data?.summary?.pendingLockJobs ?? 0 }}
+            </div>
+          </UCard>
+          <UCard>
+            <div class="text-xs uppercase tracking-wide text-dimmed">
+              Dead lock jobs
+            </div>
+            <div class="mt-2 text-2xl font-semibold">
+              {{ data?.summary?.deadLockJobs ?? 0 }}
+            </div>
+          </UCard>
+          <UCard>
+            <div class="text-xs uppercase tracking-wide text-dimmed">
+              Open lock incidents
+            </div>
+            <div class="mt-2 text-2xl font-semibold">
+              {{ data?.summary?.openLockIncidents ?? 0 }}
+            </div>
+          </UCard>
+        </div>
 
         <div class="grid gap-4 xl:grid-cols-2">
           <UCard>
@@ -323,6 +426,38 @@ onMounted(() => {
             </div>
           </UCard>
         </div>
+
+        <UCard>
+          <template #header>
+            <div class="font-medium">Recent lock incidents</div>
+          </template>
+          <div v-if="!(data?.recentLockIncidents?.length)" class="text-sm text-dimmed">
+            No lock incidents recorded.
+          </div>
+          <div v-else class="space-y-3">
+            <div
+              v-for="incident in data?.recentLockIncidents"
+              :key="incident.id"
+              class="rounded-lg border border-default p-3 text-sm"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-medium">{{ incident.title }}</span>
+                <UBadge :color="incident.severity === 'critical' ? 'error' : incident.severity === 'warning' ? 'warning' : 'neutral'" variant="soft">
+                  {{ incident.severity }}
+                </UBadge>
+              </div>
+              <div class="mt-1 text-dimmed">
+                {{ incident.incident_type }} · {{ incident.status }}
+              </div>
+              <div v-if="incident.message" class="mt-1 text-dimmed">
+                {{ incident.message }}
+              </div>
+              <div class="mt-1 text-dimmed">
+                Created {{ formatDateTime(incident.created_at) }}
+              </div>
+            </div>
+          </div>
+        </UCard>
 
         <UCard>
           <template #header>

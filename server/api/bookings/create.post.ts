@@ -11,6 +11,7 @@ import {
   validateOvernightHoldWindow
 } from '~~/server/utils/booking/holds'
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
+import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 
 const schema = z.object({
   start_time: z.string(),
@@ -391,12 +392,25 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: msg })
   }
 
+  const bookingId = result?.[0]?.booking_id ?? null
+  if (bookingId) {
+    await enqueueBookingAccessSync(event, {
+      bookingId,
+      reason: 'member_booking_create'
+    }).catch((error) => {
+      console.warn('[access/sync] failed to queue booking create sync', {
+        bookingId,
+        error: (error as Error)?.message ?? String(error)
+      })
+    })
+  }
+
   return {
     ok: true,
     creditsNeeded,
     burned: result?.[0]?.credits_burned ?? null,
     newBalance: result?.[0]?.new_balance ?? null,
-    booking_id: result?.[0]?.booking_id ?? null,
+    booking_id: bookingId,
     hold_id: membership ? (result?.[0]?.hold_id ?? null) : null
   }
 })

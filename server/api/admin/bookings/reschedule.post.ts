@@ -8,6 +8,7 @@ import {
   DEFAULT_MIN_HOLD_BOOKING_HOURS,
   validateOvernightHoldWindow
 } from '~~/server/utils/booking/holds'
+import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 
 const STUDIO_TZ = 'America/Los_Angeles'
 
@@ -270,6 +271,16 @@ export default defineEventHandler(async (event) => {
       if (creditRefundInsertErr) throw createError({ statusCode: 500, statusMessage: creditRefundInsertErr.message })
     }
   }
+
+  await enqueueBookingAccessSync(event, {
+    bookingId: body.bookingId,
+    reason: 'admin_booking_reschedule'
+  }).catch((error) => {
+    console.warn('[access/sync] failed to queue admin booking reschedule sync', {
+      bookingId: body.bookingId,
+      error: (error as Error)?.message ?? String(error)
+    })
+  })
 
   return {
     booking: updated,

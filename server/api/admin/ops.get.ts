@@ -2,6 +2,7 @@ import { requireServerAdmin } from '~~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
+  const db = supabase as any
   const now = new Date().toISOString()
 
   const [
@@ -12,7 +13,11 @@ export default defineEventHandler(async (event) => {
     membershipsAttentionRes,
     recentGuestBookingsRes,
     activeExtendedMembershipsRes,
-    futureGrantMembershipsRes
+    futureGrantMembershipsRes,
+    pendingLockJobsRes,
+    deadLockJobsRes,
+    openLockIncidentsRes,
+    recentLockIncidentsRes
   ] = await Promise.all([
     supabase
       .from('membership_credit_grants')
@@ -61,7 +66,24 @@ export default defineEventHandler(async (event) => {
       .from('membership_credit_grants')
       .select('membership_id')
       .eq('status', 'scheduled')
-      .gt('due_at', now)
+      .gt('due_at', now),
+    db
+      .from('lock_access_jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending'),
+    db
+      .from('lock_access_jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'dead'),
+    db
+      .from('lock_access_incidents')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'open'),
+    db
+      .from('lock_access_incidents')
+      .select('id,incident_type,severity,status,title,message,booking_id,user_id,created_at')
+      .order('created_at', { ascending: false })
+      .limit(8)
   ])
 
   const errors = [
@@ -72,7 +94,11 @@ export default defineEventHandler(async (event) => {
     membershipsAttentionRes.error,
     recentGuestBookingsRes.error,
     activeExtendedMembershipsRes.error,
-    futureGrantMembershipsRes.error
+    futureGrantMembershipsRes.error,
+    pendingLockJobsRes.error,
+    deadLockJobsRes.error,
+    openLockIncidentsRes.error,
+    recentLockIncidentsRes.error
   ].filter(Boolean)
 
   if (errors.length) {
@@ -93,12 +119,16 @@ export default defineEventHandler(async (event) => {
       scheduledGrantCount: scheduledGrantCountRes.count ?? 0,
       membershipsNeedingAttention: membershipsAttentionRes.data?.length ?? 0,
       guestBookings: recentGuestBookingsRes.data?.length ?? 0,
-      membershipsMissingFutureSchedule: membershipsMissingFutureSchedule.length
+      membershipsMissingFutureSchedule: membershipsMissingFutureSchedule.length,
+      pendingLockJobs: pendingLockJobsRes.count ?? 0,
+      deadLockJobs: deadLockJobsRes.count ?? 0,
+      openLockIncidents: openLockIncidentsRes.count ?? 0
     },
     dueGrants: dueGrantsRes.data ?? [],
     upcomingGrants: upcomingGrantsRes.data ?? [],
     membershipsNeedingAttention: membershipsAttentionRes.data ?? [],
     membershipsMissingFutureSchedule,
-    recentGuestBookings: recentGuestBookingsRes.data ?? []
+    recentGuestBookings: recentGuestBookingsRes.data ?? [],
+    recentLockIncidents: recentLockIncidentsRes.data ?? []
   }
 })
