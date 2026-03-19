@@ -9,9 +9,23 @@ const modules = [
   '@nuxtjs/supabase'
 ]
 
+const studioRepoPrivate = process.env.STUDIO_REPOSITORY_PRIVATE
+  ? process.env.STUDIO_REPOSITORY_PRIVATE.toLowerCase() !== 'false'
+  : true
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   modules,
+  studio: {
+    repository: {
+      provider: process.env.STUDIO_REPOSITORY_PROVIDER || 'github',
+      owner: process.env.STUDIO_REPOSITORY_OWNER || 'victorpagan',
+      repo: process.env.STUDIO_REPOSITORY_REPO || 'fostudio',
+      branch: process.env.STUDIO_REPOSITORY_BRANCH || 'main',
+      rootDir: process.env.STUDIO_REPOSITORY_ROOT_DIR || '',
+      private: studioRepoPrivate
+    }
+  },
 
   components: [
     { path: '~/components', pathPrefix: false }
