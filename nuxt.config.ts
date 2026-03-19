@@ -32,14 +32,15 @@ export default defineNuxtConfig({
   ],
 
   devtools: {
-    enabled: true
+    enabled: process.env.NODE_ENV !== 'production'
   },
 
   css: ['~/assets/css/main.css'],
 
   vite: {
     build: {
-      target: 'es2022'
+      target: 'es2022',
+      sourcemap: false
     },
     optimizeDeps: {
       include: []
@@ -61,15 +62,23 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-07-11',
 
   nitro: {
+    minify: false,
     esbuild: {
       options: {
         target: 'es2022'
       }
     },
+    hooks: {
+      'prerender:routes'(routes) {
+        for (const route of Array.from(routes)) {
+          if (route.startsWith('/__nuxt_content/')) {
+            routes.delete(route)
+          }
+        }
+      }
+    },
     prerender: {
-      routes: [
-        '/'
-      ],
+      routes: [],
       crawlLinks: false
     }
   },
