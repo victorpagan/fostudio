@@ -108,8 +108,10 @@ const createEquipmentSchema = () => z.object({
   heroTitle: z.string().nonempty(),
   heroBody: z.string().nonempty(),
   includedHeader: z.string().nonempty(),
+  equipmentListHeader: z.string().nonempty(),
   guidelinesHeader: z.string().nonempty(),
   includedGear: z.array(z.string().nonempty()),
+  equipmentList: z.array(z.string().nonempty()),
   sessionGuidelines: z.array(z.string().nonempty()),
   cta: z.object({
     title: z.string().nonempty(),

@@ -7,6 +7,15 @@ includedGear:
   - "Backdrop paper and day-to-day consumables are included, so you can arrive ready to shoot."
   - "Membership keeps production simple: book, pay, and show up without separate equipment rentals."
 
+equipmentListHeader: "Equipment list"
+equipmentList:
+  - "Profoto monolights and wireless triggers (strobe setup ready)."
+  - "Softboxes, umbrellas, strip modifiers, and beauty-dish style light shaping options."
+  - "C-stands, combo stands, boom arm support, sandbags, and core grip hardware."
+  - "V-flats, apple boxes, clamps, extension runs, and common on-set support tools."
+  - "Seamless backdrop paper system with studio-ready color rolls."
+  - "Styling tables, stools, and practical props for product and portrait setups."
+
 guidelinesHeader: "Before you book"
 sessionGuidelines:
   - "Bring any specialty gear, props, or production-specific tools your session depends on."
