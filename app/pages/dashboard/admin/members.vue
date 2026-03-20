@@ -7,6 +7,7 @@ type MemberRecord = {
   tier: string | null
   cadence: string | null
   status: string | null
+  effective_status: string
   current_period_start: string | null
   current_period_end: string | null
   last_paid_at: string | null
@@ -153,6 +154,11 @@ function formatRequestStatus(status: string | null) {
   return status
 }
 
+function memberStatusColor(status: string) {
+  const normalized = String(status ?? '').toLowerCase()
+  return normalized === 'active' || normalized === 'past_due' ? 'success' : 'neutral'
+}
+
 async function saveDoorCode() {
   if (!selectedMember.value || updatingDoorCode.value) return
   updatingDoorCode.value = true
@@ -221,8 +227,8 @@ onMounted(() => {
               >
                 <div class="flex items-center justify-between gap-2">
                   <span class="font-medium truncate">{{ memberLabel(member) }}</span>
-                  <UBadge :color="member.status === 'active' ? 'success' : 'neutral'" size="xs" variant="soft">
-                    {{ member.status }}
+                  <UBadge :color="memberStatusColor(member.effective_status)" size="xs" variant="soft">
+                    {{ member.effective_status }}
                   </UBadge>
                 </div>
                 <div class="mt-1 text-xs text-dimmed truncate">
