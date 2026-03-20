@@ -71,7 +71,7 @@ type CalendarLoadEvent = {
   end?: string
   display?: string
   extendedProps?: {
-    type?: 'booking' | 'hold'
+    type?: 'booking' | 'hold' | 'external'
     bookingId?: string
     isOwn?: boolean
   }
@@ -854,7 +854,7 @@ async function loadRescheduleMonthHints(anchorValue: string) {
       if (type === 'hold' && rawEvent.extendedProps?.isOwn) {
         continue
       }
-      const isOccupied = type === 'booking' || type === 'hold' || rawEvent.display === 'background'
+      const isOccupied = type === 'booking' || type === 'hold' || type === 'external' || rawEvent.display === 'background'
       if (!isOccupied) continue
       if (!rawEvent.start || !rawEvent.end) continue
 

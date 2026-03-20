@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
+import { ensureNoExternalCalendarConflict } from '~~/server/utils/booking/externalCalendar'
 import {
   computeOvernightHoldWindow,
   DEFAULT_HOLD_END_HOUR,
@@ -42,6 +43,7 @@ export default defineEventHandler(async (event) => {
   const startIso = start.toUTC().toISO()
   const endIso = end.toUTC().toISO()
   if (!startIso || !endIso) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
+  await ensureNoExternalCalendarConflict(supabase, startIso, endIso)
 
   // membership/credits access check
   const { data: membership } = await supabase
