@@ -4,6 +4,7 @@ import { serverSupabaseClient, serverSupabaseServiceRole, serverSupabaseUser } f
 import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
 import { getExternalCalendarEventsInRange } from '~~/server/utils/booking/externalCalendar'
 import { maybeAutoSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
+import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -49,20 +50,15 @@ export default defineEventHandler(async (event) => {
 
   if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
 
-  const { data: balanceRow, error: balanceErr } = await supabase
-    .from('credit_balance')
-    .select('balance')
-    .eq('user_id', user.sub)
-    .maybeSingle()
-
-  if (balanceErr) throw createError({ statusCode: 500, statusMessage: balanceErr.message })
-  const remainingCredits = Number(balanceRow?.balance ?? 0)
+  let remainingCredits = 0
+  try {
+    remainingCredits = await resolveAvailableCreditBalance(supabase, user.sub)
+  } catch (error: any) {
+    throw createError({ statusCode: 500, statusMessage: error?.message ?? 'Failed to load credits' })
+  }
 
   const hasActiveMembership = (membership?.status || '').toLowerCase() === 'active'
   const canBookFromCredits = remainingCredits > 0
-  if (!hasActiveMembership && !canBookFromCredits) {
-    throw createError({ statusCode: 403, statusMessage: 'Membership required' })
-  }
 
   const { data: tierRow, error: tierErr } = await supabase
     .from('membership_tiers')
@@ -201,6 +197,9 @@ export default defineEventHandler(async (event) => {
     from: from.toISOString(),
     to: to.toISOString(),
     bookingWindowDays: windowDays,
+    canBook: hasActiveMembership || canBookFromCredits,
+    hasActiveMembership,
+    remainingCredits,
     peakWindow: toPeakWindowPayload(peakWindowConfig, Number(tierRow?.peak_multiplier ?? 1.5)),
     events
   }

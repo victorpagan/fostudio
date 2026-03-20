@@ -68,6 +68,13 @@ export type GoogleCalendarSyncResult = {
   dryRun: boolean
 }
 
+export type GoogleCalendarListEntry = {
+  id: string
+  summary: string
+  primary: boolean
+  accessRole: string
+}
+
 const SETTINGS_KEYS = [
   'gcal_sync_enabled',
   'gcal_push_enabled',
@@ -113,9 +120,10 @@ function asString(value: unknown, fallback = '') {
   return value.trim() || fallback
 }
 
-function toManagedGoogleEventId(sourceKey: string) {
-  const normalized = sourceKey.toLowerCase().replace(/[^a-z0-9-_]/g, '-')
-  return `fo-${normalized}`.slice(0, 120)
+function isGoogleNotFoundError(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+  const message = (error as { message?: string }).message
+  return typeof message === 'string' && /\bfailed \(404\)\b/i.test(message)
 }
 
 function decodeJwtPayload(idToken: string): Record<string, unknown> | null {
@@ -136,6 +144,15 @@ function decodeJwtPayload(idToken: string): Record<string, unknown> | null {
 
 async function setSystemConfigValues(db: SupabaseLike, rows: Array<{ key: string, value: unknown }>) {
   for (const row of rows) {
+    if (row.value === null || row.value === undefined) {
+      const deleteRes = await db
+        .from('system_config')
+        .delete()
+        .eq('key', row.key)
+      if (deleteRes.error) throw new Error(deleteRes.error.message)
+      continue
+    }
+
     const updateRes = await db
       .from('system_config')
       .update({ value: row.value })
@@ -356,6 +373,62 @@ async function fetchGoogleCalendarEvents(
   } while (pageToken)
 
   return allEvents
+}
+
+async function fetchGoogleCalendarList(accessToken: string): Promise<GoogleCalendarListEntry[]> {
+  const calendars: GoogleCalendarListEntry[] = []
+  let pageToken: string | null = null
+
+  do {
+    const qs = new URLSearchParams({
+      maxResults: '250',
+      showHidden: 'false',
+      showDeleted: 'false'
+    })
+    if (pageToken) qs.set('pageToken', pageToken)
+
+    const url = `https://www.googleapis.com/calendar/v3/users/me/calendarList?${qs.toString()}`
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`Google calendar list fetch failed (${response.status}): ${text}`)
+    }
+
+    const payload = await response.json() as {
+      items?: Array<{
+        id?: string
+        summary?: string
+        primary?: boolean
+        accessRole?: string
+      }>
+      nextPageToken?: string
+    }
+
+    for (const entry of payload.items ?? []) {
+      const id = asString(entry.id)
+      if (!id) continue
+      calendars.push({
+        id,
+        summary: asString(entry.summary, id),
+        primary: Boolean(entry.primary),
+        accessRole: asString(entry.accessRole, 'reader')
+      })
+    }
+
+    pageToken = asString(payload.nextPageToken) || null
+  } while (pageToken)
+
+  calendars.sort((a, b) => {
+    if (a.primary !== b.primary) return a.primary ? -1 : 1
+    return a.summary.localeCompare(b.summary)
+  })
+
+  return calendars
 }
 
 async function insertGoogleCalendarEvent(
@@ -646,6 +719,13 @@ async function resolveGoogleAccessTokenForSync(event: H3Event, settings: GoogleC
   return await exchangeGoogleAccessToken(serviceAccount)
 }
 
+export async function listGoogleCalendarsForConnectedAccount(event: H3Event): Promise<GoogleCalendarListEntry[]> {
+  const settings = await getGoogleCalendarSyncSettings(event)
+  if (!settings.oauthConnected || !settings.oauthClientId) return []
+  const accessToken = await resolveGoogleAccessTokenForSync(event, settings)
+  return await fetchGoogleCalendarList(accessToken)
+}
+
 export async function syncGoogleCalendarToExternalBlocks(
   event: H3Event,
   options?: {
@@ -738,7 +818,6 @@ export async function syncGoogleCalendarToExternalBlocks(
 
     for (const localItem of localBusyWindows) {
       const payload = {
-        id: toManagedGoogleEventId(localItem.sourceKey),
         summary: localItem.summary,
         description: localItem.description,
         transparency: 'opaque',
@@ -754,19 +833,15 @@ export async function syncGoogleCalendarToExternalBlocks(
 
       const existing = managedGoogleEvents.get(localItem.sourceKey)
       if (existing?.id) {
-        await patchGoogleCalendarEvent(accessToken, settings.calendarId, existing.id, payload)
-      } else {
         try {
+          await patchGoogleCalendarEvent(accessToken, settings.calendarId, existing.id, payload)
+        } catch (error) {
+          // Event disappeared or no longer accessible; recreate it.
+          if (!isGoogleNotFoundError(error)) throw error
           await insertGoogleCalendarEvent(accessToken, settings.calendarId, payload)
-        } catch {
-          // idempotent retry path
-          await patchGoogleCalendarEvent(
-            accessToken,
-            settings.calendarId,
-            toManagedGoogleEventId(localItem.sourceKey),
-            payload
-          )
         }
+      } else {
+        await insertGoogleCalendarEvent(accessToken, settings.calendarId, payload)
       }
       pushedRows += 1
     }

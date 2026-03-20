@@ -152,11 +152,22 @@ CREATE TABLE IF NOT EXISTS public.bookings (
 -- Prevent overlapping confirmed/requested bookings (exclusion constraint requires btree_gist)
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
-CREATE UNIQUE INDEX IF NOT EXISTS bookings_no_overlap_idx
-  ON public.bookings USING GIST (
-    tstzrange(start_time, end_time, '[)')
-  )
-  WHERE status IN ('confirmed','requested','pending_payment');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'bookings_no_overlap_excl'
+  ) THEN
+    ALTER TABLE public.bookings
+      ADD CONSTRAINT bookings_no_overlap_excl
+      EXCLUDE USING GIST (
+        tstzrange(start_time, end_time, '[)') WITH &&
+      )
+      WHERE (status IN ('confirmed', 'requested', 'pending_payment'));
+  END IF;
+END
+$$;
 
 CREATE INDEX IF NOT EXISTS bookings_user_id_idx    ON public.bookings(user_id);
 CREATE INDEX IF NOT EXISTS bookings_start_time_idx ON public.bookings(start_time);
@@ -177,10 +188,21 @@ CREATE TABLE IF NOT EXISTS public.booking_holds (
 );
 
 -- Holds also block time — prevent overlapping holds
-CREATE UNIQUE INDEX IF NOT EXISTS booking_holds_no_overlap_idx
-  ON public.booking_holds USING GIST (
-    tstzrange(hold_start, hold_end, '[)')
-  );
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'booking_holds_no_overlap_excl'
+  ) THEN
+    ALTER TABLE public.booking_holds
+      ADD CONSTRAINT booking_holds_no_overlap_excl
+      EXCLUDE USING GIST (
+        tstzrange(hold_start, hold_end, '[)') WITH &&
+      );
+  END IF;
+END
+$$;
 
 CREATE INDEX IF NOT EXISTS booking_holds_booking_id_idx  ON public.booking_holds(booking_id);
 CREATE INDEX IF NOT EXISTS booking_holds_hold_start_idx  ON public.booking_holds(hold_start);
@@ -276,9 +298,9 @@ $$;
 INSERT INTO public.membership_tiers
   (id, display_name, description, booking_window_days, peak_multiplier, max_bank, max_slots, holds_included, active, visible, sort_order)
 VALUES
-  ('creator',     'Creator',   'For hobbyists and new photographers. Great for practice sessions.',         30,  2.00, 25, 10, false, true, true, 1),
-  ('pro',         'Pro',       'For active working photographers and freelancers.',                         60,  1.50, 50,  5, true,  true, true, 2),
-  ('studio_plus', 'Studio+',   'For commercial users, agencies, and high-volume bookings.',                90,  1.25, 80,  3, true,  true, true, 3)
+  ('creator',     'Creator',   'For hobbyists and new photographers. Great for practice sessions.',         30,  2.00, 25, 10, 0, true, true, 1),
+  ('pro',         'Pro',       'For active working photographers and freelancers.',                         60,  1.50, 50,  5, 1, true, true, 2),
+  ('studio_plus', 'Studio+',   'For commercial users, agencies, and high-volume bookings.',                90,  1.25, 80,  3, 1, true, true, 3)
 ON CONFLICT (id) DO UPDATE SET
   display_name        = EXCLUDED.display_name,
   description         = EXCLUDED.description,
@@ -321,13 +343,19 @@ ON CONFLICT (tier_id, cadence, provider) DO UPDATE SET
 -- ---------------------------------------------------------------------------
 
 -- system_config.value is jsonb — insert numeric values without quotes
-INSERT INTO public.system_config (key, value) VALUES
-  ('guest_booking_rate_per_credit_cents', '3500'::jsonb),
-  ('guest_peak_multiplier',               '2.0'::jsonb),
-  ('guest_booking_window_days',           '7'::jsonb),
-  ('credit_expiry_days',                  '90'::jsonb),
-  ('credit_rollover_max_multiplier',      '2.0'::jsonb)
-ON CONFLICT (key) DO NOTHING;
+DO $$
+BEGIN
+  IF to_regclass('public.system_config') IS NOT NULL THEN
+    INSERT INTO public.system_config (key, value) VALUES
+      ('guest_booking_rate_per_credit_cents', '3500'::jsonb),
+      ('guest_peak_multiplier',               '2.0'::jsonb),
+      ('guest_booking_window_days',           '7'::jsonb),
+      ('credit_expiry_days',                  '90'::jsonb),
+      ('credit_rollover_max_multiplier',      '2.0'::jsonb)
+    ON CONFLICT (key) DO NOTHING;
+  END IF;
+END
+$$;
 
 -- ---------------------------------------------------------------------------
 -- 12. Updated_at auto-maintenance triggers

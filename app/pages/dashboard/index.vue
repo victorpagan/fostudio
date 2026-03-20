@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { formatMembershipTierLabel } from '~~/app/utils/membershipTierLabel'
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -31,7 +32,7 @@ const { data: membership } = await useAsyncData('dash:home:membership', async ()
   if (!user.value) return null
   const { data, error } = await supabase
     .from('memberships')
-    .select('id, tier, cadence, status, created_at')
+    .select('id, tier, cadence, status, created_at, current_period_end, canceled_at')
     .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
@@ -69,13 +70,7 @@ const { data: holdSummary } = await useAsyncData('dash:home:holds', async () => 
 })
 
 const membershipState = computed(() => {
-  if (!membership.value) return 'none'
-  const s = (membership.value.status || '').toLowerCase()
-  if (s === 'active') return 'active'
-  if (s === 'pending_checkout') return 'pending_checkout'
-  if (s === 'canceled') return 'canceled'
-  if (s === 'past_due') return 'past_due'
-  return 'inactive'
+  return resolveMembershipUiState(membership.value)
 })
 
 const { data: subscriptionState } = await useAsyncData('dash:home:subscription-state', async () => {

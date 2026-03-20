@@ -155,17 +155,23 @@ CREATE POLICY "ledger: admin write"
 -- system_config  (public read for non-sensitive keys, admin write)
 -- ---------------------------------------------------------------------------
 
-ALTER TABLE public.system_config ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF to_regclass('public.system_config') IS NOT NULL THEN
+    ALTER TABLE public.system_config ENABLE ROW LEVEL SECURITY;
 
--- All config values are currently non-sensitive (rates, window sizes)
--- If you add sensitive keys in future, add a 'public' boolean column to filter.
-CREATE POLICY "system_config: public read"
-  ON public.system_config FOR SELECT
-  USING (true);
+    -- All config values are currently non-sensitive (rates, window sizes)
+    -- If you add sensitive keys in future, add a 'public' boolean column to filter.
+    CREATE POLICY "system_config: public read"
+      ON public.system_config FOR SELECT
+      USING (true);
 
-CREATE POLICY "system_config: admin write"
-  ON public.system_config FOR ALL
-  USING (public.is_admin());
+    CREATE POLICY "system_config: admin write"
+      ON public.system_config FOR ALL
+      USING (public.is_admin());
+  END IF;
+END
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Grant service role access to the credit_balance view

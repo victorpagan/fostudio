@@ -6,6 +6,7 @@ type MemberRow = {
   tier: string | null
   cadence: string | null
   status: string | null
+  effective_status: string
   current_period_start: string | null
   current_period_end: string | null
   last_paid_at: string | null
@@ -17,6 +18,21 @@ type MemberRow = {
   door_code_request_status: string | null
   door_code_last_request_at: string | null
   credit_balance: number | null
+}
+
+function deriveEffectiveStatus(status: string | null, currentPeriodEnd: string | null, now = new Date()): string {
+  const normalized = String(status ?? '').trim().toLowerCase()
+  if (!normalized) return 'unknown'
+
+  if (normalized !== 'active' && normalized !== 'past_due') {
+    return normalized
+  }
+
+  if (!currentPeriodEnd) return normalized
+  const endAt = new Date(currentPeriodEnd)
+  if (Number.isNaN(endAt.getTime())) return normalized
+
+  return endAt.getTime() <= now.getTime() ? 'expired' : normalized
 }
 
 export default defineEventHandler(async (event) => {
@@ -104,6 +120,7 @@ export default defineEventHandler(async (event) => {
       tier: membership.tier,
       cadence: membership.cadence,
       status: membership.status,
+      effective_status: deriveEffectiveStatus(membership.status, membership.current_period_end),
       current_period_start: membership.current_period_start,
       current_period_end: membership.current_period_end,
       last_paid_at: membership.last_paid_at,

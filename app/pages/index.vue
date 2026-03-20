@@ -9,6 +9,36 @@ type TierPreview = {
   details: string[]
 }
 
+type SiteLandingContent = {
+  hero: {
+    headline: string
+    subheadline: string
+    primaryCta: { label: string, to: string }
+    secondaryCta: { label: string, to: string }
+    chips: string[]
+  }
+  howItWorks: {
+    title: string
+    steps: Array<{ title: string, body: string }>
+  }
+  membershipsPreview: {
+    title: string
+    subtitle: string
+    cta: { label: string, to: string }
+  }
+  valueProps: {
+    title: string
+    bullets: string[]
+    cta: { label: string, to: string }
+  }
+  finalCta: {
+    title: string
+    body: string
+    primaryCta: { label: string, to: string }
+    secondaryCta: { label: string, to: string }
+  }
+}
+
 const openWaitlist = ref(false)
 
 const creativeReasons = [
@@ -26,7 +56,7 @@ const creativeReasons = [
   }
 ]
 
-const process = [
+const fallbackProcess = [
   {
     title: 'Choose your plan',
     body: 'Start with the membership that matches your real volume now. You can upgrade or downgrade as your workload changes.'
@@ -71,12 +101,51 @@ const featuredTiers: TierPreview[] = [
   }
 ]
 
-const studioNotes = [
+const fallbackStudioNotes = [
   '25x30 ft cyclorama with 20+ ft ceilings for production-ready framing and lighting.',
   'Small makeup station and client seating area for smoother on-set flow.',
   'Props, backdrops, Profoto equipment, and standard consumables are included with memberships.',
   'Film shooters get rush-fee waivers when the lab is open and capacity allows.'
 ]
+
+const fallbackLanding: SiteLandingContent = {
+  hero: {
+    headline: 'A studio that moves at the pace of working creatives.',
+    subheadline: 'LA Film Lab is a 24/7 turnkey studio for photographers, filmmakers, and creative teams. Book, pay, show up, and shoot in a space designed to stay production-ready.',
+    primaryCta: { label: 'Find your membership', to: '/memberships' },
+    secondaryCta: { label: 'Check the calendar', to: '/calendar' },
+    chips: ['24/7 member access', '25x30 cyc · 20+ ft ceilings', 'Equipment + consumables included']
+  },
+  howItWorks: {
+    title: 'Built to feel clear before the shoot day arrives.',
+    steps: fallbackProcess
+  },
+  membershipsPreview: {
+    title: 'Choose the plan that matches the way you actually produce.',
+    subtitle: 'Keep the first decision simple: pick the membership that fits your immediate workload. Longer-term billing discounts and full cadence options are shown in the next step.',
+    cta: { label: 'Compare all plans', to: '/memberships' }
+  },
+  valueProps: {
+    title: 'Studio notes',
+    bullets: fallbackStudioNotes,
+    cta: { label: 'See equipment', to: '/equipment' }
+  },
+  finalCta: {
+    title: 'Build a better shooting rhythm.',
+    body: 'Start with the plan that fits your next 30 to 60 days. Upgrade or downgrade as your production pace shifts.',
+    primaryCta: { label: 'Choose a membership', to: '/memberships' },
+    secondaryCta: { label: 'See upcoming availability', to: '/calendar' }
+  }
+}
+
+const { data: siteLanding } = await useAsyncData('site:landing', async () => {
+  return await queryCollection('siteLanding').first()
+})
+const landingContent = computed<SiteLandingContent>(() => {
+  return (siteLanding.value as SiteLandingContent | null) ?? fallbackLanding
+})
+const process = computed(() => landingContent.value.howItWorks.steps)
+const studioNotes = computed(() => landingContent.value.valueProps.bullets)
 </script>
 
 <template>
@@ -90,28 +159,27 @@ const studioNotes = [
 
               <div class="space-y-4">
                 <h1 class="studio-display max-w-4xl text-6xl leading-[0.92] text-[color:var(--gruv-ink-0)] sm:text-8xl">
-                  A studio that moves at the pace of working creatives.
+                  {{ landingContent.hero.headline }}
                 </h1>
                 <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
-                  LA Film Lab is a 24/7 turnkey studio for photographers, filmmakers, and creative teams.
-                  Book, pay, show up, and shoot in a space designed to stay production-ready.
+                  {{ landingContent.hero.subheadline }}
                 </p>
               </div>
 
               <div class="flex flex-wrap gap-3">
                 <UButton
-                  to="/memberships"
+                  :to="landingContent.hero.primaryCta.to"
                   size="xl"
                 >
-                  Find your membership
+                  {{ landingContent.hero.primaryCta.label }}
                 </UButton>
                 <UButton
                   color="neutral"
                   variant="soft"
                   size="xl"
-                  to="/calendar"
+                  :to="landingContent.hero.secondaryCta.to"
                 >
-                  Check the calendar
+                  {{ landingContent.hero.secondaryCta.label }}
                 </UButton>
 
                 <UModal v-model:open="openWaitlist">
@@ -179,22 +247,12 @@ const studioNotes = [
 
               <div class="flex flex-wrap gap-2">
                 <UBadge
+                  v-for="chip in landingContent.hero.chips"
+                  :key="chip"
                   color="neutral"
                   variant="soft"
                 >
-                  24/7 member access
-                </UBadge>
-                <UBadge
-                  color="neutral"
-                  variant="soft"
-                >
-                  25x30 cyc · 20+ ft ceilings
-                </UBadge>
-                <UBadge
-                  color="neutral"
-                  variant="soft"
-                >
-                  Equipment + consumables included
+                  {{ chip }}
                 </UBadge>
               </div>
             </div>
@@ -255,11 +313,8 @@ const studioNotes = [
           <div class="max-w-3xl">
             <span class="studio-kicker">How it works</span>
             <h2 class="mt-4 studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-6xl">
-              Built to feel clear before the shoot day arrives.
+              {{ landingContent.howItWorks.title }}
             </h2>
-            <p class="mt-3 text-base leading-8 text-[color:var(--gruv-ink-2)]">
-              The system is simple on purpose. Pick a plan, use monthly credits, and reserve your time with enough margin to make your work better.
-            </p>
           </div>
 
           <UButton
@@ -299,16 +354,15 @@ const studioNotes = [
           <div class="max-w-3xl">
             <span class="studio-kicker">Memberships</span>
             <h2 class="mt-4 studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-6xl">
-              Choose the plan that matches the way you actually produce.
+              {{ landingContent.membershipsPreview.title }}
             </h2>
             <p class="mt-3 text-base leading-8 text-[color:var(--gruv-ink-2)]">
-              Keep the first decision simple: pick the membership that fits your immediate workload.
-              Longer-term billing discounts and full cadence options are shown in the next step.
+              {{ landingContent.membershipsPreview.subtitle }}
             </p>
           </div>
 
-          <UButton to="/memberships">
-            Compare all plans
+          <UButton :to="landingContent.membershipsPreview.cta.to">
+            {{ landingContent.membershipsPreview.cta.label }}
           </UButton>
         </div>
 
@@ -369,27 +423,27 @@ const studioNotes = [
             <div>
               <span class="studio-kicker">Ready when you are</span>
               <h2 class="mt-4 studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-6xl">
-                Build a better shooting rhythm.
+                {{ landingContent.finalCta.title }}
               </h2>
               <p class="mt-4 max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)]">
-                Start with the plan that fits your next 30 to 60 days. Upgrade or downgrade as your production pace shifts.
+                {{ landingContent.finalCta.body }}
               </p>
             </div>
 
             <div class="flex flex-col gap-3">
               <UButton
                 size="xl"
-                to="/memberships"
+                :to="landingContent.finalCta.primaryCta.to"
               >
-                Choose a membership
+                {{ landingContent.finalCta.primaryCta.label }}
               </UButton>
               <UButton
                 size="xl"
                 color="neutral"
                 variant="soft"
-                to="/calendar"
+                :to="landingContent.finalCta.secondaryCta.to"
               >
-                See upcoming availability
+                {{ landingContent.finalCta.secondaryCta.label }}
               </UButton>
             </div>
           </div>

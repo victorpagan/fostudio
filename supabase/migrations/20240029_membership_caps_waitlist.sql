@@ -50,5 +50,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS membership_waitlist_pending_email_unique_idx
   ON public.membership_waitlist(tier_id, lower(email))
   WHERE user_id IS NULL AND status = 'pending';
 
-ALTER TABLE public.settings
-  ADD COLUMN IF NOT EXISTS "membershipWaitlistInvite" text;
+DO $$
+BEGIN
+  IF to_regclass('public.settings') IS NOT NULL THEN
+    ALTER TABLE public.settings
+      ADD COLUMN IF NOT EXISTS "membershipWaitlistInvite" text;
+  END IF;
+END
+$$;

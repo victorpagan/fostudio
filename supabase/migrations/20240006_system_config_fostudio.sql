@@ -10,6 +10,12 @@
 --
 -- Update values via the Supabase dashboard or another migration.
 
+CREATE TABLE IF NOT EXISTS public.system_config (
+  key text PRIMARY KEY,
+  value jsonb NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 INSERT INTO public.system_config (key, value)
 VALUES
   -- Square location ID for the FO Studio location. Required for all payment link and order creation.

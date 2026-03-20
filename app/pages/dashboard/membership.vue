@@ -2,6 +2,7 @@
 import { getMembershipPlanDetails } from '~~/app/utils/membershipPlanDetails'
 import { normalizeDiscountLabel } from '~~/app/utils/membershipDiscount'
 import { formatMembershipTierLabel } from '~~/app/utils/membershipTierLabel'
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -18,6 +19,7 @@ type MembershipRow = {
   status: string | null
   created_at: string | null
   current_period_end: string | null
+  canceled_at: string | null
   square_plan_variation_id: string | null
 }
 
@@ -158,7 +160,7 @@ const { data: membership, refresh } = await useAsyncData('dash:membership', asyn
   if (!user.value) return null
   const { data, error } = await supabase
     .from('memberships')
-    .select('id, tier, cadence, status, created_at, current_period_end, square_plan_variation_id')
+    .select('id, tier, cadence, status, created_at, current_period_end, canceled_at, square_plan_variation_id')
     .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
@@ -217,13 +219,7 @@ function getDiscountLabel(label?: string | null) {
 
 // ── Tier catalog (shown when no active membership) ─────────────────────────
 const membershipState = computed(() => {
-  const s = (membership.value?.status ?? '').toLowerCase()
-  if (s === 'active') return 'active'
-  if (s === 'pending_checkout') return 'pending_checkout'
-  if (s === 'canceled') return 'canceled'
-  if (s === 'past_due') return 'past_due'
-  if (!s) return 'none'
-  return 'inactive'
+  return resolveMembershipUiState(membership.value)
 })
 
 const showCatalog = computed(() =>

@@ -22,11 +22,22 @@ type GoogleCalendarStats = {
   nextWeekEvents: number
 }
 
+type GoogleCalendarOption = {
+  id: string
+  summary: string
+  primary: boolean
+  accessRole: string
+}
+
 const toast = useToast()
 const route = useRoute()
 const saving = ref(false)
 const syncing = ref(false)
 const testing = ref(false)
+const loadingCalendars = ref(false)
+const calendarsError = ref<string | null>(null)
+const statsError = ref<string | null>(null)
+const calendarOptions = ref<GoogleCalendarOption[]>([])
 
 const form = reactive<GoogleCalendarSettings>({
   enabled: false,
@@ -50,7 +61,13 @@ const stats = reactive<GoogleCalendarStats>({
 })
 
 const { pending, refresh } = await useAsyncData('admin:gcal:settings', async () => {
-  const res = await $fetch<{ settings: GoogleCalendarSettings, stats: GoogleCalendarStats }>('/api/admin/google-calendar/settings')
+  const res = await $fetch<{
+    settings: GoogleCalendarSettings
+    stats: GoogleCalendarStats
+    calendars: GoogleCalendarOption[]
+    calendarsError: string | null
+    statsError: string | null
+  }>('/api/admin/google-calendar/settings')
   form.enabled = Boolean(res.settings.enabled)
   form.pushEnabled = Boolean(res.settings.pushEnabled)
   form.calendarId = String(res.settings.calendarId ?? '')
@@ -64,6 +81,9 @@ const { pending, refresh } = await useAsyncData('admin:gcal:settings', async () 
   form.syncIntervalMinutes = Number(res.settings.syncIntervalMinutes ?? 5)
   form.lastSyncAt = res.settings.lastSyncAt ?? null
   form.lastSyncStatus = res.settings.lastSyncStatus ?? null
+  calendarOptions.value = Array.isArray(res.calendars) ? res.calendars : []
+  calendarsError.value = res.calendarsError ?? null
+  statsError.value = res.statsError ?? null
   stats.activeSyncedEvents = Number(res.stats.activeSyncedEvents ?? 0)
   stats.nextWeekEvents = Number(res.stats.nextWeekEvents ?? 0)
   return res
@@ -204,6 +224,44 @@ async function syncNow() {
     syncing.value = false
   }
 }
+
+const calendarSelectItems = computed(() => {
+  const items = calendarOptions.value.map(calendar => ({
+    value: calendar.id,
+    label: `${calendar.summary}${calendar.primary ? ' (Primary)' : ''} · ${calendar.id}`
+  }))
+  const selected = form.calendarId.trim()
+  if (selected && !items.some(item => item.value === selected)) {
+    items.unshift({
+      value: selected,
+      label: `Saved calendar · ${selected}`
+    })
+  }
+  return items
+})
+
+async function refreshGoogleCalendars() {
+  if (!form.oauthConnected) {
+    calendarOptions.value = []
+    calendarsError.value = null
+    return
+  }
+
+  loadingCalendars.value = true
+  try {
+    const res = await $fetch<{ calendars: GoogleCalendarOption[], error: string | null }>('/api/admin/google-calendar/calendars')
+    calendarOptions.value = Array.isArray(res.calendars) ? res.calendars : []
+    calendarsError.value = res.error ?? null
+  } catch (error: unknown) {
+    calendarsError.value = readErrorMessage(error)
+  } finally {
+    loadingCalendars.value = false
+  }
+}
+
+async function startOauthConnect() {
+  await navigateTo('/api/admin/google-calendar/oauth/start', { external: true })
+}
 </script>
 
 <template>
@@ -221,7 +279,7 @@ async function syncNow() {
             variant="soft"
             icon="i-lucide-refresh-cw"
             :loading="pending"
-            @click="() => refresh()"
+            @click="refresh"
           />
         </template>
       </UDashboardNavbar>
@@ -256,6 +314,15 @@ async function syncNow() {
           </UCard>
         </div>
 
+        <UAlert
+          v-if="statsError"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-circle-alert"
+          title="Google sync stats unavailable"
+          :description="statsError"
+        />
+
         <UCard>
           <div class="grid gap-3 md:grid-cols-2">
             <UFormField label="Enable sync">
@@ -268,6 +335,35 @@ async function syncNow() {
 
             <UFormField label="Google Calendar ID">
               <UInput v-model="form.calendarId" placeholder="your-calendar-id@group.calendar.google.com" />
+            </UFormField>
+
+            <UFormField v-if="form.oauthConnected" label="Select Google calendar">
+              <div class="space-y-2">
+                <USelect
+                  v-model="form.calendarId"
+                  :items="calendarSelectItems"
+                  option-attribute="label"
+                  value-attribute="value"
+                  :disabled="loadingCalendars || calendarSelectItems.length === 0"
+                />
+                <div class="flex flex-wrap items-center gap-2">
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="soft"
+                    :loading="loadingCalendars"
+                    @click="refreshGoogleCalendars"
+                  >
+                    Refresh calendars
+                  </UButton>
+                  <span v-if="!loadingCalendars && calendarSelectItems.length === 0" class="text-xs text-dimmed">
+                    No calendars returned for this account.
+                  </span>
+                </div>
+                <p v-if="calendarsError" class="text-xs text-error">
+                  {{ calendarsError }}
+                </p>
+              </div>
             </UFormField>
 
             <UFormField label="Google OAuth Client ID">
@@ -288,8 +384,8 @@ async function syncNow() {
                 <UButton
                   color="neutral"
                   variant="soft"
-                  to="/api/admin/google-calendar/oauth/start"
                   icon="i-lucide-link"
+                  @click="startOauthConnect"
                 >
                   Connect to Google Calendar
                 </UButton>
@@ -315,7 +411,9 @@ async function syncNow() {
 
           <div class="mt-4 space-y-1 text-xs text-dimmed">
             <div>Last sync: {{ formatLastSync(form.lastSyncAt) }}</div>
-            <div v-if="lastSyncSummary">{{ lastSyncSummary }}</div>
+            <div v-if="lastSyncSummary">
+              {{ lastSyncSummary }}
+            </div>
           </div>
 
           <div class="mt-4 flex flex-wrap gap-2">

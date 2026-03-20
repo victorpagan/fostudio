@@ -27,6 +27,19 @@ type Tier = {
   membership_plan_variations: PlanOption[]
 }
 
+type SiteMembershipsContent = {
+  hero: {
+    kicker: string
+    title: string
+    description: string
+    badges: string[]
+  }
+  infoPanel: {
+    title: string
+    paragraphs: string[]
+  }
+}
+
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
@@ -42,6 +55,30 @@ const isPlanSwitchMode = computed(() => {
 })
 
 const { user } = useCurrentUser()
+const { data: siteMemberships } = await useAsyncData('site:memberships', async () => {
+  return await queryCollection('siteMemberships').first()
+})
+const membershipsContent = computed<SiteMembershipsContent>(() => {
+  const fallback: SiteMembershipsContent = {
+    hero: {
+      kicker: 'Memberships',
+      title: 'Pick the studio rhythm that fits the way you actually work.',
+      description: 'This is a 24/7 turnkey studio built for photographers and small-to-mid crews. Book the plan that matches your volume, then use the space like it was made for production days, not paperwork.',
+      badges: ['24/7 member access', 'Gear + consumables included', 'No startup fees']
+    },
+    infoPanel: {
+      title: 'What changes with membership',
+      paragraphs: [
+        'Every membership includes studio equipment, backdrop paper, and day-to-day consumables. Book, pay, and show up ready to shoot.',
+        'The space is 24/7 access with a 25x30 ft cyc, 20+ ft ceilings, makeup area, client seating, and props for product or fashion sessions.',
+        'You can upgrade or downgrade as your workload changes. Priority booking and equipment holds scale with the plan level.',
+        'Memberships are intentionally limited so the calendar stays usable for everyone.'
+      ]
+    }
+  }
+
+  return (siteMemberships.value as SiteMembershipsContent | null) ?? fallback
+})
 
 const { data, refresh } = await useFetch<{ tiers: Tier[] }>('/api/membership/catalog', {
   default: () => ({ tiers: [] })
@@ -196,7 +233,7 @@ async function submitWaitlist() {
     <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
       <div class="grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)] lg:items-end">
         <div class="space-y-5">
-          <span class="studio-kicker">Memberships</span>
+          <span class="studio-kicker">{{ membershipsContent.hero.kicker }}</span>
           <UBadge
             v-if="isPlanSwitchMode"
             color="warning"
@@ -207,44 +244,35 @@ async function submitWaitlist() {
           </UBadge>
           <div class="max-w-3xl space-y-4">
             <h1 class="studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-7xl">
-              Pick the studio rhythm that fits the way you actually work.
+              {{ membershipsContent.hero.title }}
             </h1>
             <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
-              This is a 24/7 turnkey studio built for photographers and small-to-mid crews. Book the plan that matches your volume,
-              then use the space like it was made for production days, not paperwork.
+              {{ membershipsContent.hero.description }}
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
             <UBadge
+              v-for="badge in membershipsContent.hero.badges"
+              :key="badge"
               color="neutral"
               variant="soft"
             >
-              24/7 member access
-            </UBadge>
-            <UBadge
-              color="neutral"
-              variant="soft"
-            >
-              Gear + consumables included
-            </UBadge>
-            <UBadge
-              color="neutral"
-              variant="soft"
-            >
-              No startup fees
+              {{ badge }}
             </UBadge>
           </div>
         </div>
 
         <div class="studio-panel p-5 sm:p-6">
           <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
-            What changes with membership
+            {{ membershipsContent.infoPanel.title }}
           </div>
           <div class="mt-4 space-y-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-            <p>Every membership includes studio equipment, backdrop paper, and day-to-day consumables. Book, pay, and show up ready to shoot.</p>
-            <p>The space is 24/7 access with a 25x30 ft cyc, 20+ ft ceilings, makeup area, client seating, and props for product or fashion sessions.</p>
-            <p>You can upgrade or downgrade as your workload changes. Priority booking and equipment holds scale with the plan level.</p>
-            <p>Memberships are intentionally limited so the calendar stays usable for everyone.</p>
+            <p
+              v-for="paragraph in membershipsContent.infoPanel.paragraphs"
+              :key="paragraph"
+            >
+              {{ paragraph }}
+            </p>
             <p v-if="isPlanSwitchMode">
               When changing an active membership, the new plan takes effect on your next billing cycle. Mid-cycle prorated membership changes are not applied.
             </p>

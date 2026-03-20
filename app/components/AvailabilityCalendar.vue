@@ -58,6 +58,8 @@ const visibleRange = ref('Loading schedule')
 const lastRefreshedAt = ref<string | null>(null)
 const bookingWindowDays = ref<number | null>(null)
 const peakWindow = ref<PeakWindow | null>(null)
+const nowTickMs = ref(Date.now())
+let nowTickTimer: ReturnType<typeof setInterval> | null = null
 const instance = getCurrentInstance()
 const STUDIO_TZ = 'America/Los_Angeles'
 
@@ -140,7 +142,7 @@ function calendarDateToStudioDate(value: Date) {
 }
 
 function mapApiEventsToCalendar(events: CalendarEvent[]) {
-  return events.map((event) => ({
+  return events.map(event => ({
     ...event,
     start: event.start ? studioInstantToCalendarIso(event.start) : event.start,
     end: event.end ? studioInstantToCalendarIso(event.end) : event.end
@@ -153,7 +155,7 @@ function escapeHtml(value: string) {
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
+    .replaceAll('\'', '&#39;')
 }
 
 function formatNoteHtml(value: string) {
@@ -220,13 +222,14 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
   const isUnownedBooking = arg.event.extendedProps?.type === 'booking' && !arg.event.extendedProps?.isOwn
   const noteRaw = isOwnBooking ? (arg.event.extendedProps?.notes ?? '').trim() : ''
   const note = noteRaw ? `<div class="fc-event-note">${formatNoteHtml(noteRaw)}</div>` : ''
-  const label = isHold
-    ? '<div class="fc-event-label">Equipement Hold</div>'
-    : isExternal
-      ? `<div class="fc-event-label">${escapeHtml(arg.event.title || 'External Booking')}</div>`
-    : isUnownedBooking
-      ? '<div class="fc-event-label">Blocked</div>'
-      : ''
+  let label = ''
+  if (isHold) {
+    label = '<div class="fc-event-label">Equipement Hold</div>'
+  } else if (isExternal) {
+    label = '<div class="fc-event-label">Blocked</div>'
+  } else if (isUnownedBooking) {
+    label = '<div class="fc-event-label">Blocked</div>'
+  }
   const time = arg.timeText ? `<div class="fc-event-time">${arg.timeText}</div>` : ''
   return {
     html: `${label}${time}${note}`
@@ -346,6 +349,7 @@ const calendarOptions = computed(() => ({
     return selectionStart <= maxStart
   },
   selectMirror: true,
+  now: studioInstantToCalendarIso(new Date(nowTickMs.value)),
   nowIndicator: true,
   allDaySlot: false,
   height: 'auto',
@@ -413,7 +417,18 @@ const calendarOptions = computed(() => ({
   }
 }))
 
-onMounted(() => loadEvents())
+onMounted(() => {
+  loadEvents()
+  nowTickTimer = setInterval(() => {
+    nowTickMs.value = Date.now()
+  }, 60_000)
+})
+
+onUnmounted(() => {
+  if (!nowTickTimer) return
+  clearInterval(nowTickTimer)
+  nowTickTimer = null
+})
 </script>
 
 <template>

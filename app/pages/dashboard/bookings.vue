@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { DateTime } from 'luxon'
 import { normalizeDiscountLabel } from '~~/app/utils/membershipDiscount'
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
 // auth only — no membership-required middleware. We handle the no-membership
 // state inline so users can purchase right from this page.
@@ -92,14 +93,14 @@ const { data: membershipData } = await useAsyncData('bookings:membership', async
   if (!user.value) return null
   const { data } = await supabase
     .from('memberships')
-    .select('status, tier, cadence')
+    .select('status, tier, cadence, current_period_end, canceled_at')
     .eq('user_id', user.value.sub)
     .maybeSingle()
   return data
 })
 
 const hasMembership = computed(() =>
-  isAdmin.value || (membershipData.value?.status ?? '').toLowerCase() === 'active'
+  isAdmin.value || resolveMembershipUiState(membershipData.value) === 'active'
 )
 
 // Only fetch bookings when membership is confirmed
