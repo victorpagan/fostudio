@@ -24,6 +24,29 @@ function isoDate(offsetDays = 0) {
   return at.toISOString()
 }
 
+function readUpstreamErrorDetails(error: unknown) {
+  if (!error || typeof error !== 'object') return null
+  const value = error as {
+    statusCode?: number
+    statusMessage?: string
+    data?: unknown
+    response?: { status?: number, _data?: unknown }
+    message?: string
+  }
+
+  const status = value.statusCode ?? value.response?.status ?? null
+  const payload = value.data ?? value.response?._data ?? null
+  const payloadText = payload == null
+    ? null
+    : (typeof payload === 'string' ? payload : JSON.stringify(payload))
+
+  return {
+    status,
+    message: value.statusMessage ?? value.message ?? null,
+    payloadText
+  }
+}
+
 function buildTestPayload(params: {
   eventType: string
   recipient: string
@@ -133,13 +156,19 @@ export default defineEventHandler(async (event) => {
       payload
     })
   } catch (error: unknown) {
-    const message = error instanceof Error
-      ? error.message
-      : String(error)
+    const details = readUpstreamErrorDetails(error)
+    const parts = [
+      'Test send failed upstream',
+      details?.status ? `(status ${details.status})` : '',
+      details?.message ?? (error instanceof Error ? error.message : String(error))
+    ].filter(Boolean)
+    const baseMessage = parts.join(': ')
 
     throw createError({
       statusCode: 502,
-      statusMessage: `Test send failed upstream: ${message}`
+      statusMessage: details?.payloadText
+        ? `${baseMessage} | body: ${details.payloadText}`
+        : baseMessage
     })
   }
 
