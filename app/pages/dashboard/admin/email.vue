@@ -296,9 +296,16 @@ async function saveTemplateFromModal() {
     </template>
   </UDashboardPanel>
 
-  <UModal v-model:open="templateModalOpen">
+  <UModal
+    v-model:open="templateModalOpen"
+    :ui="{ content: 'sm:max-w-5xl' }"
+  >
     <template #content>
-      <UCard v-if="templateDraft" class="w-[calc(100vw-2rem)] max-w-5xl">
+      <UCard
+        v-if="templateDraft"
+        class="w-[calc(100vw-2rem)] max-w-5xl max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-4rem)] overflow-hidden"
+        :ui="{ body: 'space-y-4 overflow-y-auto max-h-[calc(100dvh-14rem)]' }"
+      >
         <template #header>
           <div class="flex items-start justify-between gap-3">
             <div>
@@ -319,7 +326,7 @@ async function saveTemplateFromModal() {
           </div>
         </template>
 
-        <div class="space-y-4">
+        <div>
           <div class="grid gap-3 md:grid-cols-2">
             <UFormField label="Event type">
               <UInput
@@ -383,7 +390,7 @@ async function saveTemplateFromModal() {
             <UEditor
               v-model="templateDraft.bodyTemplate"
               content-type="html"
-              class="w-full min-h-[34rem] rounded-md border border-default [&_.ProseMirror]:min-h-[30rem]"
+              class="w-full rounded-md border border-default [&_.ProseMirror]:min-h-[24rem] [&_.tiptap.ProseMirror]:min-h-[24rem]"
               placeholder="Write HTML body content. Example: <p>Your {{ tierName }} membership is active.</p>"
             />
           </UFormField>
@@ -401,18 +408,21 @@ async function saveTemplateFromModal() {
             </div>
           </div>
 
-          <div class="flex items-center justify-between gap-3">
+          <div>
             <UCheckbox v-model="templateDraft.active" label="Active" />
-            <div class="flex items-center gap-2">
-              <UButton color="neutral" variant="soft" @click="closeTemplateModal">
-                Cancel
-              </UButton>
-              <UButton :loading="saving" @click="saveTemplateFromModal">
-                Save template settings
-              </UButton>
-            </div>
           </div>
         </div>
+
+        <template #footer>
+          <div class="flex items-center justify-end gap-2">
+            <UButton color="neutral" variant="soft" @click="closeTemplateModal">
+              Cancel
+            </UButton>
+            <UButton :loading="saving" @click="saveTemplateFromModal">
+              Save template settings
+            </UButton>
+          </div>
+        </template>
       </UCard>
     </template>
   </UModal>
