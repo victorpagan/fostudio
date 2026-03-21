@@ -26,6 +26,7 @@ type AdminEmailSettingsResponse = {
 
 const toast = useToast()
 const saving = ref(false)
+const pending = ref(false)
 const recipientsInput = ref('')
 const templates = ref<AdminMailTemplate[]>([])
 const availableVariablesByEvent = ref<Record<string, string[]>>({ '*': [] })
@@ -38,8 +39,7 @@ const adminCopies = reactive({
   nonCriticalEnabled: false
 })
 
-const { pending, refresh } = await useAsyncData('admin:email:settings', async () => {
-  const res = await $fetch<AdminEmailSettingsResponse>('/api/admin/email/settings')
+function applySettings(res: AdminEmailSettingsResponse) {
   adminCopies.criticalEnabled = Boolean(res.adminCopies.criticalEnabled)
   adminCopies.nonCriticalEnabled = Boolean(res.adminCopies.nonCriticalEnabled)
   recipientsInput.value = (res.adminCopies.recipients ?? []).join('\n')
@@ -54,7 +54,28 @@ const { pending, refresh } = await useAsyncData('admin:email:settings', async ()
     bodyTemplate: template.bodyTemplate ?? ''
   }))
   availableVariablesByEvent.value = res.availableVariablesByEvent ?? { '*': [] }
-  return res
+}
+
+async function loadSettings(options: { silent?: boolean } = {}) {
+  pending.value = true
+  try {
+    const res = await $fetch<AdminEmailSettingsResponse>('/api/admin/email/settings')
+    applySettings(res)
+  } catch (error: unknown) {
+    if (!options.silent) {
+      toast.add({
+        title: 'Could not load email settings',
+        description: readErrorMessage(error),
+        color: 'error'
+      })
+    }
+  } finally {
+    pending.value = false
+  }
+}
+
+onMounted(() => {
+  void loadSettings({ silent: true })
 })
 
 const selectedTemplateVariables = computed(() => {
@@ -254,7 +275,7 @@ async function saveSettings(options: { closeModalOnSuccess?: boolean } = {}) {
     })
 
     toast.add({ title: 'Email settings saved', color: 'success' })
-    await refresh()
+    await loadSettings({ silent: true })
     if (options.closeModalOnSuccess) closeTemplateModal()
   } catch (error: unknown) {
     toast.add({
@@ -294,7 +315,7 @@ async function saveTemplateFromModal() {
               variant="soft"
               icon="i-lucide-refresh-cw"
               :loading="pending"
-              @click="() => refresh()"
+              @click="() => loadSettings()"
             />
           </template>
         </UDashboardNavbar>
@@ -440,6 +461,8 @@ async function saveTemplateFromModal() {
 
     <UModal
       v-model:open="templateModalOpen"
+      title="Edit template mapping"
+      description="Configure SendGrid mapping, copy templates, and tokens."
       :ui="{ content: 'sm:max-w-5xl' }"
     >
       <template #content>
