@@ -26,8 +26,10 @@ type AdminEmailSettingsResponse = {
 
 const toast = useToast()
 const saving = ref(false)
+const sendingTest = ref(false)
 const pending = ref(false)
 const recipientsInput = ref('')
+const testRecipient = ref('')
 const templates = ref<AdminMailTemplate[]>([])
 const availableVariablesByEvent = ref<Record<string, string[]>>({ '*': [] })
 const templateModalOpen = ref(false)
@@ -237,6 +239,8 @@ function openTemplateModal(index: number) {
   if (!selected) return
   editingTemplateIndex.value = index
   templateDraft.value = { ...selected }
+  const fallbackRecipient = parseRecipients(recipientsInput.value)[0] ?? ''
+  testRecipient.value = fallbackRecipient
   templateModalOpen.value = true
 }
 
@@ -244,6 +248,7 @@ function closeTemplateModal() {
   templateModalOpen.value = false
   editingTemplateIndex.value = null
   templateDraft.value = null
+  testRecipient.value = ''
 }
 
 async function saveSettings(options: { closeModalOnSuccess?: boolean } = {}) {
@@ -294,6 +299,50 @@ async function saveTemplateFromModal() {
   if (index === null || !draft) return
   templates.value[index] = { ...draft }
   await saveSettings({ closeModalOnSuccess: true })
+}
+
+async function sendTemplateTest() {
+  const draft = templateDraft.value
+  if (!draft) return
+
+  sendingTest.value = true
+  try {
+    const res = await $fetch<{
+      recipient: string
+      mailer?: { skipped_reason?: string }
+      isActive: boolean
+    }>('/api/admin/email/test', {
+      method: 'POST',
+      body: {
+        eventType: draft.eventType,
+        recipient: testRecipient.value.trim() || undefined
+      }
+    })
+
+    const skippedReason = res.mailer?.skipped_reason
+    if (skippedReason) {
+      toast.add({
+        title: 'Test send skipped',
+        description: `Reason: ${skippedReason}. ${res.isActive ? '' : 'This registry event is inactive.'}`.trim(),
+        color: 'warning'
+      })
+      return
+    }
+
+    toast.add({
+      title: 'Test email sent',
+      description: `Sent to ${res.recipient}`,
+      color: 'success'
+    })
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not send test email',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    sendingTest.value = false
+  }
 }
 </script>
 
@@ -558,6 +607,19 @@ async function saveTemplateFromModal() {
               </div>
             </div>
 
+            <div class="rounded-lg border border-info/25 bg-info/8 p-3">
+              <UFormField
+                label="Test recipient"
+                description="Optional. If blank, this sends to your admin account email."
+              >
+                <UInput
+                  v-model="testRecipient"
+                  class="w-full"
+                  placeholder="name@example.com"
+                />
+              </UFormField>
+            </div>
+
             <div class="rounded-lg border border-warning/25 bg-warning/7 p-3">
               <UFormField label="Event type">
                 <template #label>
@@ -614,6 +676,16 @@ async function saveTemplateFromModal() {
                 @click="closeTemplateModal"
               >
                 Cancel
+              </UButton>
+              <UButton
+                color="info"
+                variant="soft"
+                icon="i-lucide-send"
+                :loading="sendingTest"
+                :disabled="!templateDraft || !hasTemplateId(templateDraft)"
+                @click="sendTemplateTest"
+              >
+                Send test email
               </UButton>
               <UButton
                 :loading="saving"
