@@ -6,7 +6,10 @@ const templateSchema = z.object({
   sendgridTemplateId: z.string().trim().min(3).max(255),
   category: z.enum(['critical', 'non_critical']),
   active: z.coerce.boolean().default(true),
-  description: z.string().trim().max(300).optional().default('')
+  description: z.string().trim().max(300).optional().default(''),
+  subjectTemplate: z.string().max(300).optional().default(''),
+  preheaderTemplate: z.string().max(300).optional().default(''),
+  bodyTemplate: z.string().max(50_000).optional().default('')
 })
 
 const bodySchema = z.object({
@@ -17,6 +20,21 @@ const bodySchema = z.object({
   }),
   templates: z.array(templateSchema).max(300).default([])
 })
+
+function normalizeBodyTemplate(value: string): string | null {
+  if (!value.trim()) return null
+
+  const plainText = value
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!plainText) return null
+  return value
+}
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
@@ -35,6 +53,9 @@ export default defineEventHandler(async (event) => {
     category: 'critical' | 'non_critical'
     active: boolean
     description: string | null
+    subject_template: string | null
+    preheader_template: string | null
+    body_template: string | null
   }>()
 
   for (const template of body.templates) {
@@ -44,7 +65,10 @@ export default defineEventHandler(async (event) => {
       sendgrid_template_id: template.sendgridTemplateId.trim(),
       category: template.category,
       active: Boolean(template.active),
-      description: template.description.trim() || null
+      description: template.description.trim() || null,
+      subject_template: template.subjectTemplate.trim() || null,
+      preheader_template: template.preheaderTemplate.trim() || null,
+      body_template: normalizeBodyTemplate(template.bodyTemplate)
     })
   }
 

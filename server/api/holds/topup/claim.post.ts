@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
+import { sendViaFomailer } from '~~/server/utils/mail/fomailer'
 
 const bodySchema = z.object({
   token: z.string().uuid().optional(),
@@ -44,6 +45,44 @@ function readString(source: Record<string, unknown> | null | undefined, ...keys:
   return null
 }
 
+async function sendHoldTopupPurchasedMail(params: {
+  event: Parameters<typeof sendViaFomailer>[0]
+  to: string | null
+  userId: string
+  membershipId: string | null
+  holdsAdded: number | null
+  newHoldBalance: number
+  amountCents: number | null
+  label: string | null
+  paymentId: string | null
+}) {
+  const to = typeof params.to === 'string' ? params.to.trim().toLowerCase() : ''
+  if (!to) return
+
+  try {
+    await sendViaFomailer(params.event, {
+      type: 'holds.topupPurchased',
+      payload: {
+        to,
+        userId: params.userId,
+        eventType: 'holds.topupPurchased',
+        membershipId: params.membershipId,
+        holdsAdded: params.holdsAdded,
+        newHoldBalance: params.newHoldBalance,
+        amountCents: params.amountCents,
+        label: params.label,
+        paymentId: params.paymentId
+      }
+    })
+  } catch (error) {
+    console.warn('[holds/topup/claim] top-up mail send failed (non-blocking)', {
+      userId: params.userId,
+      paymentId: params.paymentId,
+      message: error instanceof Error ? error.message : String(error)
+    })
+  }
+}
+
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
@@ -81,134 +120,147 @@ export default defineEventHandler(async (event) => {
   const processSession = async (topup: TopupSessionRow, hintedOrderId?: string | null) => {
     const sessionStatus = normalizeSessionStatus(topup.status)
     if (sessionStatus === 'processed') {
-      return {
-        ok: true,
-        status: 'processed' as const,
-        holdsAdded: asNumber(topup.holds) ?? null,
-        newHoldBalance: await readHoldBalance(user.sub),
-        sessionId: topup.id
-      }
-    }
-
-    if (sessionStatus === 'failed') {
-      return {
-        ok: false,
-        status: 'failed' as const,
-        message: 'This hold purchase is no longer valid. Please start a new purchase.',
-        sessionId: topup.id
-      }
-    }
-
-    let orderId = topup.order_template_id ?? hintedOrderId ?? null
-    if (!orderId && topup.payment_link_id) {
-      const linkRes = await square.checkout.paymentLinks.get({ id: topup.payment_link_id } as never)
-      const paymentLink = (linkRes as { paymentLink?: Record<string, unknown> | null }).paymentLink ?? null
-      orderId = readString(paymentLink, 'orderId', 'order_id')
-    }
-
-    if (!orderId) {
-      return {
-        ok: false,
-        status: 'pending' as const,
-        message: 'Payment details are still syncing. Please retry in a moment.',
-        sessionId: topup.id
-      }
-    }
-
-    const paymentState = await resolveOrderPaymentState({
-      square,
-      orderId,
-      beginTime: topup.created_at ?? null
-    })
-
-    if (!paymentState.completed) {
-      const nextStatus = sessionStatus === 'expired' ? 'expired' : 'pending'
-      await supabase
-        .from('hold_topup_sessions')
-        .update({
-          status: nextStatus,
-          metadata: {
-            ...(topup.metadata ?? {}),
-            last_claim_status: 'pending_order_not_completed',
-            last_claim_order_state: paymentState.orderState,
-            last_claim_payment_status: paymentState.paymentStatus,
-            last_claim_order_id: orderId,
-            last_claim_at: new Date().toISOString()
-          }
-        })
-        .eq('id', topup.id)
-
-      return {
-        ok: false,
-        status: 'pending' as const,
-        message: 'Hold payment is not completed yet.',
-        sessionId: topup.id
-      }
-    }
-
-    const { data: existingLedger } = topup.ledger_entry_id
-      ? await supabase
-          .from('hold_ledger')
-          .select('id')
-          .eq('id', topup.ledger_entry_id)
-          .maybeSingle()
-      : { data: null as { id: string } | null }
-
-    let ledgerEntryId = existingLedger?.id ?? null
-    if (!ledgerEntryId) {
-      const { data: insertedLedger, error: ledgerErr } = await supabase
-        .from('hold_ledger')
-        .insert({
-          user_id: user.sub,
-          delta: topup.holds,
-          reason: 'topoff',
-          external_ref: orderId,
-          metadata: {
-            source: 'dashboard_hold_topup',
-            topup_session_id: topup.id,
-            amount_cents: topup.amount_cents,
-            label: readString(topup.metadata, 'label')
-          }
-        })
-        .select('id')
-        .single()
-
-      if (ledgerErr || !insertedLedger) {
-        await supabase
-          .from('hold_topup_sessions')
-          .update({
-            metadata: {
-              ...(topup.metadata ?? {}),
-              last_claim_status: 'failed_ledger_insert',
-              last_claim_error: ledgerErr?.message ?? 'failed_to_mint_holds',
-              last_claim_order_id: orderId,
-              last_claim_at: new Date().toISOString()
-            }
-          })
-          .eq('id', topup.id)
-        throw createError({ statusCode: 500, statusMessage: ledgerErr?.message ?? 'Failed to add holds' })
-      }
-      ledgerEntryId = insertedLedger.id
-    }
-
-    const nowIso = new Date().toISOString()
-    const { error: updateErr } = await supabase
-      .from('hold_topup_sessions')
-      .update({
-        status: 'processed',
-        ledger_entry_id: ledgerEntryId,
-        order_template_id: orderId,
-        paid_at: nowIso
-      })
-      .eq('id', topup.id)
-
-    if (updateErr) throw createError({ statusCode: 500, statusMessage: updateErr.message })
-
     return {
       ok: true,
       status: 'processed' as const,
       holdsAdded: asNumber(topup.holds) ?? null,
       newHoldBalance: await readHoldBalance(user.sub),
+      sessionId: topup.id
+    }
+  }
+
+  if (sessionStatus === 'failed') {
+    return {
+      ok: false,
+      status: 'failed' as const,
+      message: 'This hold purchase is no longer valid. Please start a new purchase.',
+      sessionId: topup.id
+    }
+  }
+
+  let orderId = topup.order_template_id ?? hintedOrderId ?? null
+  if (!orderId && topup.payment_link_id) {
+    const linkRes = await square.checkout.paymentLinks.get({ id: topup.payment_link_id } as never)
+    const paymentLink = (linkRes as { paymentLink?: Record<string, unknown> | null }).paymentLink ?? null
+    orderId = readString(paymentLink, 'orderId', 'order_id')
+  }
+
+  if (!orderId) {
+    return {
+      ok: false,
+      status: 'pending' as const,
+      message: 'Payment details are still syncing. Please retry in a moment.',
+      sessionId: topup.id
+    }
+  }
+
+  const paymentState = await resolveOrderPaymentState({
+    square,
+    orderId,
+    beginTime: topup.created_at ?? null
+  })
+
+  if (!paymentState.completed) {
+    const nextStatus = sessionStatus === 'expired' ? 'expired' : 'pending'
+    await supabase
+      .from('hold_topup_sessions')
+      .update({
+        status: nextStatus,
+        metadata: {
+          ...(topup.metadata ?? {}),
+          last_claim_status: 'pending_order_not_completed',
+          last_claim_order_state: paymentState.orderState,
+          last_claim_payment_status: paymentState.paymentStatus,
+          last_claim_order_id: orderId,
+          last_claim_at: new Date().toISOString()
+        }
+      })
+      .eq('id', topup.id)
+
+    return {
+      ok: false,
+      status: 'pending' as const,
+      message: 'Hold payment is not completed yet.',
+      sessionId: topup.id
+    }
+  }
+
+  const { data: existingLedger } = topup.ledger_entry_id
+    ? await supabase
+        .from('hold_ledger')
+        .select('id')
+        .eq('id', topup.ledger_entry_id)
+        .maybeSingle()
+    : { data: null as { id: string } | null }
+
+  let ledgerEntryId = existingLedger?.id ?? null
+  if (!ledgerEntryId) {
+    const { data: insertedLedger, error: ledgerErr } = await supabase
+      .from('hold_ledger')
+      .insert({
+        user_id: user.sub,
+        delta: topup.holds,
+        reason: 'topoff',
+        external_ref: orderId,
+        metadata: {
+          source: 'dashboard_hold_topup',
+          topup_session_id: topup.id,
+          amount_cents: topup.amount_cents,
+          label: readString(topup.metadata, 'label')
+        }
+      })
+      .select('id')
+      .single()
+
+    if (ledgerErr || !insertedLedger) {
+      await supabase
+        .from('hold_topup_sessions')
+        .update({
+          metadata: {
+            ...(topup.metadata ?? {}),
+            last_claim_status: 'failed_ledger_insert',
+            last_claim_error: ledgerErr?.message ?? 'failed_to_mint_holds',
+            last_claim_order_id: orderId,
+            last_claim_at: new Date().toISOString()
+          }
+        })
+        .eq('id', topup.id)
+      throw createError({ statusCode: 500, statusMessage: ledgerErr?.message ?? 'Failed to add holds' })
+    }
+    ledgerEntryId = insertedLedger.id
+  }
+
+  const nowIso = new Date().toISOString()
+  const { error: updateErr } = await supabase
+    .from('hold_topup_sessions')
+    .update({
+      status: 'processed',
+      ledger_entry_id: ledgerEntryId,
+      order_template_id: orderId,
+      paid_at: nowIso
+    })
+    .eq('id', topup.id)
+
+  if (updateErr) throw createError({ statusCode: 500, statusMessage: updateErr.message })
+
+  const newHoldBalance = await readHoldBalance(user.sub)
+  await sendHoldTopupPurchasedMail({
+    event,
+    to: user.email ?? null,
+    userId: user.sub,
+    membershipId: topup.membership_id,
+    holdsAdded: asNumber(topup.holds) ?? null,
+    newHoldBalance,
+    amountCents: asNumber(topup.amount_cents),
+    label: readString(topup.metadata, 'label'),
+    paymentId: orderId
+  })
+
+  return {
+      ok: true,
+      status: 'processed' as const,
+      holdsAdded: asNumber(topup.holds) ?? null,
+      newHoldBalance,
       sessionId: topup.id
     }
   }

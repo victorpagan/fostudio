@@ -1,4 +1,5 @@
 import { requireServerAdmin } from '~~/server/utils/auth'
+import { getAvailableVariablesByEvent } from '~~/server/utils/mail/templateVariables'
 
 type MailTemplateCategory = 'critical' | 'non_critical'
 
@@ -8,6 +9,9 @@ type MailTemplateRegistryRow = {
   category: MailTemplateCategory
   active: boolean
   description: string | null
+  subject_template: string | null
+  preheader_template: string | null
+  body_template: string | null
 }
 
 type MailAdminCopyPreferencesRow = {
@@ -29,7 +33,7 @@ export default defineEventHandler(async (event) => {
       .maybeSingle(),
     db
       .from('mail_template_registry')
-      .select('event_type,sendgrid_template_id,category,active,description')
+      .select('event_type,sendgrid_template_id,category,active,description,subject_template,preheader_template,body_template')
       .order('event_type', { ascending: true })
   ])
 
@@ -52,7 +56,11 @@ export default defineEventHandler(async (event) => {
       sendgridTemplateId: row.sendgrid_template_id,
       category: row.category,
       active: row.active,
-      description: row.description ?? ''
-    }))
+      description: row.description ?? '',
+      subjectTemplate: row.subject_template ?? '',
+      preheaderTemplate: row.preheader_template ?? '',
+      bodyTemplate: row.body_template ?? ''
+    })),
+    availableVariablesByEvent: getAvailableVariablesByEvent()
   }
 })

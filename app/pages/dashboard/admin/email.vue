@@ -9,6 +9,9 @@ type AdminMailTemplate = {
   category: MailTemplateCategory
   active: boolean
   description: string
+  subjectTemplate: string
+  preheaderTemplate: string
+  bodyTemplate: string
 }
 
 type AdminEmailSettingsResponse = {
@@ -18,12 +21,14 @@ type AdminEmailSettingsResponse = {
     recipients: string[]
   }
   templates: AdminMailTemplate[]
+  availableVariablesByEvent: Record<string, string[]>
 }
 
 const toast = useToast()
 const saving = ref(false)
 const recipientsInput = ref('')
 const templates = ref<AdminMailTemplate[]>([])
+const availableVariablesByEvent = ref<Record<string, string[]>>({ '*': [] })
 
 const adminCopies = reactive({
   criticalEnabled: true,
@@ -40,8 +45,12 @@ const { pending, refresh } = await useAsyncData('admin:email:settings', async ()
     sendgridTemplateId: template.sendgridTemplateId,
     category: template.category,
     active: Boolean(template.active),
-    description: template.description ?? ''
+    description: template.description ?? '',
+    subjectTemplate: template.subjectTemplate ?? '',
+    preheaderTemplate: template.preheaderTemplate ?? '',
+    bodyTemplate: template.bodyTemplate ?? ''
   }))
+  availableVariablesByEvent.value = res.availableVariablesByEvent ?? { '*': [] }
   return res
 })
 
@@ -57,7 +66,10 @@ function addTemplateRow() {
     sendgridTemplateId: '',
     category: 'critical',
     active: true,
-    description: ''
+    description: '',
+    subjectTemplate: '',
+    preheaderTemplate: '',
+    bodyTemplate: ''
   })
 }
 
@@ -72,6 +84,10 @@ function parseRecipients(input: string) {
       .map(value => value.trim().toLowerCase())
       .filter(Boolean)
   )]
+}
+
+function formatVariableToken(variableName: string) {
+  return `{{ ${variableName} }}`
 }
 
 async function saveSettings() {
@@ -89,7 +105,10 @@ async function saveSettings() {
           sendgridTemplateId: template.sendgridTemplateId.trim(),
           category: template.category,
           active: Boolean(template.active),
-          description: template.description.trim()
+          description: template.description.trim(),
+          subjectTemplate: template.subjectTemplate,
+          preheaderTemplate: template.preheaderTemplate,
+          bodyTemplate: template.bodyTemplate
         }))
         .filter(template => template.eventType && template.sendgridTemplateId)
     }
@@ -140,7 +159,7 @@ async function saveSettings() {
           variant="soft"
           icon="i-lucide-mail"
           title="Centralized mail controls"
-          description="Configure admin copies and SendGrid template mapping by mail event type."
+          description="Configure admin copies and SendGrid template mapping by event type. Supports {{ variableName }} interpolation for subject, preheader, and body (single-pass, unresolved variables render blank)."
         />
 
         <UCard>
@@ -192,7 +211,7 @@ async function saveSettings() {
               No template mappings yet.
             </div>
 
-            <div v-for="(template, index) in templates" :key="`${template.eventType}-${index}`" class="rounded-lg border border-default p-3 space-y-3">
+              <div v-for="(template, index) in templates" :key="`${template.eventType}-${index}`" class="rounded-lg border border-default p-3 space-y-3">
               <div class="grid gap-3 md:grid-cols-2">
                 <UFormField label="Event type">
                   <UInput
@@ -228,6 +247,52 @@ async function saveSettings() {
                     placeholder="Optional"
                   />
                 </UFormField>
+              </div>
+
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField label="Subject template">
+                  <UInput
+                    v-model="template.subjectTemplate"
+                    class="w-full"
+                    placeholder="FO Studio: {{ tierName }} membership update"
+                  />
+                </UFormField>
+
+                <UFormField label="Preheader template">
+                  <UInput
+                    v-model="template.preheaderTemplate"
+                    class="w-full"
+                    placeholder="{{ cadenceLabel }} plan update and next steps"
+                  />
+                </UFormField>
+              </div>
+
+              <UFormField
+                label="Body template (HTML)"
+                description="Use {{ variableName }} tokens. This value is passed to SendGrid as {{ body }}."
+              >
+                <UEditor
+                  v-model="template.bodyTemplate"
+                  content-type="html"
+                  class="max-h-72 overflow-auto rounded-md border border-default"
+                  placeholder="Write HTML body content. Example: <p>Your {{ tierName }} membership is active.</p>"
+                />
+              </UFormField>
+
+              <div class="text-xs text-dimmed rounded-md border border-default bg-elevated/30 p-2">
+                <div class="font-medium text-highlighted mb-1">Available variables</div>
+                <div class="leading-relaxed break-words">
+                  <span
+                    v-for="variableName in [
+                      ...(availableVariablesByEvent['*'] ?? []),
+                      ...((template.eventType && availableVariablesByEvent[template.eventType]) ?? [])
+                    ]"
+                    :key="`${template.eventType || 'new'}-${variableName}`"
+                    class="inline-block mr-2 mb-1"
+                  >
+                    <code>{{ formatVariableToken(variableName) }}</code>
+                  </span>
+                </div>
               </div>
 
               <div class="flex items-center justify-between">
