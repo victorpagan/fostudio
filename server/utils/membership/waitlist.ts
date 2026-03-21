@@ -82,21 +82,6 @@ export async function inviteWaitlistForTier(event: H3Event, tierId: string) {
     } as const
   }
 
-  const { data: settingsRow, error: settingsErr } = await supabase
-    .from('settings')
-    .select('membershipWaitlistInvite')
-    .eq('locationId', locationId)
-    .limit(1)
-    .maybeSingle()
-
-  if (settingsErr) {
-    throw createError({ statusCode: 500, statusMessage: settingsErr.message })
-  }
-
-  const templateId = typeof settingsRow?.membershipWaitlistInvite === 'string'
-    ? settingsRow.membershipWaitlistInvite.trim() || null
-    : null
-
   const { data: waitlistRowsRaw, error: waitlistErr } = await supabase
     .from('membership_waitlist')
     .select('id,tier_id,cadence,user_id,email,phone,is_priority_member,status,created_at')
@@ -133,9 +118,9 @@ export async function inviteWaitlistForTier(event: H3Event, tierId: string) {
         type: 'membership.waitlistInvite',
         payload: {
           to: toEmail,
+          userId: row.user_id ?? null,
+          eventType: 'membership.waitlistInvite',
           locationId,
-          templateId,
-          templateKey: 'membershipWaitlistInvite',
           tierId,
           tierName: tierRow.display_name ?? tierId,
           cadence: row.cadence ?? 'monthly',
@@ -162,7 +147,6 @@ export async function inviteWaitlistForTier(event: H3Event, tierId: string) {
           updated_at: nowIso,
           metadata: {
             checkout_url: checkoutUrl,
-            template_id: templateId,
             location_id: locationId,
             mail_type: 'membership.waitlistInvite'
           }

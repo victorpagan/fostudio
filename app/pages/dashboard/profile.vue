@@ -45,6 +45,12 @@ type MembershipSummary = {
   current_period_end: string | null
   billing_provider: string | null
 }
+type EmailPreferencesResponse = {
+  preferences: {
+    criticalEnabled: boolean
+    nonCriticalEnabled: boolean
+  }
+}
 
 const { data: customer, refresh } = await useAsyncData('dash:profile', async () => {
   if (!user.value) return null
@@ -74,6 +80,31 @@ const { data: membershipSummary, refresh: refreshMembershipSummary } = await use
   if (error) throw error
   return data as MembershipSummary | null
 }, { watch: [() => user.value?.sub], default: () => null })
+const emailPreferences = reactive({
+  criticalEnabled: true,
+  nonCriticalEnabled: false
+})
+const emailPreferencesSaving = ref(false)
+const { data: emailPreferencesData, refresh: refreshEmailPreferences } = await useAsyncData('dash:profile:email-preferences', async () => {
+  if (!user.value?.sub) {
+    return {
+      preferences: {
+        criticalEnabled: true,
+        nonCriticalEnabled: false
+      }
+    } as EmailPreferencesResponse
+  }
+  return await $fetch<EmailPreferencesResponse>('/api/profile/email-preferences')
+}, {
+  watch: [() => user.value?.sub],
+  server: false,
+  default: () => ({
+    preferences: {
+      criticalEnabled: true,
+      nonCriticalEnabled: false
+    }
+  })
+})
 
 // Editable form — synced from customer data
 const form = reactive({
@@ -87,6 +118,12 @@ watch(customer, (c) => {
   form.first_name = c.first_name ?? ''
   form.last_name = c.last_name ?? ''
   form.phone = c.phone ?? ''
+}, { immediate: true })
+watch(emailPreferencesData, (data) => {
+  const prefs = data?.preferences
+  if (!prefs) return
+  emailPreferences.criticalEnabled = Boolean(prefs.criticalEnabled)
+  emailPreferences.nonCriticalEnabled = Boolean(prefs.nonCriticalEnabled)
 }, { immediate: true })
 
 const saving = ref(false)
@@ -159,6 +196,14 @@ const isDirty = computed(() =>
 const savedCards = computed(() => paymentMethodsData.value?.methods ?? [])
 const defaultCardId = computed(() => paymentMethodsData.value?.defaultCardId ?? null)
 const membershipTierLabel = computed(() => formatMembershipTierLabel(membershipSummary.value?.tier) ?? null)
+const emailPreferencesDirty = computed(() => {
+  const defaults = emailPreferencesData.value?.preferences
+  if (!defaults) return false
+  return (
+    emailPreferences.criticalEnabled !== Boolean(defaults.criticalEnabled)
+    || emailPreferences.nonCriticalEnabled !== Boolean(defaults.nonCriticalEnabled)
+  )
+})
 
 function formatExactDate(value: string | null | undefined) {
   if (!value) return null
@@ -247,6 +292,30 @@ async function setDefaultPaymentMethod(cardId: string) {
     })
   } finally {
     settingDefaultCardId.value = null
+  }
+}
+
+async function saveEmailPreferences() {
+  if (!user.value?.sub) return
+  emailPreferencesSaving.value = true
+  try {
+    await $fetch('/api/profile/email-preferences.upsert', {
+      method: 'POST',
+      body: {
+        criticalEnabled: emailPreferences.criticalEnabled,
+        nonCriticalEnabled: emailPreferences.nonCriticalEnabled
+      }
+    })
+    toast.add({ title: 'Email preferences saved', color: 'success' })
+    await refreshEmailPreferences()
+  } catch (error: any) {
+    toast.add({
+      title: 'Could not save email preferences',
+      description: error?.data?.statusMessage ?? error?.message ?? 'Error',
+      color: 'error'
+    })
+  } finally {
+    emailPreferencesSaving.value = false
   }
 }
 </script>
@@ -345,6 +414,43 @@ async function setDefaultPaymentMethod(cardId: string) {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </UCard>
+
+        <UCard>
+          <div class="space-y-4">
+            <div class="flex items-center justify-between gap-2">
+              <div class="text-sm font-medium">Email preferences</div>
+              <UButton size="xs" color="neutral" variant="soft" @click="() => refreshEmailPreferences()">
+                Refresh
+              </UButton>
+            </div>
+
+            <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
+              <div>
+                <div class="text-sm font-medium">Critical emails</div>
+                <div class="text-xs text-dimmed">Membership and booking status updates.</div>
+              </div>
+              <USwitch v-model="emailPreferences.criticalEnabled" />
+            </div>
+
+            <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
+              <div>
+                <div class="text-sm font-medium">Non-critical emails</div>
+                <div class="text-xs text-dimmed">Optional reminders and informational messages.</div>
+              </div>
+              <USwitch v-model="emailPreferences.nonCriticalEnabled" />
+            </div>
+
+            <div class="flex justify-end">
+              <UButton
+                :loading="emailPreferencesSaving"
+                :disabled="!emailPreferencesDirty"
+                @click="saveEmailPreferences"
+              >
+                Save email preferences
+              </UButton>
             </div>
           </div>
         </UCard>

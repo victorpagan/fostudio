@@ -110,20 +110,6 @@ export default defineEventHandler(async (event) => {
   if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
 
   const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID').catch(() => null)
-  let templateId: string | null = null
-  if (locationId && typeof locationId === 'string') {
-    const { data: settingsRow } = await db
-      .from('settings')
-      .select('membershipCheckoutActivation')
-      .eq('locationId', locationId)
-      .limit(1)
-      .maybeSingle()
-
-    templateId = typeof settingsRow?.membershipCheckoutActivation === 'string'
-      ? settingsRow.membershipCheckoutActivation.trim() || null
-      : null
-  }
-
   const origin = getRequestURL(event).origin
   const activationUrl = `${origin}/checkout/success?checkout=${encodeURIComponent(session.token)}&returnTo=${encodeURIComponent(normalizeReturnTo(session.return_to))}`
 
@@ -133,9 +119,9 @@ export default defineEventHandler(async (event) => {
       type: 'membership.checkoutActivationPending',
       payload: {
         to: String(session.guest_email).trim().toLowerCase(),
+        userId: session.claimed_by_user_id ?? null,
+        eventType: 'membership.checkoutActivationPending',
         locationId: typeof locationId === 'string' ? locationId : null,
-        templateId,
-        templateKey: 'membershipCheckoutActivation',
         tierId: session.tier,
         tierName: tier?.display_name ?? session.tier,
         cadence: session.cadence,

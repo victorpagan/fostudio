@@ -51,6 +51,12 @@ const sections = [
     to: '/dashboard/admin/google-calendar'
   },
   {
+    title: 'Email',
+    description: 'Manage customer mail preferences, admin copy behavior, and SendGrid template mappings.',
+    icon: 'i-lucide-mail',
+    to: '/dashboard/admin/email'
+  },
+  {
     title: 'Holds',
     description: 'Configure hold fallback, hold top-up settings, and sync the hold item to Square.',
     icon: 'i-lucide-package-plus',

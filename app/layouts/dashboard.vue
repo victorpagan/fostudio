@@ -65,6 +65,12 @@ const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
         onSelect: () => { open.value = false }
       },
       {
+        label: 'Email',
+        icon: 'i-lucide-mail',
+        to: '/dashboard/admin/email',
+        onSelect: () => { open.value = false }
+      },
+      {
         label: 'Holds',
         icon: 'i-lucide-package-plus',
         to: '/dashboard/admin/holds',
