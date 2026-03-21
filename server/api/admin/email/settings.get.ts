@@ -1,7 +1,9 @@
 import { requireServerAdmin } from '~~/server/utils/auth'
-import { getAvailableVariablesByEvent } from '~~/server/utils/mail/templateVariables'
-
-type MailTemplateCategory = 'critical' | 'non_critical'
+import {
+  getAvailableVariablesByEvent,
+  getRegisteredMailEvents,
+  type MailTemplateCategory
+} from '~~/server/utils/mail/templateVariables'
 
 type MailTemplateRegistryRow = {
   event_type: string
@@ -42,6 +44,39 @@ export default defineEventHandler(async (event) => {
 
   const prefRow = (prefRowRaw ?? null) as MailAdminCopyPreferencesRow | null
   const templateRows = (templateRowsRaw ?? []) as MailTemplateRegistryRow[]
+  const registeredEvents = getRegisteredMailEvents()
+  const templateMap = new Map(
+    templateRows.map(row => [row.event_type, row] as const)
+  )
+
+  const mergedTemplates = registeredEvents.map((registryItem) => {
+    const row = templateMap.get(registryItem.eventType) ?? null
+    if (row) templateMap.delete(registryItem.eventType)
+
+    return {
+      eventType: registryItem.eventType,
+      sendgridTemplateId: row?.sendgrid_template_id ?? '',
+      category: row?.category ?? registryItem.category,
+      active: row?.active ?? true,
+      description: row?.description ?? registryItem.description,
+      subjectTemplate: row?.subject_template ?? '',
+      preheaderTemplate: row?.preheader_template ?? '',
+      bodyTemplate: row?.body_template ?? ''
+    }
+  })
+
+  for (const row of templateMap.values()) {
+    mergedTemplates.push({
+      eventType: row.event_type,
+      sendgridTemplateId: row.sendgrid_template_id,
+      category: row.category,
+      active: row.active,
+      description: row.description ?? '',
+      subjectTemplate: row.subject_template ?? '',
+      preheaderTemplate: row.preheader_template ?? '',
+      bodyTemplate: row.body_template ?? ''
+    })
+  }
 
   return {
     adminCopies: {
@@ -51,16 +86,7 @@ export default defineEventHandler(async (event) => {
         ? prefRow?.recipients.filter(item => typeof item === 'string' && item.trim().length > 0)
         : []
     },
-    templates: templateRows.map(row => ({
-      eventType: row.event_type,
-      sendgridTemplateId: row.sendgrid_template_id,
-      category: row.category,
-      active: row.active,
-      description: row.description ?? '',
-      subjectTemplate: row.subject_template ?? '',
-      preheaderTemplate: row.preheader_template ?? '',
-      bodyTemplate: row.body_template ?? ''
-    })),
+    templates: mergedTemplates.sort((a, b) => a.eventType.localeCompare(b.eventType)),
     availableVariablesByEvent: getAvailableVariablesByEvent()
   }
 })

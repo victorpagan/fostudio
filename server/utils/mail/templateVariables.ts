@@ -1,10 +1,65 @@
+export type MailTemplateCategory = 'critical' | 'non_critical'
 export type AvailableVariablesByEvent = Record<string, string[]>
+
+export type RegisteredMailEvent = {
+  eventType: string
+  category: MailTemplateCategory
+  description: string
+}
 
 const COMMON_VARIABLES = [
   'to',
   'userId',
   'eventType',
   'templateId'
+]
+
+const REGISTERED_MAIL_EVENTS: RegisteredMailEvent[] = [
+  {
+    eventType: 'membership.waitlistInvite',
+    category: 'non_critical',
+    description: 'Member invite to complete checkout from the waitlist.'
+  },
+  {
+    eventType: 'membership.checkoutActivationPending',
+    category: 'critical',
+    description: 'Checkout paid, but activation requires follow-up action.'
+  },
+  {
+    eventType: 'membership.started',
+    category: 'critical',
+    description: 'Membership started or returned to active.'
+  },
+  {
+    eventType: 'membership.pastDue',
+    category: 'critical',
+    description: 'Membership payment moved to past due.'
+  },
+  {
+    eventType: 'membership.ended',
+    category: 'critical',
+    description: 'Membership canceled or ended.'
+  },
+  {
+    eventType: 'membership.renewed',
+    category: 'critical',
+    description: 'Membership invoice paid and cycle renewed.'
+  },
+  {
+    eventType: 'credits.topupPurchased',
+    category: 'critical',
+    description: 'Credits top-off purchase completed.'
+  },
+  {
+    eventType: 'holds.topupPurchased',
+    category: 'critical',
+    description: 'Equipment hold top-off purchase completed.'
+  },
+  {
+    eventType: 'order.confirmation',
+    category: 'critical',
+    description: 'Order confirmation sent after checkout.'
+  }
 ]
 
 const EVENT_VARIABLES: AvailableVariablesByEvent = {
@@ -98,6 +153,12 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'totalDiscount',
     'receipt'
   ]
+}
+
+export function getRegisteredMailEvents(): RegisteredMailEvent[] {
+  return REGISTERED_MAIL_EVENTS
+    .map(event => ({ ...event }))
+    .sort((a, b) => a.eventType.localeCompare(b.eventType))
 }
 
 export function getAvailableVariablesByEvent(): AvailableVariablesByEvent {
