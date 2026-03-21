@@ -126,10 +126,22 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: payload.reason })
   }
 
-  const sendResult = await sendViaFomailer(event, {
-    type: body.eventType,
-    payload
-  })
+  let sendResult: Awaited<ReturnType<typeof sendViaFomailer>>
+  try {
+    sendResult = await sendViaFomailer(event, {
+      type: body.eventType,
+      payload
+    })
+  } catch (error: unknown) {
+    const message = error instanceof Error
+      ? error.message
+      : String(error)
+
+    throw createError({
+      statusCode: 502,
+      statusMessage: `Test send failed upstream: ${message}`
+    })
+  }
 
   return {
     ok: Boolean(sendResult.ok),
