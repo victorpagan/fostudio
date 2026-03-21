@@ -445,13 +445,13 @@ async function saveTemplateFromModal() {
       <template #content>
         <UCard
           v-if="templateDraft"
-          class="w-[calc(100vw-2rem)] max-w-5xl max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-4rem)] overflow-hidden"
-          :ui="{ body: 'space-y-4 overflow-y-auto max-h-[calc(100dvh-14rem)]' }"
+          class="w-[calc(100vw-2rem)] max-w-5xl max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-4rem)] overflow-hidden ring-1 ring-primary/25"
+          :ui="{ body: 'space-y-4 overflow-y-auto max-h-[calc(100dvh-14rem)] bg-elevated/20' }"
         >
           <template #header>
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <div class="text-base font-semibold">
+            <div class="flex items-start justify-between gap-3 rounded-md border border-primary/20 bg-primary/8 px-3 py-2">
+              <div class="min-w-0">
+                <div class="text-base font-semibold text-highlighted">
                   Edit template mapping
                 </div>
                 <p class="mt-1 text-sm text-dimmed break-all">
@@ -468,96 +468,107 @@ async function saveTemplateFromModal() {
             </div>
           </template>
 
-          <div>
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Event type">
-                <UInput
-                  :model-value="templateDraft.eventType"
-                  class="w-full"
-                  disabled
-                  readonly
-                />
-              </UFormField>
-              <UFormField label="SendGrid template id">
-                <UInput
-                  v-model="templateDraft.sendgridTemplateId"
-                  class="w-full"
-                  placeholder="d-xxxxxxxxxxxxxxxxxxxx"
-                />
-              </UFormField>
-            </div>
-
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Category">
-                <select
-                  v-model="templateDraft.category"
-                  class="w-full rounded-md border border-default bg-default px-2.5 py-2 text-sm"
-                >
-                  <option value="critical">
-                    critical
-                  </option>
-                  <option value="non_critical">
-                    non_critical
-                  </option>
-                </select>
-              </UFormField>
-
-              <UFormField label="Description">
-                <UInput
-                  v-model="templateDraft.description"
-                  class="w-full"
-                  placeholder="Optional"
-                />
-              </UFormField>
-            </div>
-
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Subject template">
-                <UInput
-                  v-model="templateDraft.subjectTemplate"
-                  class="w-full"
-                  placeholder="FO Studio: {{ tierName }} membership update"
-                />
-              </UFormField>
-
-              <UFormField label="Preheader template">
-                <UInput
-                  v-model="templateDraft.preheaderTemplate"
-                  class="w-full"
-                  placeholder="{{ cadenceLabel }} plan update and next steps"
-                />
-              </UFormField>
-            </div>
-
-            <UFormField
-              label="Body template (HTML)"
-              description="Use {{ variableName }} tokens. This value is passed to SendGrid as {{ body }}."
-            >
-              <UEditor
-                v-model="templateDraft.bodyTemplate"
-                content-type="html"
-                class="w-full rounded-md border border-default [&_.ProseMirror]:min-h-[24rem] [&_.tiptap.ProseMirror]:min-h-[24rem]"
-                placeholder="Write HTML body content. Example: <p>Your {{ tierName }} membership is active.</p>"
-              >
-                <template #default="{ editor }">
-                  <UEditorToolbar
-                    :editor="editor"
-                    :items="emailEditorToolbarItems"
-                    class="border-b border-default sticky top-0 inset-x-0 p-1.5 z-10 bg-default/95 backdrop-blur overflow-x-auto"
+          <div class="space-y-3">
+            <div class="rounded-lg border border-primary/20 bg-default/80 p-3">
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField label="Event type">
+                  <UInput
+                    :model-value="templateDraft.eventType"
+                    class="w-full"
+                    disabled
+                    readonly
                   />
-                </template>
-              </UEditor>
-            </UFormField>
+                </UFormField>
+                <UFormField label="SendGrid template id">
+                  <UInput
+                    v-model="templateDraft.sendgridTemplateId"
+                    class="w-full"
+                    placeholder="d-xxxxxxxxxxxxxxxxxxxx"
+                  />
+                </UFormField>
+              </div>
+            </div>
 
-            <div class="text-xs text-dimmed rounded-md border border-default bg-elevated/30 p-2">
-              <div class="font-medium text-highlighted mb-1">
+            <div class="rounded-lg border border-info/25 bg-info/8 p-3">
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField label="Category">
+                  <select
+                    v-model="templateDraft.category"
+                    class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
+                  >
+                    <option value="critical">
+                      critical
+                    </option>
+                    <option value="non_critical">
+                      non_critical
+                    </option>
+                  </select>
+                </UFormField>
+
+                <UFormField label="Description">
+                  <UInput
+                    v-model="templateDraft.description"
+                    class="w-full"
+                    placeholder="Optional"
+                  />
+                </UFormField>
+              </div>
+            </div>
+
+            <div class="rounded-lg border border-success/25 bg-success/8 p-3">
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField label="Subject template">
+                  <UInput
+                    v-model="templateDraft.subjectTemplate"
+                    class="w-full"
+                    placeholder="FO Studio: {{ tierName }} membership update"
+                  />
+                </UFormField>
+
+                <UFormField label="Preheader template">
+                  <UInput
+                    v-model="templateDraft.preheaderTemplate"
+                    class="w-full"
+                    placeholder="{{ cadenceLabel }} plan update and next steps"
+                  />
+                </UFormField>
+              </div>
+            </div>
+
+            <div class="rounded-lg border border-warning/25 bg-warning/7 p-3">
+              <UFormField label="Event type">
+                <template #label>
+                  <span class="text-warning-700 dark:text-warning-300">Body template (HTML)</span>
+                </template>
+                <template #description>
+                  Use <code v-pre>{{ variableName }}</code> tokens. This value is passed to SendGrid as <code v-pre>{{ body }}</code>.
+                </template>
+                <UEditor
+                  v-model="templateDraft.bodyTemplate"
+                  content-type="html"
+                  class="w-full rounded-md border border-warning/30 bg-default [&_.ProseMirror]:min-h-[24rem] [&_.tiptap.ProseMirror]:min-h-[24rem]"
+                  placeholder="Write HTML body content. Example: <p>Your {{ tierName }} membership is active.</p>"
+                >
+                  <template #default="{ editor }">
+                    <UEditorToolbar
+                      :editor="editor"
+                      :items="emailEditorToolbarItems"
+                      class="border-b border-warning/25 sticky top-0 inset-x-0 p-1.5 z-10 bg-warning/8 backdrop-blur overflow-x-auto"
+                    />
+                  </template>
+                </UEditor>
+              </UFormField>
+            </div>
+
+            <div class="text-xs text-dimmed rounded-md border border-primary/25 bg-primary/8 p-2.5">
+              <div class="font-medium text-highlighted mb-1.5">
                 Available variables
               </div>
               <div class="leading-relaxed break-words">
                 <span
                   v-for="variableName in selectedTemplateVariables"
                   :key="`${templateDraft.eventType}-${variableName}`"
-                  class="inline-block mr-2 mb-1"
+                  class="inline-block mr-2 mb-1 rounded bg-default/90 px-1.5 py-0.5 ring-1 ring-primary/20"
                 >
                   <code>{{ formatVariableToken(variableName) }}</code>
                 </span>
