@@ -326,7 +326,7 @@ function formatDate(value: string | null) {
                 v-model="form.metadataJson"
                 :rows="8"
                 autoresize
-                placeholder="{\"documentKey\":\"member_waiver_v1\"}"
+                placeholder='{"documentKey":"member_waiver_v1"}'
               />
             </UFormField>
           </div>
