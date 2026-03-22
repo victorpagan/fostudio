@@ -66,6 +66,8 @@ async function sendTopupPurchasedMail(params: {
   amountCents: number | null
   optionLabel: string | null
   paymentId: string | null
+  customerName: string | null
+  customerEmail: string | null
 }) {
   const to = typeof params.to === 'string' ? params.to.trim().toLowerCase() : ''
   if (!to) return
@@ -82,7 +84,9 @@ async function sendTopupPurchasedMail(params: {
         newBalance: params.newBalance,
         amountCents: params.amountCents,
         optionLabel: params.optionLabel,
-        paymentId: params.paymentId
+        paymentId: params.paymentId,
+        customerName: params.customerName,
+        customerEmail: params.customerEmail
       }
     })
   } catch (error) {
@@ -308,7 +312,9 @@ export default defineEventHandler(async (event) => {
       newBalance,
       amountCents: asNumber(topup.amount_cents),
       optionLabel,
-      paymentId: orderId
+      paymentId: orderId,
+      customerName: [user.user_metadata?.first_name, user.user_metadata?.last_name].filter(Boolean).join(' ').trim() || null,
+      customerEmail: user.email ?? null
     })
 
     return {

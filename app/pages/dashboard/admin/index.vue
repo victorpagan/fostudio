@@ -33,6 +33,12 @@ const sections = [
     to: '/dashboard/admin/members'
   },
   {
+    title: 'Waiver templates',
+    description: 'Draft and publish member waiver versions. Publishing forces member re-signing.',
+    icon: 'i-lucide-file-signature',
+    to: '/dashboard/admin/waiver'
+  },
+  {
     title: 'Bookings',
     description: 'Review all bookings and run admin-level cancellation/refund actions.',
     icon: 'i-lucide-calendar-range',

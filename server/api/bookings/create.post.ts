@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
+import { isAdminRole, readUserRole } from '~~/server/utils/auth'
+import type { RoleCarrier } from '~~/server/utils/auth'
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { ensureNoExternalCalendarConflict } from '~~/server/utils/booking/externalCalendar'
 import {
@@ -12,6 +14,7 @@ import {
   validateOvernightHoldWindow
 } from '~~/server/utils/booking/holds'
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
+import { assertCurrentWaiver } from '~~/server/utils/waiver/status'
 
 const schema = z.object({
   start_time: z.string(),
@@ -62,6 +65,11 @@ function computeCredits(startIso: string, endIso: string, peakMultiplier: number
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
   if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
+  const role = readUserRole(user as RoleCarrier)
+  const isAdmin = isAdminRole(role)
+  if (!isAdmin) {
+    await assertCurrentWaiver(event, user.sub)
+  }
 
   const supabase = serverSupabaseServiceRole(event)
   const db = supabase as any

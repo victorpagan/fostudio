@@ -64,6 +64,9 @@ const REGISTERED_MAIL_EVENTS: RegisteredMailEvent[] = [
 
 const EVENT_VARIABLES: AvailableVariablesByEvent = {
   'membership.waitlistInvite': [
+    'customerName',
+    'customerEmail',
+    'doorCode',
     'tierId',
     'tierName',
     'cadence',
@@ -72,6 +75,9 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'isPriorityMember'
   ],
   'membership.checkoutActivationPending': [
+    'customerName',
+    'customerEmail',
+    'doorCode',
     'tierId',
     'tierName',
     'cadence',
@@ -82,6 +88,9 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'paymentLinkId'
   ],
   'membership.started': [
+    'customerName',
+    'customerEmail',
+    'doorCode',
     'tierId',
     'tierName',
     'cadence',
@@ -92,6 +101,9 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'squareStatus'
   ],
   'membership.pastDue': [
+    'customerName',
+    'customerEmail',
+    'doorCode',
     'tierId',
     'tierName',
     'cadence',
@@ -102,6 +114,9 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'squareStatus'
   ],
   'membership.ended': [
+    'customerName',
+    'customerEmail',
+    'doorCode',
     'tierId',
     'tierName',
     'cadence',
@@ -112,6 +127,9 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'squareStatus'
   ],
   'membership.renewed': [
+    'customerName',
+    'customerEmail',
+    'doorCode',
     'tierId',
     'tierName',
     'cadence',
@@ -122,6 +140,8 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'subscriptionId'
   ],
   'credits.topupPurchased': [
+    'customerName',
+    'customerEmail',
     'membershipId',
     'creditsAdded',
     'newBalance',
@@ -131,6 +151,8 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'paymentId'
   ],
   'holds.topupPurchased': [
+    'customerName',
+    'customerEmail',
     'membershipId',
     'holdsAdded',
     'newHoldBalance',

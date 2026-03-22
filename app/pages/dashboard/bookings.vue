@@ -14,6 +14,22 @@ const router = useRouter()
 const route = useRoute()
 const toast = useToast()
 
+type ApiErrorLike = {
+  data?: {
+    statusMessage?: string
+    code?: string
+    data?: {
+      code?: string
+    }
+  }
+  message?: string
+}
+
+function getApiErrorCode(error: unknown) {
+  const maybe = error as ApiErrorLike
+  return maybe.data?.code ?? maybe.data?.data?.code ?? null
+}
+
 type Booking = {
   id: string
   start_time: string
@@ -565,7 +581,16 @@ async function saveReschedule() {
       })
     }
   } catch (error: unknown) {
-    const maybe = error as { data?: { statusMessage?: string }, message?: string }
+    const maybe = error as ApiErrorLike
+    if (getApiErrorCode(error) === 'WAIVER_REQUIRED') {
+      toast.add({
+        title: 'Waiver signature required',
+        description: 'Please sign the current waiver before rescheduling.',
+        color: 'warning'
+      })
+      await router.push(`/dashboard/waiver?returnTo=${encodeURIComponent(route.fullPath)}`)
+      return
+    }
     toast.add({
       title: 'Could not reschedule',
       description: maybe.data?.statusMessage ?? maybe.message ?? 'Error',

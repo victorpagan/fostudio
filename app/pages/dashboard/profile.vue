@@ -45,6 +45,18 @@ type MembershipSummary = {
   current_period_end: string | null
   billing_provider: string | null
 }
+type WaiverCurrentResponse = {
+  status: 'current' | 'expired' | 'missing' | 'stale_version'
+  renewalNeeded: boolean
+  activeTemplate: {
+    version: number
+  } | null
+  latestSignature: {
+    signedAt: string
+    expiresAt: string
+    templateVersion: number
+  } | null
+}
 type EmailPreferencesResponse = {
   preferences: {
     criticalEnabled: boolean
@@ -79,6 +91,10 @@ const { data: membershipSummary, refresh: refreshMembershipSummary } = await use
     .maybeSingle()
   if (error) throw error
   return data as MembershipSummary | null
+}, { watch: [() => user.value?.sub], default: () => null })
+const { data: waiverStatus, refresh: refreshWaiverStatus } = await useAsyncData('dash:profile:waiver-status', async () => {
+  if (!user.value?.sub) return null
+  return await $fetch<WaiverCurrentResponse>('/api/waiver/current')
 }, { watch: [() => user.value?.sub], default: () => null })
 const emailPreferences = reactive({
   criticalEnabled: true,
@@ -196,6 +212,19 @@ const isDirty = computed(() =>
 const savedCards = computed(() => paymentMethodsData.value?.methods ?? [])
 const defaultCardId = computed(() => paymentMethodsData.value?.defaultCardId ?? null)
 const membershipTierLabel = computed(() => formatMembershipTierLabel(membershipSummary.value?.tier) ?? null)
+const waiverStatusLabel = computed(() => {
+  const status = waiverStatus.value?.status
+  if (status === 'current') return 'Current'
+  if (status === 'expired') return 'Expired'
+  if (status === 'stale_version') return 'Needs re-sign'
+  return 'Missing'
+})
+const waiverStatusColor = computed(() => {
+  const status = waiverStatus.value?.status
+  if (status === 'current') return 'success'
+  if (status === 'expired') return 'warning'
+  return 'error'
+})
 const emailPreferencesDirty = computed(() => {
   const defaults = emailPreferencesData.value?.preferences
   if (!defaults) return false
@@ -336,7 +365,7 @@ async function saveEmailPreferences() {
           <div class="space-y-4">
             <div class="flex items-center justify-between gap-2">
               <div class="text-sm font-medium">Billing</div>
-              <UButton size="xs" color="neutral" variant="soft" @click="refreshSubscriptionState(); refreshMembershipSummary(); refreshPaymentMethods()">
+              <UButton size="xs" color="neutral" variant="soft" @click="refreshSubscriptionState(); refreshMembershipSummary(); refreshPaymentMethods(); refreshWaiverStatus()">
                 Refresh
               </UButton>
             </div>
@@ -415,6 +444,38 @@ async function saveEmailPreferences() {
                 </div>
               </div>
             </div>
+          </div>
+        </UCard>
+
+        <UCard>
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-sm font-medium">Waiver</div>
+            <UBadge :color="waiverStatusColor" variant="soft" size="xs">
+              {{ waiverStatusLabel }}
+            </UBadge>
+          </div>
+          <div class="mt-3 rounded-lg border border-default p-3 space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-dimmed">Active version</span>
+              <span>{{ waiverStatus?.activeTemplate?.version ?? '—' }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-dimmed">Signed version</span>
+              <span>{{ waiverStatus?.latestSignature?.templateVersion ?? '—' }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-dimmed">Signed at</span>
+              <span>{{ formatExactDate(waiverStatus?.latestSignature?.signedAt) ?? '—' }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-dimmed">Expires at</span>
+              <span>{{ formatExactDate(waiverStatus?.latestSignature?.expiresAt) ?? '—' }}</span>
+            </div>
+          </div>
+          <div class="mt-3 flex justify-end">
+            <UButton size="sm" to="/dashboard/waiver">
+              View waiver
+            </UButton>
           </div>
         </UCard>
 

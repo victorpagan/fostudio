@@ -19,6 +19,11 @@ type MemberRecord = {
   door_code_request_status: string | null
   door_code_last_request_at: string | null
   credit_balance: number | null
+  waiver_status: 'current' | 'expired' | 'missing' | 'stale_version'
+  waiver_signed_at: string | null
+  waiver_expires_at: string | null
+  waiver_signer_name: string | null
+  waiver_version: number | null
 }
 
 const toast = useToast()
@@ -159,6 +164,19 @@ function memberStatusColor(status: string) {
   return normalized === 'active' || normalized === 'past_due' ? 'success' : 'neutral'
 }
 
+function waiverStatusLabel(status: MemberRecord['waiver_status']) {
+  if (status === 'current') return 'Current'
+  if (status === 'expired') return 'Expired'
+  if (status === 'stale_version') return 'Needs re-sign'
+  return 'Missing'
+}
+
+function waiverStatusColor(status: MemberRecord['waiver_status']) {
+  if (status === 'current') return 'success'
+  if (status === 'expired') return 'warning'
+  return 'error'
+}
+
 async function saveDoorCode() {
   if (!selectedMember.value || updatingDoorCode.value) return
   updatingDoorCode.value = true
@@ -234,6 +252,11 @@ onMounted(() => {
                 <div class="mt-1 text-xs text-dimmed truncate">
                   {{ member.tier }} · {{ member.cadence }}
                 </div>
+                <div class="mt-1">
+                  <UBadge :color="waiverStatusColor(member.waiver_status)" size="xs" variant="soft">
+                    Waiver: {{ waiverStatusLabel(member.waiver_status) }}
+                  </UBadge>
+                </div>
               </button>
             </div>
           </UCard>
@@ -287,6 +310,48 @@ onMounted(() => {
                   </div>
                   <div class="mt-1">
                     {{ formatDate(selectedMember.door_code_last_request_at) }}
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs uppercase tracking-wide text-dimmed">
+                    Waiver status
+                  </div>
+                  <div class="mt-1">
+                    <UBadge :color="waiverStatusColor(selectedMember.waiver_status)" size="xs" variant="soft">
+                      {{ waiverStatusLabel(selectedMember.waiver_status) }}
+                    </UBadge>
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs uppercase tracking-wide text-dimmed">
+                    Waiver version
+                  </div>
+                  <div class="mt-1">
+                    {{ selectedMember.waiver_version ?? '—' }}
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs uppercase tracking-wide text-dimmed">
+                    Waiver signer
+                  </div>
+                  <div class="mt-1">
+                    {{ selectedMember.waiver_signer_name ?? '—' }}
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs uppercase tracking-wide text-dimmed">
+                    Waiver signed
+                  </div>
+                  <div class="mt-1">
+                    {{ formatDate(selectedMember.waiver_signed_at) }}
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs uppercase tracking-wide text-dimmed">
+                    Waiver expires
+                  </div>
+                  <div class="mt-1">
+                    {{ formatDate(selectedMember.waiver_expires_at) }}
                   </div>
                 </div>
               </div>

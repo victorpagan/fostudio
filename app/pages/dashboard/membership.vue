@@ -141,6 +141,19 @@ type DoorCodeState = {
   } | null
 }
 
+type WaiverCurrentResponse = {
+  status: 'current' | 'expired' | 'missing' | 'stale_version'
+  renewalNeeded: boolean
+  activeTemplate: {
+    version: number
+  } | null
+  latestSignature: {
+    templateVersion: number
+    signedAt: string
+    expiresAt: string
+  } | null
+}
+
 type CreditSummary = {
   totalBalance: number
   bankBalance: number
@@ -308,6 +321,11 @@ const { data: doorCodeState, refresh: refreshDoorCodeState } = await useAsyncDat
   if (!user.value || !hasActiveMembership.value) return null
   return await $fetch<DoorCodeState>('/api/membership/door-code')
 }, { watch: [user, membershipState] })
+
+const { data: waiverState, refresh: refreshWaiverState } = await useAsyncData('dash:membership:waiver', async () => {
+  if (!user.value) return null
+  return await $fetch<WaiverCurrentResponse>('/api/waiver/current')
+}, { watch: [user] })
 
 function goCheckout(tierId: string, cadence: string) {
   router.push(`/checkout?tier=${tierId}&cadence=${cadence}&returnTo=/dashboard/membership`)
@@ -654,9 +672,25 @@ async function refreshAll() {
     refreshPaymentMethods(),
     refreshHoldSummary(),
     refreshHoldTopupOffer(),
-    refreshDoorCodeState()
+    refreshDoorCodeState(),
+    refreshWaiverState()
   ])
 }
+
+const waiverStatusLabel = computed(() => {
+  const status = waiverState.value?.status
+  if (status === 'current') return 'Current'
+  if (status === 'expired') return 'Expired'
+  if (status === 'stale_version') return 'Needs re-sign'
+  return 'Missing'
+})
+
+const waiverStatusColor = computed(() => {
+  const status = waiverState.value?.status
+  if (status === 'current') return 'success'
+  if (status === 'expired') return 'warning'
+  return 'error'
+})
 
 async function requestDoorCodeChange() {
   if (doorCodeRequestLoading.value || !doorCodeState.value?.canRequestChange) return
@@ -1639,6 +1673,32 @@ onUnmounted(() => {
                   >
                     Next request: {{ formatDateLabel(doorCodeState.cooldownEndsAt) ?? doorCodeState.cooldownEndsAt }}
                   </span>
+                </div>
+              </div>
+
+              <div class="mt-4 border-t border-default pt-4">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="text-xs text-dimmed uppercase tracking-wide">
+                    Waiver status
+                  </div>
+                  <UBadge :color="waiverStatusColor" size="xs" variant="soft">
+                    {{ waiverStatusLabel }}
+                  </UBadge>
+                </div>
+                <div class="mt-2 text-xs text-dimmed space-y-1">
+                  <div>Active version: {{ waiverState?.activeTemplate?.version ?? '—' }}</div>
+                  <div>Signed version: {{ waiverState?.latestSignature?.templateVersion ?? '—' }}</div>
+                  <div>Expires: {{ formatDateLabel(waiverState?.latestSignature?.expiresAt ?? null) ?? '—' }}</div>
+                </div>
+                <div class="mt-3">
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="soft"
+                    to="/dashboard/waiver"
+                  >
+                    View waiver
+                  </UButton>
                 </div>
               </div>
             </UCard>

@@ -55,6 +55,8 @@ async function sendHoldTopupPurchasedMail(params: {
   amountCents: number | null
   label: string | null
   paymentId: string | null
+  customerName: string | null
+  customerEmail: string | null
 }) {
   const to = typeof params.to === 'string' ? params.to.trim().toLowerCase() : ''
   if (!to) return
@@ -71,7 +73,9 @@ async function sendHoldTopupPurchasedMail(params: {
         newHoldBalance: params.newHoldBalance,
         amountCents: params.amountCents,
         label: params.label,
-        paymentId: params.paymentId
+        paymentId: params.paymentId,
+        customerName: params.customerName,
+        customerEmail: params.customerEmail
       }
     })
   } catch (error) {
@@ -253,7 +257,9 @@ export default defineEventHandler(async (event) => {
     newHoldBalance,
     amountCents: asNumber(topup.amount_cents),
     label: readString(topup.metadata, 'label'),
-    paymentId: orderId
+    paymentId: orderId,
+    customerName: [user.user_metadata?.first_name, user.user_metadata?.last_name].filter(Boolean).join(' ').trim() || null,
+    customerEmail: user.email ?? null
   })
 
   return {

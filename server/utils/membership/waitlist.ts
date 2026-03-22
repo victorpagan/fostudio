@@ -126,7 +126,8 @@ export async function inviteWaitlistForTier(event: H3Event, tierId: string) {
           cadence: row.cadence ?? 'monthly',
           cadenceLabel: cadenceLabel(row.cadence),
           checkoutUrl,
-          isPriorityMember: row.is_priority_member
+          isPriorityMember: row.is_priority_member,
+          customerEmail: toEmail
         }
       })
 

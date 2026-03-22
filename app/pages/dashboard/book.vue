@@ -6,6 +6,7 @@ definePageMeta({ middleware: ['auth', 'membership-required'] })
 
 const toast = useToast()
 const router = useRouter()
+const route = useRoute()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const { isAdmin } = useCurrentUser()
@@ -88,8 +89,19 @@ type BookingCreateResponse = {
 }
 
 type ApiErrorLike = {
-  data?: { statusMessage?: string }
+  data?: {
+    statusMessage?: string
+    code?: string
+    data?: {
+      code?: string
+    }
+  }
   message?: string
+}
+
+function getApiErrorCode(error: unknown) {
+  const maybe = error as ApiErrorLike
+  return maybe.data?.code ?? maybe.data?.data?.code ?? null
 }
 
 function isCreditError(message: string) {
@@ -431,6 +443,15 @@ async function confirmBooking() {
   } catch (error: unknown) {
     const maybe = error as ApiErrorLike
     const msg = maybe.data?.statusMessage ?? maybe.message ?? 'Booking failed'
+    if (getApiErrorCode(error) === 'WAIVER_REQUIRED') {
+      toast.add({
+        title: 'Waiver signature required',
+        description: 'Please sign the current waiver before booking.',
+        color: 'warning'
+      })
+      await router.push(`/dashboard/waiver?returnTo=${encodeURIComponent(route.fullPath)}`)
+      return
+    }
     toast.add({ title: 'Could not book', description: msg, color: 'error' })
     if (isCreditError(msg)) {
       await router.push('/dashboard/membership#credits')

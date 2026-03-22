@@ -129,7 +129,9 @@ export default defineEventHandler(async (event) => {
         activationUrl,
         checkoutToken: session.token,
         planVariationId: session.plan_variation_id,
-        paymentLinkId: session.payment_link_id
+        paymentLinkId: session.payment_link_id,
+        customerEmail: String(session.guest_email).trim().toLowerCase(),
+        customerName: typeof metadata.guest_name === 'string' ? metadata.guest_name : null
       }
     })
   } catch (error) {

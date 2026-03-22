@@ -96,6 +96,7 @@ function buildTestPayload(params: {
     isPriorityMember: true,
     customerName: 'FO Studio Test',
     customerEmail: params.recipient,
+    doorCode: '2468',
     orderNumber: 'TEST-0001',
     orderDate: new Date().toLocaleString('en-US'),
     phoneNumber: '(555) 010-0200',
@@ -155,6 +156,12 @@ export default defineEventHandler(async (event) => {
       type: body.eventType,
       payload
     })
+    if (!sendResult.ok) {
+      throw createError({
+        statusCode: 502,
+        statusMessage: `Test send failed before upstream request: ${sendResult.reason}`
+      })
+    }
   } catch (error: unknown) {
     const details = readUpstreamErrorDetails(error)
     const parts = [
