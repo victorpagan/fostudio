@@ -57,6 +57,8 @@ const visibleTitle = ref('This week')
 const visibleRange = ref('Loading schedule')
 const lastRefreshedAt = ref<string | null>(null)
 const bookingWindowDays = ref<number | null>(null)
+const guestBookingStartHour = ref<number | null>(null)
+const guestBookingEndHour = ref<number | null>(null)
 const peakWindow = ref<PeakWindow | null>(null)
 const nowTickMs = ref(Date.now())
 let nowTickTimer: ReturnType<typeof setInterval> | null = null
@@ -67,6 +69,8 @@ type CalendarResponse = {
   from?: string
   to?: string
   bookingWindowDays?: number
+  guestBookingStartHour?: number
+  guestBookingEndHour?: number
   peakWindow?: PeakWindow | null
   events: CalendarEvent[]
 }
@@ -173,6 +177,12 @@ async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
     const res = await $fetch<CalendarResponse>(props.endpoint, { query: q })
     events.value = mapApiEventsToCalendar(res.events ?? [])
     bookingWindowDays.value = res.bookingWindowDays ?? null
+    guestBookingStartHour.value = Number.isFinite(Number(res.guestBookingStartHour))
+      ? Number(res.guestBookingStartHour)
+      : null
+    guestBookingEndHour.value = Number.isFinite(Number(res.guestBookingEndHour))
+      ? Number(res.guestBookingEndHour)
+      : null
     peakWindow.value = res.peakWindow ?? null
     lastRefreshedAt.value = new Date().toLocaleTimeString('en-US', {
       hour: 'numeric',
@@ -188,6 +198,7 @@ const ownBookingCount = computed(() =>
   events.value.filter(event => event.extendedProps?.isOwn).length
 )
 const isMemberFeed = computed(() => props.endpoint.includes('/member'))
+const isPublicFeed = computed(() => props.endpoint.includes('/public'))
 
 function eventClassNames(arg: { event: { display: string, end?: Date | null, extendedProps: CalendarEvent['extendedProps'] } }) {
   const classes = ['fc-event-block']
@@ -284,6 +295,10 @@ function hourToTimeLabel(hour: number) {
   return `${safe.toString().padStart(2, '0')}:00:00`
 }
 
+function toHourValue(dateTime: DateTime) {
+  return dateTime.hour + (dateTime.minute / 60) + (dateTime.second / 3600)
+}
+
 const peakEvents = computed<CalendarEvent[]>(() => {
   if (!peakWindow.value) return []
   const days = (peakWindow.value.days ?? [])
@@ -325,6 +340,18 @@ const memberValidRange = computed(() => {
   }
 })
 
+const calendarSlotMinTime = computed(() => {
+  if (!isPublicFeed.value) return '00:00:00'
+  if (guestBookingStartHour.value === null) return '00:00:00'
+  return hourToTimeLabel(guestBookingStartHour.value)
+})
+
+const calendarSlotMaxTime = computed(() => {
+  if (!isPublicFeed.value) return '24:00:00'
+  if (guestBookingEndHour.value === null) return '24:00:00'
+  return hourToTimeLabel(guestBookingEndHour.value)
+})
+
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
   initialView: 'timeGridWeek',
@@ -339,10 +366,25 @@ const calendarOptions = computed(() => ({
   },
   selectAllow: (selectionInfo: { start: Date, end: Date, allDay?: boolean }) => {
     const selectionStart = calendarDateToStudioDate(selectionInfo.start)
+    const selectionEnd = calendarDateToStudioDate(selectionInfo.end)
     if (selectionStart < new Date()) return false
 
     // In month view, require users to pick an actual time slot in day/week view.
     if (selectionInfo.allDay) return false
+
+    if (isPublicFeed.value) {
+      const startLA = DateTime.fromJSDate(selectionStart, { zone: STUDIO_TZ })
+      const endLA = DateTime.fromJSDate(selectionEnd, { zone: STUDIO_TZ })
+      if (!startLA.hasSame(endLA, 'day')) return false
+
+      if (guestBookingStartHour.value !== null && guestBookingEndHour.value !== null) {
+        const startHourValue = toHourValue(startLA)
+        const endHourValue = toHourValue(endLA)
+        if (startHourValue < guestBookingStartHour.value || endHourValue > guestBookingEndHour.value) {
+          return false
+        }
+      }
+    }
 
     if (!bookingWindowDays.value) return true
     const maxStart = new Date(Date.now() + bookingWindowDays.value * 24 * 60 * 60 * 1000)
@@ -353,8 +395,8 @@ const calendarOptions = computed(() => ({
   nowIndicator: true,
   allDaySlot: false,
   height: 'auto',
-  slotMinTime: '00:00:00',
-  slotMaxTime: '24:00:00',
+  slotMinTime: calendarSlotMinTime.value,
+  slotMaxTime: calendarSlotMaxTime.value,
   slotDuration: '01:00:00',
   slotLabelInterval: '02:00:00',
   eventTimeFormat: {

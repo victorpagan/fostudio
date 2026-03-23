@@ -44,6 +44,23 @@ function computeCredits(startIso: string, endIso: string, peakMultiplier: number
   return Math.round(credits * 100) / 100
 }
 
+function toValidHour(raw: unknown, fallback: number) {
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return fallback
+  const hour = Math.floor(parsed)
+  return Math.min(24, Math.max(0, hour))
+}
+
+function toHourValue(dateTime: DateTime) {
+  return dateTime.hour + (dateTime.minute / 60) + (dateTime.second / 3600)
+}
+
+function formatHourLabel(hour: number) {
+  const normalized = Math.min(24, Math.max(0, Math.floor(hour)))
+  if (normalized === 24) return '12:00 AM'
+  return DateTime.fromObject({ year: 2026, month: 1, day: 1, hour: normalized, minute: 0 }, { zone: STUDIO_TZ }).toFormat('h:mm a')
+}
+
 export default defineEventHandler(async (event) => {
   const q = qSchema.parse(getQuery(event))
   const peakWindow = await loadPeakWindowConfig(event)
@@ -64,7 +81,10 @@ export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
   const cfg = await getServerConfigMap(event, [
     'guest_peak_multiplier',
-    'guest_booking_rate_per_credit_cents'
+    'guest_booking_rate_per_credit_cents',
+    'guest_booking_window_days',
+    'guest_booking_start_hour',
+    'guest_booking_end_hour'
   ])
 
   let mode = q.mode ?? (user ? 'member' : 'guest')
@@ -115,6 +135,32 @@ export default defineEventHandler(async (event) => {
   }
 
   if (mode === 'guest') {
+    const guestWindowDays = Math.max(1, Number(cfg.guest_booking_window_days ?? 7))
+    const guestStartHour = toValidHour(cfg.guest_booking_start_hour, 11)
+    let guestEndHour = toValidHour(cfg.guest_booking_end_hour, 19)
+    if (guestEndHour <= guestStartHour) {
+      guestEndHour = Math.min(24, guestStartHour + 1)
+    }
+
+    const now = DateTime.now().setZone(STUDIO_TZ)
+    if (start < now) {
+      throw createError({ statusCode: 400, statusMessage: 'Cannot book in the past' })
+    }
+    const maxAhead = now.plus({ days: guestWindowDays })
+    if (start > maxAhead) {
+      throw createError({ statusCode: 400, statusMessage: `Guest bookings can only be made up to ${guestWindowDays} days ahead` })
+    }
+
+    const sameDay = start.hasSame(end, 'day')
+    const startHourValue = toHourValue(start)
+    const endHourValue = toHourValue(end)
+    if (!sameDay || startHourValue < guestStartHour || endHourValue > guestEndHour) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `Guest bookings must start/end between ${formatHourLabel(guestStartHour)} and ${formatHourLabel(guestEndHour)} (Los Angeles time).`
+      })
+    }
+
     peakMultiplier = Number(cfg.guest_peak_multiplier ?? 2.0)
     ratePerCreditCents = Number(cfg.guest_booking_rate_per_credit_cents ?? 3500)
   }

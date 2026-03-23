@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
 import { serverSupabaseClient, serverSupabaseServiceRole } from '#supabase/server'
+import { getServerConfigMap } from '~~/server/utils/config/secret'
 import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
 import { getExternalCalendarEventsInRange } from '~~/server/utils/booking/externalCalendar'
 import { maybeAutoSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
@@ -26,10 +27,22 @@ function normalizeIso(value: string) {
   return value
 }
 
+function toValidHour(raw: unknown, fallback: number) {
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return fallback
+  const hour = Math.floor(parsed)
+  return Math.min(24, Math.max(0, hour))
+}
+
 export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient(event)
   const q = qSchema.parse(getQuery(event))
   const peakWindowConfig = await loadPeakWindowConfig(event)
+  const cfg = await getServerConfigMap(event, [
+    'guest_booking_window_days',
+    'guest_booking_start_hour',
+    'guest_booking_end_hour'
+  ])
 
   const now = new Date()
   const from = q.from ? new Date(q.from) : now
@@ -82,7 +95,7 @@ export default defineEventHandler(async (event) => {
   }> = []
 
   try {
-    const serviceRole = serverSupabaseServiceRole(event) as any
+    const serviceRole = serverSupabaseServiceRole(event)
     externalEvents = await getExternalCalendarEventsInRange(
       serviceRole,
       from.toISOString(),
@@ -120,7 +133,7 @@ export default defineEventHandler(async (event) => {
       color: '#dc2626',
       extendedProps: { type: 'hold' }
     })),
-    ...externalEvents.map((ext) => ({
+    ...externalEvents.map(ext => ({
       id: `g_${ext.id}`,
       start: normalizeIso(ext.start_time),
       end: normalizeIso(ext.end_time),
@@ -135,9 +148,19 @@ export default defineEventHandler(async (event) => {
     }))
   ]
 
+  const guestBookingWindowDays = Math.max(1, Number(cfg.guest_booking_window_days ?? 7))
+  const guestBookingStartHour = toValidHour(cfg.guest_booking_start_hour, 11)
+  let guestBookingEndHour = toValidHour(cfg.guest_booking_end_hour, 19)
+  if (guestBookingEndHour <= guestBookingStartHour) {
+    guestBookingEndHour = Math.min(24, guestBookingStartHour + 1)
+  }
+
   return {
     from: from.toISOString(),
     to: to.toISOString(),
+    bookingWindowDays: guestBookingWindowDays,
+    guestBookingStartHour,
+    guestBookingEndHour,
     peakWindow: toPeakWindowPayload(peakWindowConfig, null),
     events
   }

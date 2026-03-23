@@ -6,6 +6,8 @@ const SETTINGS_KEYS = [
   'peak_end_hour',
   'guest_peak_multiplier',
   'guest_booking_window_days',
+  'guest_booking_start_hour',
+  'guest_booking_end_hour',
   'member_reschedule_notice_hours'
 ] as const
 
@@ -28,6 +30,8 @@ export default defineEventHandler(async (event) => {
       peakEndHour: Number(map.get('peak_end_hour') ?? 16),
       guestPeakMultiplier: Number(map.get('guest_peak_multiplier') ?? 2),
       guestBookingWindowDays: Number(map.get('guest_booking_window_days') ?? 7),
+      guestBookingStartHour: Number(map.get('guest_booking_start_hour') ?? 11),
+      guestBookingEndHour: Number(map.get('guest_booking_end_hour') ?? 19),
       memberRescheduleNoticeHours: Number(map.get('member_reschedule_notice_hours') ?? 24)
     }
   }
