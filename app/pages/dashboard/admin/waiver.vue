@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { toRenderableHtml } from '~~/app/utils/richText'
+
 definePageMeta({ middleware: ['admin'] })
 
 type WaiverTemplate = {
@@ -25,11 +27,137 @@ const form = reactive({
   metadataJson: '{}'
 })
 
+const waiverEditorToolbarItems = [[{
+  kind: 'undo',
+  icon: 'i-lucide-undo',
+  tooltip: { text: 'Undo' }
+}, {
+  kind: 'redo',
+  icon: 'i-lucide-redo',
+  tooltip: { text: 'Redo' }
+}], [{
+  icon: 'i-lucide-heading',
+  tooltip: { text: 'Headings' },
+  content: { align: 'start' },
+  items: [{
+    kind: 'paragraph',
+    label: 'Paragraph',
+    icon: 'i-lucide-pilcrow'
+  }, {
+    kind: 'heading',
+    level: 1,
+    icon: 'i-lucide-heading-1',
+    label: 'Heading 1'
+  }, {
+    kind: 'heading',
+    level: 2,
+    icon: 'i-lucide-heading-2',
+    label: 'Heading 2'
+  }, {
+    kind: 'heading',
+    level: 3,
+    icon: 'i-lucide-heading-3',
+    label: 'Heading 3'
+  }, {
+    kind: 'heading',
+    level: 4,
+    icon: 'i-lucide-heading-4',
+    label: 'Heading 4'
+  }]
+}, {
+  icon: 'i-lucide-list',
+  tooltip: { text: 'Lists' },
+  content: { align: 'start' },
+  items: [{
+    kind: 'bulletList',
+    icon: 'i-lucide-list',
+    label: 'Bullet list'
+  }, {
+    kind: 'orderedList',
+    icon: 'i-lucide-list-ordered',
+    label: 'Ordered list'
+  }]
+}, {
+  kind: 'blockquote',
+  icon: 'i-lucide-text-quote',
+  tooltip: { text: 'Blockquote' }
+}, {
+  kind: 'codeBlock',
+  icon: 'i-lucide-square-code',
+  tooltip: { text: 'Code block' }
+}], [{
+  kind: 'mark',
+  mark: 'bold',
+  icon: 'i-lucide-bold',
+  tooltip: { text: 'Bold' }
+}, {
+  kind: 'mark',
+  mark: 'italic',
+  icon: 'i-lucide-italic',
+  tooltip: { text: 'Italic' }
+}, {
+  kind: 'mark',
+  mark: 'underline',
+  icon: 'i-lucide-underline',
+  tooltip: { text: 'Underline' }
+}, {
+  kind: 'mark',
+  mark: 'strike',
+  icon: 'i-lucide-strikethrough',
+  tooltip: { text: 'Strikethrough' }
+}, {
+  kind: 'mark',
+  mark: 'code',
+  icon: 'i-lucide-code',
+  tooltip: { text: 'Inline code' }
+}], [{
+  kind: 'link',
+  icon: 'i-lucide-link',
+  tooltip: { text: 'Link' }
+}, {
+  kind: 'horizontalRule',
+  icon: 'i-lucide-separator-horizontal',
+  tooltip: { text: 'Horizontal rule' }
+}, {
+  icon: 'i-lucide-align-justify',
+  tooltip: { text: 'Text align' },
+  content: { align: 'end' },
+  items: [{
+    kind: 'textAlign',
+    align: 'left',
+    icon: 'i-lucide-align-left',
+    label: 'Align left'
+  }, {
+    kind: 'textAlign',
+    align: 'center',
+    icon: 'i-lucide-align-center',
+    label: 'Align center'
+  }, {
+    kind: 'textAlign',
+    align: 'right',
+    icon: 'i-lucide-align-right',
+    label: 'Align right'
+  }, {
+    kind: 'textAlign',
+    align: 'justify',
+    icon: 'i-lucide-align-justify',
+    label: 'Align justify'
+  }]
+}, {
+  kind: 'clearFormatting',
+  icon: 'i-lucide-eraser',
+  tooltip: { text: 'Clear formatting' }
+}]]
+
 const { data, pending, refresh } = await useAsyncData('admin:waiver:templates', async () => {
   return await $fetch<{
     templates: WaiverTemplate[]
     activeTemplate: WaiverTemplate | null
   }>('/api/admin/waiver/templates')
+})
+
+onMounted(() => {
+  void refresh()
 })
 
 const templates = computed(() => data.value?.templates ?? [])
@@ -47,7 +175,8 @@ const selectedTemplate = computed(() =>
 )
 
 const canEditSelected = computed(() => Boolean(selectedTemplate.value && !selectedTemplate.value.is_active))
-const canPublishSelected = computed(() => Boolean(selectedTemplate.value && !selectedTemplate.value.is_active))
+const firstDraftTemplate = computed(() => templates.value.find(template => !template.is_active) ?? null)
+const canPublishAnyDraft = computed(() => Boolean(firstDraftTemplate.value))
 
 function toMetadataJson(metadata: Record<string, unknown> | null | undefined) {
   return JSON.stringify(metadata ?? {}, null, 2)
@@ -105,10 +234,14 @@ function parseMetadataJson() {
   }
 }
 
+function getBodyHtml(value: unknown) {
+  return toRenderableHtml(value)
+}
+
 const getErrorMessage = (error: unknown) => {
   if (!error || typeof error !== 'object') return 'Request failed.'
   if ('data' in error && error.data && typeof error.data === 'object') {
-    const data = error.data as { statusMessage?: string; message?: string }
+    const data = error.data as { statusMessage?: string; message?: string; }
     if (typeof data.statusMessage === 'string') return data.statusMessage
     if (typeof data.message === 'string') return data.message
   }
@@ -120,12 +253,13 @@ const getErrorMessage = (error: unknown) => {
 async function createDraft() {
   loadingCreateDraft.value = true
   try {
+    const bodyHtml = getBodyHtml(form.body).trim()
     const metadata = parseMetadataJson()
     const response = await $fetch<{ template: WaiverTemplate }>('/api/admin/waiver/templates', {
       method: 'POST',
       body: {
         title: form.title.trim(),
-        body: form.body.trim(),
+        body: bodyHtml,
         metadata
       }
     })
@@ -156,12 +290,13 @@ async function saveDraft() {
 
   loadingSaveDraft.value = true
   try {
+    const bodyHtml = getBodyHtml(form.body).trim()
     const metadata = parseMetadataJson()
     await $fetch<{ template: WaiverTemplate }>(`/api/admin/waiver/templates/${selectedTemplate.value.id}`, {
       method: 'PATCH',
       body: {
         title: form.title.trim(),
-        body: form.body.trim(),
+        body: bodyHtml,
         metadata
       }
     })
@@ -179,11 +314,14 @@ async function saveDraft() {
 }
 
 async function publishDraft() {
-  if (!selectedTemplate.value) return
-  if (!canPublishSelected.value) {
+  const draftToPublish = selectedTemplate.value && !selectedTemplate.value.is_active
+    ? selectedTemplate.value
+    : firstDraftTemplate.value
+
+  if (!draftToPublish) {
     toast.add({
       title: 'Select a draft to publish',
-      description: 'The selected template is already active.',
+      description: 'Create a new draft before publishing.',
       color: 'warning'
     })
     return
@@ -191,7 +329,7 @@ async function publishDraft() {
 
   loadingPublishDraft.value = true
   try {
-    await $fetch<{ template: WaiverTemplate }>(`/api/admin/waiver/templates/${selectedTemplate.value.id}/publish`, {
+    await $fetch<{ template: WaiverTemplate }>(`/api/admin/waiver/templates/${draftToPublish.id}/publish`, {
       method: 'POST'
     })
     await refresh()
@@ -216,6 +354,16 @@ function formatDate(value: string | null) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString('en-US')
+}
+
+function normalizeWaiverBodyHtml(value: unknown) {
+  return toRenderableHtml(value)
+}
+
+const previewBodyHtml = computed(() => normalizeWaiverBodyHtml(form.body))
+
+function hasPreviewBody(value: unknown) {
+  return getBodyHtml(value).trim().length > 0
 }
 </script>
 
@@ -300,7 +448,7 @@ function formatDate(value: string | null) {
               icon="i-lucide-upload"
               color="warning"
               :loading="loadingPublishDraft"
-              :disabled="!selectedTemplateId || !canPublishSelected"
+              :disabled="!canPublishAnyDraft"
               @click="publishDraft"
             >
               Publish Draft
@@ -308,17 +456,32 @@ function formatDate(value: string | null) {
           </div>
 
           <div class="mt-4 grid gap-4">
-            <UFormField label="Title">
-              <UInput v-model="form.title" placeholder="Film Objektiv Member Waiver and Studio Rules" />
+            <UFormField label="Title" class="w-full">
+              <UInput
+                v-model="form.title"
+                class="w-full max-w-none"
+                placeholder="Film Objektiv Member Waiver and Studio Rules"
+              />
             </UFormField>
 
-            <UFormField label="Waiver Body">
-              <UTextarea
+            <UFormField label="Waiver Body" class="w-full">
+              <template #description>
+                Rich text/HTML supported for member-facing waiver copy.
+              </template>
+              <UEditor
                 v-model="form.body"
-                :rows="18"
-                autoresize
-                placeholder="Paste waiver body text..."
-              />
+                content-type="html"
+                class="waiver-editor-shell w-full max-w-none rounded-md border border-default bg-default overflow-hidden"
+                placeholder="Write waiver content..."
+              >
+                <template #default="{ editor }">
+                  <UEditorToolbar
+                    :editor="editor"
+                    :items="waiverEditorToolbarItems"
+                    class="sticky top-0 inset-x-0 z-10 border-b border-default bg-default/95 p-1.5 backdrop-blur overflow-x-auto"
+                  />
+                </template>
+              </UEditor>
             </UFormField>
 
             <UFormField label="Metadata (JSON)">
@@ -334,11 +497,120 @@ function formatDate(value: string | null) {
 
         <UCard>
           <div class="text-sm font-medium">Preview</div>
-          <div class="mt-3 rounded-md border border-default p-4 whitespace-pre-wrap text-sm leading-6">
-            {{ form.body || 'No waiver body content yet.' }}
+          <div
+            class="waiver-rich-content mt-3 max-w-none rounded-md border border-default p-4 text-sm leading-6"
+            v-html="previewBodyHtml"
+          />
+          <div
+            v-if="!hasPreviewBody(form.body)"
+            class="mt-2 text-xs text-dimmed"
+          >
+            No waiver body content yet.
           </div>
         </UCard>
       </div>
     </template>
   </UDashboardPanel>
 </template>
+
+<style scoped>
+.waiver-rich-content :deep(p) {
+  margin: 0 0 0.9rem;
+}
+
+.waiver-rich-content :deep(ul) {
+  list-style: disc;
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+}
+
+.waiver-rich-content :deep(ol) {
+  list-style: decimal;
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+}
+
+.waiver-rich-content :deep(li) {
+  margin: 0.2rem 0;
+}
+
+.waiver-rich-content :deep(h1),
+.waiver-rich-content :deep(h2),
+.waiver-rich-content :deep(h3),
+.waiver-rich-content :deep(h4),
+.waiver-rich-content :deep(h5),
+.waiver-rich-content :deep(h6) {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1rem 0 0.6rem;
+}
+
+.waiver-rich-content :deep(h1) {
+  font-size: 1.5rem;
+}
+
+.waiver-rich-content :deep(h2) {
+  font-size: 1.25rem;
+}
+
+.waiver-rich-content :deep(h3) {
+  font-size: 1.125rem;
+}
+
+.waiver-rich-content :deep(h4) {
+  font-size: 1rem;
+}
+
+.waiver-rich-content :deep(h5) {
+  font-size: 0.925rem;
+}
+
+.waiver-rich-content :deep(h6) {
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.waiver-rich-content :deep(blockquote) {
+  border-left: 3px solid var(--ui-border-muted);
+  margin: 0 0 1rem;
+  padding-left: 0.85rem;
+  color: var(--ui-text-muted);
+}
+
+.waiver-rich-content :deep(a) {
+  color: var(--ui-primary);
+  text-decoration: underline;
+}
+
+.waiver-rich-content :deep(pre) {
+  overflow-x: auto;
+  border-radius: 0.375rem;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg-elevated);
+  padding: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.waiver-rich-content :deep(hr) {
+  border: 0;
+  border-top: 1px solid var(--ui-border);
+  margin: 1rem 0;
+}
+
+.waiver-rich-content :deep(p:last-child),
+.waiver-rich-content :deep(ul:last-child),
+.waiver-rich-content :deep(ol:last-child),
+.waiver-rich-content :deep(blockquote:last-child),
+.waiver-rich-content :deep(pre:last-child) {
+  margin-bottom: 0;
+}
+
+.waiver-editor-shell :deep(.tiptap.ProseMirror),
+.waiver-editor-shell :deep(.ProseMirror) {
+  min-height: 20rem;
+  max-height: 34rem;
+  overflow-y: auto;
+  padding: 0.85rem;
+}
+</style>

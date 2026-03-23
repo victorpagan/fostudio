@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatMembershipTierLabel } from '~~/app/utils/membershipTierLabel'
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 definePageMeta({ middleware: ['auth'] })
 
 const supabase = useSupabaseClient()
@@ -88,6 +89,8 @@ const { data: membershipSummary, refresh: refreshMembershipSummary } = await use
     .from('memberships')
     .select('tier,cadence,status,current_period_end,billing_provider')
     .eq('user_id', user.value.sub)
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle()
   if (error) throw error
   return data as MembershipSummary | null
@@ -212,6 +215,14 @@ const isDirty = computed(() =>
 const savedCards = computed(() => paymentMethodsData.value?.methods ?? [])
 const defaultCardId = computed(() => paymentMethodsData.value?.defaultCardId ?? null)
 const membershipTierLabel = computed(() => formatMembershipTierLabel(membershipSummary.value?.tier) ?? null)
+const membershipUiState = computed(() => resolveMembershipUiState(membershipSummary.value))
+const membershipUiStatusLabel = computed(() => membershipUiState.value.replace(/_/g, ' '))
+const membershipUiStatusColor = computed(() => {
+  if (membershipUiState.value === 'active') return 'success'
+  if (membershipUiState.value === 'past_due') return 'error'
+  if (membershipUiState.value === 'pending_checkout') return 'warning'
+  return 'neutral'
+})
 const waiverStatusLabel = computed(() => {
   const status = waiverStatus.value?.status
   if (status === 'current') return 'Current'
@@ -381,7 +392,9 @@ async function saveEmailPreferences() {
               </div>
               <div class="flex justify-between">
                 <span class="text-dimmed">Status</span>
-                <span>{{ membershipSummary?.status ?? '—' }}</span>
+                <UBadge :color="membershipUiStatusColor" variant="soft" size="xs">
+                  {{ membershipUiStatusLabel }}
+                </UBadge>
               </div>
               <div class="flex justify-between">
                 <span class="text-dimmed">Billing provider</span>

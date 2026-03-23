@@ -617,12 +617,12 @@ function holdEligibilityFromLocalInputs(startValue: string, endValue: string) {
   const reasons: string[] = []
   const durationHours = end.diff(start, 'hours').hours
   if (durationHours < minHoldBookingHours.value) {
-    reasons.push(`Booking must be at least ${minHoldBookingHours.value} hours.`)
+    reasons.push(`Equipment hold eligibility requires a booking of at least ${minHoldBookingHours.value} hours.`)
   }
   const requiredEnd = end.startOf('day').set({ hour: holdMinEndHour.value, minute: 0, second: 0, millisecond: 0 })
   if (end < requiredEnd) {
     const label = DateTime.fromObject({ hour: holdMinEndHour.value, minute: 0 }, { zone: STUDIO_TZ }).toFormat('h:mm a')
-    reasons.push(`Booking must end at or after ${label}.`)
+    reasons.push(`Equipment hold eligibility requires the booking to end at or after ${label}.`)
   }
   return {
     eligible: reasons.length === 0,

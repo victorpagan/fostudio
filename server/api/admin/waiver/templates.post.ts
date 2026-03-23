@@ -4,7 +4,7 @@ import type { Json } from '~~/app/types/database.types'
 
 const bodySchema = z.object({
   title: z.string().trim().min(3).max(200),
-  body: z.string().trim().min(50),
+  body: z.string().trim().min(1),
   metadata: z.record(z.string(), z.unknown()).optional()
 })
 

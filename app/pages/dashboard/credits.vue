@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
+
 definePageMeta({ middleware: ['auth'] })
 
 const supabase = useSupabaseClient()
@@ -138,6 +139,7 @@ const pendingTopupCurrency = ref('USD')
 const pendingTopupLabel = ref('credits')
 const promoCode = ref('')
 const dashboardHydrated = ref(false)
+const activeCreditsTab = ref<'buy' | 'history'>('buy')
 
 function asNumber(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) return value
@@ -239,6 +241,22 @@ function formatSaleWindow(start: string | null, end: string | null) {
   return null
 }
 
+function showRefreshPageToast() {
+  toast.add({
+    title: 'Update saved',
+    description: 'Refresh this page if balances or history still look stale.',
+    color: 'info',
+    actions: [{
+      label: 'Refresh page',
+      color: 'neutral',
+      variant: 'soft',
+      onClick: () => {
+        if (import.meta.client) window.location.reload()
+      }
+    }]
+  })
+}
+
 async function refreshAll() {
   await Promise.all([
     refreshBalance(),
@@ -329,6 +347,7 @@ async function processTopupPayment(payload: { sourceId?: string, cardId?: string
         ? `${added} credits added${balance !== null && balance !== undefined ? ` · New balance: ${balance}` : ''}.`
         : 'Credits updated.'
     })
+    showRefreshPageToast()
     await refreshAll()
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
@@ -560,7 +579,28 @@ watch(
             </div>
           </UCard>
 
-          <UCard>
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              size="sm"
+              :color="activeCreditsTab === 'buy' ? 'primary' : 'neutral'"
+              :variant="activeCreditsTab === 'buy' ? 'solid' : 'soft'"
+              icon="i-lucide-shopping-cart"
+              @click="activeCreditsTab = 'buy'"
+            >
+              Buy credits
+            </UButton>
+            <UButton
+              size="sm"
+              :color="activeCreditsTab === 'history' ? 'primary' : 'neutral'"
+              :variant="activeCreditsTab === 'history' ? 'solid' : 'soft'"
+              icon="i-lucide-history"
+              @click="activeCreditsTab = 'history'"
+            >
+              Credit history
+            </UButton>
+          </div>
+
+          <UCard v-if="activeCreditsTab === 'buy'">
             <div class="space-y-3">
               <div class="flex items-center justify-between">
                 <div>
@@ -683,7 +723,7 @@ watch(
             </div>
           </UCard>
 
-          <UCard>
+          <UCard v-else>
             <div class="flex items-center justify-between gap-2">
               <div>
                 <div class="text-xs text-dimmed uppercase tracking-wide">

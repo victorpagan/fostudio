@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { toRenderableHtml } from '~~/app/utils/richText'
+
 definePageMeta({ middleware: ['auth'] })
 
 type WaiverStatus = 'current' | 'expired' | 'missing' | 'stale_version'
@@ -39,6 +41,10 @@ const form = reactive({
 
 const { data, pending, refresh } = await useAsyncData('waiver:current', async () => {
   return await $fetch<WaiverCurrentResponse>('/api/waiver/current')
+})
+
+onMounted(() => {
+  void refresh()
 })
 
 const waiverStatus = computed<WaiverStatus>(() => data.value?.status ?? 'missing')
@@ -101,7 +107,7 @@ function formatDate(value: string | null | undefined) {
 function getErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Request failed.'
   if ('data' in error && error.data && typeof error.data === 'object') {
-    const data = error.data as { statusMessage?: string; message?: string }
+    const data = error.data as { statusMessage?: string; message?: string; }
     if (typeof data.statusMessage === 'string') return data.statusMessage
     if (typeof data.message === 'string') return data.message
   }
@@ -191,9 +197,10 @@ async function signWaiver() {
             </div>
           </template>
 
-          <div class="rounded-md border border-default p-4 whitespace-pre-wrap text-sm leading-6 max-h-[50vh] overflow-y-auto">
-            {{ activeTemplate.body }}
-          </div>
+          <div
+            class="waiver-rich-content max-w-none rounded-md border border-default p-4 text-sm leading-6 max-h-[50vh] overflow-y-auto"
+            v-html="toRenderableHtml(activeTemplate.body)"
+          />
 
           <div class="mt-4 space-y-3">
             <UFormField label="Legal full name">
@@ -242,3 +249,97 @@ async function signWaiver() {
     </template>
   </UDashboardPanel>
 </template>
+
+<style scoped>
+.waiver-rich-content :deep(p) {
+  margin: 0 0 0.9rem;
+}
+
+.waiver-rich-content :deep(ul) {
+  list-style: disc;
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+}
+
+.waiver-rich-content :deep(ol) {
+  list-style: decimal;
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+}
+
+.waiver-rich-content :deep(li) {
+  margin: 0.2rem 0;
+}
+
+.waiver-rich-content :deep(h1),
+.waiver-rich-content :deep(h2),
+.waiver-rich-content :deep(h3),
+.waiver-rich-content :deep(h4),
+.waiver-rich-content :deep(h5),
+.waiver-rich-content :deep(h6) {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1rem 0 0.6rem;
+}
+
+.waiver-rich-content :deep(h1) {
+  font-size: 1.5rem;
+}
+
+.waiver-rich-content :deep(h2) {
+  font-size: 1.25rem;
+}
+
+.waiver-rich-content :deep(h3) {
+  font-size: 1.125rem;
+}
+
+.waiver-rich-content :deep(h4) {
+  font-size: 1rem;
+}
+
+.waiver-rich-content :deep(h5) {
+  font-size: 0.925rem;
+}
+
+.waiver-rich-content :deep(h6) {
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.waiver-rich-content :deep(blockquote) {
+  border-left: 3px solid var(--ui-border-muted);
+  margin: 0 0 1rem;
+  padding-left: 0.85rem;
+  color: var(--ui-text-muted);
+}
+
+.waiver-rich-content :deep(a) {
+  color: var(--ui-primary);
+  text-decoration: underline;
+}
+
+.waiver-rich-content :deep(pre) {
+  overflow-x: auto;
+  border-radius: 0.375rem;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg-elevated);
+  padding: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.waiver-rich-content :deep(hr) {
+  border: 0;
+  border-top: 1px solid var(--ui-border);
+  margin: 1rem 0;
+}
+
+.waiver-rich-content :deep(p:last-child),
+.waiver-rich-content :deep(ul:last-child),
+.waiver-rich-content :deep(ol:last-child),
+.waiver-rich-content :deep(blockquote:last-child),
+.waiver-rich-content :deep(pre:last-child) {
+  margin-bottom: 0;
+}
+</style>

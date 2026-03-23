@@ -8,7 +8,7 @@ const paramsSchema = z.object({
 
 const bodySchema = z.object({
   title: z.string().trim().min(3).max(200).optional(),
-  body: z.string().trim().min(50).optional(),
+  body: z.string().trim().min(1).optional(),
   metadata: z.record(z.string(), z.unknown()).optional()
 })
 

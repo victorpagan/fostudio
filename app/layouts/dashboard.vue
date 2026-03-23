@@ -1,12 +1,76 @@
 <script setup lang="ts">
 import type { CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui'
+import { formatMembershipTierLabel } from '~~/app/utils/membershipTierLabel'
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
 const open = ref(false)
 const route = useRoute()
 const router = useRouter()
+const supabase = useSupabaseClient()
+const user = useSupabaseUser()
 const { isAdmin } = useCurrentUser()
 const topupRecoveryRunning = useState<boolean>('topup-recovery-running', () => false)
 const lastTopupRecoveryAt = useState<number>('topup-recovery-last-at', () => 0)
+
+type SidebarMembershipRow = {
+  tier: string | null
+  cadence: string | null
+  status: string | null
+  current_period_end: string | null
+  canceled_at: string | null
+}
+
+const { data: sidebarMembership } = await useAsyncData('dash:sidebar:membership', async () => {
+  if (!user.value?.sub) return null
+  const { data, error } = await supabase
+    .from('memberships')
+    .select('tier,cadence,status,current_period_end,canceled_at')
+    .eq('user_id', user.value.sub)
+    .maybeSingle()
+  if (error) throw error
+  return data as SidebarMembershipRow | null
+}, { watch: [() => user.value?.sub] })
+
+const { data: sidebarCredits } = await useAsyncData('dash:sidebar:credits', async () => {
+  if (!user.value?.sub) return null
+  const { data, error } = await supabase
+    .from('credit_balance')
+    .select('balance')
+    .eq('user_id', user.value.sub)
+    .maybeSingle()
+  if (error) throw error
+  return typeof data?.balance === 'number' ? data.balance : Number(data?.balance ?? 0)
+}, { watch: [() => user.value?.sub] })
+
+const sidebarMembershipState = computed(() => resolveMembershipUiState(sidebarMembership.value))
+
+const sidebarTierLabel = computed(() => {
+  const row = sidebarMembership.value
+  if (!row) return null
+  const tierLabel = formatMembershipTierLabel(row.tier)
+  const cadence = row.cadence ?? null
+  return [tierLabel, cadence].filter(Boolean).join(' · ')
+})
+
+const sidebarMembershipCta = computed(() => {
+  if (sidebarMembershipState.value === 'active') return { label: 'Manage membership', to: '/dashboard/membership' }
+  if (sidebarMembershipState.value === 'pending_checkout') return { label: 'Finish checkout', to: '/dashboard/memberships' }
+  return { label: 'Get membership', to: '/dashboard/memberships' }
+})
+
+const sidebarStatusLabel = computed(() => sidebarMembershipState.value.replace(/_/g, ' '))
+
+const sidebarStatusColor = computed(() => {
+  if (sidebarMembershipState.value === 'active') return 'success'
+  if (sidebarMembershipState.value === 'pending_checkout') return 'warning'
+  if (sidebarMembershipState.value === 'past_due') return 'error'
+  return 'neutral'
+})
+
+const showSidebarBalanceCta = computed(() => {
+  if (sidebarMembershipState.value !== 'active') return true
+  return (sidebarCredits.value ?? 0) <= 0
+})
 
 const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
   ? [
@@ -263,6 +327,45 @@ watch(
           tooltip
           popover
         />
+
+        <UCard
+          v-if="!collapsed"
+          class="mt-4 border-default/70 bg-elevated/60"
+        >
+          <div class="space-y-2">
+            <div class="text-[11px] uppercase tracking-wide text-dimmed">
+              Membership
+            </div>
+            <div class="text-sm font-medium">
+              {{ sidebarTierLabel ?? 'No active membership' }}
+            </div>
+            <div>
+              <UBadge
+                size="xs"
+                variant="soft"
+                :color="sidebarStatusColor"
+              >
+                {{ sidebarStatusLabel }}
+              </UBadge>
+            </div>
+            <div class="text-xs text-dimmed">
+              Credits: {{ sidebarCredits ?? 0 }}
+            </div>
+            <div
+              v-if="showSidebarBalanceCta"
+              class="pt-1"
+            >
+              <UButton
+                size="xs"
+                block
+                color="primary"
+                :to="sidebarMembershipState === 'active' ? '/dashboard/credits' : sidebarMembershipCta.to"
+              >
+                {{ sidebarMembershipState === 'active' ? 'Buy credits' : sidebarMembershipCta.label }}
+              </UButton>
+            </div>
+          </div>
+        </UCard>
 
         <UNavigationMenu
           :collapsed="collapsed"
