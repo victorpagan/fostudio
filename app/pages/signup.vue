@@ -23,6 +23,8 @@ const returnTo = computed(() => {
   return '/onboarding'
 })
 
+const RETURN_TO_PARSE_BASE = 'https://fo.studio'
+
 const selectedPlan = computed(() => {
   const selected = {
     tier: null as TierId | null,
@@ -30,7 +32,7 @@ const selectedPlan = computed(() => {
   }
 
   try {
-    const target = new URL(returnTo.value, 'https://fostudio.local')
+    const target = new URL(returnTo.value, RETURN_TO_PARSE_BASE)
     const tier = target.searchParams.get('tier')?.toLowerCase()
     const cadence = target.searchParams.get('cadence')?.toLowerCase()
 
@@ -48,7 +50,7 @@ const selectedPlan = computed(() => {
 
 const checkoutTokenFromReturnTo = computed(() => {
   try {
-    const target = new URL(returnTo.value, 'https://fostudio.local')
+    const target = new URL(returnTo.value, RETURN_TO_PARSE_BASE)
     if (!target.pathname.startsWith('/checkout/success')) return null
     const token = target.searchParams.get('checkout')
     return token || null
@@ -59,7 +61,7 @@ const checkoutTokenFromReturnTo = computed(() => {
 
 const hasCheckoutSuccessReturn = computed(() => {
   try {
-    const target = new URL(returnTo.value, 'https://fostudio.local')
+    const target = new URL(returnTo.value, RETURN_TO_PARSE_BASE)
     return target.pathname.startsWith('/checkout/success')
   } catch {
     return false
@@ -212,6 +214,11 @@ async function handleSignup() {
         }
       })
 
+      if (checkoutTokenFromReturnTo.value) {
+        await router.push(returnTo.value)
+        return
+      }
+
       const pending = await $fetch<{ pending: { token: string, returnTo: string } | null }>('/api/checkout/pending').catch(() => ({ pending: null }))
       if (pending.pending?.token) {
         const query = new URLSearchParams({
@@ -249,6 +256,11 @@ async function handleSignup() {
           last_name: form.lastName.trim() || undefined
         }
       })
+
+      if (checkoutTokenFromReturnTo.value) {
+        await router.push(returnTo.value)
+        return
+      }
 
       const pending = await $fetch<{ pending: { token: string, returnTo: string } | null }>('/api/checkout/pending').catch(() => ({ pending: null }))
       if (pending.pending?.token) {

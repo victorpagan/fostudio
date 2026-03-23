@@ -25,6 +25,17 @@ const signupTo = computed(() =>
   `/signup?returnTo=${encodeURIComponent(returnTo.value)}`
 )
 
+const RETURN_TO_PARSE_BASE = 'https://fo.studio'
+
+const hasCheckoutSuccessReturn = computed(() => {
+  try {
+    const target = new URL(returnTo.value, RETURN_TO_PARSE_BASE)
+    return target.pathname.startsWith('/checkout/success') && Boolean(target.searchParams.get('checkout'))
+  } catch {
+    return false
+  }
+})
+
 // Keep the remember checkbox separate so it doesn't sit between password
 // and the submit button — some browsers skip form submit on Enter when a
 // checkbox is the last field before the button.
@@ -79,6 +90,11 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
       password: payload.data.password
     })
     if (error) throw error
+
+    if (hasCheckoutSuccessReturn.value) {
+      await router.push(returnTo.value)
+      return
+    }
 
     const pending = await $fetch<{ pending: { token: string, returnTo: string } | null }>('/api/checkout/pending').catch(() => ({ pending: null }))
     if (pending.pending?.token) {

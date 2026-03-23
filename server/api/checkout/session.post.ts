@@ -163,6 +163,7 @@ export default defineEventHandler(async (event) => {
       .from('customers')
       .select('id,user_id,email')
       .ilike('email', guestEmail)
+      .not('user_id', 'is', null)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
