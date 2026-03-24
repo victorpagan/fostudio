@@ -42,6 +42,20 @@ const { data: sidebarCredits } = await useAsyncData('dash:sidebar:credits', asyn
   return typeof data?.balance === 'number' ? data.balance : Number(data?.balance ?? 0)
 }, { watch: [() => user.value?.sub] })
 
+const { data: sidebarCreditCap } = await useAsyncData('dash:sidebar:credit-cap', async () => {
+  const tierId = sidebarMembership.value?.tier
+  if (!tierId) return null
+
+  const { data, error } = await supabase
+    .from('membership_tiers')
+    .select('max_bank')
+    .eq('id', tierId)
+    .maybeSingle()
+  if (error) throw error
+
+  return typeof data?.max_bank === 'number' ? data.max_bank : Number(data?.max_bank ?? 0)
+}, { watch: [() => sidebarMembership.value?.tier] })
+
 const sidebarMembershipState = computed(() => resolveMembershipUiState(sidebarMembership.value))
 
 const sidebarTierLabel = computed(() => {
@@ -70,6 +84,21 @@ const sidebarStatusColor = computed(() => {
 const showSidebarBalanceCta = computed(() => {
   if (sidebarMembershipState.value !== 'active') return true
   return (sidebarCredits.value ?? 0) <= 0
+})
+
+const sidebarCreditsValue = computed(() => Number(sidebarCredits.value ?? 0))
+const sidebarMaxBank = computed(() => Number(sidebarCreditCap.value ?? 0))
+
+const sidebarCreditsOverCap = computed(() => {
+  if (sidebarMaxBank.value <= 0) return false
+  return sidebarCreditsValue.value > sidebarMaxBank.value
+})
+
+const sidebarCreditsProgress = computed(() => {
+  if (sidebarCreditsOverCap.value) return 100
+  if (sidebarMaxBank.value <= 0) return 0
+  const ratio = (sidebarCreditsValue.value / sidebarMaxBank.value) * 100
+  return Math.max(0, Math.min(100, ratio))
 })
 
 const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
@@ -228,6 +257,12 @@ const groups = computed<CommandPaletteGroup[]>(() => [{
   items: searchItems.value
 }])
 
+function formatSidebarCreditValue(value: number) {
+  if (!Number.isFinite(value)) return '0'
+  if (Number.isInteger(value)) return String(value)
+  return value.toFixed(2).replace(/\.?0+$/, '')
+}
+
 function readQueryString(value: unknown) {
   if (typeof value === 'string' && value.trim()) return value.trim()
   if (Array.isArray(value)) {
@@ -348,8 +383,29 @@ watch(
                 {{ sidebarStatusLabel }}
               </UBadge>
             </div>
-            <div class="text-xs text-dimmed">
-              Credits: {{ sidebarCredits ?? 0 }}
+            <div class="space-y-1.5 text-xs">
+              <div class="flex items-center justify-between text-dimmed">
+                <span>Credits</span>
+                <span>
+                  {{ formatSidebarCreditValue(sidebarCreditsValue) }}
+                  <template v-if="sidebarMaxBank > 0">
+                    / {{ formatSidebarCreditValue(sidebarMaxBank) }}
+                  </template>
+                </span>
+              </div>
+              <div class="h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  class="h-full rounded-full transition-all duration-300"
+                  :class="sidebarCreditsOverCap ? 'bg-red-500' : 'bg-primary'"
+                  :style="{ width: `${sidebarCreditsProgress}%` }"
+                />
+              </div>
+              <div
+                v-if="sidebarCreditsOverCap"
+                class="text-[11px] font-medium text-error"
+              >
+                Over cap
+              </div>
             </div>
             <div
               v-if="showSidebarBalanceCta"

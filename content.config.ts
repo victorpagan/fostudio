@@ -14,48 +14,34 @@ const createSimpleCtaSchema = () => z.object({
 
 const createLandingSchema = () => z.object({
   hero: z.object({
+    kicker: z.string().nonempty(),
     headline: z.string().nonempty(),
     subheadline: z.string().nonempty(),
     primaryCta: createSimpleCtaSchema(),
     secondaryCta: createSimpleCtaSchema(),
-    chips: z.array(z.string().nonempty()),
-    media: z.object({
-      type: z.string().optional(),
-      images: z.array(createImageSchema()).optional()
-    }).optional()
+    waitlistCtaLabel: z.string().nonempty(),
+    chips: z.array(z.string().nonempty())
   }),
-  howItWorks: z.object({
+  infoCard: z.object({
     title: z.string().nonempty(),
-    steps: z.array(
-      z.object({
-        title: z.string().nonempty(),
-        body: z.string().nonempty()
-      })
-    )
+    body: z.string().nonempty(),
+    features: z.array(z.string().nonempty())
   }),
-  membershipsPreview: z.object({
+  gallery: z.object({
+    title: z.string().nonempty(),
+    images: z.array(createImageSchema()).min(1)
+  }),
+  tiersPreview: z.object({
     title: z.string().nonempty(),
     subtitle: z.string().nonempty(),
-    cta: createSimpleCtaSchema()
-  }),
-  valueProps: z.object({
-    title: z.string().nonempty(),
-    bullets: z.array(z.string().nonempty()),
-    cta: createSimpleCtaSchema()
-  }),
-  fairness: z.object({
-    title: z.string().nonempty(),
-    body: z.string().nonempty(),
-    bullets: z.array(z.string().nonempty())
-  }),
-  faq: z.object({
-    title: z.string().nonempty()
-  }),
-  finalCta: z.object({
-    title: z.string().nonempty(),
-    body: z.string().nonempty(),
-    primaryCta: createSimpleCtaSchema(),
-    secondaryCta: createSimpleCtaSchema()
+    items: z.array(
+      z.object({
+        id: z.string().nonempty(),
+        title: z.string().nonempty(),
+        body: z.string().nonempty(),
+        buttonLabel: z.string().nonempty()
+      })
+    )
   })
 })
 
@@ -90,16 +76,17 @@ const createMembershipsSiteSchema = () => z.object({
     title: z.string().nonempty(),
     paragraphs: z.array(z.string().nonempty())
   }),
-  tiers: z.array(
+  creditsExplainer: z.object({
+    title: z.string().nonempty(),
+    description: z.string().nonempty(),
+    bullets: z.array(z.string().nonempty())
+  }),
+  plans: z.array(
     z.object({
       id: z.string().nonempty(),
-      name: z.string().nonempty(),
-      price: z.number(),
-      credits: z.number(),
-      bookingWindowDays: z.number(),
-      tagline: z.string().nonempty(),
-      bestFor: z.array(z.string().nonempty()),
-      cap: z.number()
+      lead: z.string().nonempty(),
+      highlights: z.array(z.string().nonempty()),
+      detail: z.string().nonempty()
     })
   )
 })
