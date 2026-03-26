@@ -1,9 +1,11 @@
 <script setup lang="ts">
 const route = useRoute()
 const isOpen = ref(false)
+const isScrolled = ref(false)
 const supabase = useSupabaseClient()
 const router = useRouter()
 const { user, isAdmin } = useCurrentUser()
+let scrollRaf: number | null = null
 
 const isAuthed = computed(() => !!user.value)
 const dashboardHref = computed(() => (isAuthed.value ? '/dashboard' : '/login'))
@@ -45,6 +47,31 @@ watch(() => route.fullPath, () => {
   isOpen.value = false
 })
 
+function syncScrolledState() {
+  isScrolled.value = (window.scrollY || window.pageYOffset || 0) > 8
+}
+
+function onWindowScroll() {
+  if (scrollRaf !== null) return
+  scrollRaf = window.requestAnimationFrame(() => {
+    scrollRaf = null
+    syncScrolledState()
+  })
+}
+
+onMounted(() => {
+  syncScrolledState()
+  window.addEventListener('scroll', onWindowScroll, { passive: true })
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onWindowScroll)
+  if (scrollRaf !== null) {
+    window.cancelAnimationFrame(scrollRaf)
+    scrollRaf = null
+  }
+})
+
 async function logout() {
   await supabase.auth.signOut()
   isOpen.value = false
@@ -53,9 +80,12 @@ async function logout() {
 </script>
 
 <template>
-  <header class="site-header">
+  <header
+    class="site-header"
+    :class="{ 'site-header--scrolled': isScrolled }"
+  >
     <UContainer class="site-header-frame">
-      <div class="site-header-panel">
+      <div class="site-header-row">
         <NuxtLink
           to="/"
           class="site-brand"
@@ -69,77 +99,79 @@ async function logout() {
           </div>
         </NuxtLink>
 
-        <div class="site-header-actions">
-          <template v-if="!isAuthed">
+        <div class="site-header-right">
+          <nav
+            class="site-nav hidden lg:flex"
+            aria-label="Main navigation"
+          >
             <NuxtLink
-              to="/login"
-              class="site-auth-link hidden sm:inline-flex"
+              v-for="l in links"
+              :key="l.to"
+              :to="l.to"
+              class="site-nav-link"
+              :class="{ 'is-active': isLinkActive(l.to) }"
             >
-              Login
+              {{ l.label }}
             </NuxtLink>
-            <NuxtLink
-              :to="dashboardHref"
-              class="site-auth-link sm:hidden"
-            >
-              Dashboard
-            </NuxtLink>
-            <UButton
-              :to="dashboardHref"
-              color="neutral"
-              variant="soft"
-              class="hidden sm:inline-flex"
-            >
-              Dashboard
-            </UButton>
-          </template>
+          </nav>
 
-          <template v-else>
-            <UButton
-              to="/dashboard"
-              color="neutral"
-              variant="soft"
-              class="hidden sm:inline-flex"
-            >
-              Dashboard
-            </UButton>
-            <UDropdownMenu
-              :items="accountMenuItems"
-              :content="{ align: 'end' }"
-            >
+          <div class="site-header-actions">
+            <template v-if="!isAuthed">
+              <NuxtLink
+                to="/login"
+                class="site-auth-link hidden sm:inline-flex"
+              >
+                Login
+              </NuxtLink>
+              <NuxtLink
+                :to="dashboardHref"
+                class="site-auth-link sm:hidden"
+              >
+                Dashboard
+              </NuxtLink>
               <UButton
+                :to="dashboardHref"
                 color="neutral"
-                variant="ghost"
-                icon="i-lucide-circle-user"
+                variant="soft"
                 class="hidden sm:inline-flex"
-              />
-            </UDropdownMenu>
-          </template>
+              >
+                Dashboard
+              </UButton>
+            </template>
 
-          <UButton
-            icon="i-heroicons-bars-3"
-            color="neutral"
-            variant="ghost"
-            aria-label="Menu"
-            class="lg:hidden"
-            @click="isOpen = !isOpen"
-          />
+            <template v-else>
+              <UButton
+                to="/dashboard"
+                color="neutral"
+                variant="soft"
+                class="hidden sm:inline-flex"
+              >
+                Dashboard
+              </UButton>
+              <UDropdownMenu
+                :items="accountMenuItems"
+                :content="{ align: 'end' }"
+              >
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-circle-user"
+                  class="hidden sm:inline-flex"
+                />
+              </UDropdownMenu>
+            </template>
+
+            <UButton
+              icon="i-heroicons-bars-3"
+              color="neutral"
+              variant="ghost"
+              aria-label="Menu"
+              class="lg:hidden"
+              @click="isOpen = !isOpen"
+            />
+          </div>
         </div>
       </div>
-
-      <nav
-        class="site-nav-pocket hidden lg:flex"
-        aria-label="Main navigation"
-      >
-        <NuxtLink
-          v-for="l in links"
-          :key="l.to"
-          :to="l.to"
-          class="site-nav-link"
-          :class="{ 'is-active': isLinkActive(l.to) }"
-        >
-          {{ l.label }}
-        </NuxtLink>
-      </nav>
     </UContainer>
 
     <Transition name="fade-slide">
