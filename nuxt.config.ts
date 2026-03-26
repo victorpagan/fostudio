@@ -111,6 +111,8 @@ export default defineNuxtConfig({
         '/equipment',
         '/faq',
         '/contact',
+        '/site',
+        '/site/**',
         '/policies',
         '/pricing',
         // Auth pages
