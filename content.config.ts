@@ -1,4 +1,4 @@
-import { defineCollection, z } from '@nuxt/content'
+import { defineCollection, defineContentConfig, z } from '@nuxt/content'
 
 const createImageSchema = () => z.object({
   src: z.string().nonempty().editor({ input: 'media' }),
@@ -157,35 +157,37 @@ const createCalendarSchema = () => z.object({
   })
 })
 
-export const collections = {
-  siteLanding: defineCollection({
-    source: 'site/landing.yml',
-    type: 'page',
-    schema: createLandingSchema()
-  }),
-  siteFaq: defineCollection({
-    source: 'site/faq.yml',
-    type: 'page',
-    schema: createFaqSchema()
-  }),
-  siteMemberships: defineCollection({
-    source: 'site/memberships.yml',
-    type: 'page',
-    schema: createMembershipsSiteSchema()
-  }),
-  siteEquipment: defineCollection({
-    source: 'site/equipment.yml',
-    type: 'page',
-    schema: createEquipmentSchema()
-  }),
-  siteContact: defineCollection({
-    source: 'site/contact.yml',
-    type: 'page',
-    schema: createContactSchema()
-  }),
-  siteCalendar: defineCollection({
-    source: 'site/calendar.yml',
-    type: 'page',
-    schema: createCalendarSchema()
-  })
-}
+export default defineContentConfig({
+  collections: {
+    siteLanding: defineCollection({
+      source: 'site/landing.yml',
+      type: 'data',
+      schema: createLandingSchema()
+    }),
+    siteFaq: defineCollection({
+      source: 'site/faq.yml',
+      type: 'data',
+      schema: createFaqSchema()
+    }),
+    siteMemberships: defineCollection({
+      source: 'site/memberships.yml',
+      type: 'data',
+      schema: createMembershipsSiteSchema()
+    }),
+    siteEquipment: defineCollection({
+      source: 'site/equipment.yml',
+      type: 'data',
+      schema: createEquipmentSchema()
+    }),
+    siteContact: defineCollection({
+      source: 'site/contact.yml',
+      type: 'data',
+      schema: createContactSchema()
+    }),
+    siteCalendar: defineCollection({
+      source: 'site/calendar.yml',
+      type: 'data',
+      schema: createCalendarSchema()
+    })
+  }
+})
