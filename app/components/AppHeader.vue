@@ -6,6 +6,7 @@ const router = useRouter()
 const { user, isAdmin } = useCurrentUser()
 
 const isAuthed = computed(() => !!user.value)
+const dashboardHref = computed(() => (isAuthed.value ? '/dashboard' : '/login'))
 
 const links = [
   { label: 'Calendar', to: '/calendar' },
@@ -36,6 +37,10 @@ const accountMenuItems = computed(() => [
   [{ label: 'Log out', icon: 'i-lucide-log-out', onSelect: logout }]
 ])
 
+watch(() => route.fullPath, () => {
+  isOpen.value = false
+})
+
 async function logout() {
   await supabase.auth.signOut()
   isOpen.value = false
@@ -44,183 +49,180 @@ async function logout() {
 </script>
 
 <template>
-  <header class="sticky top-0 z-50 border-b border-[color:var(--gruv-line)] bg-[rgba(249,245,215,0.82)] backdrop-blur dark:bg-[rgba(29,32,33,0.86)]">
-    <UContainer class="flex h-16 items-center justify-between">
-      <NuxtLink
-        to="/"
-        class="flex items-center gap-3"
-      >
-        <div class="flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.12)] text-[color:var(--gruv-accent)]">
-          <span class="studio-display text-lg leading-none">FO</span>
-        </div>
-        <div class="leading-none">
-          <div class="studio-display text-xl text-[color:var(--gruv-ink-0)]">FO Studio</div>
-          <div class="text-[10px] font-semibold uppercase tracking-[0.24em] text-[color:var(--gruv-ink-2)]">
-            Built for working image-makers
+  <header class="site-header">
+    <UContainer class="site-header-frame">
+      <div class="site-header-panel">
+        <NuxtLink
+          to="/"
+          class="site-brand"
+        >
+          <div class="site-brand-mark">
+            <span class="studio-display text-lg leading-none">FO</span>
           </div>
-        </div>
-      </NuxtLink>
+          <div class="leading-none">
+            <div class="site-brand-title">FO Studio</div>
+            <div class="site-brand-subtitle">24/7 production studio</div>
+          </div>
+        </NuxtLink>
 
-      <!-- Desktop nav -->
-      <nav class="hidden items-center gap-6 md:flex">
+        <div class="site-header-actions">
+          <template v-if="!isAuthed">
+            <NuxtLink
+              to="/login"
+              class="site-auth-link hidden sm:inline-flex"
+            >
+              Login
+            </NuxtLink>
+            <NuxtLink
+              :to="dashboardHref"
+              class="site-auth-link sm:hidden"
+            >
+              Dashboard
+            </NuxtLink>
+            <UButton
+              :to="dashboardHref"
+              color="neutral"
+              variant="soft"
+              class="hidden sm:inline-flex"
+            >
+              Dashboard
+            </UButton>
+          </template>
+
+          <template v-else>
+            <UButton
+              to="/dashboard"
+              color="neutral"
+              variant="soft"
+              class="hidden sm:inline-flex"
+            >
+              Dashboard
+            </UButton>
+            <UDropdownMenu
+              :items="accountMenuItems"
+              :content="{ align: 'end' }"
+            >
+              <UButton
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-circle-user"
+                class="hidden sm:inline-flex"
+              />
+            </UDropdownMenu>
+          </template>
+
+          <UButton
+            icon="i-heroicons-bars-3"
+            color="neutral"
+            variant="ghost"
+            aria-label="Menu"
+            class="lg:hidden"
+            @click="isOpen = !isOpen"
+          />
+        </div>
+      </div>
+
+      <nav
+        class="site-nav-pocket hidden lg:flex"
+        aria-label="Main navigation"
+      >
         <NuxtLink
           v-for="l in links"
           :key="l.to"
           :to="l.to"
-          class="text-sm transition-colors"
-          :class="route.path === l.to
-            ? 'text-[color:var(--gruv-ink-0)]'
-            : 'text-[color:var(--gruv-ink-2)] hover:text-[color:var(--gruv-accent)]'"
+          class="site-nav-link"
+          :class="{ 'is-active': route.path === l.to }"
         >
           {{ l.label }}
         </NuxtLink>
       </nav>
-
-      <div class="flex items-center gap-2">
-        <!-- Logged OUT state -->
-        <template v-if="!isAuthed">
-          <UButton
-            color="neutral"
-            variant="soft"
-            to="/calendar"
-            class="hidden sm:inline-flex"
-          >
-            View Availability
-          </UButton>
-          <UButton to="/memberships">
-            Join
-          </UButton>
-          <NuxtLink
-            to="/login"
-            class="ml-2 hidden text-sm text-[color:var(--gruv-ink-2)] transition-colors hover:text-[color:var(--gruv-accent)] md:inline"
-          >
-            Login
-          </NuxtLink>
-        </template>
-
-        <!-- Logged IN state -->
-        <template v-else>
-          <UButton
-            color="neutral"
-            variant="soft"
-            to="/dashboard"
-            class="hidden sm:inline-flex"
-          >
-            Dashboard
-          </UButton>
-          <UDropdownMenu
-            :items="accountMenuItems"
-            :content="{ align: 'end' }"
-          >
-            <UButton
-              color="neutral"
-              variant="ghost"
-              icon="i-lucide-circle-user"
-              class="hidden md:inline-flex"
-            />
-          </UDropdownMenu>
-        </template>
-
-        <!-- Mobile menu button (always shown) -->
-        <UButton
-          icon="i-heroicons-bars-3"
-          color="neutral"
-          variant="ghost"
-          aria-label="Menu"
-          class="md:hidden"
-          @click="isOpen = !isOpen"
-        />
-      </div>
     </UContainer>
 
-    <!-- Mobile menu -->
-    <div
-      v-if="isOpen"
-      class="border-t border-[color:var(--gruv-line)] bg-[rgba(249,245,215,0.96)] backdrop-blur dark:bg-[rgba(29,32,33,0.98)] md:hidden"
-    >
-      <UContainer class="space-y-1 py-4">
-        <NuxtLink
-          v-for="l in links"
-          :key="l.to"
-          :to="l.to"
-          class="block rounded px-3 py-2 text-sm transition-colors"
-          :class="route.path === l.to
-            ? 'bg-[rgba(181,118,20,0.14)] text-[color:var(--gruv-ink-0)]'
-            : 'text-[color:var(--gruv-ink-2)] hover:bg-[rgba(181,118,20,0.08)]'"
-          @click="isOpen = false"
-        >
-          {{ l.label }}
-        </NuxtLink>
+    <Transition name="fade-slide">
+      <div
+        v-if="isOpen"
+        class="site-mobile-menu lg:hidden"
+      >
+        <UContainer class="space-y-2 py-4">
+          <NuxtLink
+            v-for="l in links"
+            :key="l.to"
+            :to="l.to"
+            class="site-mobile-link"
+            :class="{ 'is-active': route.path === l.to }"
+            @click="isOpen = false"
+          >
+            {{ l.label }}
+          </NuxtLink>
 
-        <div class="my-2 border-t border-[color:var(--gruv-line)]" />
+          <div class="my-2 border-t border-[color:var(--gruv-line)]" />
 
-        <!-- Mobile: logged out -->
-        <template v-if="!isAuthed">
-          <NuxtLink
-            to="/login"
-            class="block rounded px-3 py-2 text-sm text-[color:var(--gruv-ink-2)] hover:bg-[rgba(181,118,20,0.08)]"
-            @click="isOpen = false"
-          >
-            Login
-          </NuxtLink>
-          <NuxtLink
-            to="/memberships"
-            class="block rounded px-3 py-2 text-sm text-[color:var(--gruv-ink-2)] hover:bg-[rgba(181,118,20,0.08)]"
-            @click="isOpen = false"
-          >
-            Join
-          </NuxtLink>
-        </template>
+          <template v-if="!isAuthed">
+            <NuxtLink
+              :to="dashboardHref"
+              class="site-mobile-link"
+              @click="isOpen = false"
+            >
+              Dashboard
+            </NuxtLink>
+            <NuxtLink
+              to="/login"
+              class="site-mobile-link"
+              @click="isOpen = false"
+            >
+              Login
+            </NuxtLink>
+          </template>
 
-        <!-- Mobile: logged in -->
-        <template v-else>
-          <p class="truncate px-3 py-1 text-xs font-medium text-[color:var(--gruv-ink-2)]">
-            {{ displayName }}
-          </p>
-          <NuxtLink
-            to="/dashboard"
-            class="block rounded px-3 py-2 text-sm font-medium text-[color:var(--gruv-ink-0)] hover:bg-[rgba(181,118,20,0.08)]"
-            @click="isOpen = false"
-          >
-            Dashboard
-          </NuxtLink>
-          <NuxtLink
-            to="/dashboard/bookings"
-            class="block rounded px-3 py-2 text-sm text-[color:var(--gruv-ink-2)] hover:bg-[rgba(181,118,20,0.08)]"
-            @click="isOpen = false"
-          >
-            My Bookings
-          </NuxtLink>
-          <NuxtLink
-            to="/dashboard/membership"
-            class="block rounded px-3 py-2 text-sm text-[color:var(--gruv-ink-2)] hover:bg-[rgba(181,118,20,0.08)]"
-            @click="isOpen = false"
-          >
-            Membership &amp; Credits
-          </NuxtLink>
-          <NuxtLink
-            to="/dashboard/profile"
-            class="block rounded px-3 py-2 text-sm text-[color:var(--gruv-ink-2)] hover:bg-[rgba(181,118,20,0.08)]"
-            @click="isOpen = false"
-          >
-            Profile
-          </NuxtLink>
-          <NuxtLink
-            v-if="isAdmin"
-            to="/dashboard/admin"
-            class="block rounded px-3 py-2 text-sm text-[color:var(--gruv-ink-2)] hover:bg-[rgba(181,118,20,0.08)]"
-            @click="isOpen = false"
-          >
-            Admin
-          </NuxtLink>
-          <button
-            class="block w-full rounded px-3 py-2 text-left text-sm text-[color:var(--gruv-rust)] hover:bg-[rgba(157,0,6,0.08)]"
-            @click="logout"
-          >
-            Log out
-          </button>
-        </template>
-      </UContainer>
-    </div>
+          <template v-else>
+            <p class="truncate px-3 py-1 text-xs font-medium text-[color:var(--gruv-ink-2)]">
+              {{ displayName }}
+            </p>
+            <NuxtLink
+              to="/dashboard"
+              class="site-mobile-link"
+              @click="isOpen = false"
+            >
+              Dashboard
+            </NuxtLink>
+            <NuxtLink
+              to="/dashboard/bookings"
+              class="site-mobile-link"
+              @click="isOpen = false"
+            >
+              My Bookings
+            </NuxtLink>
+            <NuxtLink
+              to="/dashboard/membership"
+              class="site-mobile-link"
+              @click="isOpen = false"
+            >
+              Membership &amp; Credits
+            </NuxtLink>
+            <NuxtLink
+              to="/dashboard/profile"
+              class="site-mobile-link"
+              @click="isOpen = false"
+            >
+              Profile
+            </NuxtLink>
+            <NuxtLink
+              v-if="isAdmin"
+              to="/dashboard/admin"
+              class="site-mobile-link"
+              @click="isOpen = false"
+            >
+              Admin
+            </NuxtLink>
+            <button
+              class="site-mobile-link site-mobile-link-danger w-full text-left"
+              @click="logout"
+            >
+              Log out
+            </button>
+          </template>
+        </UContainer>
+      </div>
+    </Transition>
   </header>
 </template>
