@@ -121,7 +121,7 @@ function tierDetailsHref(tierId: string) {
   <div class="space-y-12 py-8 sm:space-y-16 sm:py-12">
     <section>
       <UContainer>
-        <div class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
+        <div class="studio-grid overflow-hidden rounded-[2rem] px-5 py-6 sm:px-8 sm:py-8">
           <div class="grid gap-10 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)] lg:items-center">
             <div class="space-y-6">
               <span class="studio-kicker">{{ landingContent.hero.kicker }}</span>
@@ -270,7 +270,7 @@ function tierDetailsHref(tierId: string) {
               :src="galleryPrimaryImage.src"
               :alt="galleryPrimaryImage.alt || 'Studio image'"
               :loading="galleryPrimaryImage.loading || 'eager'"
-              class="h-[360px] w-full rounded-3xl border border-[color:var(--gruv-line)] object-cover"
+              class="h-[360px] w-full rounded-3xl object-cover"
             >
           </div>
           <div class="grid gap-4 lg:col-span-5">
@@ -278,13 +278,13 @@ function tierDetailsHref(tierId: string) {
               :src="gallerySecondaryImage.src"
               :alt="gallerySecondaryImage.alt || 'Studio image'"
               :loading="gallerySecondaryImage.loading || 'lazy'"
-              class="h-[172px] w-full rounded-3xl border border-[color:var(--gruv-line)] object-cover"
+              class="h-[172px] w-full rounded-3xl object-cover"
             >
             <img
               :src="galleryTertiaryImage.src"
               :alt="galleryTertiaryImage.alt || 'Studio image'"
               :loading="galleryTertiaryImage.loading || 'lazy'"
-              class="h-[172px] w-full rounded-3xl border border-[color:var(--gruv-line)] object-cover"
+              class="h-[172px] w-full rounded-3xl object-cover"
             >
           </div>
         </div>
@@ -299,7 +299,7 @@ function tierDetailsHref(tierId: string) {
             :src="image.src"
             :alt="image.alt || 'Studio image'"
             :loading="image.loading || 'lazy'"
-            class="h-[240px] w-full rounded-3xl border border-[color:var(--gruv-line)] object-cover"
+            class="h-[240px] w-full rounded-3xl object-cover"
           >
         </div>
       </UContainer>

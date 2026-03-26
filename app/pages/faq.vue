@@ -57,7 +57,7 @@ const openItem = ref<number | null>(0)
 <template>
   <UContainer class="py-10 sm:py-14">
     <div class="space-y-8">
-      <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
+      <section class="studio-grid overflow-hidden rounded-[2rem] px-5 py-6 sm:px-8 sm:py-8">
         <div class="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] lg:items-end">
           <div class="space-y-5">
             <span class="studio-kicker">{{ pageContent.hero.kicker }}</span>
@@ -115,7 +115,7 @@ const openItem = ref<number | null>(0)
 
           <div
             v-if="openItem === index"
-            class="border-t border-[color:var(--gruv-line)] px-5 py-5 sm:px-6"
+            class="px-5 py-5 sm:px-6"
           >
             <p class="text-sm leading-8 text-[color:var(--gruv-ink-2)] sm:text-base">
               {{ faq.answer }}

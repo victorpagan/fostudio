@@ -96,7 +96,7 @@ const currentPolicy = computed(() => policyContent[activeTab.value])
 <template>
   <UContainer class="py-10 sm:py-14">
     <div class="space-y-8">
-      <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
+      <section class="studio-grid overflow-hidden rounded-[2rem] px-5 py-6 sm:px-8 sm:py-8">
         <div class="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] lg:items-end">
           <div class="space-y-5">
             <span class="studio-kicker">Policies</span>
@@ -126,10 +126,10 @@ const currentPolicy = computed(() => policyContent[activeTab.value])
         <button
           v-for="tab in tabs"
           :key="tab.key"
-          class="rounded-full border px-4 py-2 text-sm font-semibold uppercase tracking-[0.14em] transition-colors"
+          class="rounded-full px-4 py-2 text-sm font-semibold uppercase tracking-[0.14em] transition-colors"
           :class="activeTab === tab.key
-            ? 'border-[color:var(--gruv-accent)] bg-[rgba(181,118,20,0.14)] text-[color:var(--gruv-accent)]'
-            : 'border-[color:var(--gruv-line)] bg-transparent text-[color:var(--gruv-ink-2)] hover:bg-[rgba(181,118,20,0.08)]'"
+            ? 'bg-[rgba(181,118,20,0.16)] text-[color:var(--gruv-accent-strong)]'
+            : 'bg-[color:var(--gruv-bg-1)]/85 text-[color:var(--gruv-ink-2)] hover:bg-[rgba(181,118,20,0.08)]'"
           @click="activeTab = tab.key"
         >
           {{ tab.label }}
@@ -150,7 +150,7 @@ const currentPolicy = computed(() => policyContent[activeTab.value])
           <div
             v-for="block in currentPolicy.blocks"
             :key="block.heading"
-            class="rounded-[1.4rem] border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] p-5"
+            class="rounded-[1.4rem] bg-[rgba(181,118,20,0.08)] p-5"
           >
             <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
               {{ block.heading }}

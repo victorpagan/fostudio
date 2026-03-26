@@ -303,7 +303,7 @@ async function submitWaitlist() {
 
 <template>
   <UContainer class="py-10 sm:py-14">
-    <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
+    <section class="studio-grid overflow-hidden rounded-[2rem] px-5 py-6 sm:px-8 sm:py-8">
       <div class="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] lg:items-end">
         <div class="space-y-4">
           <span class="studio-kicker">{{ membershipsContent.hero.kicker }}</span>
@@ -447,7 +447,7 @@ async function submitWaitlist() {
             </div>
           </div>
 
-          <div class="rounded-2xl border border-[color:var(--gruv-line)] bg-[color:var(--gruv-accent-soft)] p-4">
+          <div class="rounded-2xl bg-[color:var(--gruv-accent-soft)] p-4">
             <div class="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
               Starting at
             </div>
@@ -484,7 +484,7 @@ async function submitWaitlist() {
             </p>
           </div>
 
-          <div class="rounded-2xl border border-[color:var(--gruv-line)] bg-[color:var(--gruv-accent-soft)] px-4 py-3 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
+          <div class="rounded-2xl bg-[color:var(--gruv-accent-soft)] px-4 py-3 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
             {{ tierDetail(tier) }}
           </div>
         </div>

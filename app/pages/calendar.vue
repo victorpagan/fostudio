@@ -62,7 +62,7 @@ const content = computed<SiteCalendarContent>(() => {
 
 <template>
   <UContainer class="py-10 sm:py-14">
-    <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
+    <section class="studio-grid overflow-hidden rounded-[2rem] px-5 py-6 sm:px-8 sm:py-8">
       <div class="grid gap-8 xl:grid-cols-[minmax(0,1.4fr)_20rem]">
         <div class="space-y-5">
           <span class="studio-kicker">{{ content.hero.kicker }}</span>

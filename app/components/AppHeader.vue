@@ -155,7 +155,7 @@ async function logout() {
             {{ l.label }}
           </NuxtLink>
 
-          <div class="my-2 border-t border-[color:var(--gruv-line)]" />
+          <div class="my-2 h-px bg-[color:var(--gruv-accent-soft)]" />
 
           <template v-if="!isAuthed">
             <NuxtLink

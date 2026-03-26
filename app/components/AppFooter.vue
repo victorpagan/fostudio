@@ -15,14 +15,11 @@ function toggleColorMode() {
 </script>
 
 <template>
-  <UFooter class="border-t border-[color:var(--gruv-line)] py-10">
+  <UFooter class="py-10">
     <UContainer class="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
       <div class="space-y-1">
         <div class="text-sm text-[color:var(--gruv-ink-2)]">
           © {{ year }} FO Studio
-        </div>
-        <div class="text-xs uppercase tracking-[0.18em] text-[color:var(--gruv-ink-2)]">
-          Studio access shaped around production rhythm
         </div>
       </div>
 
@@ -44,9 +41,7 @@ function toggleColorMode() {
           class="h-7 rounded-full px-2 text-[color:var(--gruv-ink-2)]"
           :aria-label="isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'"
           @click="toggleColorMode"
-        >
-          {{ isDarkMode ? 'Dark' : 'Light' }}
-        </UButton>
+        />
       </div>
     </UContainer>
   </UFooter>

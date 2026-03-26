@@ -201,7 +201,7 @@ async function submitForm() {
 <template>
   <UContainer class="py-10 sm:py-14">
     <div class="space-y-8">
-      <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
+      <section class="studio-grid overflow-hidden rounded-[2rem] px-5 py-6 sm:px-8 sm:py-8">
         <div class="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)] lg:items-end">
           <div class="space-y-5">
             <span class="studio-kicker">{{ pageContent.hero.kicker }}</span>
@@ -245,7 +245,7 @@ async function submitForm() {
               <div
                 v-for="item in contactDetails"
                 :key="item.label"
-                class="rounded-2xl border border-[color:var(--gruv-line)] bg-[color:var(--gruv-accent-soft)] p-4"
+                class="rounded-2xl bg-[color:var(--gruv-accent-soft)] p-4"
               >
                 <div class="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
                   {{ item.label }}
@@ -261,7 +261,7 @@ async function submitForm() {
           </div>
 
           <div class="studio-panel p-3 sm:p-4">
-            <div class="overflow-hidden rounded-[1.25rem] border border-[color:var(--gruv-line)]">
+            <div class="overflow-hidden rounded-[1.25rem]">
               <iframe
                 :src="mapEmbedUrl"
                 title="LA Film Lab map"
