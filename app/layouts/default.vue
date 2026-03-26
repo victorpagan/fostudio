@@ -1,18 +1,31 @@
 <script setup lang="ts">
 const toast = useToast()
 const parallaxY = ref(0)
+let rafId: number | null = null
 
 const shellStyle = computed(() => ({
   '--site-scroll-y': `${Math.round(parallaxY.value)}px`
 }))
 
+function readScrollY() {
+  return window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0
+}
+
 function syncParallaxOffset() {
-  parallaxY.value = window.scrollY || 0
+  parallaxY.value = Math.max(0, readScrollY())
+}
+
+function onWindowScroll() {
+  if (rafId !== null) return
+  rafId = window.requestAnimationFrame(() => {
+    rafId = null
+    syncParallaxOffset()
+  })
 }
 
 onMounted(async () => {
   syncParallaxOffset()
-  window.addEventListener('scroll', syncParallaxOffset, { passive: true })
+  window.addEventListener('scroll', onWindowScroll, { passive: true })
 
   const cookie = useCookie('cookie-consent')
   if (cookie.value === 'accepted') {
@@ -39,7 +52,11 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('scroll', syncParallaxOffset)
+  window.removeEventListener('scroll', onWindowScroll)
+  if (rafId !== null) {
+    window.cancelAnimationFrame(rafId)
+    rafId = null
+  }
 })
 </script>
 

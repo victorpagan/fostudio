@@ -447,7 +447,7 @@ async function submitWaitlist() {
             </div>
           </div>
 
-          <div class="rounded-2xl border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] p-4">
+          <div class="rounded-2xl border border-[color:var(--gruv-line)] bg-[color:var(--gruv-accent-soft)] p-4">
             <div class="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
               Starting at
             </div>
@@ -484,7 +484,7 @@ async function submitWaitlist() {
             </p>
           </div>
 
-          <div class="rounded-2xl border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] px-4 py-3 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
+          <div class="rounded-2xl border border-[color:var(--gruv-line)] bg-[color:var(--gruv-accent-soft)] px-4 py-3 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
             {{ tierDetail(tier) }}
           </div>
         </div>
