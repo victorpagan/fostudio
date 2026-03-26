@@ -1,54 +1,51 @@
-hero:
-  kicker: "Membership studio access"
-  headline: "Pick the studio membership that fits the way you actually work."
-  subheadline: "This is a 24/7 turnkey studio built for photographers and small-to-mid crews. Book the plan that matches your volume, then use the space like it was made for production days, not paperwork."
-  primaryCta:
-    label: "See Availability"
-    to: "/calendar"
-  secondaryCta:
-    label: "Explore Memberships"
-    to: "/memberships"
-  waitlistCtaLabel: "Join the waitlist"
-  chips:
-    - "24/7 member access"
-    - "Gear + consumables included"
-    - "No startup fees"
-
-infoCard:
-  title: "FO Studio at a glance"
-  body: "Built for production days, not logistics overhead."
-  features:
-    - "25x30 ft cyclorama with 20+ ft ceilings"
-    - "Member-first calendar access and booking controls"
-    - "Included equipment, backdrop paper, and baseline consumables"
-    - "Secure access flow with 24/7 member entry"
-
 gallery:
-  title: "Inside the studio"
+  title: Inside the studio
   images:
-    - src: "/images/studio-hero-1.jpg"
-      alt: "Studio wide shot with cyc wall"
-      loading: "eager"
-    - src: "/images/studio-hero-2.jpg"
-      alt: "Backdrop and prep area"
-      loading: "lazy"
-    - src: "/images/studio-hero-3.jpg"
-      alt: "Lighting setup in the studio"
-      loading: "lazy"
-
+    - src: /images/studio-hero-1.jpg
+      alt: Studio wide shot with cyc wall
+      loading: eager
+    - src: /images/studio-hero-2.jpg
+      alt: Backdrop and prep area
+      loading: lazy
+    - src: /images/studio-hero-3.jpg
+      alt: Lighting setup in the studio
+      loading: lazy
+hero:
+  kicker: Membership studio access
+  headline: "LA's #1 All Access Photo Studio"
+  subheadline: This is a 24/7 turnkey studio built for photographers and small-to-mid crews. Book the plan that matches your volume, then use the space like it was made for production days, not paperwork.
+  primaryCta:
+    label: See Availability
+    to: /calendar
+  secondaryCta:
+    label: Explore Memberships
+    to: /memberships
+  waitlistCtaLabel: Join the waitlist
+  chips:
+    - 24/7 member access
+    - Gear + consumables included
+    - No startup fees
+infoCard:
+  title: FO Studio at a glance
+  body: Built for production days, not logistics overhead.
+  features:
+    - 25x30 ft cyclorama with 20+ ft ceilings
+    - Member-first calendar access and booking controls
+    - Included equipment, backdrop paper, and baseline consumables
+    - Secure access flow with 24/7 member entry
 tiersPreview:
-  title: "Membership tier preview"
-  subtitle: "Start with the plan that matches your current volume. You can always move up as your schedule grows."
+  title: Membership tier preview
+  subtitle: Start with the plan that matches your current volume. You can always move up as your schedule grows.
   items:
-    - id: "creator"
-      title: "Creator"
-      body: "A practical fit for lighter monthly volume, test sessions, and smaller recurring shoots."
-      buttonLabel: "Explore Creator plan"
-    - id: "pro"
-      title: "Pro"
-      body: "For repeat client production that needs stronger booking window and steadier weekly cadence."
-      buttonLabel: "Explore Pro plan"
-    - id: "studio_plus"
-      title: "Studio+"
-      body: "Priority-focused access for heavier production months and larger crew coordination."
-      buttonLabel: "Explore Studio+ plan"
+    - id: creator
+      title: Creator
+      body: A practical fit for lighter monthly volume, test sessions, and smaller recurring shoots.
+      buttonLabel: Explore Creator plan
+    - id: pro
+      title: Pro
+      body: For repeat client production that needs stronger booking window and steadier weekly cadence.
+      buttonLabel: Explore Pro plan
+    - id: studio_plus
+      title: Studio+
+      body: Priority-focused access for heavier production months and larger crew coordination.
+      buttonLabel: Explore Studio+ plan
