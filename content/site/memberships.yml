@@ -1,45 +1,43 @@
-hero:
-  kicker: "Memberships"
-  title: "Credit-based studio booking for real production workflows."
-  description: "Each plan mints monthly credits. You use credits to reserve studio time, with peak windows consuming credits at the plan’s peak rate."
-  badges:
-    - "24/7 member access"
-    - "Gear + consumables included"
-    - "No startup fees"
-
-infoPanel:
-  title: "What changes with membership"
-  paragraphs:
-    - "Every membership includes studio equipment, backdrop paper, and day-to-day consumables. Book, pay, and show up ready to shoot."
-    - "The space is 24/7 access with a 25x30 ft cyc, 20+ ft ceilings, makeup area, client seating, and props for product or fashion sessions."
-    - "You can upgrade or downgrade as your workload changes. Priority booking and equipment holds scale with the plan level."
-    - "Memberships are intentionally limited so the calendar stays usable for everyone."
-
+title: Memberships
 creditsExplainer:
-  title: "What Credits Are (and Why They Work)"
-  description: "Credits are your booking currency. Instead of tracking multiple booking rules manually, you get a clear monthly credit amount and spend it only when you reserve studio time."
+  title: What Credits Are (and Why They Work)
+  description: Credits are your booking currency. Instead of tracking multiple booking rules manually, you get a clear monthly credit amount and spend it only when you reserve studio time.
   bullets:
     - "Predictable: your plan gives you a known credit budget each month."
     - "Flexible: use credits when work is busy, then bank extras up to your cap."
-    - "Fair: peak windows consume credits at a higher rate, while off-peak bookings stretch your balance further."
+    - "Fair: peak windows consume credits at a higher rate, while off-peak bookings stretch your balance further. Every membership starts at 1 credit per one hour on off peak times and consumes more credits depending on your chosen membership plan for peak hours."
     - "Scalable: quarterly and annual options are designed for higher monthly output."
-
+hero:
+  kicker: Memberships
+  title: Credit-based studio booking for real production workflows.
+  description: Each plan mints monthly credits. You use credits to reserve studio time, with peak windows consuming credits at the plan’s peak rate.
+  badges:
+    - 24/7 member access
+    - Gear + consumables included
+    - No startup fees
+infoPanel:
+  title: What changes with membership
+  paragraphs:
+    - Every membership includes studio equipment, backdrop paper, and day-to-day consumables. Book, pay, and show up ready to shoot.
+    - The space is 24/7 access with a 25x30 ft cyc, 20+ ft ceilings, makeup area, client seating, and props for product or fashion sessions.
+    - You can upgrade or downgrade as your workload changes. Priority booking and equipment holds scale with the plan level.
+    - Memberships are intentionally limited so the calendar stays usable for everyone.
 plans:
-  - id: "creator"
-    lead: "Built for lighter recurring volume and simpler month-to-month production flow."
+  - id: creator
+    lead: Built for lighter recurring volume and simpler month-to-month production flow.
     highlights:
-      - "Strong fit for off-peak sessions, portfolio work, and early paid client projects."
-      - "Keeps overhead contained while still giving you full studio access and included gear."
-    detail: "Creator is ideal when you need reliable access without committing to a higher monthly credit load."
-  - id: "pro"
-    lead: "Balanced for active client calendars that need more planning range and reliable weekly access."
+      - Strong fit for off-peak sessions, portfolio work, and early paid client projects.
+      - Keeps overhead contained while still giving you full studio access and included gear.
+    detail: Creator is ideal when you need reliable access without committing to a higher monthly credit load.
+  - id: pro
+    lead: Balanced for active client calendars that need more planning range and reliable weekly access.
     highlights:
-      - "Great for consistent weekday production and growing repeat business."
-      - "Adds more booking flexibility while keeping credit use predictable."
-    detail: "Pro is designed for working shooters who need steadier access and stronger booking control."
-  - id: "studio_plus"
-    lead: "Priority-focused plan for heavier production schedules and larger team coordination."
+      - Great for consistent weekday production and growing repeat business.
+      - Adds more booking flexibility while keeping credit use predictable.
+    detail: Pro is designed for working shooters who need steadier access and stronger booking control.
+  - id: studio_plus
+    lead: Priority-focused plan for heavier production schedules and larger team coordination.
     highlights:
-      - "Best when your month has multiple high-value sessions and tighter turnaround windows."
-      - "Supports crews that need the strongest planning reach and scheduling priority."
-    detail: "Studio+ is the high-throughput option for teams that depend on recurring, production-heavy use."
+      - Best when your month has multiple high-value sessions and tighter turnaround windows.
+      - Supports crews that need the strongest planning reach and scheduling priority.
+    detail: Studio+ is the high-throughput option for teams that depend on recurring, production-heavy use.
