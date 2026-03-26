@@ -139,6 +139,24 @@ const createContactSchema = () => z.object({
   })
 })
 
+const createCalendarSchema = () => z.object({
+  hero: z.object({
+    kicker: z.string().nonempty(),
+    title: z.string().nonempty(),
+    description: z.string().nonempty()
+  }),
+  readingPanel: z.object({
+    title: z.string().nonempty(),
+    points: z.array(z.string().nonempty())
+  }),
+  nextMovePanel: z.object({
+    title: z.string().nonempty(),
+    points: z.array(z.string().nonempty()),
+    primaryCta: createSimpleCtaSchema(),
+    secondaryCta: createSimpleCtaSchema()
+  })
+})
+
 export const collections = {
   siteLanding: defineCollection({
     source: 'site/landing.yml',
@@ -164,5 +182,10 @@ export const collections = {
     source: 'site/contact.yml',
     type: 'page',
     schema: createContactSchema()
+  }),
+  siteCalendar: defineCollection({
+    source: 'site/calendar.yml',
+    type: 'page',
+    schema: createCalendarSchema()
   })
 }

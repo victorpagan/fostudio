@@ -514,6 +514,21 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <FullCalendar :options="calendarOptions" />
+    <div class="relative">
+      <FullCalendar :options="calendarOptions" />
+
+      <div
+        v-if="loading"
+        class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[1.25rem] bg-[rgba(250,241,224,0.58)] backdrop-blur-[1px] dark:bg-[rgba(40,40,40,0.45)]"
+      >
+        <div class="flex items-center gap-2 rounded-full border border-[color:var(--gruv-line)] bg-[color:var(--gruv-bg-0)] px-3 py-1.5 text-xs font-medium text-[color:var(--gruv-ink-1)] shadow-sm dark:bg-[color:var(--gruv-bg-0)]">
+          <UIcon
+            name="i-lucide-loader-circle"
+            class="size-4 animate-spin"
+          />
+          Loading bookings…
+        </div>
+      </div>
+    </div>
   </div>
 </template>

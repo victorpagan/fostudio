@@ -6,7 +6,8 @@ const aliases: Record<string, string> = {
   memberships: '/memberships',
   equipment: '/equipment',
   faq: '/faq',
-  contact: '/contact'
+  contact: '/contact',
+  calendar: '/calendar'
 }
 
 const rawPage = route.params.page

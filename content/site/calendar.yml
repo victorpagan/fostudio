@@ -1,0 +1,23 @@
+hero:
+  kicker: "Open schedule"
+  title: "See when the room is clear, then build your day around it."
+  description: "This view shows booked sessions and hold windows so you can quickly spot the best openings for portrait sets, product days, test shoots, or client work. Members can book from their dashboard. Guests can use the public booking flow."
+
+readingPanel:
+  title: "Reading the calendar"
+  points:
+    - "Warm blocks mark hold windows where a set stays built overnight."
+    - "Neutral blocks show confirmed bookings that are no longer available."
+    - "Use week view for planning. Switch to day view when you need a tight read on turnaround time."
+
+nextMovePanel:
+  title: "Best next move"
+  points:
+    - "If you are comparing plans, start with memberships so you can book with credits and priority windows."
+    - "If you need a one-off date right away, guest booking is available on the public booking flow."
+  primaryCta:
+    label: "Explore memberships"
+    to: "/memberships"
+  secondaryCta:
+    label: "Book as a guest"
+    to: "/book"
