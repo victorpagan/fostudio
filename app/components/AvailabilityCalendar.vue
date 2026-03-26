@@ -36,9 +36,12 @@ type PeakWindow = {
   multiplier: number | null
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   endpoint: string // '/api/calendar/public' or '/api/calendar/member'
-}>()
+  fullDay?: boolean
+}>(), {
+  fullDay: false
+})
 
 const emit = defineEmits<{
   (e: 'select', payload: { start: Date, end: Date }): void
@@ -341,12 +344,14 @@ const memberValidRange = computed(() => {
 })
 
 const calendarSlotMinTime = computed(() => {
+  if (props.fullDay) return '00:00:00'
   if (!isPublicFeed.value) return '00:00:00'
   if (guestBookingStartHour.value === null) return '00:00:00'
   return hourToTimeLabel(guestBookingStartHour.value)
 })
 
 const calendarSlotMaxTime = computed(() => {
+  if (props.fullDay) return '24:00:00'
   if (!isPublicFeed.value) return '24:00:00'
   if (guestBookingEndHour.value === null) return '24:00:00'
   return hourToTimeLabel(guestBookingEndHour.value)

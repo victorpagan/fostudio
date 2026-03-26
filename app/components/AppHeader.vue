@@ -16,6 +16,10 @@ const links = [
   { label: 'Contact', to: '/contact' }
 ]
 
+function isLinkActive(path: string) {
+  return route.path === path || route.path.startsWith(`${path}/`)
+}
+
 const displayName = computed(() => {
   if (!user.value) return null
   const meta = user.value.user_metadata as Record<string, string> | undefined
@@ -131,7 +135,7 @@ async function logout() {
           :key="l.to"
           :to="l.to"
           class="site-nav-link"
-          :class="{ 'is-active': route.path === l.to }"
+          :class="{ 'is-active': isLinkActive(l.to) }"
         >
           {{ l.label }}
         </NuxtLink>
@@ -149,7 +153,7 @@ async function logout() {
             :key="l.to"
             :to="l.to"
             class="site-mobile-link"
-            :class="{ 'is-active': route.path === l.to }"
+            :class="{ 'is-active': isLinkActive(l.to) }"
             @click="isOpen = false"
           >
             {{ l.label }}

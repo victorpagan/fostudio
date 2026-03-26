@@ -75,7 +75,10 @@ const content = computed<SiteCalendarContent>(() => {
             </p>
           </div>
 
-          <AvailabilityCalendar endpoint="/api/calendar/public" />
+          <AvailabilityCalendar
+            endpoint="/api/calendar/public"
+            full-day
+          />
         </div>
 
         <div class="space-y-4">

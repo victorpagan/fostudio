@@ -39,27 +39,27 @@
 }
 
 .dark {
-  --gruv-bg-0: #4e3725;
-  --gruv-bg-1: #5d412b;
-  --gruv-bg-2: #6c4c31;
-  --gruv-ink-0: #fdf3df;
-  --gruv-ink-1: #f2e4c8;
-  --gruv-ink-2: #d8c29f;
-  --gruv-line: rgba(253, 243, 223, 0.12);
-  --gruv-accent: #f0b97f;
-  --gruv-accent-strong: #d47b62;
-  --gruv-accent-soft: rgba(240, 185, 127, 0.2);
-  --gruv-olive: #8ca884;
-  --gruv-rust: #d47b62;
-  --gruv-aqua: #f0b97f;
-  --gruv-card-glow: rgba(240, 185, 127, 0.22);
-  --gruv-card-glow-2: rgba(140, 168, 132, 0.18);
-  --gruv-button-0: #f0b97f;
-  --gruv-button-1: #cf7760;
+  --gruv-bg-0: #372518;
+  --gruv-bg-1: #483122;
+  --gruv-bg-2: #5d3f2b;
+  --gruv-ink-0: #fff4e0;
+  --gruv-ink-1: #f6e8cc;
+  --gruv-ink-2: #e0c8a6;
+  --gruv-line: rgba(255, 244, 224, 0.16);
+  --gruv-accent: #efb678;
+  --gruv-accent-strong: #dc8465;
+  --gruv-accent-soft: rgba(239, 182, 120, 0.24);
+  --gruv-olive: #8faa88;
+  --gruv-rust: #dc8465;
+  --gruv-aqua: #efb678;
+  --gruv-card-glow: rgba(239, 182, 120, 0.26);
+  --gruv-card-glow-2: rgba(143, 170, 136, 0.2);
+  --gruv-button-0: #efb678;
+  --gruv-button-1: #cf735c;
   --ui-bg: var(--gruv-bg-0);
   --ui-bg-muted: var(--gruv-bg-1);
-  --ui-bg-elevated: #5a3f2a;
-  --ui-bg-accented: #6a4b31;
+  --ui-bg-elevated: #513625;
+  --ui-bg-accented: #63432d;
 }
 
 html,
@@ -160,12 +160,12 @@ body {
   border-radius: 1.6rem;
   padding: 1rem 1.2rem 2.55rem;
   background: color-mix(in srgb, var(--gruv-bg-0) 92%, var(--gruv-bg-1) 8%);
-  box-shadow: 0 10px 24px -20px rgba(26, 26, 26, 0.5);
+  box-shadow: 0 12px 28px -20px rgba(26, 26, 26, 0.52);
 }
 
 .dark .site-header-panel {
-  background: color-mix(in srgb, var(--gruv-bg-0) 88%, var(--gruv-bg-1) 12%);
-  box-shadow: 0 10px 24px -18px rgba(0, 0, 0, 0.5);
+  background: color-mix(in srgb, var(--gruv-bg-0) 78%, var(--gruv-bg-1) 22%);
+  box-shadow: 0 16px 28px -20px rgba(0, 0, 0, 0.62);
 }
 
 .site-header-panel::after {
@@ -256,60 +256,71 @@ body {
   transform: translate(-50%, 50%);
   z-index: 2;
   border-radius: 999px;
-  padding: 0.4rem;
-  background: color-mix(in srgb, var(--gruv-bg-0) 92%, var(--gruv-bg-1) 8%);
+  padding: 0.32rem;
+  background: color-mix(in srgb, var(--gruv-bg-0) 90%, var(--gruv-bg-1) 10%);
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.25rem;
+  box-shadow: 0 12px 20px -16px rgba(26, 26, 26, 0.45);
 }
 
 .dark .site-nav-pocket {
-  background: color-mix(in srgb, var(--gruv-bg-0) 86%, var(--gruv-bg-1) 14%);
+  background: color-mix(in srgb, var(--gruv-bg-0) 74%, var(--gruv-bg-1) 26%);
+  box-shadow: 0 16px 24px -18px rgba(0, 0, 0, 0.58);
 }
 
 .site-nav-link {
   border-radius: 999px;
-  padding: 0.52rem 0.92rem;
-  font-size: 0.83rem;
-  font-weight: 600;
-  color: var(--gruv-ink-2);
+  padding: 0.56rem 0.98rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  color: var(--gruv-ink-1);
   transition: color 120ms ease, background-color 120ms ease;
 }
 
 .site-nav-link:hover {
   color: var(--gruv-ink-0);
-  background: rgba(26, 26, 26, 0.06);
+  background: color-mix(in srgb, var(--gruv-accent) 18%, transparent);
 }
 
 .site-nav-link.is-active {
-  color: var(--gruv-bg-0);
-  background: var(--gruv-ink-0);
+  color: #1a1a1a;
+  background: linear-gradient(135deg, var(--gruv-button-0), var(--gruv-button-1));
+}
+
+.dark .site-nav-link.is-active {
+  color: #291d14;
 }
 
 .site-mobile-menu {
-  background: color-mix(in srgb, var(--gruv-bg-0) 94%, var(--gruv-bg-1) 6%);
+  margin-top: 0.4rem;
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--gruv-bg-0) 92%, var(--gruv-bg-1) 8%);
+  box-shadow: 0 16px 24px -20px rgba(26, 26, 26, 0.52);
 }
 
 .dark .site-mobile-menu {
-  background: color-mix(in srgb, var(--gruv-bg-0) 88%, var(--gruv-bg-1) 12%);
+  background: color-mix(in srgb, var(--gruv-bg-0) 72%, var(--gruv-bg-1) 28%);
+  box-shadow: 0 16px 24px -18px rgba(0, 0, 0, 0.62);
 }
 
 .site-mobile-link {
   display: block;
   border-radius: 0.78rem;
   padding: 0.58rem 0.78rem;
-  color: var(--gruv-ink-2);
+  color: var(--gruv-ink-1);
   font-size: 0.88rem;
   font-weight: 500;
   transition: background-color 120ms ease, color 120ms ease;
 }
 
 .site-mobile-link:hover {
-  background: rgba(26, 26, 26, 0.08);
+  background: color-mix(in srgb, var(--gruv-accent) 18%, transparent);
   color: var(--gruv-ink-0);
 }
 
 .site-mobile-link.is-active {
-  background: rgba(26, 26, 26, 0.12);
+  background: color-mix(in srgb, var(--gruv-accent) 24%, transparent);
   color: var(--gruv-ink-0);
 }
 
@@ -354,7 +365,7 @@ body {
 }
 
 .dark .studio-kicker {
-  background: transparent;
+  background: color-mix(in srgb, var(--gruv-accent) 18%, transparent);
 }
 
 .studio-panel {
@@ -370,8 +381,8 @@ body {
   background:
     radial-gradient(circle at 10% 0%, var(--gruv-card-glow), transparent 48%),
     radial-gradient(circle at 100% 100%, var(--gruv-card-glow-2), transparent 54%),
-    color-mix(in srgb, var(--gruv-bg-0) 86%, var(--gruv-bg-1) 14%);
-  box-shadow: 0 14px 26px -22px rgba(0, 0, 0, 0.42);
+    color-mix(in srgb, var(--gruv-bg-0) 72%, var(--gruv-bg-1) 28%);
+  box-shadow: 0 16px 28px -20px rgba(0, 0, 0, 0.56);
 }
 
 .studio-grid {
@@ -380,7 +391,7 @@ body {
 }
 
 .dark .studio-grid {
-  background: color-mix(in srgb, var(--gruv-bg-0) 84%, var(--gruv-bg-1) 16%);
+  background: color-mix(in srgb, var(--gruv-bg-0) 72%, var(--gruv-bg-1) 28%);
 }
 
 .studio-grid::before {
@@ -425,7 +436,7 @@ body {
 .dark .availability-shell {
   background:
     radial-gradient(circle at 10% 0%, var(--gruv-card-glow), transparent 50%),
-    color-mix(in srgb, var(--gruv-bg-0) 86%, var(--gruv-bg-1) 14%);
+    color-mix(in srgb, var(--gruv-bg-0) 72%, var(--gruv-bg-1) 28%);
 }
 
 .availability-toolbar {
@@ -439,7 +450,7 @@ body {
 }
 
 .dark .availability-toolbar {
-  background: color-mix(in srgb, var(--gruv-accent) 14%, transparent);
+  background: color-mix(in srgb, var(--gruv-accent) 20%, transparent);
 }
 
 .availability-meta {
@@ -509,6 +520,9 @@ body {
 }
 
 .dark .availability-shell .fc {
+  --fc-border-color: rgba(255, 244, 224, 0.18);
+  --fc-neutral-bg-color: color-mix(in srgb, var(--gruv-bg-1) 76%, #000 24%);
+  --fc-today-bg-color: rgba(239, 182, 120, 0.15);
   --fc-button-bg-color: var(--gruv-bg-1);
   --fc-button-border-color: var(--gruv-line);
   --fc-button-text-color: var(--gruv-ink-0);
@@ -863,7 +877,7 @@ body {
 .dark .site-shell :is(button, a, [role='button']).bg-accented,
 .dark .site-shell :is(button, a, [role='button'])[class*='bg-elevated/'],
 .dark .site-shell :is(button, a, [role='button'])[class*='bg-accented/'] {
-  background: color-mix(in srgb, var(--gruv-bg-0) 78%, var(--gruv-accent) 22%);
+  background: color-mix(in srgb, var(--gruv-bg-0) 64%, var(--gruv-accent) 36%);
 }
 
 .plan-option-copy {
