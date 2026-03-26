@@ -260,15 +260,6 @@ async function submitForm() {
             </div>
           </div>
 
-          <div class="studio-panel p-5 sm:p-6">
-            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
-              {{ pageContent.followupPanel.title }}
-            </div>
-            <p class="mt-4 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-              {{ pageContent.followupPanel.body }}
-            </p>
-          </div>
-
           <div class="studio-panel p-3 sm:p-4">
             <div class="overflow-hidden rounded-[1.25rem] border border-[color:var(--gruv-line)]">
               <iframe
