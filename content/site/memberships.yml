@@ -1,15 +1,15 @@
-title: Memberships
 creditsExplainer:
   title: How credits work
-  description: Credits keep booking simple. Your plan adds credits each month, and you spend them only when you reserve time, so your cost tracks your real production volume.
+  description: ""
   bullets:
-    - You can bank unused credits up to your plan cap.
-    - Off-peak sessions stretch your credits further while peak windows are priced higher.
-    - Quarterly and annual options are built for heavier usage and stronger month-to-month output.
+    - Each plan mints monthly credits
+    - Unused credits roll over up to plan cap
+    - Quarterly and Annual plans provide even more credits per month
+    - If you run out of credits, you can buy a top off
 hero:
-  kicker: Memberships
-  title: Credit-based studio booking for real production workflows.
-  description: Each plan mints monthly credits. You use credits to reserve studio time, with peak windows consuming credits at the plan’s peak rate.
+  kicker: Credits / Memberships
+  title: ""
+  description: You use credits to reserve studio time, with peak windows consuming credits at the plan’s peak rate.
   badges:
     - 24/7 member access
     - Gear + consumables included
@@ -40,3 +40,4 @@ plans:
       - Best when your month has multiple high-value sessions and tighter turnaround windows.
       - Supports crews that need the strongest planning reach and scheduling priority.
     detail: Studio+ is the high-throughput option for teams that depend on recurring, production-heavy use.
+title: Memberships
