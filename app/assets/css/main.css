@@ -824,22 +824,8 @@ body {
 }
 
 .memberships-hero-grid {
-  grid-template-columns: minmax(11.5rem, 0.78fr) minmax(0, 1.22fr) minmax(0, 1fr);
-  grid-template-areas: "meta copy info";
-}
-
-.memberships-info-cell {
-  border-left: 1px solid var(--gruv-line);
-  padding: clamp(1rem, 2.8vw, 2rem);
-  background: color-mix(in srgb, var(--gruv-bg-0) 90%, var(--gruv-bg-1) 10%);
-}
-
-.memberships-info-title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(1.45rem, 2.5vw, 2.1rem);
-  line-height: 1.1;
-  color: var(--gruv-ink-0);
+  grid-template-columns: minmax(11.5rem, 0.78fr) minmax(0, 1.22fr);
+  grid-template-areas: "meta copy";
 }
 
 .memberships-hero-badges {
@@ -1028,10 +1014,6 @@ body {
   background: #222831;
   border-color: #374151;
   color: #f3f4f6;
-}
-
-.dark .memberships-info-cell {
-  background: color-mix(in srgb, var(--gruv-bg-0) 72%, var(--gruv-bg-1) 28%);
 }
 
 .dark .membership-plan-card--accent-a {
@@ -1583,13 +1565,7 @@ body {
     grid-template-columns: 1fr 1fr;
     grid-template-areas:
       "meta meta"
-      "copy copy"
-      "info info";
-  }
-
-  .memberships-info-cell {
-    border-left: 0;
-    border-top: 1px solid var(--gruv-line);
+      "copy copy";
   }
 
   .memberships-plan-list {
@@ -1629,10 +1605,6 @@ body {
 
   .memberships-page {
     padding-inline: 0.55rem;
-  }
-
-  .memberships-info-cell {
-    padding: 0.95rem 1rem;
   }
 
   .memberships-credits-embed {

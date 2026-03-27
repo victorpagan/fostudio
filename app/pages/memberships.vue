@@ -347,23 +347,6 @@ async function submitWaitlist() {
                 {{ badge }}
               </UBadge>
             </div>
-          </div>
-
-          <div class="editorial-cell memberships-info-cell">
-            <h2 class="memberships-info-title">
-              {{ membershipsContent.infoPanel.title }}
-            </h2>
-            <div class="mt-4 space-y-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-              <p
-                v-for="paragraph in membershipsContent.infoPanel.paragraphs"
-                :key="paragraph"
-              >
-                {{ paragraph }}
-              </p>
-              <p v-if="isPlanSwitchMode">
-                When changing an active membership, the new plan takes effect on your next billing cycle. Mid-cycle prorated membership changes are not applied.
-              </p>
-            </div>
 
             <div class="memberships-credits-embed">
               <h3 class="memberships-credits-embed-title">
@@ -383,6 +366,13 @@ async function submitWaitlist() {
                 </div>
               </div>
             </div>
+
+            <p
+              v-if="isPlanSwitchMode"
+              class="mt-4 text-sm leading-7 text-[color:var(--gruv-ink-2)]"
+            >
+              When changing an active membership, the new plan takes effect on your next billing cycle. Mid-cycle prorated membership changes are not applied.
+            </p>
           </div>
         </div>
       </div>
