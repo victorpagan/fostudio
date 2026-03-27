@@ -108,11 +108,7 @@ const landingContent = computed<SiteLandingContent>(() => {
 })
 
 const galleryImages = computed(() => landingContent.value.gallery.images ?? [])
-const galleryPrimaryImage = computed(() => galleryImages.value[0] ?? null)
-const galleryShowcaseImages = computed(() => {
-  if (galleryImages.value.length <= 1) return galleryImages.value
-  return galleryImages.value.slice(1)
-})
+const galleryShowcaseImages = computed(() => galleryImages.value)
 
 function tierDetailsHref(tierId: string) {
   return `/memberships#plan-${encodeURIComponent(tierId)}`
@@ -123,137 +119,152 @@ function tierDetailsHref(tierId: string) {
   <div class="space-y-12 pb-12 sm:space-y-16 sm:pb-16">
     <section class="landing-hero">
       <img
-        v-if="galleryPrimaryImage"
-        :src="galleryPrimaryImage.src"
-        :alt="galleryPrimaryImage.alt || 'Studio image'"
-        :loading="galleryPrimaryImage.loading || 'eager'"
-        class="landing-hero-image"
+        src="/images/sky.png"
+        alt="Sky background"
+        loading="eager"
+        class="landing-hero-image landing-hero-image-sky"
       >
       <div class="landing-hero-scrim" />
+      <div class="landing-hero-wordmark">
+        <span class="landing-hero-wordmark-fo">FO</span>
+        <span class="landing-hero-wordmark-studio">STUDIO</span>
+      </div>
+      <img
+        src="/images/william.png"
+        alt="William portrait"
+        loading="eager"
+        class="landing-hero-william"
+      >
+    </section>
 
-      <UContainer class="landing-hero-grid">
-        <div class="landing-hero-copy space-y-6">
-          <span class="studio-kicker">{{ landingContent.hero.kicker }}</span>
+    <section>
+      <UContainer>
+        <div class="studio-grid overflow-hidden rounded-[2rem] px-5 py-6 sm:px-8 sm:py-8">
+          <div class="grid gap-10 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)] lg:items-center">
+            <div class="space-y-6">
+              <span class="studio-kicker">{{ landingContent.hero.kicker }}</span>
 
-          <div class="space-y-4">
-            <h1 class="studio-display max-w-4xl text-6xl leading-[0.92] text-[color:var(--gruv-ink-0)] sm:text-8xl">
-              {{ landingContent.hero.headline }}
-            </h1>
-            <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
-              {{ landingContent.hero.subheadline }}
-            </p>
-          </div>
+              <div class="space-y-4">
+                <h1 class="studio-display max-w-4xl text-6xl leading-[0.92] text-[color:var(--gruv-ink-0)] sm:text-8xl">
+                  {{ landingContent.hero.headline }}
+                </h1>
+                <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
+                  {{ landingContent.hero.subheadline }}
+                </p>
+              </div>
 
-          <div class="flex flex-wrap gap-3">
-            <UButton
-              :to="landingContent.hero.primaryCta.to"
-              size="xl"
-            >
-              {{ landingContent.hero.primaryCta.label }}
-            </UButton>
-            <UButton
-              :to="landingContent.hero.secondaryCta.to"
-              color="neutral"
-              variant="soft"
-              size="xl"
-            >
-              {{ landingContent.hero.secondaryCta.label }}
-            </UButton>
+              <div class="flex flex-wrap gap-3">
+                <UButton
+                  :to="landingContent.hero.primaryCta.to"
+                  size="xl"
+                >
+                  {{ landingContent.hero.primaryCta.label }}
+                </UButton>
+                <UButton
+                  :to="landingContent.hero.secondaryCta.to"
+                  color="neutral"
+                  variant="soft"
+                  size="xl"
+                >
+                  {{ landingContent.hero.secondaryCta.label }}
+                </UButton>
 
-            <UModal v-model:open="openWaitlist">
-              <UButton
-                color="neutral"
-                variant="ghost"
-                size="xl"
-                @click="openWaitlist = true"
-              >
-                {{ landingContent.hero.waitlistCtaLabel }}
-              </UButton>
+                <UModal v-model:open="openWaitlist">
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    size="xl"
+                    @click="openWaitlist = true"
+                  >
+                    {{ landingContent.hero.waitlistCtaLabel }}
+                  </UButton>
 
-              <template #content>
-                <UCard class="studio-panel">
-                  <template #header>
-                    <div class="flex items-center justify-between gap-3">
-                      <div>
-                        <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
-                          Join the waitlist
+                  <template #content>
+                    <UCard class="studio-panel">
+                      <template #header>
+                        <div class="flex items-center justify-between gap-3">
+                          <div>
+                            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
+                              Join the waitlist
+                            </div>
+                            <p class="mt-1 text-sm text-[color:var(--gruv-ink-2)]">
+                              We keep membership counts limited so booking stays usable.
+                            </p>
+                          </div>
+                          <UButton
+                            icon="i-heroicons-x-mark"
+                            color="neutral"
+                            variant="ghost"
+                            @click="openWaitlist = false"
+                          />
                         </div>
-                        <p class="mt-1 text-sm text-[color:var(--gruv-ink-2)]">
-                          We keep membership counts limited so booking stays usable.
-                        </p>
+                      </template>
+
+                      <div class="space-y-3">
+                        <UInput placeholder="Email" />
+                        <UInput placeholder="Phone (optional)" />
+                        <USelect
+                          :options="[
+                            { label: 'Creator', value: 'creator' },
+                            { label: 'Pro', value: 'pro' },
+                            { label: 'Studio+', value: 'studio_plus' }
+                          ]"
+                          placeholder="Plan you are watching"
+                        />
                       </div>
-                      <UButton
-                        icon="i-heroicons-x-mark"
-                        color="neutral"
-                        variant="ghost"
-                        @click="openWaitlist = false"
-                      />
-                    </div>
+
+                      <template #footer>
+                        <div class="flex justify-end gap-2">
+                          <UButton
+                            color="neutral"
+                            variant="soft"
+                            @click="openWaitlist = false"
+                          >
+                            Close
+                          </UButton>
+                          <UButton @click="openWaitlist = false">
+                            Notify me
+                          </UButton>
+                        </div>
+                      </template>
+                    </UCard>
                   </template>
+                </UModal>
+              </div>
 
-                  <div class="space-y-3">
-                    <UInput placeholder="Email" />
-                    <UInput placeholder="Phone (optional)" />
-                    <USelect
-                      :options="[
-                        { label: 'Creator', value: 'creator' },
-                        { label: 'Pro', value: 'pro' },
-                        { label: 'Studio+', value: 'studio_plus' }
-                      ]"
-                      placeholder="Plan you are watching"
-                    />
-                  </div>
+              <div class="flex flex-wrap gap-2">
+                <UBadge
+                  v-for="chip in landingContent.hero.chips"
+                  :key="chip"
+                  color="neutral"
+                  variant="soft"
+                >
+                  {{ chip }}
+                </UBadge>
+              </div>
+            </div>
 
-                  <template #footer>
-                    <div class="flex justify-end gap-2">
-                      <UButton
-                        color="neutral"
-                        variant="soft"
-                        @click="openWaitlist = false"
-                      >
-                        Close
-                      </UButton>
-                      <UButton @click="openWaitlist = false">
-                        Notify me
-                      </UButton>
-                    </div>
-                  </template>
-                </UCard>
-              </template>
-            </UModal>
-          </div>
+            <UCard class="studio-panel">
+              <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
+                {{ landingContent.infoCard.title }}
+              </div>
+              <p class="mt-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+                {{ landingContent.infoCard.body }}
+              </p>
 
-          <div class="flex flex-wrap gap-2">
-            <UBadge
-              v-for="chip in landingContent.hero.chips"
-              :key="chip"
-              color="neutral"
-              variant="soft"
-            >
-              {{ chip }}
-            </UBadge>
+              <div class="mt-5 space-y-3">
+                <div
+                  v-for="feature in landingContent.infoCard.features"
+                  :key="feature"
+                  class="flex gap-3 text-sm leading-7 text-[color:var(--gruv-ink-1)]"
+                >
+                  <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--gruv-accent)]" />
+                  <span>{{ feature }}</span>
+                </div>
+              </div>
+            </UCard>
           </div>
         </div>
-
-        <UCard class="studio-panel landing-hero-card">
-          <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
-            {{ landingContent.infoCard.title }}
-          </div>
-          <p class="mt-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-            {{ landingContent.infoCard.body }}
-          </p>
-
-          <div class="mt-5 space-y-3">
-            <div
-              v-for="feature in landingContent.infoCard.features"
-              :key="feature"
-              class="flex gap-3 text-sm leading-7 text-[color:var(--gruv-ink-1)]"
-            >
-              <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--gruv-accent)]" />
-              <span>{{ feature }}</span>
-            </div>
-          </div>
-        </UCard>
       </UContainer>
     </section>
 

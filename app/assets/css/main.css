@@ -415,9 +415,10 @@ body {
 
 .landing-hero {
   position: relative;
-  min-height: min(90vh, 56rem);
+  min-height: min(94vh, 60rem);
   overflow: clip;
   border-block: 1px solid var(--gruv-line);
+  isolation: isolate;
 }
 
 .landing-hero-image {
@@ -429,38 +430,70 @@ body {
   filter: grayscale(28%) contrast(1.15) brightness(0.86);
 }
 
+.landing-hero-image-sky {
+  object-position: 50% 35%;
+}
+
 .landing-hero-scrim {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(217, 219, 220, 0.9) 0%, rgba(217, 219, 220, 0.76) 42%, rgba(24, 28, 36, 0.74) 100%),
-    linear-gradient(180deg, rgba(255, 49, 92, 0.08) 0%, rgba(16, 20, 27, 0.42) 100%);
+    linear-gradient(180deg, rgba(16, 20, 27, 0.08) 0%, rgba(16, 20, 27, 0.42) 100%),
+    linear-gradient(90deg, rgba(16, 20, 27, 0.04) 0%, rgba(16, 20, 27, 0.2) 100%);
 }
 
 .dark .landing-hero-scrim {
   background:
-    linear-gradient(90deg, rgba(9, 12, 17, 0.86) 0%, rgba(9, 12, 17, 0.72) 45%, rgba(9, 12, 17, 0.88) 100%),
-    linear-gradient(180deg, rgba(255, 74, 111, 0.08) 0%, rgba(5, 7, 10, 0.74) 100%);
+    linear-gradient(180deg, rgba(9, 12, 17, 0.14) 0%, rgba(9, 12, 17, 0.58) 100%),
+    linear-gradient(90deg, rgba(9, 12, 17, 0.12) 0%, rgba(9, 12, 17, 0.28) 100%);
 }
 
-.landing-hero-grid {
+.landing-hero-wordmark {
   position: relative;
   z-index: 1;
-  display: grid;
-  gap: 1.25rem;
-  grid-template-columns: minmax(0, 1.25fr) minmax(17rem, 0.75fr);
-  align-items: end;
-  min-height: min(90vh, 56rem);
-  padding-top: 7.2rem;
-  padding-bottom: 3.5rem;
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%, -50%);
+  display: inline-grid;
+  justify-items: center;
+  gap: 0.2rem;
+  text-transform: uppercase;
+  pointer-events: none;
 }
 
-.landing-hero-copy {
-  max-width: 64rem;
+.landing-hero-wordmark-fo {
+  margin-right: clamp(8rem, 24vw, 16rem);
+  color: var(--gruv-accent);
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 7vw, 5.2rem);
+  line-height: 0.88;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  text-shadow: 0 14px 24px rgba(16, 20, 27, 0.32);
 }
 
-.landing-hero-card {
-  backdrop-filter: blur(6px);
+.landing-hero-wordmark-studio {
+  color: color-mix(in srgb, white 88%, var(--gruv-bg-0) 12%);
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 15vw, 12rem);
+  line-height: 0.85;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  text-shadow: 0 22px 44px rgba(16, 20, 27, 0.35);
+}
+
+.landing-hero-william {
+  position: absolute;
+  left: 50%;
+  bottom: -16%;
+  z-index: 2;
+  width: min(86vw, 55rem);
+  max-width: none;
+  transform: translate3d(-50%, calc(10% - (var(--site-scroll-y, 0px) * 0.12)), 0);
+  transform-origin: center bottom;
+  will-change: transform;
+  pointer-events: none;
 }
 
 .studio-grid > * {
@@ -938,15 +971,17 @@ body {
     padding: 0.54rem 0.72rem;
   }
 
-  .landing-hero-grid {
-    grid-template-columns: 1fr;
-    min-height: min(92vh, 62rem);
-    padding-top: 6.4rem;
-    padding-bottom: 2.5rem;
-  }
-
   .site-shell::after {
     display: none;
+  }
+
+  .landing-hero-wordmark {
+    top: 45%;
+  }
+
+  .landing-hero-william {
+    width: min(95vw, 48rem);
+    bottom: -13%;
   }
 }
 
@@ -966,25 +1001,40 @@ body {
   }
 
   .landing-hero {
-    min-height: min(96vh, 52rem);
-  }
-
-  .landing-hero-grid {
-    min-height: min(96vh, 52rem);
-    padding-top: 5.9rem;
-    padding-bottom: 2rem;
+    min-height: min(88vh, 42rem);
   }
 
   .landing-hero-scrim {
     background:
-      linear-gradient(180deg, rgba(217, 219, 220, 0.9) 0%, rgba(217, 219, 220, 0.8) 50%, rgba(18, 24, 34, 0.78) 100%),
-      linear-gradient(180deg, rgba(255, 49, 92, 0.1) 0%, rgba(16, 20, 27, 0.42) 100%);
+      linear-gradient(180deg, rgba(16, 20, 27, 0.14) 0%, rgba(16, 20, 27, 0.56) 100%),
+      linear-gradient(90deg, rgba(16, 20, 27, 0.06) 0%, rgba(16, 20, 27, 0.26) 100%);
   }
 
   .dark .landing-hero-scrim {
     background:
-      linear-gradient(180deg, rgba(9, 12, 17, 0.74) 0%, rgba(9, 12, 17, 0.84) 100%),
-      linear-gradient(180deg, rgba(255, 74, 111, 0.08) 0%, rgba(5, 7, 10, 0.78) 100%);
+      linear-gradient(180deg, rgba(9, 12, 17, 0.24) 0%, rgba(9, 12, 17, 0.7) 100%),
+      linear-gradient(90deg, rgba(9, 12, 17, 0.16) 0%, rgba(9, 12, 17, 0.3) 100%);
+  }
+
+  .landing-hero-wordmark {
+    top: 43%;
+    gap: 0.15rem;
+  }
+
+  .landing-hero-wordmark-fo {
+    margin-right: clamp(5rem, 19vw, 8.5rem);
+    font-size: clamp(1.5rem, 8vw, 2.6rem);
+  }
+
+  .landing-hero-wordmark-studio {
+    font-size: clamp(2.25rem, 19vw, 4.8rem);
+    letter-spacing: 0.08em;
+  }
+
+  .landing-hero-william {
+    width: min(108vw, 33rem);
+    bottom: -8%;
+    transform: translate3d(-50%, calc(7% - (var(--site-scroll-y, 0px) * 0.1)), 0);
   }
 
   .availability-shell .fc {
@@ -1005,7 +1055,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .site-shell::before,
   .site-shell::after,
-  .studio-grid::after {
+  .studio-grid::after,
+  .landing-hero-william {
     transform: none !important;
     transition: none !important;
   }
