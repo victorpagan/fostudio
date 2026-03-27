@@ -108,9 +108,18 @@ const landingContent = computed<SiteLandingContent>(() => {
 const galleryImages = computed(() => landingContent.value.gallery.images ?? [])
 const galleryLeadImage = computed(() => galleryImages.value[0] ?? null)
 const gallerySecondaryImage = computed(() => galleryImages.value[1] ?? galleryImages.value[0] ?? null)
+const planAccentClasses = ['editorial-plan-card--accent-a', 'editorial-plan-card--accent-b', 'editorial-plan-card--accent-c'] as const
 
 function tierDetailsHref(tierId: string) {
   return `/memberships#plan-${encodeURIComponent(tierId)}`
+}
+
+function tierAccentClass(tierId: string, index: number) {
+  const normalized = tierId.toLowerCase()
+  if (normalized.includes('creator')) return 'editorial-plan-card--accent-a'
+  if (normalized.includes('pro')) return 'editorial-plan-card--accent-b'
+  if (normalized.includes('studio')) return 'editorial-plan-card--accent-c'
+  return planAccentClasses[index % planAccentClasses.length]
 }
 </script>
 
@@ -161,89 +170,86 @@ function tierDetailsHref(tierId: string) {
       </div>
     </section>
 
-    <section>
-      <UContainer>
-        <div class="editorial-frame">
-          <div class="editorial-grid editorial-grid-intro">
-            <div class="editorial-cell editorial-meta">
-              <p class="editorial-label">INTRO / STUDIO</p>
-            </div>
+    <section class="editorial-section">
+      <div class="editorial-frame">
+        <div class="editorial-grid editorial-grid-intro">
+          <div class="editorial-cell editorial-meta">
+            <p class="editorial-label">INTRO / STUDIO</p>
+          </div>
 
-            <div class="editorial-cell editorial-copy">
-              <h2 class="editorial-title">
-                {{ landingContent.infoCard.title }}
-              </h2>
-              <p class="editorial-body">
-                {{ landingContent.infoCard.body }}
-              </p>
-            </div>
+          <div class="editorial-cell editorial-copy editorial-copy-texture">
+            <h2 class="editorial-title">
+              {{ landingContent.infoCard.title }}
+            </h2>
+            <p class="editorial-body">
+              {{ landingContent.infoCard.body }}
+            </p>
+          </div>
 
-            <div class="editorial-cell editorial-image-large editorial-texture">
-              <img
-                v-if="galleryLeadImage"
-                :src="galleryLeadImage.src"
-                :alt="galleryLeadImage.alt || 'Studio image'"
-                :loading="galleryLeadImage.loading || 'lazy'"
-                class="editorial-image"
-              >
-            </div>
+          <div class="editorial-cell editorial-image-large">
+            <img
+              v-if="galleryLeadImage"
+              :src="galleryLeadImage.src"
+              :alt="galleryLeadImage.alt || 'Studio image'"
+              :loading="galleryLeadImage.loading || 'lazy'"
+              class="editorial-image"
+            >
+          </div>
 
-            <div class="editorial-cell editorial-image-side editorial-texture">
-              <img
-                v-if="gallerySecondaryImage"
-                :src="gallerySecondaryImage.src"
-                :alt="gallerySecondaryImage.alt || 'Studio image'"
-                :loading="gallerySecondaryImage.loading || 'lazy'"
-                class="editorial-image"
-              >
-              <div class="editorial-side-mark">/</div>
-            </div>
+          <div class="editorial-cell editorial-image-side">
+            <img
+              v-if="gallerySecondaryImage"
+              :src="gallerySecondaryImage.src"
+              :alt="gallerySecondaryImage.alt || 'Studio image'"
+              :loading="gallerySecondaryImage.loading || 'lazy'"
+              class="editorial-image"
+            >
+            <div class="editorial-side-mark">/</div>
           </div>
         </div>
-      </UContainer>
+      </div>
     </section>
 
-    <section>
-      <UContainer>
-        <div class="editorial-frame">
-          <div class="editorial-grid editorial-grid-plans">
-            <div class="editorial-cell editorial-meta">
-              <p class="editorial-label">MEMBERSHIP / TIERS</p>
-            </div>
+    <section class="editorial-section">
+      <div class="editorial-frame">
+        <div class="editorial-grid editorial-grid-plans">
+          <div class="editorial-cell editorial-meta">
+            <p class="editorial-label">MEMBERSHIP / TIERS</p>
+          </div>
 
-            <div class="editorial-cell editorial-copy">
-              <h2 class="editorial-title">
-                {{ landingContent.tiersPreview.title }}
-              </h2>
-              <p class="editorial-body">
-                {{ landingContent.tiersPreview.subtitle }}
-              </p>
-            </div>
+          <div class="editorial-cell editorial-copy editorial-copy-texture">
+            <h2 class="editorial-title">
+              {{ landingContent.tiersPreview.title }}
+            </h2>
+            <p class="editorial-body">
+              {{ landingContent.tiersPreview.subtitle }}
+            </p>
+          </div>
 
-            <div class="editorial-cell editorial-plan-list editorial-texture">
-              <div
-                v-for="tier in landingContent.tiersPreview.items"
-                :key="tier.id"
-                class="editorial-plan-card"
-              >
-                <div class="editorial-plan-title">
-                  {{ tier.title }}
-                </div>
-                <p class="editorial-plan-body">
-                  {{ tier.body }}
-                </p>
-                <UButton
-                  color="neutral"
-                  variant="soft"
-                  :to="tierDetailsHref(tier.id)"
-                >
-                  {{ tier.buttonLabel }}
-                </UButton>
+          <div class="editorial-cell editorial-plan-list">
+            <div
+              v-for="(tier, index) in landingContent.tiersPreview.items"
+              :key="tier.id"
+              class="editorial-plan-card"
+              :class="tierAccentClass(tier.id, index)"
+            >
+              <div class="editorial-plan-title">
+                {{ tier.title }}
               </div>
+              <p class="editorial-plan-body">
+                {{ tier.body }}
+              </p>
+              <UButton
+                color="neutral"
+                variant="soft"
+                :to="tierDetailsHref(tier.id)"
+              >
+                {{ tier.buttonLabel }}
+              </UButton>
             </div>
           </div>
         </div>
-      </UContainer>
+      </div>
     </section>
   </div>
 </template>
