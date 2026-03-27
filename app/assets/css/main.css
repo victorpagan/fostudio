@@ -1264,13 +1264,17 @@ body {
 }
 
 .memberships-plans-section {
-  background: #2b2b2b;
   margin-top: 0.7rem;
 }
 
 .memberships-plans-section .editorial-frame {
-  background: #2b2b2b;
   border-color: rgba(245, 245, 245, 0.18);
+}
+
+.memberships-plans-section .editorial-meta,
+.memberships-plans-section .editorial-copy,
+.memberships-plans-section .memberships-plan-list {
+  background: #2b2b2b;
 }
 
 .memberships-plans-section .editorial-meta,
