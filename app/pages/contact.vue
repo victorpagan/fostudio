@@ -235,7 +235,7 @@ async function submitForm() {
               <div
                 v-for="item in contactDetails"
                 :key="item.label"
-                class="rounded-2xl bg-[color:var(--gruv-accent-soft)] p-4"
+                class="contact-detail-item"
               >
                 <div class="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
                   {{ item.label }}
