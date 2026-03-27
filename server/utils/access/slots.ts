@@ -27,7 +27,11 @@ async function getReservedPermanentSlots(event: H3Event) {
     .select('slot_number')
     .eq('active', true)
 
-  if (error) throw new Error(error.message)
+  if (error) {
+    const code = (error as { code?: unknown } | null)?.code
+    if (code === '42P01') return new Set<number>()
+    throw new Error(error.message)
+  }
   return new Set((data ?? []).map((row: any) => Number(row.slot_number)))
 }
 

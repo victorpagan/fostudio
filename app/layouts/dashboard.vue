@@ -141,6 +141,12 @@ const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
         onSelect: () => { open.value = false }
       },
       {
+        label: 'Door Codes',
+        icon: 'i-lucide-key-round',
+        to: '/dashboard/admin/door-codes',
+        onSelect: () => { open.value = false }
+      },
+      {
         label: 'Waiver Templates',
         icon: 'i-lucide-file-signature',
         to: '/dashboard/admin/waiver',

@@ -15,6 +15,7 @@ type PermanentCodeRow = {
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
   const body = bodySchema.parse(await readBody(event))
 

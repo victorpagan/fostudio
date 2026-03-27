@@ -36,6 +36,24 @@ Set these values:
 - `ACCESS_AUTOMATION_SHARED_KEY` (shared key for internal worker endpoints)
 - Optional: `HOME_ASSISTANT_ABODE_ALARM_CODE` (if disarm/arm actions require an alarm code)
 
+### Admin door code management
+
+- Admin page: `/dashboard/admin/door-codes`
+- Member codes:
+  - Update from the admin page (or member admin tools).
+  - Codes remain booking-window controlled by queued access jobs.
+- Permanent codes:
+  - Managed from the same admin page.
+  - Stored in `public.lock_permanent_codes` and synced to the lock immediately on create/update/delete.
+  - Active permanent slots are reserved, so booking/member slot allocation will skip those slots.
+  - Sync outcomes are tracked per code (`last_sync_status`, `last_sync_error`, `last_synced_at`).
+
+Apply migration before using permanent codes:
+
+```bash
+supabase db push
+```
+
 ### Home Assistant scheduler (recommended)
 
 Add these blocks in Home Assistant `configuration.yaml`:

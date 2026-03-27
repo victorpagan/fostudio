@@ -27,7 +27,11 @@ function isUniqueViolation(error: unknown) {
   return code === '23505'
 }
 
-async function fetchPermanentCodeById(db: any, id: string) {
+async function fetchPermanentCodeById(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  id: string
+) {
   const { data, error } = await db
     .from('lock_permanent_codes')
     .select('id,label,slot_number,code,active,last_synced_at,last_sync_status,last_sync_error')
@@ -40,6 +44,7 @@ async function fetchPermanentCodeById(db: any, id: string) {
 
 export default defineEventHandler(async (event) => {
   const { user, supabase } = await requireServerAdmin(event)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
   const body = bodySchema.parse(await readBody(event))
   const nowIso = new Date().toISOString()

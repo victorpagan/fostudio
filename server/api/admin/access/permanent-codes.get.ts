@@ -2,6 +2,7 @@ import { requireServerAdmin } from '~~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
 
   const { data, error } = await db
