@@ -153,7 +153,7 @@ function tierAccentClass(tierId: string, index: number) {
         src="/images/amanda.png"
         alt="Amanda portrait"
         loading="eager"
-        class="landing-hero-william hidden dark:block"
+        class="landing-hero-amanda hidden dark:block"
       >
 
       <div class="landing-hero-badges">
