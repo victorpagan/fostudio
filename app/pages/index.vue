@@ -235,44 +235,6 @@ function tierDetailsHref(tierId: string) {
 
     <section>
       <UContainer>
-        <div class="studio-grid overflow-hidden rounded-[2rem] px-5 py-6 sm:px-8 sm:py-8">
-          <div class="grid gap-10 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)] lg:items-center">
-            <div class="space-y-6">
-              <span class="studio-kicker">{{ landingContent.hero.kicker }}</span>
-
-              <div class="space-y-4">
-                <h1 class="studio-display max-w-4xl text-6xl leading-[0.92] text-[color:var(--gruv-ink-0)] sm:text-8xl">
-                  {{ landingContent.hero.headline }}
-                </h1>
-              </div>
-            </div>
-
-            <UCard class="studio-panel">
-              <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
-                {{ landingContent.infoCard.title }}
-              </div>
-              <p class="mt-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-                {{ landingContent.infoCard.body }}
-              </p>
-
-              <div class="mt-5 space-y-3">
-                <div
-                  v-for="feature in landingContent.infoCard.features"
-                  :key="feature"
-                  class="flex gap-3 text-sm leading-7 text-[color:var(--gruv-ink-1)]"
-                >
-                  <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--gruv-accent)]" />
-                  <span>{{ feature }}</span>
-                </div>
-              </div>
-            </UCard>
-          </div>
-        </div>
-      </UContainer>
-    </section>
-
-    <section>
-      <UContainer>
         <div class="flex items-end justify-between gap-4">
           <div>
             <span class="studio-kicker">Studio preview</span>
@@ -280,6 +242,18 @@ function tierDetailsHref(tierId: string) {
               {{ landingContent.gallery.title }}
             </h2>
           </div>
+        </div>
+
+        <div class="mt-5 flex flex-wrap gap-2">
+          <UBadge
+            v-for="feature in landingContent.infoCard.features"
+            :key="feature"
+            color="neutral"
+            variant="soft"
+            class="px-3 py-1 text-xs sm:text-sm"
+          >
+            {{ feature }}
+          </UBadge>
         </div>
 
         <div class="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
