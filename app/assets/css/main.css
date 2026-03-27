@@ -171,14 +171,9 @@ body {
 
 .site-header--scrolled .site-header-row {
   padding: 0.58rem 0.9rem;
-  border: 1px solid var(--gruv-line);
-  background: color-mix(in srgb, var(--gruv-bg-0) 70%, transparent);
+  border: 1px solid rgba(243, 246, 251, 0.24);
+  background: rgba(9, 12, 17, 0.66);
   backdrop-filter: blur(14px) saturate(1.15);
-  box-shadow: 0 14px 26px -22px rgba(16, 20, 27, 0.55);
-}
-
-.dark .site-header--scrolled .site-header-row {
-  background: color-mix(in srgb, var(--gruv-bg-0) 64%, transparent);
   box-shadow: 0 14px 26px -20px rgba(0, 0, 0, 0.62);
 }
 
@@ -202,7 +197,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: var(--gruv-ink-0);
+  color: #f3f6fb;
 }
 
 .site-nav {
@@ -228,16 +223,16 @@ body {
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: var(--gruv-ink-1);
-  background: color-mix(in srgb, var(--gruv-ink-0) 7%, transparent);
-  border: 1px solid color-mix(in srgb, var(--gruv-line) 84%, transparent);
+  color: #f3f6fb;
+  background: rgba(243, 246, 251, 0.08);
+  border: 1px solid rgba(243, 246, 251, 0.24);
   transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
 }
 
 .site-auth-link:hover {
-  color: var(--gruv-ink-0);
-  border-color: color-mix(in srgb, var(--gruv-accent) 62%, transparent);
-  background: color-mix(in srgb, var(--gruv-accent) 18%, transparent);
+  color: #ffffff;
+  border-color: rgba(255, 74, 111, 0.75);
+  background: rgba(255, 74, 111, 0.2);
 }
 
 .site-nav-link {
@@ -247,47 +242,42 @@ body {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--gruv-ink-1);
+  color: #f3f6fb;
   border: 1px solid transparent;
   transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
 }
 
 .site-nav-link:hover {
-  color: var(--gruv-ink-0);
-  border-color: color-mix(in srgb, var(--gruv-line) 86%, transparent);
-  background: color-mix(in srgb, var(--gruv-ink-0) 8%, transparent);
+  color: #ffffff;
+  border-color: rgba(243, 246, 251, 0.24);
+  background: rgba(243, 246, 251, 0.08);
 }
 
 .site-nav-link.is-active {
-  color: #07090d;
-  border-color: transparent;
-  background: linear-gradient(135deg, var(--gruv-button-0), var(--gruv-button-1));
+  color: #ffffff;
+  border-color: rgba(243, 246, 251, 0.3);
+  background: rgba(243, 246, 251, 0.14);
 }
 
 .site-mobile-menu {
   margin-top: 0.35rem;
   margin-inline: clamp(0.8rem, 2.5vw, 2.25rem);
   border-radius: 0.8rem;
-  border: 1px solid var(--gruv-line);
-  background: color-mix(in srgb, var(--gruv-bg-0) 92%, var(--gruv-bg-1) 8%);
+  border: 1px solid rgba(243, 246, 251, 0.24);
+  background: rgba(9, 12, 17, 0.82);
   backdrop-filter: blur(14px) saturate(1.15);
-  box-shadow: 0 14px 24px -18px rgba(16, 20, 27, 0.5);
+  box-shadow: 0 16px 24px -18px rgba(0, 0, 0, 0.58);
 }
 
 .site-mobile-menu-inner {
   padding-inline: 0.75rem;
 }
 
-.dark .site-mobile-menu {
-  background: color-mix(in srgb, var(--gruv-bg-0) 70%, var(--gruv-bg-1) 30%);
-  box-shadow: 0 16px 24px -18px rgba(0, 0, 0, 0.58);
-}
-
 .site-mobile-link {
   display: block;
   border-radius: 0.5rem;
   padding: 0.58rem 0.78rem;
-  color: var(--gruv-ink-1);
+  color: #f3f6fb;
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -297,15 +287,15 @@ body {
 }
 
 .site-mobile-link:hover {
-  border-color: color-mix(in srgb, var(--gruv-line) 82%, transparent);
-  background: color-mix(in srgb, var(--gruv-ink-0) 8%, transparent);
-  color: var(--gruv-ink-0);
+  border-color: rgba(243, 246, 251, 0.24);
+  background: rgba(243, 246, 251, 0.08);
+  color: #ffffff;
 }
 
 .site-mobile-link.is-active {
-  border-color: transparent;
-  background: linear-gradient(135deg, var(--gruv-button-0), var(--gruv-button-1));
-  color: #07090d;
+  border-color: rgba(243, 246, 251, 0.3);
+  background: rgba(243, 246, 251, 0.14);
+  color: #ffffff;
 }
 
 .site-mobile-link-danger {
@@ -443,7 +433,7 @@ body {
 
 .landing-hero-wordmark {
   position: absolute;
-  z-index: 4;
+  z-index: 1;
   left: 50%;
   top: 48%;
   transform: translate(-50%, -50%);
@@ -528,8 +518,11 @@ body {
 }
 
 .landing-hero-badges {
-  margin-top: clamp(0.5rem, 1.8vw, 1.2rem);
-  align-self: flex-end;
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 48%;
+  transform: translate(calc(-50% + clamp(8.5rem, 16vw, 13.5rem)), clamp(4.2rem, 9vw, 8rem));
   display: grid;
   gap: 0.45rem;
   justify-items: end;
@@ -1048,7 +1041,7 @@ body {
   }
 
   .landing-hero-badges {
-    margin-top: clamp(0.35rem, 1vw, 0.8rem);
+    transform: translate(calc(-50% + clamp(6.2rem, 14vw, 10.5rem)), clamp(3.5rem, 8vw, 6rem));
   }
 }
 
@@ -1103,7 +1096,10 @@ body {
   }
 
   .landing-hero-badges {
-    align-self: center;
+    left: 50%;
+    top: auto;
+    transform: translateX(-50%);
+    bottom: 7.1rem;
     width: calc(100% - 1.5rem);
     max-width: 24rem;
     display: flex;

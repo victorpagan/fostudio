@@ -126,17 +126,6 @@ function tierDetailsHref(tierId: string) {
       <div class="landing-hero-wordmark">
         <span class="landing-hero-wordmark-fo">FO</span>
         <span class="landing-hero-wordmark-studio">STUDIO</span>
-        <div class="landing-hero-badges">
-          <UBadge
-            v-for="chip in landingContent.hero.chips"
-            :key="chip"
-            color="neutral"
-            variant="soft"
-            class="landing-hero-badge"
-          >
-            {{ chip }}
-          </UBadge>
-        </div>
       </div>
       <img
         src="/images/william.png"
@@ -144,6 +133,18 @@ function tierDetailsHref(tierId: string) {
         loading="eager"
         class="landing-hero-william"
       >
+
+      <div class="landing-hero-badges">
+        <UBadge
+          v-for="chip in landingContent.hero.chips"
+          :key="chip"
+          color="neutral"
+          variant="soft"
+          class="landing-hero-badge"
+        >
+          {{ chip }}
+        </UBadge>
+      </div>
 
       <div class="landing-hero-content">
         <NuxtLink
