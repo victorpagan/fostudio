@@ -578,6 +578,7 @@ body {
   height: 100%;
   object-fit: cover;
   object-position: 50% 58%;
+  filter: grayscale(28%) contrast(1.15) brightness(0.86);
   transform: translate3d(0, calc(4% - (var(--site-scroll-y, 0px) * 0.08)), 0);
   transform-origin: center center;
   will-change: transform;
