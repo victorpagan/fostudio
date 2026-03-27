@@ -1078,6 +1078,7 @@ body {
 }
 
 .calendar-page {
+  --calendar-content-max: 1520px;
   padding-inline: clamp(0.75rem, 2.2vw, 2.4rem);
   display: grid;
   gap: 0.9rem;
@@ -1089,7 +1090,7 @@ body {
 }
 
 .calendar-guide-section .editorial-frame {
-  max-width: 1520px;
+  max-width: var(--calendar-content-max);
   margin-inline: auto;
 }
 
@@ -1139,7 +1140,7 @@ body {
 }
 
 .calendar-standalone-shell {
-  width: min(100%, 1620px);
+  width: min(100%, var(--calendar-content-max));
   margin-inline: auto;
 }
 
