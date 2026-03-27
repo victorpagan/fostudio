@@ -144,14 +144,19 @@ body {
 }
 
 .site-header {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
   z-index: 70;
   padding: 0.65rem 0;
 }
 
 .site-header-frame {
   position: relative;
+  width: 100%;
+  padding-inline: clamp(0.8rem, 2.5vw, 2.25rem);
 }
 
 .site-header-row {
@@ -282,11 +287,16 @@ body {
 
 .site-mobile-menu {
   margin-top: 0.35rem;
+  margin-inline: clamp(0.8rem, 2.5vw, 2.25rem);
   border-radius: 0.8rem;
   border: 1px solid var(--gruv-line);
   background: color-mix(in srgb, var(--gruv-bg-0) 92%, var(--gruv-bg-1) 8%);
   backdrop-filter: blur(14px) saturate(1.15);
   box-shadow: 0 14px 24px -18px rgba(16, 20, 27, 0.5);
+}
+
+.site-mobile-menu-inner {
+  padding-inline: 0.75rem;
 }
 
 .dark .site-mobile-menu {
@@ -461,11 +471,11 @@ body {
 
 .landing-hero-wordmark-fo {
   color: var(--gruv-accent);
-  font-family: var(--font-wordmark);
+  font-family: var(--font-display);
   font-size: clamp(2.2rem, 7vw, 5.2rem);
-  line-height: 0.9;
-  letter-spacing: 0.08em;
-  font-weight: 400;
+  line-height: 0.86;
+  letter-spacing: 0.06em;
+  font-weight: 700;
   text-shadow: 0 14px 24px rgba(16, 20, 27, 0.32);
 }
 
@@ -1015,7 +1025,7 @@ body {
 
   .landing-hero-wordmark-fo {
     font-size: clamp(1.5rem, 8vw, 2.6rem);
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
   }
 
   .landing-hero-wordmark-studio {

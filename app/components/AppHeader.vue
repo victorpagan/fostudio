@@ -84,7 +84,7 @@ async function logout() {
     class="site-header"
     :class="{ 'site-header--scrolled': isScrolled }"
   >
-    <UContainer class="site-header-frame">
+    <div class="site-header-frame">
       <div class="site-header-row">
         <NuxtLink
           to="/"
@@ -172,14 +172,14 @@ async function logout() {
           </div>
         </div>
       </div>
-    </UContainer>
+    </div>
 
     <Transition name="fade-slide">
       <div
         v-if="isOpen"
         class="site-mobile-menu lg:hidden"
       >
-        <UContainer class="space-y-2 py-4">
+        <div class="site-mobile-menu-inner space-y-2 py-4">
           <NuxtLink
             v-for="l in links"
             :key="l.to"
@@ -257,7 +257,7 @@ async function logout() {
               Log out
             </button>
           </template>
-        </UContainer>
+        </div>
       </div>
     </Transition>
   </header>

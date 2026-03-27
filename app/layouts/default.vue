@@ -1,11 +1,19 @@
 <script setup lang="ts">
 const toast = useToast()
+const route = useRoute()
 const parallaxY = ref(0)
 let rafId: number | null = null
 
 const shellStyle = computed(() => ({
   '--site-scroll-y': `${Math.round(parallaxY.value)}px`
 }))
+
+const mainClass = computed(() => {
+  if (route.path === '/') {
+    return 'relative'
+  }
+  return 'relative pt-20 sm:pt-24'
+})
 
 function readScrollY() {
   return window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0
@@ -67,7 +75,7 @@ onBeforeUnmount(() => {
   >
     <AppHeader />
 
-    <UMain class="relative">
+    <UMain :class="mainClass">
       <slot />
     </UMain>
 
