@@ -851,10 +851,28 @@ async function runRefreshMemberActiveJob(event: H3Event, job: JobRow) {
 
   const activeBookings = await listActiveMemberWindowBookings(event, job.user_id)
   if (!activeBookings.length) {
+    const assignment = await getActiveMemberSlot(event, job.user_id)
+    if (!assignment?.slot_number) {
+      return {
+        ok: true,
+        skipped: 'no_active_booking_window',
+        userId: job.user_id
+      }
+    }
+
+    const providerResult = await clearLockUserCode(event, {
+      slotNumber: Number(assignment.slot_number),
+      kind: 'member',
+      userId: job.user_id,
+      reason: 'refresh_no_active_window'
+    })
+
     return {
       ok: true,
-      skipped: 'no_active_booking_window',
-      userId: job.user_id
+      action: 'member_code_cleared_inactive_refresh',
+      userId: job.user_id,
+      slotNumber: Number(assignment.slot_number),
+      provider: providerResult.body ?? null
     }
   }
 
