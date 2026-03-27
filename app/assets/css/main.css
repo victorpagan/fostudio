@@ -1267,7 +1267,6 @@ body {
   margin-top: 0.7rem;
   --memberships-plans-gap: clamp(1.5rem, 4vw, 2.9rem);
   --memberships-plans-line: rgba(245, 245, 245, 0.18);
-  --memberships-gap-connector-line: var(--gruv-line);
   --memberships-header-divider-x: 39%;
 }
 
@@ -1346,10 +1345,10 @@ body {
   position: absolute;
   top: calc(-1 * var(--memberships-plans-gap));
   height: var(--memberships-plans-gap);
-  width: 1px;
+  width: 2px;
   left: var(--memberships-header-divider-x);
-  transform: translateX(-0.5px);
-  background: var(--memberships-gap-connector-line);
+  transform: translateX(-1px);
+  background: var(--gruv-line);
   pointer-events: none;
   z-index: 2;
 }
