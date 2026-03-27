@@ -15,20 +15,20 @@ function toggleColorMode() {
 </script>
 
 <template>
-  <UFooter class="py-10">
-    <UContainer class="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-      <div class="space-y-1">
-        <div class="text-sm text-[color:var(--gruv-ink-2)]">
+  <UFooter class="site-footer">
+    <UContainer class="site-footer-row">
+      <div class="site-footer-brand">
+        <div class="site-footer-copyright">
           © {{ year }} FO Studio
         </div>
       </div>
 
-      <div class="flex flex-wrap gap-4 text-sm">
+      <div class="site-footer-links-wrap">
         <NuxtLink
           v-for="l in footerLinks"
           :key="l.to"
           :to="l.to"
-          class="text-[color:var(--gruv-ink-2)] transition-colors hover:text-[color:var(--gruv-accent)]"
+          class="site-footer-link"
         >
           {{ l.label }}
         </NuxtLink>
@@ -38,7 +38,7 @@ function toggleColorMode() {
           variant="ghost"
           size="sm"
           :icon="isDarkMode ? 'i-lucide-moon' : 'i-lucide-sun'"
-          class="h-7 rounded-full px-2 text-[color:var(--gruv-ink-2)]"
+          class="site-footer-theme-toggle"
           :aria-label="isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'"
           @click="toggleColorMode"
         />
