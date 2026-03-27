@@ -247,6 +247,14 @@ function tierSpotsLeftColor(tier: Tier): 'success' | 'warning' | 'error' | 'neut
   return 'success'
 }
 
+function tierCardAccentClass(tier: Tier) {
+  const normalized = tier.id.toLowerCase()
+  if (normalized.includes('creator')) return 'membership-plan-card--accent-a'
+  if (normalized.includes('pro')) return 'membership-plan-card--accent-b'
+  if (normalized.includes('studio')) return 'membership-plan-card--accent-c'
+  return 'membership-plan-card--accent-a'
+}
+
 function checkoutUrl(tierId: string) {
   const base = `/checkout?tier=${encodeURIComponent(tierId)}&returnTo=${encodeURIComponent(returnTo.value)}`
   return isPlanSwitchMode.value ? `${base}&mode=switch` : base
@@ -302,194 +310,224 @@ async function submitWaitlist() {
 </script>
 
 <template>
-  <UContainer class="py-10 sm:py-14">
-    <section class="studio-grid overflow-hidden rounded-[2rem] px-5 py-6 sm:px-8 sm:py-8">
-      <div class="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] lg:items-end">
-        <div class="space-y-4">
-          <span class="studio-kicker">{{ membershipsContent.hero.kicker }}</span>
-          <UBadge
-            v-if="isPlanSwitchMode"
-            color="warning"
-            variant="soft"
-            class="w-fit"
-          >
-            Change mode: next billing cycle
-          </UBadge>
-          <h1 class="studio-display text-4xl leading-none text-[color:var(--gruv-ink-0)] sm:text-5xl">
-            {{ membershipsContent.hero.title }}
-          </h1>
-          <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)]">
-            {{ membershipsContent.hero.description }}
-          </p>
-          <div class="flex flex-wrap gap-2">
-            <UBadge
-              v-for="badge in membershipsContent.hero.badges"
-              :key="badge"
-              color="neutral"
-              variant="soft"
-            >
-              {{ badge }}
-            </UBadge>
+  <div class="memberships-page space-y-8 py-10 sm:py-14">
+    <section class="editorial-section">
+      <div class="editorial-frame">
+        <div class="editorial-grid memberships-hero-grid">
+          <div class="editorial-cell editorial-meta">
+            <p class="editorial-label">{{ membershipsContent.hero.kicker }}</p>
           </div>
-        </div>
 
-        <div class="studio-panel p-5 sm:p-6">
-          <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
-            {{ membershipsContent.infoPanel.title }}
-          </div>
-          <div class="mt-4 space-y-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-            <p
-              v-for="paragraph in membershipsContent.infoPanel.paragraphs"
-              :key="paragraph"
+          <div class="editorial-cell editorial-copy editorial-copy-texture">
+            <UBadge
+              v-if="isPlanSwitchMode"
+              color="warning"
+              variant="soft"
+              class="w-fit"
             >
-              {{ paragraph }}
+              Change mode: next billing cycle
+            </UBadge>
+            <h1 class="editorial-title mt-2">
+              {{ membershipsContent.hero.title }}
+            </h1>
+            <p class="editorial-body">
+              {{ membershipsContent.hero.description }}
             </p>
-            <p v-if="isPlanSwitchMode">
-              When changing an active membership, the new plan takes effect on your next billing cycle. Mid-cycle prorated membership changes are not applied.
-            </p>
+            <div class="memberships-hero-badges">
+              <UBadge
+                v-for="badge in membershipsContent.hero.badges"
+                :key="badge"
+                color="neutral"
+                variant="soft"
+              >
+                {{ badge }}
+              </UBadge>
+            </div>
+          </div>
+
+          <div class="editorial-cell memberships-info-cell">
+            <h2 class="memberships-info-title">
+              {{ membershipsContent.infoPanel.title }}
+            </h2>
+            <div class="mt-4 space-y-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+              <p
+                v-for="paragraph in membershipsContent.infoPanel.paragraphs"
+                :key="paragraph"
+              >
+                {{ paragraph }}
+              </p>
+              <p v-if="isPlanSwitchMode">
+                When changing an active membership, the new plan takes effect on your next billing cycle. Mid-cycle prorated membership changes are not applied.
+              </p>
+            </div>
           </div>
         </div>
       </div>
     </section>
 
-    <section class="studio-panel mt-8 p-5 sm:p-6">
-      <div class="space-y-3">
-        <h2 class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
-          {{ membershipsContent.creditsExplainer.title }}
-        </h2>
-        <p class="max-w-3xl text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-          {{ membershipsContent.creditsExplainer.description }}
-        </p>
-      </div>
-      <div class="mt-4 grid gap-2">
-        <div
-          v-for="bullet in membershipsContent.creditsExplainer.bullets"
-          :key="bullet"
-          class="flex gap-3 text-sm leading-7 text-[color:var(--gruv-ink-1)]"
-        >
-          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--gruv-olive)]" />
-          <span>{{ bullet }}</span>
+    <section class="editorial-section">
+      <div class="editorial-frame">
+        <div class="editorial-grid memberships-credits-grid">
+          <div class="editorial-cell editorial-meta">
+            <p class="editorial-label">CREDITS / SYSTEM</p>
+          </div>
+          <div class="editorial-cell editorial-copy editorial-copy-texture">
+            <h2 class="editorial-title">
+              {{ membershipsContent.creditsExplainer.title }}
+            </h2>
+            <p class="editorial-body">
+              {{ membershipsContent.creditsExplainer.description }}
+            </p>
+          </div>
+          <div class="editorial-cell memberships-credits-list">
+            <div
+              v-for="bullet in membershipsContent.creditsExplainer.bullets"
+              :key="bullet"
+              class="memberships-credits-item"
+            >
+              <span class="memberships-credits-dot" />
+              <span>{{ bullet }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
-    <div class="mt-10 grid gap-5 xl:grid-cols-3">
-      <article
-        v-for="tier in visibleTiers"
-        :id="`plan-${tier.id}`"
-        :key="tier.id"
-        class="studio-panel plan-card scroll-mt-24"
-      >
-        <div class="flex items-start justify-between gap-4">
-          <div>
-            <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
-              {{ tier.display_name }}
-            </div>
-            <UBadge
-              v-if="tier.is_full"
-              color="error"
-              variant="soft"
-              size="xs"
-              class="mt-2"
-            >
-              Waitlist open
-            </UBadge>
+    <section class="editorial-section">
+      <div class="editorial-frame">
+        <div class="editorial-grid memberships-plans-grid">
+          <div class="editorial-cell editorial-meta">
+            <p class="editorial-label">PLANS / MEMBERSHIPS</p>
           </div>
-          <UBadge
-            size="xs"
-            variant="soft"
-            :color="tierSpotsLeftColor(tier)"
-          >
-            {{ tierSpotsLeftLabel(tier) }}
-          </UBadge>
-        </div>
-
-        <p class="plan-lead">
-          {{ tierLead(tier) }}
-        </p>
-
-        <div class="space-y-2 text-sm leading-7 text-[color:var(--gruv-ink-1)]">
-          <div
-            v-for="highlight in tierHighlights(tier)"
-            :key="highlight"
-            class="flex gap-3"
-          >
-            <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--gruv-olive)]" />
-            <span>{{ highlight }}</span>
-          </div>
-        </div>
-
-        <div class="mt-auto space-y-4">
-          <div class="grid grid-cols-3 gap-2">
-            <div class="plan-stat text-center">
-              <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
-                {{ tier.booking_window_days }}d
-              </div>
-              <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
-                Booking Window
-              </div>
-            </div>
-            <div class="plan-stat text-center">
-              <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
-                {{ monthlyCreditsPerMonth(tier) }}
-              </div>
-              <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
-                Cr / Month
-              </div>
-            </div>
-            <div class="plan-stat text-center">
-              <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
-                {{ tier.max_bank }}
-              </div>
-              <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
-                Cr Cap
-              </div>
-            </div>
-          </div>
-
-          <div class="rounded-2xl bg-[color:var(--gruv-accent-soft)] p-4">
-            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
-              Starting at
-            </div>
-            <div class="mt-2 text-3xl font-semibold text-[color:var(--gruv-ink-0)]">
-              {{ monthlyStartingLabel(tier) }}/mo
-            </div>
-            <p class="mt-2 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
-              Quarterly and annual savings are shown on the next step before checkout.
+          <div class="editorial-cell editorial-copy editorial-copy-texture">
+            <h2 class="editorial-title">
+              Choose your membership tier.
+            </h2>
+            <p class="editorial-body">
+              Pick the plan that matches your current volume. You can move tiers as your production cadence changes.
             </p>
           </div>
+          <div class="editorial-cell memberships-plan-list">
+            <article
+              v-for="tier in visibleTiers"
+              :id="`plan-${tier.id}`"
+              :key="tier.id"
+              class="plan-card membership-plan-card scroll-mt-24"
+              :class="tierCardAccentClass(tier)"
+            >
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
+                    {{ tier.display_name }}
+                  </div>
+                  <UBadge
+                    v-if="tier.is_full"
+                    color="error"
+                    variant="soft"
+                    size="xs"
+                    class="mt-2"
+                  >
+                    Waitlist open
+                  </UBadge>
+                </div>
+                <UBadge
+                  size="xs"
+                  variant="soft"
+                  :color="tierSpotsLeftColor(tier)"
+                >
+                  {{ tierSpotsLeftLabel(tier) }}
+                </UBadge>
+              </div>
 
-          <div class="grid gap-2">
-            <UButton
-              v-if="!isTierBlockedForCheckout(tier)"
-              block
-              @click="onSelectTier(tier.id)"
-            >
-              {{ isPlanSwitchMode ? `Change to ${tier.display_name}` : `Choose ${tier.display_name}` }}
-            </UButton>
-            <UButton
-              v-else
-              block
-              color="neutral"
-              variant="soft"
-              @click="openWaitlist(tier)"
-            >
-              Join waitlist
-            </UButton>
-            <p
-              v-if="tier.is_full && isPriorityMember"
-              class="text-xs text-dimmed"
-            >
-              Tier is full for new members. Active members still have priority for plan changes.
-            </p>
-          </div>
+              <p class="plan-lead">
+                {{ tierLead(tier) }}
+              </p>
 
-          <div class="rounded-2xl bg-[color:var(--gruv-accent-soft)] px-4 py-3 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
-            {{ tierDetail(tier) }}
+              <div class="space-y-2 text-sm leading-7 text-[color:var(--gruv-ink-1)]">
+                <div
+                  v-for="highlight in tierHighlights(tier)"
+                  :key="highlight"
+                  class="flex gap-3"
+                >
+                  <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--gruv-olive)]" />
+                  <span>{{ highlight }}</span>
+                </div>
+              </div>
+
+              <div class="mt-auto space-y-4">
+                <div class="grid grid-cols-3 gap-2">
+                  <div class="plan-stat text-center">
+                    <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
+                      {{ tier.booking_window_days }}d
+                    </div>
+                    <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
+                      Booking Window
+                    </div>
+                  </div>
+                  <div class="plan-stat text-center">
+                    <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
+                      {{ monthlyCreditsPerMonth(tier) }}
+                    </div>
+                    <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
+                      Cr / Month
+                    </div>
+                  </div>
+                  <div class="plan-stat text-center">
+                    <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
+                      {{ tier.max_bank }}
+                    </div>
+                    <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
+                      Cr Cap
+                    </div>
+                  </div>
+                </div>
+
+                <div class="rounded-2xl bg-[color:var(--gruv-accent-soft)] p-4">
+                  <div class="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
+                    Starting at
+                  </div>
+                  <div class="mt-2 text-3xl font-semibold text-[color:var(--gruv-ink-0)]">
+                    {{ monthlyStartingLabel(tier) }}/mo
+                  </div>
+                  <p class="mt-2 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
+                    Quarterly and annual savings are shown on the next step before checkout.
+                  </p>
+                </div>
+
+                <div class="grid gap-2">
+                  <UButton
+                    v-if="!isTierBlockedForCheckout(tier)"
+                    block
+                    @click="onSelectTier(tier.id)"
+                  >
+                    {{ isPlanSwitchMode ? `Change to ${tier.display_name}` : `Choose ${tier.display_name}` }}
+                  </UButton>
+                  <UButton
+                    v-else
+                    block
+                    color="neutral"
+                    variant="soft"
+                    @click="openWaitlist(tier)"
+                  >
+                    Join waitlist
+                  </UButton>
+                  <p
+                    v-if="tier.is_full && isPriorityMember"
+                    class="text-xs text-dimmed"
+                  >
+                    Tier is full for new members. Active members still have priority for plan changes.
+                  </p>
+                </div>
+
+                <div class="rounded-2xl bg-[color:var(--gruv-accent-soft)] px-4 py-3 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
+                  {{ tierDetail(tier) }}
+                </div>
+              </div>
+            </article>
           </div>
         </div>
-      </article>
-    </div>
+      </div>
+    </section>
 
     <UModal v-model:open="waitlistOpen">
       <template #content>
@@ -564,5 +602,5 @@ async function submitWaitlist() {
         </UCard>
       </template>
     </UModal>
-  </UContainer>
+  </div>
 </template>
