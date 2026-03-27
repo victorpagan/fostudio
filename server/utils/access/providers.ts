@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { getKey, getServerConfigMap } from '~~/server/utils/config/secret'
 
-export type SlotKind = 'member' | 'guest'
+export type SlotKind = 'member' | 'guest' | 'permanent'
 
 export type SetLockCodeInput = {
   slotNumber: number

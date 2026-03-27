@@ -20,6 +20,17 @@ function isUniqueViolation(error: unknown) {
   return code === '23505'
 }
 
+async function getReservedPermanentSlots(event: H3Event) {
+  const supabase = serverSupabaseServiceRole(event) as any
+  const { data, error } = await supabase
+    .from('lock_permanent_codes')
+    .select('slot_number')
+    .eq('active', true)
+
+  if (error) throw new Error(error.message)
+  return new Set((data ?? []).map((row: any) => Number(row.slot_number)))
+}
+
 export async function getLockSlotRanges(event: H3Event): Promise<SlotRange> {
   const config = await getServerConfigMap(event, [
     'LOCK_MEMBER_SLOT_START',
@@ -81,9 +92,11 @@ export async function allocateMemberSlot(event: H3Event, userId: string) {
 
   if (usedErr) throw new Error(usedErr.message)
   const used = new Set((usedRows ?? []).map((row: any) => Number(row.slot_number)))
+  const reserved = await getReservedPermanentSlots(event)
 
   for (let slot = memberStart; slot <= memberEnd; slot += 1) {
     if (used.has(slot)) continue
+    if (reserved.has(slot)) continue
 
     const { data: inserted, error: insertErr } = await supabase
       .from('lock_slot_assignments')
@@ -149,9 +162,11 @@ export async function allocateGuestSlot(event: H3Event, bookingId: string) {
 
   if (usedErr) throw new Error(usedErr.message)
   const used = new Set((usedRows ?? []).map((row: any) => Number(row.slot_number)))
+  const reserved = await getReservedPermanentSlots(event)
 
   for (let slot = guestStart; slot <= guestEnd; slot += 1) {
     if (used.has(slot)) continue
+    if (reserved.has(slot)) continue
 
     const { data: inserted, error: insertErr } = await supabase
       .from('lock_slot_assignments')

@@ -73,6 +73,25 @@ export default defineEventHandler(async (event) => {
   if (assignmentErr) throw createError({ statusCode: 500, statusMessage: assignmentErr.message })
 
   if (!assignment) {
+    const { data: permanentCode, error: permanentErr } = await supabase
+      .from('lock_permanent_codes')
+      .select('id,label,slot_number,active')
+      .eq('slot_number', body.slotNumber)
+      .eq('active', true)
+      .maybeSingle()
+
+    if (permanentErr) throw createError({ statusCode: 500, statusMessage: permanentErr.message })
+
+    if (permanentCode?.id) {
+      return {
+        ok: true,
+        authMode,
+        ignored: true,
+        reason: 'permanent_slot_unlock',
+        permanentCodeId: permanentCode.id
+      }
+    }
+
     await createAccessIncident(event, {
       incidentType: 'unlock_without_slot_assignment',
       severity: 'warning',
