@@ -1267,6 +1267,8 @@ body {
   margin-top: 0.7rem;
   --memberships-plans-gap: clamp(1.5rem, 4vw, 2.9rem);
   --memberships-plans-line: rgba(245, 245, 245, 0.18);
+  --memberships-gap-connector-line: var(--gruv-line);
+  --memberships-header-divider-x: 39%;
 }
 
 .memberships-plans-section .editorial-frame {
@@ -1339,23 +1341,17 @@ body {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.memberships-plan-list::before,
-.memberships-plan-list::after {
+.memberships-plan-list::before {
   content: '';
   position: absolute;
   top: calc(-1 * var(--memberships-plans-gap));
   height: var(--memberships-plans-gap);
   width: 1px;
-  background: var(--memberships-plans-line);
+  left: var(--memberships-header-divider-x);
+  transform: translateX(-0.5px);
+  background: var(--memberships-gap-connector-line);
   pointer-events: none;
-}
-
-.memberships-plan-list::before {
-  left: 0;
-}
-
-.memberships-plan-list::after {
-  right: 0;
+  z-index: 2;
 }
 
 .membership-plan-card {
@@ -2029,6 +2025,10 @@ body {
 
   .memberships-plan-list {
     grid-template-columns: 1fr;
+  }
+
+  .memberships-plan-list::before {
+    content: none;
   }
 
   .membership-plan-card {
