@@ -591,7 +591,7 @@ body {
 .faq-hero-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
-  align-items: end;
+  align-items: start;
 }
 
 .faq-hero-main {
@@ -662,6 +662,30 @@ body {
   font-size: 0.93rem;
   line-height: 1.82;
   color: var(--gruv-ink-2);
+}
+
+.contact-hero-frame {
+  border: 1px solid var(--gruv-line);
+  background: color-mix(in srgb, var(--gruv-bg-0) 94%, var(--gruv-bg-1) 6%);
+}
+
+.dark .contact-hero-frame {
+  background: color-mix(in srgb, var(--gruv-bg-0) 80%, var(--gruv-bg-1) 20%);
+}
+
+.contact-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(18rem, 0.9fr);
+  align-items: start;
+}
+
+.contact-hero-main {
+  padding: clamp(1rem, 2.8vw, 2rem);
+}
+
+.contact-side-panel {
+  border-left: 1px solid var(--gruv-line);
+  padding: clamp(1rem, 2.8vw, 2rem);
 }
 
 .studio-grid {
@@ -1864,6 +1888,15 @@ body {
   }
 
   .faq-side-panel {
+    border-left: 0;
+    border-top: 1px solid var(--gruv-line);
+  }
+
+  .contact-hero-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .contact-side-panel {
     border-left: 0;
     border-top: 1px solid var(--gruv-line);
   }

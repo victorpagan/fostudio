@@ -64,7 +64,7 @@ const fallbackContent: SiteContactContent = {
   },
   detailsPanel: {
     title: 'Studio details',
-    intro: 'Messages go to the studio inbox through the server-side contact endpoint. The reply will come back to the email you enter below, so use the address you actually want us to answer.'
+    intro: ''
   },
   mapPanel: {
     title: 'Find the studio',
@@ -201,21 +201,15 @@ async function submitForm() {
 <template>
   <UContainer class="py-10 sm:py-14">
     <div class="space-y-8">
-      <section class="studio-grid overflow-hidden rounded-[2rem] px-5 py-6 sm:px-8 sm:py-8">
-        <div class="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)] lg:items-end">
-          <div class="space-y-5">
-            <span class="studio-kicker">{{ pageContent.hero.kicker }}</span>
-            <div class="max-w-3xl space-y-4">
-              <h1 class="studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-7xl">
-                {{ pageContent.hero.title }}
-              </h1>
-              <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
-                {{ pageContent.hero.description }}
-              </p>
-            </div>
+      <section class="contact-hero-frame">
+        <div class="contact-hero-grid">
+          <div class="contact-hero-main">
+            <p class="editorial-label">
+              Contact
+            </p>
           </div>
 
-          <div class="studio-panel p-5 sm:p-6">
+          <div class="contact-side-panel">
             <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
               {{ pageContent.reasonsPanel.title }}
             </div>
@@ -237,11 +231,7 @@ async function submitForm() {
             <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
               {{ pageContent.detailsPanel.title }}
             </div>
-            <p class="mt-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-              {{ pageContent.detailsPanel.intro }}
-            </p>
-
-            <div class="mt-5 space-y-4">
+            <div class="mt-3 space-y-4">
               <div
                 v-for="item in contactDetails"
                 :key="item.label"
