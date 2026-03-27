@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Michroma&family=Sora:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap');
 @import "tailwindcss";
 @import "@nuxt/ui";
 
@@ -10,7 +10,7 @@
 
 :root {
   --font-display: 'Sora', sans-serif;
-  --font-wordmark: 'Michroma', sans-serif;
+  --font-wordmark: 'Turnpike', 'Sora', 'Space Grotesk', sans-serif;
   --gruv-bg-0: #d9dbdc;
   --gruv-bg-1: #cbced2;
   --gruv-bg-2: #b9bec5;
