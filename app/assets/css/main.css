@@ -938,6 +938,21 @@ body {
   color: rgba(242, 244, 247, 0.84);
 }
 
+.memberships-plans-section .membership-plan-card .studio-display,
+.memberships-plans-section .membership-plan-card .text-3xl,
+.memberships-plans-section .membership-plan-card .text-lg,
+.memberships-plans-section .membership-plan-card .font-semibold {
+  color: #f4f6fa;
+}
+
+.memberships-plans-section .membership-plan-card .text-xs,
+.memberships-plans-section .membership-plan-card .text-sm,
+.memberships-plans-section .membership-plan-card .text-dimmed,
+.memberships-plans-section .membership-plan-card .space-y-2 .flex > span:last-child,
+.memberships-plans-section .membership-plan-card .mt-auto > .rounded-2xl p {
+  color: rgba(232, 237, 246, 0.86);
+}
+
 .memberships-plans-section .plan-stat {
   background: rgba(255, 255, 255, 0.11);
 }
