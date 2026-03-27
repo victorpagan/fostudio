@@ -10,10 +10,12 @@ useSeoMeta({
 })
 
 const supabase = useSupabaseClient()
+const user = useSupabaseUser()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const loading = ref(false)
+const redirectingAuthenticatedUser = ref(false)
 
 const returnTo = computed(() => {
   const value = route.query.returnTo
@@ -81,6 +83,24 @@ function handleEnter(e: KeyboardEvent) {
     }
   }
 }
+
+async function redirectIfAuthenticated() {
+  if (import.meta.server || redirectingAuthenticatedUser.value || !user.value) return
+  redirectingAuthenticatedUser.value = true
+  try {
+    await router.replace(returnTo.value)
+  } finally {
+    redirectingAuthenticatedUser.value = false
+  }
+}
+
+onMounted(() => {
+  void redirectIfAuthenticated()
+})
+
+watch(() => user.value?.id, () => {
+  void redirectIfAuthenticated()
+})
 
 async function onSubmit(payload: FormSubmitEvent<Schema>) {
   loading.value = true

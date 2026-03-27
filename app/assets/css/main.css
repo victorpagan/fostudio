@@ -443,7 +443,7 @@ body {
 
 .landing-hero-wordmark {
   position: absolute;
-  z-index: 1;
+  z-index: 4;
   left: 50%;
   top: 48%;
   transform: translate(-50%, -50%);
@@ -494,14 +494,13 @@ body {
 }
 
 .landing-hero-cta {
-  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 0.8rem;
   clip-path: polygon(0 0, calc(100% - 0.9rem) 0, calc(100% - 0.9rem) 0.9rem, 100% 0.9rem, 100% 100%, 0 100%);
   border: 0;
-  background: var(--gruv-accent);
+  background: #1a1a1a;
   padding: 0.68rem 1.15rem;
   font-size: 0.83rem;
   font-weight: 700;
@@ -512,19 +511,20 @@ body {
 }
 
 .landing-hero-cta:hover {
-  background: var(--gruv-accent-strong);
+  background: #272727;
   color: white;
 }
 
-.landing-hero-cta::after {
+.landing-hero-content::after {
   content: '↗';
   position: absolute;
   top: -0.58rem;
-  right: -0.66rem;
+  right: -0.72rem;
   font-size: 0.72rem;
   line-height: 1;
   color: white;
   pointer-events: none;
+  z-index: 4;
 }
 
 .landing-hero-badges {
@@ -1116,6 +1116,11 @@ body {
     right: 0.65rem;
     bottom: 0.4rem;
     font-size: 0.58rem;
+  }
+
+  .landing-hero-content::after {
+    top: -0.48rem;
+    right: -0.56rem;
   }
 
   .availability-shell .fc {
