@@ -2,6 +2,15 @@
 const year = new Date().getFullYear()
 const colorMode = useColorMode()
 const isDarkMode = computed(() => colorMode.value === 'dark')
+const config = useRuntimeConfig()
+
+const footerPhone = computed(() => config.public.contactPhone?.trim() || '')
+const footerAddress = computed(() => config.public.contactLocation?.trim() || '')
+const footerPhoneHref = computed(() => {
+  if (!footerPhone.value) return ''
+  const normalized = footerPhone.value.replace(/[^\d+]/g, '')
+  return normalized ? `tel:${normalized}` : ''
+})
 
 const footerLinks = [
   { label: 'Policies', to: '/policies' },
@@ -20,6 +29,24 @@ function toggleColorMode() {
       <div class="site-footer-brand">
         <div class="site-footer-copyright">
           © {{ year }} FO Studio
+        </div>
+        <div
+          v-if="footerAddress || footerPhone"
+          class="site-footer-contact"
+        >
+          <span
+            v-if="footerAddress"
+            class="site-footer-contact-item"
+          >
+            {{ footerAddress }}
+          </span>
+          <a
+            v-if="footerPhone"
+            :href="footerPhoneHref || undefined"
+            class="site-footer-contact-item site-footer-contact-phone"
+          >
+            {{ footerPhone }}
+          </a>
         </div>
       </div>
 

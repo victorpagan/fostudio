@@ -127,6 +127,29 @@ body {
   color: var(--gruv-ink-2);
 }
 
+.site-footer-contact {
+  margin-top: 0.32rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.75rem;
+}
+
+.site-footer-contact-item {
+  font-size: 0.78rem;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--gruv-ink-2) 90%, var(--gruv-ink-1) 10%);
+}
+
+.site-footer-contact-phone {
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+.site-footer-contact-phone:hover {
+  color: var(--gruv-accent);
+}
+
 .site-footer-links-wrap {
   display: flex;
   flex-wrap: wrap;
@@ -1279,6 +1302,11 @@ body {
   .site-footer-links-wrap {
     justify-content: flex-start;
     gap: 0.4rem 0.85rem;
+  }
+
+  .site-footer-contact {
+    margin-top: 0.25rem;
+    gap: 0.2rem 0.6rem;
   }
 
   .site-brand-title {
