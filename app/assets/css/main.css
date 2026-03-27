@@ -512,8 +512,8 @@ body {
 }
 
 .landing-hero-image-studiobg {
-  object-position: 50% 66%;
-  transform: translate3d(0, 6%, 0) scale(1.09);
+  object-position: 50% 50%;
+  transform: scale(1.09);
   transform-origin: center center;
 }
 
@@ -532,13 +532,14 @@ body {
   z-index: 1;
   left: 50%;
   top: 48%;
-  transform: translate(-50%, -50%);
+  transform: translate3d(-50%, calc(-50% - (var(--site-scroll-y, 0px) * 0.08)), 0);
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 0.2rem;
   text-transform: uppercase;
   pointer-events: none;
+  will-change: transform;
 }
 
 .landing-hero-wordmark-fo {
@@ -579,11 +580,10 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: 50% 66%;
+  object-position: 50% 50%;
   filter: grayscale(28%) contrast(1.15) brightness(0.86);
-  transform: translate3d(0, calc(8% - (var(--site-scroll-y, 0px) * 0.08)), 0) scale(1.09);
+  transform: scale(1.09);
   transform-origin: center center;
-  will-change: transform;
   pointer-events: none;
   -webkit-user-drag: none;
 }
@@ -1847,10 +1847,6 @@ body {
     transform: translate3d(-50%, calc(7% - (var(--site-scroll-y, 0px) * 0.1)), 0);
   }
 
-  .landing-hero-amanda {
-    transform: translate3d(0, calc(6% - (var(--site-scroll-y, 0px) * 0.06)), 0) scale(1.09);
-  }
-
   .landing-hero-content {
     left: 0.75rem;
     bottom: 1.1rem;
@@ -1940,7 +1936,12 @@ body {
   }
 
   .landing-hero-amanda {
-    transform: translate3d(0, 8%, 0) scale(1.09) !important;
+    transform: scale(1.09) !important;
+    transition: none !important;
+  }
+
+  .landing-hero-wordmark {
+    transform: translate(-50%, -50%) !important;
     transition: none !important;
   }
 }
