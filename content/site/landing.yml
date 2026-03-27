@@ -1,3 +1,26 @@
+seo:
+  title: "FO Studio | 24/7 Photo Studio Membership in Los Angeles"
+  description: "24/7 turnkey photo studio in Los Angeles for photographers and small-to-mid crews. Included gear, consumables, and membership-first booking."
+  keywords:
+    - "los angeles photo studio"
+    - "24/7 studio rental"
+    - "studio membership"
+    - "cyclorama studio"
+    - "photo studio with lighting"
+  canonicalPath: "/"
+  robots: "index,follow,max-image-preview:large"
+  og:
+    title: "FO Studio | 24/7 Photo Studio Membership in Los Angeles"
+    description: "Turnkey studio access with included gear and member-first booking."
+    image: "/images/sky.png"
+    type: "website"
+  twitter:
+    card: "summary_large_image"
+    title: "FO Studio | 24/7 Photo Studio Membership in Los Angeles"
+    description: "Turnkey studio access with included gear and member-first booking."
+    image: "/images/sky.png"
+  schema:
+    pageType: "WebSite"
 gallery:
   title: Inside the studio
   images:

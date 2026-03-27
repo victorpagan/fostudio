@@ -1,3 +1,26 @@
+seo:
+  title: "Included Studio Equipment & Lighting | FO Studio Los Angeles"
+  description: "See what's included at FO Studio: Profoto strobes, grip, modifiers, backdrop system, and core production tools for fast studio days."
+  keywords:
+    - "studio equipment included"
+    - "profoto studio los angeles"
+    - "photo studio lighting gear"
+    - "grip and modifiers"
+    - "cyclorama studio gear"
+  canonicalPath: "/equipment"
+  robots: "index,follow,max-image-preview:large"
+  og:
+    title: "Included Studio Equipment & Lighting | FO Studio Los Angeles"
+    description: "Lighting, grip, and production essentials included."
+    image: "/images/sky.png"
+    type: "website"
+  twitter:
+    card: "summary_large_image"
+    title: "Included Studio Equipment & Lighting | FO Studio Los Angeles"
+    description: "Lighting, grip, and production essentials included."
+    image: "/images/sky.png"
+  schema:
+    pageType: "ItemPage"
 title: Equipment
 cta:
   title: Ready to book?

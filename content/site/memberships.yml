@@ -1,3 +1,26 @@
+seo:
+  title: Photo Studio Membership Plans in Los Angeles | FO Studio
+  description: Compare FO Studio membership tiers, monthly credits, booking windows, and included holds to pick the plan that matches your production volume.
+  keywords:
+    - photo studio membership plans
+    - los angeles studio membership
+    - studio credits booking
+    - photography membership tiers
+    - studio booking window
+  canonicalPath: /memberships
+  robots: index,follow,max-image-preview:large
+  og:
+    title: Photo Studio Membership Plans in Los Angeles | FO Studio
+    description: Compare tiers, credits, and booking windows.
+    image: /images/sky.png
+    type: website
+  twitter:
+    card: summary_large_image
+    title: Photo Studio Membership Plans in Los Angeles | FO Studio
+    description: Compare tiers, credits, and booking windows.
+    image: /images/sky.png
+  schema:
+    pageType: CollectionPage
 creditsExplainer:
   title: How credits work
   description: ""
@@ -9,7 +32,7 @@ creditsExplainer:
 hero:
   kicker: Credits / Memberships
   title: ""
-  description: You use credits to reserve studio time, with peak windows consuming credits at the plan’s peak rate.
+  description: You use credits to reserve studio time, with peak windows consuming credits at the plan's peak rate.
   badges:
     - 24/7 member access
     - Gear + consumables included
