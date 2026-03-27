@@ -13,6 +13,7 @@ import {
   validateOvernightHoldWindow
 } from '~~/server/utils/booking/holds'
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
+import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 
 const bodySchema = z.object({
   start_time: z.string().datetime(),
@@ -514,6 +515,16 @@ export default defineEventHandler(async (event) => {
       })
     if (refundErr) throw createError({ statusCode: 500, statusMessage: refundErr.message })
   }
+
+  await enqueueBookingAccessSync(event, {
+    bookingId,
+    reason: 'member_booking_reschedule'
+  }).catch((error) => {
+    console.warn('[access/sync] failed to queue booking reschedule sync', {
+      bookingId,
+      error: (error as Error)?.message ?? String(error)
+    })
+  })
 
   return {
     booking: updated,

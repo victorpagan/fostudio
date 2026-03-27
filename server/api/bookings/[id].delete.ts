@@ -16,6 +16,7 @@ import { serverSupabaseUser, serverSupabaseServiceRole, serverSupabaseClient } f
 import { DateTime } from 'luxon'
 import { isAdminRole, readUserRole } from '~~/server/utils/auth'
 import type { RoleCarrier } from '~~/server/utils/auth'
+import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 
 const TZ = 'America/Los_Angeles'
 const REFUND_WINDOW_HOURS = 24
@@ -131,6 +132,16 @@ export default defineEventHandler(async (event) => {
       console.error('[cancel] credit refund failed:', refundErr)
     }
   }
+
+  await enqueueBookingAccessSync(event, {
+    bookingId,
+    reason: 'booking_cancel'
+  }).catch((error) => {
+    console.warn('[access/sync] failed to queue booking cancel sync', {
+      bookingId,
+      error: (error as Error)?.message ?? String(error)
+    })
+  })
 
   return {
     ok: true,

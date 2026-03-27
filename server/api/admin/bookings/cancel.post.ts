@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
+import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 
 const bodySchema = z.object({
   bookingId: z.string().uuid(),
@@ -67,6 +68,16 @@ export default defineEventHandler(async (event) => {
       refundedCredits = refundAmount
     }
   }
+
+  await enqueueBookingAccessSync(event, {
+    bookingId: booking.id,
+    reason: 'admin_booking_cancel'
+  }).catch((error) => {
+    console.warn('[access/sync] failed to queue admin booking cancel sync', {
+      bookingId: booking.id,
+      error: (error as Error)?.message ?? String(error)
+    })
+  })
 
   return {
     ok: true,

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
+import { enqueueMemberActiveRefresh } from '~~/server/utils/access/jobs'
 import { ensureDoorCodeForUser } from '~~/server/utils/membership/doorCode'
 import { inviteWaitlistForTier } from '~~/server/utils/membership/waitlist'
 
@@ -39,6 +40,13 @@ export default defineEventHandler(async (event) => {
 
   if (body.status === 'active' && currentMembership.user_id) {
     await ensureDoorCodeForUser(event, { userId: currentMembership.user_id })
+  }
+
+  if (currentMembership.user_id) {
+    await enqueueMemberActiveRefresh(event, {
+      userId: currentMembership.user_id,
+      reason: `admin_membership_status_${body.status}`
+    })
   }
 
   const previousStatus = String(currentMembership.status ?? '').toLowerCase()

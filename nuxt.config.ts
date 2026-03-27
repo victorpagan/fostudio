@@ -88,6 +88,18 @@ export default defineNuxtConfig({
     }
   },
 
+  studio: {
+    route: process.env.NUXT_STUDIO_ROUTE || '/_studio',
+    repository: {
+      provider: (process.env.STUDIO_REPOSITORY_PROVIDER as 'github' | 'gitlab') || 'github',
+      owner: process.env.STUDIO_REPOSITORY_OWNER || '',
+      repo: process.env.STUDIO_REPOSITORY_REPO || '',
+      branch: process.env.STUDIO_REPOSITORY_BRANCH || 'main',
+      rootDir: process.env.STUDIO_REPOSITORY_ROOT_DIR || '',
+      private: process.env.STUDIO_REPOSITORY_PRIVATE !== 'false'
+    }
+  },
+
   eslint: {
     config: {
       stylistic: {

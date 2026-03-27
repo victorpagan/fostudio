@@ -9,6 +9,7 @@
  *
  * fohooks handles:
  *   payment.completed          → confirm a pending_payment guest booking
+ *                               then call /api/internal/access/booking-sync
  *   subscription.created       → upsert membership row
  *   subscription.updated       → upsert membership row
  *   invoice.payment_made       → schedule / release monthly credit grants

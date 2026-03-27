@@ -15,6 +15,7 @@ import {
 import { STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
 import { assertCurrentWaiver } from '~~/server/utils/waiver/status'
+import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 
 const schema = z.object({
   start_time: z.string(),
@@ -268,6 +269,16 @@ export default defineEventHandler(async (event) => {
       return { ok: true, booking, holdCreated: false, holdError: holdErr.message }
     }
   }
+
+  await enqueueBookingAccessSync(event, {
+    bookingId: booking.id,
+    reason: 'member_booking_request'
+  }).catch((syncErr) => {
+    console.warn('[access/sync] failed to queue booking request sync', {
+      bookingId: booking.id,
+      error: (syncErr as Error)?.message ?? String(syncErr)
+    })
+  })
 
   return { ok: true, booking, holdCreated: body.request_hold }
 })
