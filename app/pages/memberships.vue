@@ -348,31 +348,28 @@ async function submitWaitlist() {
               </UBadge>
             </div>
 
-            <div class="memberships-credits-embed">
-              <h3 class="memberships-credits-embed-title">
-                {{ membershipsContent.creditsExplainer.title }}
-              </h3>
-              <p class="memberships-credits-embed-body">
-                {{ membershipsContent.creditsExplainer.description }}
-              </p>
-              <div class="memberships-credits-embed-list">
-                <div
-                  v-for="bullet in membershipsContent.creditsExplainer.bullets"
-                  :key="bullet"
-                  class="memberships-credits-item"
-                >
-                  <span class="memberships-credits-dot" />
-                  <span>{{ bullet }}</span>
-                </div>
-              </div>
-            </div>
-
             <p
               v-if="isPlanSwitchMode"
               class="mt-4 text-sm leading-7 text-[color:var(--gruv-ink-2)]"
             >
               When changing an active membership, the new plan takes effect on your next billing cycle. Mid-cycle prorated membership changes are not applied.
             </p>
+          </div>
+
+          <div class="editorial-cell memberships-info-cell">
+            <h2 class="memberships-info-title">
+              {{ membershipsContent.creditsExplainer.title }}
+            </h2>
+            <div class="memberships-info-list">
+              <div
+                v-for="bullet in membershipsContent.creditsExplainer.bullets"
+                :key="bullet"
+                class="memberships-credits-item"
+              >
+                <span class="memberships-credits-dot" />
+                <span>{{ bullet }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

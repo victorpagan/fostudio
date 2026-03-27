@@ -824,8 +824,8 @@ body {
 }
 
 .memberships-hero-grid {
-  grid-template-columns: minmax(11.5rem, 0.78fr) minmax(0, 1.22fr);
-  grid-template-areas: "meta copy";
+  grid-template-columns: minmax(11.5rem, 0.78fr) minmax(0, 1.22fr) minmax(0, 1fr);
+  grid-template-areas: "meta copy info";
 }
 
 .memberships-hero-badges {
@@ -835,13 +835,13 @@ body {
   gap: 0.45rem;
 }
 
-.memberships-credits-embed {
-  margin-top: 1.1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--gruv-line);
+.memberships-info-cell {
+  border-left: 1px solid var(--gruv-line);
+  padding: clamp(1rem, 2.8vw, 2rem);
+  background: color-mix(in srgb, var(--gruv-bg-0) 90%, var(--gruv-bg-1) 10%);
 }
 
-.memberships-credits-embed-title {
+.memberships-info-title {
   margin: 0;
   font-family: var(--font-display);
   font-size: clamp(1.15rem, 2vw, 1.35rem);
@@ -849,14 +849,7 @@ body {
   color: var(--gruv-ink-0);
 }
 
-.memberships-credits-embed-body {
-  margin: 0.55rem 0 0;
-  font-size: 0.9rem;
-  line-height: 1.7;
-  color: var(--gruv-ink-1);
-}
-
-.memberships-credits-embed-list {
+.memberships-info-list {
   margin-top: 0.75rem;
   display: grid;
   gap: 0.6rem;
@@ -1026,6 +1019,10 @@ body {
 
 .dark .membership-plan-card--accent-c {
   background: color-mix(in srgb, #273142 38%, var(--gruv-bg-1) 62%);
+}
+
+.dark .memberships-info-cell {
+  background: color-mix(in srgb, var(--gruv-bg-0) 72%, var(--gruv-bg-1) 28%);
 }
 
 .studio-grid > * {
@@ -1565,7 +1562,13 @@ body {
     grid-template-columns: 1fr 1fr;
     grid-template-areas:
       "meta meta"
-      "copy copy";
+      "copy copy"
+      "info info";
+  }
+
+  .memberships-info-cell {
+    border-left: 0;
+    border-top: 1px solid var(--gruv-line);
   }
 
   .memberships-plan-list {
@@ -1607,9 +1610,13 @@ body {
     padding-inline: 0.55rem;
   }
 
-  .memberships-credits-embed {
-    margin-top: 0.9rem;
-    padding-top: 0.8rem;
+  .memberships-info-cell {
+    padding: 0.95rem 1rem;
+  }
+
+  .memberships-info-list {
+    margin-top: 0.65rem;
+    gap: 0.55rem;
   }
 
   .site-brand-title {
