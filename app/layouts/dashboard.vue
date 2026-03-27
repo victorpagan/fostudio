@@ -379,9 +379,8 @@ watch(
         <div class="px-2 py-2">
           <NuxtLink
             to="/"
-            class="flex items-center gap-2"
+            class="flex items-center"
           >
-            <div class="h-8 w-8 rounded-xl bg-gray-900 dark:bg-gray-100" />
             <span
               v-if="!collapsed"
               class="font-semibold tracking-tight"
