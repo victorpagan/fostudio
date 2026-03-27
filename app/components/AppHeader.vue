@@ -89,6 +89,11 @@ async function logout() {
           to="/"
           class="site-brand"
         >
+          <img
+            src="/images/logo.png"
+            alt="FO Studio logo"
+            class="site-brand-logo"
+          >
           <div class="leading-none">
             <div class="site-brand-title">FO Studio</div>
           </div>

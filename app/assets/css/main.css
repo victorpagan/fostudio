@@ -266,6 +266,13 @@ h6 {
   min-width: 0;
 }
 
+.site-brand-logo {
+  width: 1.45rem;
+  height: 1.45rem;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .site-brand-title {
   font-family: var(--font-display);
   font-size: 1rem;

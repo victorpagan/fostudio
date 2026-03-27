@@ -344,8 +344,13 @@ watch(
         <div class="px-2 py-2">
           <NuxtLink
             to="/"
-            class="flex items-center"
+            class="flex items-center gap-2"
           >
+            <img
+              src="/images/logo.png"
+              alt="FO Studio logo"
+              class="h-6 w-6 shrink-0 object-contain"
+            >
             <span
               v-if="!collapsed"
               class="font-semibold tracking-tight"
