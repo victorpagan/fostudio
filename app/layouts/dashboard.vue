@@ -480,32 +480,15 @@ watch(
             <div class="text-[11px] uppercase tracking-wide text-dimmed">
               Color mode
             </div>
-            <div class="flex flex-wrap gap-1.5">
-              <UButton
-                size="xs"
-                :variant="colorModePreference === 'light' ? 'solid' : 'soft'"
-                color="neutral"
-                @click="colorModePreference = 'light'"
-              >
-                Light
-              </UButton>
-              <UButton
-                size="xs"
-                :variant="colorModePreference === 'dark' ? 'solid' : 'soft'"
-                color="neutral"
-                @click="colorModePreference = 'dark'"
-              >
-                Dark
-              </UButton>
-              <UButton
-                size="xs"
-                :variant="colorModePreference === 'system' ? 'solid' : 'soft'"
-                color="neutral"
-                @click="colorModePreference = 'system'"
-              >
-                System
-              </UButton>
-            </div>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="soft"
+              block
+              :icon="colorModeIcon"
+              :label="`Mode: ${colorModeLabel}`"
+              @click="cycleColorMode"
+            />
           </div>
         </UCard>
 
