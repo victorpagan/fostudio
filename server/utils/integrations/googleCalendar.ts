@@ -123,7 +123,11 @@ function asString(value: unknown, fallback = '') {
 function isGoogleNotFoundError(error: unknown) {
   if (!error || typeof error !== 'object') return false
   const message = (error as { message?: string }).message
-  return typeof message === 'string' && /\bfailed \(404\)\b/i.test(message)
+  return typeof message === 'string'
+    && (
+      /\bfailed \((404|410)\)\b/i.test(message)
+      || /"reason"\s*:\s*"(notFound|deleted)"/i.test(message)
+    )
 }
 
 function decodeJwtPayload(idToken: string): Record<string, unknown> | null {
@@ -489,7 +493,7 @@ async function deleteGoogleCalendarEvent(
     }
   })
 
-  if (!response.ok && response.status !== 404) {
+  if (!response.ok && response.status !== 404 && response.status !== 410) {
     const text = await response.text()
     throw new Error(`Google event delete failed (${response.status}): ${text}`)
   }
