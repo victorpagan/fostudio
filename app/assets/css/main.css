@@ -1265,10 +1265,12 @@ body {
 
 .memberships-plans-section {
   margin-top: 0.7rem;
+  --memberships-plans-gap: clamp(1.5rem, 4vw, 2.9rem);
+  --memberships-plans-line: rgba(245, 245, 245, 0.18);
 }
 
 .memberships-plans-section .editorial-frame {
-  border-color: rgba(245, 245, 245, 0.18);
+  border-color: var(--memberships-plans-line);
 }
 
 .memberships-plans-section .editorial-meta,
@@ -1280,7 +1282,7 @@ body {
 .memberships-plans-section .editorial-meta,
 .memberships-plans-section .memberships-plan-list,
 .memberships-plans-section .membership-plan-card {
-  border-color: rgba(245, 245, 245, 0.18);
+  border-color: var(--memberships-plans-line);
 }
 
 .memberships-plans-section .editorial-copy-texture::before {
@@ -1330,10 +1332,30 @@ body {
 
 .memberships-plan-list {
   grid-area: plans;
-  margin-top: clamp(1.5rem, 4vw, 2.9rem);
-  border-top: 1px solid var(--gruv-line);
+  position: relative;
+  margin-top: var(--memberships-plans-gap);
+  border-top: 1px solid var(--memberships-plans-line);
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.memberships-plan-list::before,
+.memberships-plan-list::after {
+  content: '';
+  position: absolute;
+  top: calc(-1 * var(--memberships-plans-gap));
+  height: var(--memberships-plans-gap);
+  width: 1px;
+  background: var(--memberships-plans-line);
+  pointer-events: none;
+}
+
+.memberships-plan-list::before {
+  left: 0;
+}
+
+.memberships-plan-list::after {
+  right: 0;
 }
 
 .membership-plan-card {
@@ -2001,8 +2023,11 @@ body {
     border-top: 1px solid var(--gruv-line);
   }
 
+  .memberships-plans-section {
+    --memberships-plans-gap: 1.2rem;
+  }
+
   .memberships-plan-list {
-    margin-top: 1.2rem;
     grid-template-columns: 1fr;
   }
 
@@ -2075,8 +2100,8 @@ body {
     gap: 0.55rem;
   }
 
-  .memberships-plan-list {
-    margin-top: 0.95rem;
+  .memberships-plans-section {
+    --memberships-plans-gap: 0.95rem;
   }
 
   .site-brand-title {
