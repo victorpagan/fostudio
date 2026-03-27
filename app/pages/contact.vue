@@ -225,9 +225,9 @@ async function submitForm() {
         </div>
       </section>
 
-      <div class="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <div class="space-y-5">
-          <div class="studio-panel p-5 sm:p-6">
+      <div class="contact-main-grid">
+        <div class="contact-main-left">
+          <div class="contact-panel contact-panel--details">
             <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
               {{ pageContent.detailsPanel.title }}
             </div>
@@ -250,8 +250,8 @@ async function submitForm() {
             </div>
           </div>
 
-          <div class="studio-panel p-3 sm:p-4">
-            <div class="overflow-hidden rounded-[1.25rem]">
+          <div class="contact-panel contact-panel--map">
+            <div class="overflow-hidden">
               <iframe
                 :src="mapEmbedUrl"
                 title="LA Film Lab map"
@@ -280,7 +280,7 @@ async function submitForm() {
           </div>
         </div>
 
-        <div class="studio-panel p-5 sm:p-6">
+        <div class="contact-panel contact-panel--form">
           <div
             v-if="submitted"
             class="space-y-4 py-8 text-center"

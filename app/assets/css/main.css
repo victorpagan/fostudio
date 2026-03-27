@@ -680,6 +680,42 @@ body {
   padding: clamp(1rem, 2.8vw, 2rem);
 }
 
+.contact-main-grid {
+  display: grid;
+  gap: 0;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+}
+
+.contact-main-left {
+  display: grid;
+  gap: 0;
+}
+
+.contact-panel {
+  border: 1px solid var(--gruv-line);
+  border-radius: 0;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--gruv-bg-0) 94%, var(--gruv-bg-1) 6%);
+  padding: clamp(1rem, 2.2vw, 1.5rem);
+}
+
+.dark .contact-panel {
+  background: color-mix(in srgb, var(--gruv-bg-0) 80%, var(--gruv-bg-1) 20%);
+}
+
+.contact-panel--details {
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.contact-panel--map {
+  border-right: 0;
+}
+
+.contact-panel--form {
+  border-left: 1px solid var(--gruv-line);
+}
+
 .studio-grid {
   position: relative;
   border: 1px solid var(--gruv-line);
@@ -1926,6 +1962,24 @@ body {
   .contact-side-panel {
     border-left: 0;
     border-top: 1px solid var(--gruv-line);
+  }
+
+  .contact-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .contact-panel--details,
+  .contact-panel--map {
+    border-right: 1px solid var(--gruv-line);
+  }
+
+  .contact-panel--details {
+    border-bottom: 0;
+  }
+
+  .contact-panel--form {
+    border-left: 1px solid var(--gruv-line);
+    border-top: 0;
   }
 
   .equipment-card-grid .equipment-card {
