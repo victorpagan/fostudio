@@ -849,16 +849,31 @@ body {
   gap: 0.45rem;
 }
 
-.memberships-credits-grid {
-  grid-template-columns: minmax(11.5rem, 0.78fr) minmax(0, 1.22fr) minmax(0, 1fr);
-  grid-template-areas: "meta copy list";
+.memberships-credits-embed {
+  margin-top: 1.1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--gruv-line);
 }
 
-.memberships-credits-list {
-  border-left: 1px solid var(--gruv-line);
-  padding: clamp(1rem, 2.8vw, 2rem);
+.memberships-credits-embed-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.15rem, 2vw, 1.35rem);
+  line-height: 1.15;
+  color: var(--gruv-ink-0);
+}
+
+.memberships-credits-embed-body {
+  margin: 0.55rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--gruv-ink-1);
+}
+
+.memberships-credits-embed-list {
+  margin-top: 0.75rem;
   display: grid;
-  gap: 0.7rem;
+  gap: 0.6rem;
 }
 
 .memberships-credits-item {
@@ -886,6 +901,51 @@ body {
     "plans plans";
 }
 
+.memberships-plans-section {
+  background: #2b2b2b;
+}
+
+.memberships-plans-section .editorial-frame {
+  background: #2b2b2b;
+  border-color: rgba(245, 245, 245, 0.18);
+}
+
+.memberships-plans-section .editorial-meta,
+.memberships-plans-section .memberships-plan-list,
+.memberships-plans-section .membership-plan-card {
+  border-color: rgba(245, 245, 245, 0.18);
+}
+
+.memberships-plans-section .editorial-copy-texture::before {
+  background-image:
+    linear-gradient(to right, rgba(245, 245, 245, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(245, 245, 245, 0.03) 1px, transparent 1px);
+  mix-blend-mode: screen;
+}
+
+.memberships-plans-section .editorial-label {
+  color: rgba(255, 84, 121, 0.9);
+}
+
+.memberships-plans-section .editorial-title,
+.memberships-plans-section .editorial-plan-title {
+  color: #f6f7f8;
+}
+
+.memberships-plans-section .editorial-body,
+.memberships-plans-section .plan-lead,
+.memberships-plans-section .editorial-plan-body {
+  color: rgba(242, 244, 247, 0.84);
+}
+
+.memberships-plans-section .plan-stat {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.memberships-plans-section .plan-stat > :last-child {
+  color: rgba(242, 244, 247, 0.76) !important;
+}
+
 .memberships-plan-list {
   grid-area: plans;
   border-top: 1px solid var(--gruv-line);
@@ -911,6 +971,48 @@ body {
 
 .membership-plan-card--accent-c {
   background: color-mix(in srgb, var(--gruv-ink-0) 5%, var(--gruv-bg-0) 95%);
+}
+
+.memberships-plans-section .membership-plan-card--accent-a {
+  background: rgba(161, 175, 197, 0.18);
+}
+
+.memberships-plans-section .membership-plan-card--accent-b {
+  background: rgba(255, 74, 111, 0.18);
+}
+
+.memberships-plans-section .membership-plan-card--accent-c {
+  background: rgba(23, 32, 44, 0.56);
+}
+
+.membership-slots-badge {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+}
+
+.membership-slots-badge--success {
+  background: #1f7a3e;
+  border-color: #28a14f;
+  color: #f2fff5;
+}
+
+.membership-slots-badge--warning {
+  background: #9a5a00;
+  border-color: #bf730b;
+  color: #fff7e8;
+}
+
+.membership-slots-badge--error {
+  background: #a1202f;
+  border-color: #c92a3d;
+  color: #fff1f3;
+}
+
+.membership-slots-badge--neutral {
+  background: #222831;
+  border-color: #374151;
+  color: #f3f4f6;
 }
 
 .dark .memberships-info-cell {
@@ -1470,16 +1572,7 @@ body {
       "info info";
   }
 
-  .memberships-credits-grid {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "meta"
-      "copy"
-      "list";
-  }
-
-  .memberships-info-cell,
-  .memberships-credits-list {
+  .memberships-info-cell {
     border-left: 0;
     border-top: 1px solid var(--gruv-line);
   }
@@ -1523,13 +1616,13 @@ body {
     padding-inline: 0.55rem;
   }
 
-  .memberships-info-cell,
-  .memberships-credits-list {
+  .memberships-info-cell {
     padding: 0.95rem 1rem;
   }
 
-  .memberships-credits-list {
-    gap: 0.55rem;
+  .memberships-credits-embed {
+    margin-top: 0.9rem;
+    padding-top: 0.8rem;
   }
 
   .site-brand-title {

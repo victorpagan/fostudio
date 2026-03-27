@@ -247,6 +247,10 @@ function tierSpotsLeftColor(tier: Tier): 'success' | 'warning' | 'error' | 'neut
   return 'success'
 }
 
+function tierSpotsLeftClass(tier: Tier) {
+  return `membership-slots-badge--${tierSpotsLeftColor(tier)}`
+}
+
 function tierCardAccentClass(tier: Tier) {
   const normalized = tier.id.toLowerCase()
   if (normalized.includes('creator')) return 'membership-plan-card--accent-a'
@@ -310,7 +314,7 @@ async function submitWaitlist() {
 </script>
 
 <template>
-  <div class="memberships-page space-y-8 py-10 sm:py-14">
+  <div class="memberships-page py-10 sm:py-14">
     <section class="editorial-section">
       <div class="editorial-frame">
         <div class="editorial-grid memberships-hero-grid">
@@ -360,40 +364,31 @@ async function submitWaitlist() {
                 When changing an active membership, the new plan takes effect on your next billing cycle. Mid-cycle prorated membership changes are not applied.
               </p>
             </div>
-          </div>
-        </div>
-      </div>
-    </section>
 
-    <section class="editorial-section">
-      <div class="editorial-frame">
-        <div class="editorial-grid memberships-credits-grid">
-          <div class="editorial-cell editorial-meta">
-            <p class="editorial-label">CREDITS / SYSTEM</p>
-          </div>
-          <div class="editorial-cell editorial-copy editorial-copy-texture">
-            <h2 class="editorial-title">
-              {{ membershipsContent.creditsExplainer.title }}
-            </h2>
-            <p class="editorial-body">
-              {{ membershipsContent.creditsExplainer.description }}
-            </p>
-          </div>
-          <div class="editorial-cell memberships-credits-list">
-            <div
-              v-for="bullet in membershipsContent.creditsExplainer.bullets"
-              :key="bullet"
-              class="memberships-credits-item"
-            >
-              <span class="memberships-credits-dot" />
-              <span>{{ bullet }}</span>
+            <div class="memberships-credits-embed">
+              <h3 class="memberships-credits-embed-title">
+                {{ membershipsContent.creditsExplainer.title }}
+              </h3>
+              <p class="memberships-credits-embed-body">
+                {{ membershipsContent.creditsExplainer.description }}
+              </p>
+              <div class="memberships-credits-embed-list">
+                <div
+                  v-for="bullet in membershipsContent.creditsExplainer.bullets"
+                  :key="bullet"
+                  class="memberships-credits-item"
+                >
+                  <span class="memberships-credits-dot" />
+                  <span>{{ bullet }}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <section class="editorial-section">
+    <section class="editorial-section memberships-plans-section">
       <div class="editorial-frame">
         <div class="editorial-grid memberships-plans-grid">
           <div class="editorial-cell editorial-meta">
@@ -432,8 +427,9 @@ async function submitWaitlist() {
                 </div>
                 <UBadge
                   size="xs"
-                  variant="soft"
-                  :color="tierSpotsLeftColor(tier)"
+                  variant="solid"
+                  class="membership-slots-badge"
+                  :class="tierSpotsLeftClass(tier)"
                 >
                   {{ tierSpotsLeftLabel(tier) }}
                 </UBadge>

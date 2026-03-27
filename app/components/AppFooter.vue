@@ -6,6 +6,13 @@ const config = useRuntimeConfig()
 
 const footerPhone = computed(() => config.public.contactPhone?.trim() || '')
 const footerAddress = computed(() => config.public.contactLocation?.trim() || '')
+const footerAddressLines = computed(() => {
+  if (!footerAddress.value) return []
+  return footerAddress.value
+    .split(/\n|,/)
+    .map(line => line.trim())
+    .filter(Boolean)
+})
 const footerPhoneHref = computed(() => {
   if (!footerPhone.value) return ''
   const normalized = footerPhone.value.replace(/[^\d+]/g, '')
@@ -35,10 +42,11 @@ function toggleColorMode() {
           class="site-footer-contact"
         >
           <span
-            v-if="footerAddress"
+            v-for="line in footerAddressLines"
+            :key="line"
             class="site-footer-contact-item"
           >
-            {{ footerAddress }}
+            {{ line }}
           </span>
           <a
             v-if="footerPhone"
