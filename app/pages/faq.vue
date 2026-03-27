@@ -113,15 +113,9 @@ const openItem = ref<number | null>(0)
       <section class="faq-hero-frame">
         <div class="faq-hero-grid">
           <div class="faq-hero-main">
-            <span class="studio-kicker">{{ pageContent.hero.kicker }}</span>
-            <div class="faq-hero-copy">
-              <h1 class="faq-hero-title">
-                {{ pageContent.hero.title }}
-              </h1>
-              <p class="faq-hero-description">
-                {{ pageContent.hero.description }}
-              </p>
-            </div>
+            <p class="editorial-label">
+              FAQ
+            </p>
           </div>
 
           <div class="faq-side-panel">
