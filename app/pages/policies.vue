@@ -96,32 +96,6 @@ const currentPolicy = computed(() => policyContent[activeTab.value])
 <template>
   <UContainer class="py-10 sm:py-14">
     <div class="space-y-8">
-      <section class="studio-grid overflow-hidden rounded-[2rem] px-5 py-6 sm:px-8 sm:py-8">
-        <div class="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] lg:items-end">
-          <div class="space-y-5">
-            <span class="studio-kicker">Policies</span>
-            <div class="max-w-3xl space-y-4">
-              <h1 class="studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-7xl">
-                Clear operating rules for bookings, memberships, and client-facing studio work.
-              </h1>
-              <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
-                This page is meant to answer the practical questions: how information is handled, what using the platform means,
-                and how cancellations affect access to the calendar.
-              </p>
-            </div>
-          </div>
-
-          <div class="studio-panel p-5 sm:p-6">
-            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
-              Keep it readable
-            </div>
-            <p class="mt-4 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-              These are operational summaries for the studio site, not a pile of template legal filler. If you need a more specific policy for your use case, contact the studio directly.
-            </p>
-          </div>
-        </div>
-      </section>
-
       <div class="flex flex-wrap gap-2">
         <button
           v-for="tab in tabs"
