@@ -110,7 +110,7 @@ const currentPolicy = computed(() => policyContent[activeTab.value])
         </button>
       </div>
 
-      <section class="studio-panel p-5 sm:p-6">
+      <section class="studio-panel policies-panel p-5 sm:p-6">
         <div class="max-w-4xl">
           <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)] sm:text-5xl">
             {{ currentPolicy.title }}
