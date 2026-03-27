@@ -43,8 +43,6 @@ type SiteLandingContent = {
   }
 }
 
-const openWaitlist = ref(false)
-
 const fallbackLanding: SiteLandingContent = {
   hero: {
     kicker: 'Membership studio access',
@@ -137,99 +135,28 @@ function tierDetailsHref(tierId: string) {
       >
 
       <div class="landing-hero-content">
-        <p class="max-w-2xl text-sm leading-7 text-white/92 sm:text-base sm:leading-8">
-          {{ landingContent.hero.subheadline }}
-        </p>
+        <NuxtLink
+          :to="landingContent.hero.secondaryCta.to"
+          class="landing-hero-cta"
+        >
+          {{ landingContent.hero.secondaryCta.label }}
+        </NuxtLink>
+      </div>
 
-        <div class="flex flex-wrap gap-3">
-          <UButton
-            :to="landingContent.hero.primaryCta.to"
-            size="xl"
-          >
-            {{ landingContent.hero.primaryCta.label }}
-          </UButton>
-          <UButton
-            :to="landingContent.hero.secondaryCta.to"
-            color="neutral"
-            variant="soft"
-            size="xl"
-          >
-            {{ landingContent.hero.secondaryCta.label }}
-          </UButton>
+      <div class="landing-hero-badges">
+        <UBadge
+          v-for="chip in landingContent.hero.chips"
+          :key="chip"
+          color="neutral"
+          variant="soft"
+          class="landing-hero-badge"
+        >
+          {{ chip }}
+        </UBadge>
+      </div>
 
-          <UModal v-model:open="openWaitlist">
-            <UButton
-              color="neutral"
-              variant="ghost"
-              size="xl"
-              @click="openWaitlist = true"
-            >
-              {{ landingContent.hero.waitlistCtaLabel }}
-            </UButton>
-
-            <template #content>
-              <UCard class="studio-panel">
-                <template #header>
-                  <div class="flex items-center justify-between gap-3">
-                    <div>
-                      <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
-                        Join the waitlist
-                      </div>
-                      <p class="mt-1 text-sm text-[color:var(--gruv-ink-2)]">
-                        We keep membership counts limited so booking stays usable.
-                      </p>
-                    </div>
-                    <UButton
-                      icon="i-heroicons-x-mark"
-                      color="neutral"
-                      variant="ghost"
-                      @click="openWaitlist = false"
-                    />
-                  </div>
-                </template>
-
-                <div class="space-y-3">
-                  <UInput placeholder="Email" />
-                  <UInput placeholder="Phone (optional)" />
-                  <USelect
-                    :options="[
-                      { label: 'Creator', value: 'creator' },
-                      { label: 'Pro', value: 'pro' },
-                      { label: 'Studio+', value: 'studio_plus' }
-                    ]"
-                    placeholder="Plan you are watching"
-                  />
-                </div>
-
-                <template #footer>
-                  <div class="flex justify-end gap-2">
-                    <UButton
-                      color="neutral"
-                      variant="soft"
-                      @click="openWaitlist = false"
-                    >
-                      Close
-                    </UButton>
-                    <UButton @click="openWaitlist = false">
-                      Notify me
-                    </UButton>
-                  </div>
-                </template>
-              </UCard>
-            </template>
-          </UModal>
-        </div>
-
-        <div class="flex flex-wrap gap-2">
-          <UBadge
-            v-for="chip in landingContent.hero.chips"
-            :key="chip"
-            color="neutral"
-            variant="soft"
-          >
-            {{ chip }}
-          </UBadge>
-        </div>
+      <div class="landing-hero-note">
+        (Image taken in our studio!)
       </div>
     </section>
 
