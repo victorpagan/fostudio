@@ -25,6 +25,7 @@ import { serverSupabaseClient } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig, getServerConfigMap } from '~~/server/utils/config/secret'
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
+import { ensureNoExternalCalendarConflict } from '~~/server/utils/booking/externalCalendar'
 import { ensureSquareCustomerForGuest } from '~~/server/utils/square/customer'
 import { toSquareBuyerPhone } from '~~/server/utils/square/checkoutPrefill'
 
@@ -71,6 +72,23 @@ function toSquareQuantity(value: number) {
   return safe.toFixed(2).replace(/\.?0+$/, '')
 }
 
+function toValidHour(raw: unknown, fallback: number) {
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return fallback
+  const hour = Math.floor(parsed)
+  return Math.min(24, Math.max(0, hour))
+}
+
+function toHourValue(dateTime: DateTime) {
+  return dateTime.hour + (dateTime.minute / 60) + (dateTime.second / 3600)
+}
+
+function formatHourLabel(hour: number) {
+  const normalized = Math.min(24, Math.max(0, Math.floor(hour)))
+  if (normalized === 24) return '12:00 AM'
+  return DateTime.fromObject({ year: 2026, month: 1, day: 1, hour: normalized, minute: 0 }, { zone: STUDIO_TZ }).toFormat('h:mm a')
+}
+
 export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient(event)
   const body = bodySchema.parse(await readBody(event))
@@ -103,21 +121,46 @@ export default defineEventHandler(async (event) => {
     'guest_booking_rate_per_credit_cents',
     'guest_peak_multiplier',
     'guest_booking_window_days',
+    'guest_booking_start_hour',
+    'guest_booking_end_hour',
     'SQUARE_GUEST_BOOKING_VARIATION_ID'
   ])
   const guestWindowDays = Number(cfg.guest_booking_window_days ?? 7)
+  const guestStartHour = toValidHour(cfg.guest_booking_start_hour, 11)
+  let guestEndHour = toValidHour(cfg.guest_booking_end_hour, 19)
+  if (guestEndHour <= guestStartHour) {
+    guestEndHour = Math.min(24, guestStartHour + 1)
+  }
   const maxAhead = now.plus({ days: guestWindowDays })
   if (start > maxAhead) {
     throw createError({ statusCode: 400, statusMessage: `Guest bookings can only be made up to ${guestWindowDays} days ahead` })
   }
+
+  const sameDay = start.hasSame(end, 'day')
+  const startHourValue = toHourValue(start)
+  const endHourValue = toHourValue(end)
+  if (!sameDay || startHourValue < guestStartHour || endHourValue > guestEndHour) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Guest bookings must start/end between ${formatHourLabel(guestStartHour)} and ${formatHourLabel(guestEndHour)} (Los Angeles time).`
+    })
+  }
+
+  const startIso = start.toUTC().toISO()
+  const endIso = end.toUTC().toISO()
+  if (!startIso || !endIso) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
+  }
+
+  await ensureNoExternalCalendarConflict(supabase, startIso, endIso)
 
   // Check for conflicts (confirmed bookings or holds overlapping requested window)
   const { data: conflicts, error: conflictErr } = await supabase
     .from('bookings')
     .select('id')
     .in('status', ['confirmed', 'requested', 'pending_payment'])
-    .lt('start_time', end.toUTC().toISO())
-    .gt('end_time', start.toUTC().toISO())
+    .lt('start_time', endIso)
+    .gt('end_time', startIso)
     .limit(1)
 
   if (conflictErr) throw createError({ statusCode: 500, statusMessage: conflictErr.message })
@@ -129,8 +172,8 @@ export default defineEventHandler(async (event) => {
   const { data: holdConflicts, error: holdErr } = await supabase
     .from('booking_holds')
     .select('id')
-    .lt('hold_start', end.toUTC().toISO())
-    .gt('hold_end', start.toUTC().toISO())
+    .lt('hold_start', endIso)
+    .gt('hold_end', startIso)
     .limit(1)
 
   if (holdErr) throw createError({ statusCode: 500, statusMessage: holdErr.message })
@@ -142,8 +185,8 @@ export default defineEventHandler(async (event) => {
     .from('calendar_blocks')
     .select('id')
     .eq('active', true)
-    .lt('start_time', end.toUTC().toISO())
-    .gt('end_time', start.toUTC().toISO())
+    .lt('start_time', endIso)
+    .gt('end_time', startIso)
     .limit(1)
 
   if (blockErr) throw createError({ statusCode: 500, statusMessage: blockErr.message })

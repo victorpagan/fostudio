@@ -96,52 +96,29 @@ const currentPolicy = computed(() => policyContent[activeTab.value])
 <template>
   <UContainer class="py-10 sm:py-14">
     <div class="space-y-8">
-      <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
-        <div class="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] lg:items-end">
-          <div class="space-y-5">
-            <span class="studio-kicker">Policies</span>
-            <div class="max-w-3xl space-y-4">
-              <h1 class="studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-7xl">
-                Clear operating rules for bookings, memberships, and client-facing studio work.
-              </h1>
-              <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
-                This page is meant to answer the practical questions: how information is handled, what using the platform means,
-                and how cancellations affect access to the calendar.
-              </p>
-            </div>
-          </div>
-
-          <div class="studio-panel p-5 sm:p-6">
-            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
-              Keep it readable
-            </div>
-            <p class="mt-4 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-              These are operational summaries for the studio site, not a pile of template legal filler. If you need a more specific policy for your use case, contact the studio directly.
-            </p>
-          </div>
-        </div>
-      </section>
-
       <div class="flex flex-wrap gap-2">
         <button
           v-for="tab in tabs"
           :key="tab.key"
-          class="rounded-full border px-4 py-2 text-sm font-semibold uppercase tracking-[0.14em] transition-colors"
+          class="rounded-full px-4 py-2 text-sm font-semibold uppercase tracking-[0.14em] transition-colors"
           :class="activeTab === tab.key
-            ? 'border-[color:var(--gruv-accent)] bg-[rgba(181,118,20,0.14)] text-[color:var(--gruv-accent)]'
-            : 'border-[color:var(--gruv-line)] bg-transparent text-[color:var(--gruv-ink-2)] hover:bg-[rgba(181,118,20,0.08)]'"
+            ? 'bg-[rgba(181,118,20,0.16)] text-[color:var(--gruv-accent-strong)]'
+            : 'bg-[color:var(--gruv-bg-1)]/85 text-[color:var(--gruv-ink-2)] hover:bg-[rgba(181,118,20,0.08)]'"
           @click="activeTab = tab.key"
         >
           {{ tab.label }}
         </button>
       </div>
 
-      <section class="studio-panel p-5 sm:p-6">
+      <section class="policies-panel-grid p-5 sm:p-6">
         <div class="max-w-4xl">
-          <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)] sm:text-5xl">
+          <p class="policies-kicker">
+            Policy / {{ currentPolicy.title }}
+          </p>
+          <div class="policies-title">
             {{ currentPolicy.title }}
           </div>
-          <p class="mt-4 text-sm leading-8 text-[color:var(--gruv-ink-2)] sm:text-base">
+          <p class="policies-intro">
             {{ currentPolicy.intro }}
           </p>
         </div>
@@ -150,12 +127,12 @@ const currentPolicy = computed(() => policyContent[activeTab.value])
           <div
             v-for="block in currentPolicy.blocks"
             :key="block.heading"
-            class="rounded-[1.4rem] border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] p-5"
+            class="policies-block p-5"
           >
-            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
+            <div class="policies-block-title">
               {{ block.heading }}
             </div>
-            <p class="mt-3 text-sm leading-8 text-[color:var(--gruv-ink-2)] sm:text-base">
+            <p class="policies-block-body">
               {{ block.body }}
             </p>
           </div>

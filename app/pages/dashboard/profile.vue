@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatMembershipTierLabel } from '~~/app/utils/membershipTierLabel'
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 definePageMeta({ middleware: ['auth'] })
 
 const supabase = useSupabaseClient()
@@ -45,6 +46,24 @@ type MembershipSummary = {
   current_period_end: string | null
   billing_provider: string | null
 }
+type WaiverCurrentResponse = {
+  status: 'current' | 'expired' | 'missing' | 'stale_version'
+  renewalNeeded: boolean
+  activeTemplate: {
+    version: number
+  } | null
+  latestSignature: {
+    signedAt: string
+    expiresAt: string
+    templateVersion: number
+  } | null
+}
+type EmailPreferencesResponse = {
+  preferences: {
+    criticalEnabled: boolean
+    nonCriticalEnabled: boolean
+  }
+}
 
 const { data: customer, refresh } = await useAsyncData('dash:profile', async () => {
   if (!user.value) return null
@@ -70,10 +89,41 @@ const { data: membershipSummary, refresh: refreshMembershipSummary } = await use
     .from('memberships')
     .select('tier,cadence,status,current_period_end,billing_provider')
     .eq('user_id', user.value.sub)
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle()
   if (error) throw error
   return data as MembershipSummary | null
 }, { watch: [() => user.value?.sub], default: () => null })
+const { data: waiverStatus, refresh: refreshWaiverStatus } = await useAsyncData('dash:profile:waiver-status', async () => {
+  if (!user.value?.sub) return null
+  return await $fetch<WaiverCurrentResponse>('/api/waiver/current')
+}, { watch: [() => user.value?.sub], default: () => null })
+const emailPreferences = reactive({
+  criticalEnabled: true,
+  nonCriticalEnabled: false
+})
+const emailPreferencesSaving = ref(false)
+const { data: emailPreferencesData, refresh: refreshEmailPreferences } = await useAsyncData('dash:profile:email-preferences', async () => {
+  if (!user.value?.sub) {
+    return {
+      preferences: {
+        criticalEnabled: true,
+        nonCriticalEnabled: false
+      }
+    } as EmailPreferencesResponse
+  }
+  return await $fetch<EmailPreferencesResponse>('/api/profile/email-preferences')
+}, {
+  watch: [() => user.value?.sub],
+  server: false,
+  default: () => ({
+    preferences: {
+      criticalEnabled: true,
+      nonCriticalEnabled: false
+    }
+  })
+})
 
 // Editable form — synced from customer data
 const form = reactive({
@@ -87,6 +137,12 @@ watch(customer, (c) => {
   form.first_name = c.first_name ?? ''
   form.last_name = c.last_name ?? ''
   form.phone = c.phone ?? ''
+}, { immediate: true })
+watch(emailPreferencesData, (data) => {
+  const prefs = data?.preferences
+  if (!prefs) return
+  emailPreferences.criticalEnabled = Boolean(prefs.criticalEnabled)
+  emailPreferences.nonCriticalEnabled = Boolean(prefs.nonCriticalEnabled)
 }, { immediate: true })
 
 const saving = ref(false)
@@ -159,6 +215,35 @@ const isDirty = computed(() =>
 const savedCards = computed(() => paymentMethodsData.value?.methods ?? [])
 const defaultCardId = computed(() => paymentMethodsData.value?.defaultCardId ?? null)
 const membershipTierLabel = computed(() => formatMembershipTierLabel(membershipSummary.value?.tier) ?? null)
+const membershipUiState = computed(() => resolveMembershipUiState(membershipSummary.value))
+const membershipUiStatusLabel = computed(() => membershipUiState.value.replace(/_/g, ' '))
+const membershipUiStatusColor = computed(() => {
+  if (membershipUiState.value === 'active') return 'success'
+  if (membershipUiState.value === 'past_due') return 'error'
+  if (membershipUiState.value === 'pending_checkout') return 'warning'
+  return 'neutral'
+})
+const waiverStatusLabel = computed(() => {
+  const status = waiverStatus.value?.status
+  if (status === 'current') return 'Current'
+  if (status === 'expired') return 'Expired'
+  if (status === 'stale_version') return 'Needs re-sign'
+  return 'Missing'
+})
+const waiverStatusColor = computed(() => {
+  const status = waiverStatus.value?.status
+  if (status === 'current') return 'success'
+  if (status === 'expired') return 'warning'
+  return 'error'
+})
+const emailPreferencesDirty = computed(() => {
+  const defaults = emailPreferencesData.value?.preferences
+  if (!defaults) return false
+  return (
+    emailPreferences.criticalEnabled !== Boolean(defaults.criticalEnabled)
+    || emailPreferences.nonCriticalEnabled !== Boolean(defaults.nonCriticalEnabled)
+  )
+})
 
 function formatExactDate(value: string | null | undefined) {
   if (!value) return null
@@ -249,6 +334,30 @@ async function setDefaultPaymentMethod(cardId: string) {
     settingDefaultCardId.value = null
   }
 }
+
+async function saveEmailPreferences() {
+  if (!user.value?.sub) return
+  emailPreferencesSaving.value = true
+  try {
+    await $fetch('/api/profile/email-preferences.upsert', {
+      method: 'POST',
+      body: {
+        criticalEnabled: emailPreferences.criticalEnabled,
+        nonCriticalEnabled: emailPreferences.nonCriticalEnabled
+      }
+    })
+    toast.add({ title: 'Email preferences saved', color: 'success' })
+    await refreshEmailPreferences()
+  } catch (error: any) {
+    toast.add({
+      title: 'Could not save email preferences',
+      description: error?.data?.statusMessage ?? error?.message ?? 'Error',
+      color: 'error'
+    })
+  } finally {
+    emailPreferencesSaving.value = false
+  }
+}
 </script>
 
 <template>
@@ -267,7 +376,7 @@ async function setDefaultPaymentMethod(cardId: string) {
           <div class="space-y-4">
             <div class="flex items-center justify-between gap-2">
               <div class="text-sm font-medium">Billing</div>
-              <UButton size="xs" color="neutral" variant="soft" @click="refreshSubscriptionState(); refreshMembershipSummary(); refreshPaymentMethods()">
+              <UButton size="xs" color="neutral" variant="soft" @click="refreshSubscriptionState(); refreshMembershipSummary(); refreshPaymentMethods(); refreshWaiverStatus()">
                 Refresh
               </UButton>
             </div>
@@ -283,7 +392,9 @@ async function setDefaultPaymentMethod(cardId: string) {
               </div>
               <div class="flex justify-between">
                 <span class="text-dimmed">Status</span>
-                <span>{{ membershipSummary?.status ?? '—' }}</span>
+                <UBadge :color="membershipUiStatusColor" variant="soft" size="xs">
+                  {{ membershipUiStatusLabel }}
+                </UBadge>
               </div>
               <div class="flex justify-between">
                 <span class="text-dimmed">Billing provider</span>
@@ -345,6 +456,75 @@ async function setDefaultPaymentMethod(cardId: string) {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </UCard>
+
+        <UCard>
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-sm font-medium">Waiver</div>
+            <UBadge :color="waiverStatusColor" variant="soft" size="xs">
+              {{ waiverStatusLabel }}
+            </UBadge>
+          </div>
+          <div class="mt-3 rounded-lg border border-default p-3 space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-dimmed">Active version</span>
+              <span>{{ waiverStatus?.activeTemplate?.version ?? '—' }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-dimmed">Signed version</span>
+              <span>{{ waiverStatus?.latestSignature?.templateVersion ?? '—' }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-dimmed">Signed at</span>
+              <span>{{ formatExactDate(waiverStatus?.latestSignature?.signedAt) ?? '—' }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-dimmed">Expires at</span>
+              <span>{{ formatExactDate(waiverStatus?.latestSignature?.expiresAt) ?? '—' }}</span>
+            </div>
+          </div>
+          <div class="mt-3 flex justify-end">
+            <UButton size="sm" to="/dashboard/waiver">
+              View waiver
+            </UButton>
+          </div>
+        </UCard>
+
+        <UCard>
+          <div class="space-y-4">
+            <div class="flex items-center justify-between gap-2">
+              <div class="text-sm font-medium">Email preferences</div>
+              <UButton size="xs" color="neutral" variant="soft" @click="() => refreshEmailPreferences()">
+                Refresh
+              </UButton>
+            </div>
+
+            <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
+              <div>
+                <div class="text-sm font-medium">Critical emails</div>
+                <div class="text-xs text-dimmed">Membership and booking status updates.</div>
+              </div>
+              <USwitch v-model="emailPreferences.criticalEnabled" />
+            </div>
+
+            <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
+              <div>
+                <div class="text-sm font-medium">Non-critical emails</div>
+                <div class="text-xs text-dimmed">Optional reminders and informational messages.</div>
+              </div>
+              <USwitch v-model="emailPreferences.nonCriticalEnabled" />
+            </div>
+
+            <div class="flex justify-end">
+              <UButton
+                :loading="emailPreferencesSaving"
+                :disabled="!emailPreferencesDirty"
+                @click="saveEmailPreferences"
+              >
+                Save email preferences
+              </UButton>
             </div>
           </div>
         </UCard>

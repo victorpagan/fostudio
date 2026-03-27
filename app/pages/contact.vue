@@ -8,6 +8,37 @@ definePageMeta({
 type ContactField = 'name' | 'email' | 'phone' | 'subject' | 'message' | 'company'
 type FieldErrors = Record<ContactField, string>
 
+type SiteContactContent = {
+  hero: {
+    kicker: string
+    title: string
+    description: string
+  }
+  reasonsPanel: {
+    title: string
+    items: string[]
+  }
+  detailsPanel: {
+    title: string
+    intro: string
+  }
+  mapPanel: {
+    title: string
+    description: string
+  }
+  followupPanel: {
+    title: string
+    body: string
+  }
+  formPanel: {
+    title: string
+    description: string
+    submittedTitle: string
+    submittedBody: string
+    submitLabel: string
+  }
+}
+
 const contactSchema = z.object({
   name: z.string().trim().min(2, 'Please enter your name.'),
   email: z.string().trim().email('Please enter a valid email address.'),
@@ -17,8 +48,49 @@ const contactSchema = z.object({
   company: z.string().trim().optional()
 })
 
+const fallbackContent: SiteContactContent = {
+  hero: {
+    kicker: 'Contact',
+    title: 'Reach out before the next shoot comes together.',
+    description: 'Use this page for membership questions, booking help, studio fit checks, or anything else that helps you decide whether FO Studio matches the way you work.'
+  },
+  reasonsPanel: {
+    title: 'Best reasons to reach out',
+    items: [
+      'You are comparing memberships and want a quick recommendation.',
+      'You have a client date in mind and want to confirm the booking path.',
+      'You need to clarify equipment, access, or whether the room fits your production.'
+    ]
+  },
+  detailsPanel: {
+    title: 'Studio details',
+    intro: ''
+  },
+  mapPanel: {
+    title: 'Find the studio',
+    description: 'Use the map for quick routing, parking planning, and client arrival coordination.'
+  },
+  followupPanel: {
+    title: 'What happens after you send',
+    body: 'Messages go to the studio inbox through the server-side contact endpoint. The reply will come back to the email you enter below, so use the address you actually want us to answer.'
+  },
+  formPanel: {
+    title: 'Send a message',
+    description: 'Share what you are planning, what you need help with, and how best to reach you back.',
+    submittedTitle: 'Message sent',
+    submittedBody: 'Your note is in the queue. We will reply to the email you provided as soon as we can.',
+    submitLabel: 'Send message'
+  }
+}
+
 const config = useRuntimeConfig()
 const toast = useToast()
+const { data: siteContact } = await useAsyncData('site:contact', async () => {
+  return await queryCollection('siteContact').first()
+})
+const pageContent = computed<SiteContactContent>(() => {
+  return (siteContact.value as SiteContactContent | null) ?? fallbackContent
+})
 const mapQuery = 'LA Film Lab, 3131 N. San Fernando Rd., Los Angeles, CA 90065'
 const mapEmbedUrl = computed(() => `https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&t=&z=15&ie=UTF8&iwloc=&output=embed`)
 const mapDirectionsUrl = computed(() => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`)
@@ -129,46 +201,41 @@ async function submitForm() {
 <template>
   <UContainer class="py-10 sm:py-14">
     <div class="space-y-8">
-      <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
-        <div class="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)] lg:items-end">
-          <div class="space-y-5">
-            <span class="studio-kicker">Contact</span>
-            <div class="max-w-3xl space-y-4">
-              <h1 class="studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-7xl">
-                Reach out before the next shoot comes together.
-              </h1>
-              <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
-                Use this page for membership questions, booking help, studio fit checks, or anything else that helps you decide
-                whether FO Studio matches the way you work.
-              </p>
-            </div>
+      <section class="contact-hero-frame">
+        <div class="contact-hero-grid">
+          <div class="contact-hero-main">
+            <p class="editorial-label">
+              Contact
+            </p>
           </div>
 
-          <div class="studio-panel p-5 sm:p-6">
+          <div class="contact-side-panel">
             <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
-              Best reasons to reach out
+              {{ pageContent.reasonsPanel.title }}
             </div>
             <div class="mt-4 space-y-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-              <p>You are comparing memberships and want a quick recommendation.</p>
-              <p>You have a client date in mind and want to confirm the booking path.</p>
-              <p>You need to clarify equipment, access, or whether the room fits your production.</p>
+              <p
+                v-for="reason in pageContent.reasonsPanel.items"
+                :key="reason"
+              >
+                {{ reason }}
+              </p>
             </div>
           </div>
         </div>
       </section>
 
-      <div class="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <div class="space-y-5">
-          <div class="studio-panel p-5 sm:p-6">
+      <div class="contact-main-grid">
+        <div class="contact-main-left">
+          <div class="contact-panel contact-panel--details">
             <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
-              Studio details
+              {{ pageContent.detailsPanel.title }}
             </div>
-
-            <div class="mt-5 space-y-4">
+            <div class="mt-3 space-y-4">
               <div
                 v-for="item in contactDetails"
                 :key="item.label"
-                class="rounded-2xl border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] p-4"
+                class="contact-detail-item"
               >
                 <div class="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
                   {{ item.label }}
@@ -183,18 +250,8 @@ async function submitForm() {
             </div>
           </div>
 
-          <div class="studio-panel p-5 sm:p-6">
-            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
-              What happens after you send
-            </div>
-            <p class="mt-4 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-              Messages go to the studio inbox through the server-side contact endpoint. The reply will come back to the email you enter below,
-              so use the address you actually want us to answer.
-            </p>
-          </div>
-
-          <div class="studio-panel p-3 sm:p-4">
-            <div class="overflow-hidden rounded-[1.25rem] border border-[color:var(--gruv-line)]">
+          <div class="contact-panel contact-panel--map">
+            <div class="overflow-hidden">
               <iframe
                 :src="mapEmbedUrl"
                 title="LA Film Lab map"
@@ -205,10 +262,10 @@ async function submitForm() {
             </div>
             <div class="px-2 pb-2 pt-4">
               <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
-                Find the studio
+                {{ pageContent.mapPanel.title }}
               </div>
               <p class="mt-2 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-                Use the map for quick routing, parking planning, and client arrival coordination.
+                {{ pageContent.mapPanel.description }}
               </p>
               <UButton
                 class="mt-4"
@@ -223,7 +280,7 @@ async function submitForm() {
           </div>
         </div>
 
-        <div class="studio-panel p-5 sm:p-6">
+        <div class="contact-panel contact-panel--form">
           <div
             v-if="submitted"
             class="space-y-4 py-8 text-center"
@@ -233,10 +290,10 @@ async function submitForm() {
               class="mx-auto h-12 w-12 text-success"
             />
             <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
-              Message sent
+              {{ pageContent.formPanel.submittedTitle }}
             </div>
             <p class="mx-auto max-w-xl text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-              Your note is in the queue. We will reply to the email you provided as soon as we can.
+              {{ pageContent.formPanel.submittedBody }}
             </p>
             <UButton
               color="neutral"
@@ -254,10 +311,10 @@ async function submitForm() {
           >
             <div>
               <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
-                Send a message
+                {{ pageContent.formPanel.title }}
               </div>
               <p class="mt-2 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-                Share what you are planning, what you need help with, and how best to reach you back.
+                {{ pageContent.formPanel.description }}
               </p>
             </div>
 
@@ -341,7 +398,7 @@ async function submitForm() {
               :loading="isLoading"
               block
             >
-              Send message
+              {{ pageContent.formPanel.submitLabel }}
             </UButton>
           </form>
         </div>

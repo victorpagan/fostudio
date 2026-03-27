@@ -10,10 +10,12 @@ useSeoMeta({
 })
 
 const supabase = useSupabaseClient()
+const user = useSupabaseUser()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const loading = ref(false)
+const redirectingAuthenticatedUser = ref(false)
 
 const returnTo = computed(() => {
   const value = route.query.returnTo
@@ -24,6 +26,17 @@ const returnTo = computed(() => {
 const signupTo = computed(() =>
   `/signup?returnTo=${encodeURIComponent(returnTo.value)}`
 )
+
+const RETURN_TO_PARSE_BASE = 'https://fo.studio'
+
+const hasCheckoutSuccessReturn = computed(() => {
+  try {
+    const target = new URL(returnTo.value, RETURN_TO_PARSE_BASE)
+    return target.pathname.startsWith('/checkout/success') && Boolean(target.searchParams.get('checkout'))
+  } catch {
+    return false
+  }
+})
 
 // Keep the remember checkbox separate so it doesn't sit between password
 // and the submit button — some browsers skip form submit on Enter when a
@@ -71,6 +84,24 @@ function handleEnter(e: KeyboardEvent) {
   }
 }
 
+async function redirectIfAuthenticated() {
+  if (import.meta.server || redirectingAuthenticatedUser.value || !user.value) return
+  redirectingAuthenticatedUser.value = true
+  try {
+    await router.replace(returnTo.value)
+  } finally {
+    redirectingAuthenticatedUser.value = false
+  }
+}
+
+onMounted(() => {
+  void redirectIfAuthenticated()
+})
+
+watch(() => user.value?.id, () => {
+  void redirectIfAuthenticated()
+})
+
 async function onSubmit(payload: FormSubmitEvent<Schema>) {
   loading.value = true
   try {
@@ -79,6 +110,11 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
       password: payload.data.password
     })
     if (error) throw error
+
+    if (hasCheckoutSuccessReturn.value) {
+      await router.push(returnTo.value)
+      return
+    }
 
     const pending = await $fetch<{ pending: { token: string, returnTo: string } | null }>('/api/checkout/pending').catch(() => ({ pending: null }))
     if (pending.pending?.token) {

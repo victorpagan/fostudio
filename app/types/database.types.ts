@@ -899,6 +899,72 @@ export type Database = {
           },
         ]
       }
+      member_waiver_signatures: {
+        Row: {
+          consent_flags: Json
+          created_at: string
+          customer_id: string | null
+          expires_at: string
+          id: string
+          ip: unknown | null
+          signed_at: string
+          signer_name: string
+          template_id: string
+          template_version: number
+          user_agent: string | null
+          user_id: string
+          waiver_metadata_snapshot: Json
+          waiver_snapshot: string
+        }
+        Insert: {
+          consent_flags?: Json
+          created_at?: string
+          customer_id?: string | null
+          expires_at: string
+          id?: string
+          ip?: unknown | null
+          signed_at?: string
+          signer_name: string
+          template_id: string
+          template_version: number
+          user_agent?: string | null
+          user_id: string
+          waiver_metadata_snapshot?: Json
+          waiver_snapshot: string
+        }
+        Update: {
+          consent_flags?: Json
+          created_at?: string
+          customer_id?: string | null
+          expires_at?: string
+          id?: string
+          ip?: unknown | null
+          signed_at?: string
+          signer_name?: string
+          template_id?: string
+          template_version?: number
+          user_agent?: string | null
+          user_id?: string
+          waiver_metadata_snapshot?: Json
+          waiver_snapshot?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "member_waiver_signatures_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "member_waiver_signatures_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "waiver_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       memberships: {
         Row: {
           activated_at: string | null
@@ -1566,6 +1632,45 @@ export type Database = {
         }
         Relationships: []
       }
+      waiver_templates: {
+        Row: {
+          body: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          metadata: Json
+          published_at: string | null
+          published_by: string | null
+          title: string
+          version: number
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          metadata?: Json
+          published_at?: string | null
+          published_by?: string | null
+          title: string
+          version?: never
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          metadata?: Json
+          published_at?: string | null
+          published_by?: string | null
+          title?: string
+          version?: never
+        }
+        Relationships: []
+      }
       webhook_queue: {
         Row: {
           attempts: number
@@ -1780,6 +1885,19 @@ export type Database = {
         Returns: number
       }
       is_admin: { Args: never; Returns: boolean }
+      member_waiver_status: {
+        Args: { p_user_id: string }
+        Returns: {
+          active_template_id: string | null
+          active_template_version: number | null
+          expires_at: string | null
+          signed_at: string | null
+          signed_template_id: string | null
+          signed_template_version: number | null
+          signer_name: string | null
+          status: string
+        }[]
+      }
       process_due_membership_credit_grants: {
         Args: { p_limit?: number | null }
         Returns: {

@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
-import { serverSupabaseClient } from '#supabase/server'
+import { serverSupabaseClient, serverSupabaseServiceRole } from '#supabase/server'
+import { getServerConfigMap } from '~~/server/utils/config/secret'
 import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
+import { getExternalCalendarEventsInRange } from '~~/server/utils/booking/externalCalendar'
+import { maybeAutoSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -24,14 +27,32 @@ function normalizeIso(value: string) {
   return value
 }
 
+function toValidHour(raw: unknown, fallback: number) {
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return fallback
+  const hour = Math.floor(parsed)
+  return Math.min(24, Math.max(0, hour))
+}
+
 export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient(event)
   const q = qSchema.parse(getQuery(event))
   const peakWindowConfig = await loadPeakWindowConfig(event)
+  const cfg = await getServerConfigMap(event, [
+    'guest_booking_window_days',
+    'guest_booking_start_hour',
+    'guest_booking_end_hour'
+  ])
 
   const now = new Date()
   const from = q.from ? new Date(q.from) : now
   const to = q.to ? new Date(q.to) : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+
+  try {
+    await maybeAutoSyncGoogleCalendar(event, 'calendar_public')
+  } catch (error) {
+    console.error('[calendar/public] google sync failed', error)
+  }
 
   const { data: bookings, error } = await supabase
     .from('bookings')
@@ -62,6 +83,28 @@ export default defineEventHandler(async (event) => {
 
   if (blocksErr) throw createError({ statusCode: 500, statusMessage: blocksErr.message })
 
+  let externalEvents: Array<{
+    id: string
+    title: string | null
+    description: string | null
+    location: string | null
+    start_time: string
+    end_time: string
+    provider: string
+    calendar_id: string
+  }> = []
+
+  try {
+    const serviceRole = serverSupabaseServiceRole(event)
+    externalEvents = await getExternalCalendarEventsInRange(
+      serviceRole,
+      from.toISOString(),
+      to.toISOString()
+    )
+  } catch (error) {
+    console.error('[calendar/public] failed to load external calendar events', error)
+  }
+
   const events = [
     ...(bookings ?? []).map(b => ({
       id: `b_${b.id}`,
@@ -89,12 +132,35 @@ export default defineEventHandler(async (event) => {
       display: 'background',
       color: '#dc2626',
       extendedProps: { type: 'hold' }
+    })),
+    ...externalEvents.map(ext => ({
+      id: `g_${ext.id}`,
+      start: normalizeIso(ext.start_time),
+      end: normalizeIso(ext.end_time),
+      title: ext.title || 'External booking',
+      display: 'auto',
+      color: '#111827',
+      extendedProps: {
+        type: 'external',
+        provider: ext.provider,
+        location: ext.location
+      }
     }))
   ]
+
+  const guestBookingWindowDays = Math.max(1, Number(cfg.guest_booking_window_days ?? 7))
+  const guestBookingStartHour = toValidHour(cfg.guest_booking_start_hour, 11)
+  let guestBookingEndHour = toValidHour(cfg.guest_booking_end_hour, 19)
+  if (guestBookingEndHour <= guestBookingStartHour) {
+    guestBookingEndHour = Math.min(24, guestBookingStartHour + 1)
+  }
 
   return {
     from: from.toISOString(),
     to: to.toISOString(),
+    bookingWindowDays: guestBookingWindowDays,
+    guestBookingStartHour,
+    guestBookingEndHour,
     peakWindow: toPeakWindowPayload(peakWindowConfig, null),
     events
   }

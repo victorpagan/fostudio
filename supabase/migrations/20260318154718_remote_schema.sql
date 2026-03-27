@@ -102,7 +102,7 @@ alter table "public"."cart_sessions" enable row level security;
 alter table "public"."carts" enable row level security;
 
 
-  create table "public"."external_calendar_events" (
+  create table if not exists "public"."external_calendar_events" (
     "id" uuid not null default gen_random_uuid(),
     "provider" text not null,
     "calendar_id" text not null,
@@ -384,6 +384,18 @@ alter table "public"."bookings" alter column "credits_final" set data type numer
 
 alter table "public"."membership_plan_variations" drop column "created_at";
 
+update "public"."membership_plan_variations"
+set "provider_plan_variation_id" = lower(
+  concat_ws(
+    '_',
+    coalesce("tier_id", 'tier'),
+    coalesce("cadence", 'cadence'),
+    coalesce("provider", 'provider'),
+    'seed'
+  )
+)
+where coalesce(nullif("provider_plan_variation_id", ''), '') = '';
+
 alter table "public"."membership_plan_variations" alter column "provider_plan_variation_id" set not null;
 
 alter table "public"."membership_tiers" alter column "booking_window_days" drop default;
@@ -437,13 +449,13 @@ CREATE INDEX customers_email_lower_idx ON public.customers USING btree (lower(em
 
 CREATE INDEX customers_phone_idx ON public.customers USING btree (phone);
 
-CREATE INDEX external_calendar_events_active_time_idx ON public.external_calendar_events USING btree (active, start_time, end_time);
+CREATE INDEX IF NOT EXISTS external_calendar_events_active_time_idx ON public.external_calendar_events USING btree (active, start_time, end_time);
 
-CREATE UNIQUE INDEX external_calendar_events_pkey ON public.external_calendar_events USING btree (id);
+CREATE UNIQUE INDEX IF NOT EXISTS external_calendar_events_pkey ON public.external_calendar_events USING btree (id);
 
-CREATE INDEX external_calendar_events_provider_calendar_time_idx ON public.external_calendar_events USING btree (provider, calendar_id, start_time);
+CREATE INDEX IF NOT EXISTS external_calendar_events_provider_calendar_time_idx ON public.external_calendar_events USING btree (provider, calendar_id, start_time);
 
-CREATE UNIQUE INDEX external_calendar_events_provider_event_uidx ON public.external_calendar_events USING btree (provider, calendar_id, external_event_id);
+CREATE UNIQUE INDEX IF NOT EXISTS external_calendar_events_provider_event_uidx ON public.external_calendar_events USING btree (provider, calendar_id, external_event_id);
 
 select 1; 
 -- CREATE INDEX holds_no_overlap ON public.booking_holds USING gist (hold_range);
@@ -538,7 +550,19 @@ alter table "public"."cart_sessions" add constraint "cart_sessions_pkey" PRIMARY
 
 alter table "public"."carts" add constraint "carts_pkey" PRIMARY KEY using index "carts_pkey";
 
-alter table "public"."external_calendar_events" add constraint "external_calendar_events_pkey" PRIMARY KEY using index "external_calendar_events_pkey";
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'external_calendar_events_pkey'
+      AND conrelid = 'public.external_calendar_events'::regclass
+  ) THEN
+    ALTER TABLE "public"."external_calendar_events"
+      ADD CONSTRAINT "external_calendar_events_pkey" PRIMARY KEY USING INDEX "external_calendar_events_pkey";
+  END IF;
+END
+$$;
 
 alter table "public"."internal_errors" add constraint "internal_errors_pkey" PRIMARY KEY using index "internal_errors_pkey";
 
@@ -594,11 +618,35 @@ alter table "public"."cart_sessions" validate constraint "cart_sessions_user_id_
 
 alter table "public"."customers" add constraint "customers_square_customer_id_key" UNIQUE using index "customers_square_customer_id_key";
 
-alter table "public"."external_calendar_events" add constraint "external_calendar_events_provider_check" CHECK ((provider = 'google'::text)) not valid;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'external_calendar_events_provider_check'
+      AND conrelid = 'public.external_calendar_events'::regclass
+  ) THEN
+    ALTER TABLE "public"."external_calendar_events"
+      ADD CONSTRAINT "external_calendar_events_provider_check" CHECK ((provider = 'google'::text)) NOT VALID;
+  END IF;
+END
+$$;
 
 alter table "public"."external_calendar_events" validate constraint "external_calendar_events_provider_check";
 
-alter table "public"."external_calendar_events" add constraint "external_calendar_events_time_order" CHECK ((end_time > start_time)) not valid;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'external_calendar_events_time_order'
+      AND conrelid = 'public.external_calendar_events'::regclass
+  ) THEN
+    ALTER TABLE "public"."external_calendar_events"
+      ADD CONSTRAINT "external_calendar_events_time_order" CHECK ((end_time > start_time)) NOT VALID;
+  END IF;
+END
+$$;
 
 alter table "public"."external_calendar_events" validate constraint "external_calendar_events_time_order";
 
@@ -2097,6 +2145,8 @@ with check ((auth.uid() = user_id));
 
 
 
+  drop policy if exists "external_calendar_events: admin all" on "public"."external_calendar_events";
+
   create policy "external_calendar_events: admin all"
   on "public"."external_calendar_events"
   as permissive
@@ -2245,7 +2295,22 @@ CREATE TRIGGER update_cart_timestamp BEFORE UPDATE ON public.carts FOR EACH ROW 
 CREATE TRIGGER set_user_id_before_insert BEFORE INSERT ON public.customers FOR EACH ROW EXECUTE FUNCTION public.set_user_id();
 ALTER TABLE "public"."customers" DISABLE TRIGGER "set_user_id_before_insert";
 
-CREATE TRIGGER trg_external_calendar_events_updated_at BEFORE UPDATE ON public.external_calendar_events FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_trigger
+    WHERE tgname = 'trg_external_calendar_events_updated_at'
+      AND tgrelid = 'public.external_calendar_events'::regclass
+      AND NOT tgisinternal
+  ) THEN
+    CREATE TRIGGER trg_external_calendar_events_updated_at
+      BEFORE UPDATE ON public.external_calendar_events
+      FOR EACH ROW
+      EXECUTE FUNCTION public.set_updated_at();
+  END IF;
+END
+$$;
 
 CREATE TRIGGER trg_queue_print_job AFTER INSERT OR UPDATE OF state, "customerId", "isServiceOrder" ON public.orders2 FOR EACH ROW EXECUTE FUNCTION public.queue_print_job_on_order_completed();
 
@@ -2260,6 +2325,4 @@ CREATE TRIGGER trg_touch_shipping_package_profiles_updated_at BEFORE UPDATE ON p
   for select
   to public
 using ((bucket_id = 'foprinter'::text));
-
-
 

@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
+import { isAdminRole, readUserRole } from '~~/server/utils/auth'
+import type { RoleCarrier } from '~~/server/utils/auth'
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
+import { ensureNoExternalCalendarConflict } from '~~/server/utils/booking/externalCalendar'
 import {
   computeOvernightHoldWindow,
   DEFAULT_HOLD_END_HOUR,
@@ -11,6 +14,7 @@ import {
   validateOvernightHoldWindow
 } from '~~/server/utils/booking/holds'
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
+import { assertCurrentWaiver } from '~~/server/utils/waiver/status'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 
 const schema = z.object({
@@ -62,6 +66,11 @@ function computeCredits(startIso: string, endIso: string, peakMultiplier: number
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
   if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
+  const role = readUserRole(user as RoleCarrier)
+  const isAdmin = isAdminRole(role)
+  if (!isAdmin) {
+    await assertCurrentWaiver(event, user.sub)
+  }
 
   const supabase = serverSupabaseServiceRole(event)
   const db = supabase as any
@@ -185,6 +194,8 @@ export default defineEventHandler(async (event) => {
   const startIso = start.toUTC().toISO()
   const endIso = end.toUTC().toISO()
   if (!startIso || !endIso) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
+
+  await ensureNoExternalCalendarConflict(supabase, startIso, endIso)
 
   const { data: bookingConflicts, error: bookingConflictErr } = await supabase
     .from('bookings')

@@ -6,6 +6,7 @@ definePageMeta({ middleware: ['auth', 'membership-required'] })
 
 const toast = useToast()
 const router = useRouter()
+const route = useRoute()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const { isAdmin } = useCurrentUser()
@@ -88,8 +89,19 @@ type BookingCreateResponse = {
 }
 
 type ApiErrorLike = {
-  data?: { statusMessage?: string }
+  data?: {
+    statusMessage?: string
+    code?: string
+    data?: {
+      code?: string
+    }
+  }
   message?: string
+}
+
+function getApiErrorCode(error: unknown) {
+  const maybe = error as ApiErrorLike
+  return maybe.data?.code ?? maybe.data?.data?.code ?? null
 }
 
 function isCreditError(message: string) {
@@ -148,12 +160,12 @@ function validateHoldWindowForSelection(start: Date, end: Date) {
   const reasons: string[] = []
   const durationHours = endLa.diff(startLa, 'hours').hours
   if (durationHours < minHoldBookingHours.value) {
-    reasons.push(`Booking must be at least ${minHoldBookingHours.value} hours.`)
+    reasons.push(`Equipment hold eligibility requires a booking of at least ${minHoldBookingHours.value} hours.`)
   }
   const requiredEnd = endLa.startOf('day').set({ hour: holdMinEndHour.value, minute: 0, second: 0, millisecond: 0 })
   if (endLa < requiredEnd) {
     const label = DateTime.fromObject({ hour: holdMinEndHour.value, minute: 0 }, { zone: 'America/Los_Angeles' }).toFormat('h:mm a')
-    reasons.push(`Booking must end at or after ${label}.`)
+    reasons.push(`Equipment hold eligibility requires the booking to end at or after ${label}.`)
   }
   return { eligible: reasons.length === 0, reasons }
 }
@@ -431,9 +443,18 @@ async function confirmBooking() {
   } catch (error: unknown) {
     const maybe = error as ApiErrorLike
     const msg = maybe.data?.statusMessage ?? maybe.message ?? 'Booking failed'
+    if (getApiErrorCode(error) === 'WAIVER_REQUIRED') {
+      toast.add({
+        title: 'Waiver signature required',
+        description: 'Please sign the current waiver before booking.',
+        color: 'warning'
+      })
+      await router.push(`/dashboard/waiver?returnTo=${encodeURIComponent(route.fullPath)}`)
+      return
+    }
     toast.add({ title: 'Could not book', description: msg, color: 'error' })
     if (isCreditError(msg)) {
-      await router.push('/dashboard/membership#credits')
+      await router.push('/dashboard/credits')
       return
     }
     if (isHoldError(msg)) {
@@ -464,7 +485,7 @@ const hasInsufficientCredits = computed(() => {
   return creditBalance.value < requiredCredits.value
 })
 
-function goToBuyCredits() {
+function _goToBuyCredits() {
   closeModal()
   router.push('/dashboard/credits')
 }

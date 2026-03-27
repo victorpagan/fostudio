@@ -141,6 +141,19 @@ type DoorCodeState = {
   } | null
 }
 
+type WaiverCurrentResponse = {
+  status: 'current' | 'expired' | 'missing' | 'stale_version'
+  renewalNeeded: boolean
+  activeTemplate: {
+    version: number
+  } | null
+  latestSignature: {
+    templateVersion: number
+    signedAt: string
+    expiresAt: string
+  } | null
+}
+
 type CreditSummary = {
   totalBalance: number
   bankBalance: number
@@ -238,7 +251,7 @@ const { data: balance, refresh: refreshBalance } = await useAsyncData('dash:memb
   return asNumber(data?.balance)
 }, { watch: [user, membershipState] })
 
-const { data: ledger, refresh: refreshLedger } = await useAsyncData('dash:membership:credits:ledger', async () => {
+const { data: _ledger, refresh: refreshLedger } = await useAsyncData('dash:membership:credits:ledger', async () => {
   if (!user.value || !hasActiveMembership.value) return []
   const { data, error } = await supabase
     .from('credits_ledger')
@@ -288,12 +301,12 @@ const { data: creditSummary, refresh: refreshCreditSummary } = await useAsyncDat
   return res.summary
 }, { watch: [user, membershipState] })
 
-const { data: holdSummary, refresh: refreshHoldSummary } = await useAsyncData('dash:membership:hold-summary', async () => {
+const { data: _holdSummary, refresh: refreshHoldSummary } = await useAsyncData('dash:membership:hold-summary', async () => {
   if (!user.value || !hasActiveMembership.value) return null
   return await $fetch<HoldSummary>('/api/holds/summary')
 }, { watch: [user, membershipState] })
 
-const { data: holdTopupOffer, refresh: refreshHoldTopupOffer } = await useAsyncData('dash:membership:hold-topup-offer', async () => {
+const { data: _holdTopupOffer, refresh: refreshHoldTopupOffer } = await useAsyncData('dash:membership:hold-topup-offer', async () => {
   if (!user.value || !hasActiveMembership.value) return null
   const res = await $fetch<{ offer: HoldTopupOffer | null }>('/api/holds/topup/offer')
   return res.offer
@@ -308,6 +321,11 @@ const { data: doorCodeState, refresh: refreshDoorCodeState } = await useAsyncDat
   if (!user.value || !hasActiveMembership.value) return null
   return await $fetch<DoorCodeState>('/api/membership/door-code')
 }, { watch: [user, membershipState] })
+
+const { data: waiverState, refresh: refreshWaiverState } = await useAsyncData('dash:membership:waiver', async () => {
+  if (!user.value) return null
+  return await $fetch<WaiverCurrentResponse>('/api/waiver/current')
+}, { watch: [user] })
 
 function goCheckout(tierId: string, cadence: string) {
   router.push(`/checkout?tier=${tierId}&cadence=${cadence}&returnTo=/dashboard/membership`)
@@ -344,18 +362,18 @@ function asNumber(value: unknown) {
   return 0
 }
 
-function formatDelta(value: number | string) {
+function _formatDelta(value: number | string) {
   const n = asNumber(value)
   return n > 0 ? `+${n}` : `${n}`
 }
 
-function formatCredits(value: number | null | undefined) {
+function _formatCredits(value: number | null | undefined) {
   if (typeof value !== 'number' || Number.isNaN(value)) return '0'
   if (Number.isInteger(value)) return String(value)
   return value.toFixed(2).replace(/\.?0+$/, '')
 }
 
-function formatLedgerTitle(row: LedgerRow) {
+function _formatLedgerTitle(row: LedgerRow) {
   const reason = (row.reason || '').toLowerCase()
   if (reason === 'topoff') {
     const label = row.metadata?.option_label
@@ -406,12 +424,61 @@ const defaultSavedCardId = computed(() => {
   return savedCards.value[0]?.id ?? null
 })
 
+const nextPaymentDate = computed(() => parseDate(membership.value?.current_period_end ?? null))
+
+const daysUntilNextPayment = computed(() => {
+  const next = nextPaymentDate.value
+  if (!next) return null
+  const now = new Date()
+  const ms = next.getTime() - now.getTime()
+  if (ms <= 0) return 0
+  return Math.ceil(ms / (24 * 60 * 60 * 1000))
+})
+
+const showNextPaymentReminder = computed(() => {
+  if (!hasActiveMembership.value || subscriptionState.value?.pendingCancel) return false
+  if (!nextPaymentDate.value) return false
+  const outOfCredits = displayedCreditBalance.value <= 0
+  const renewalSoon = (daysUntilNextPayment.value ?? 999) <= 7
+  return outOfCredits || renewalSoon
+})
+
+const nextPaymentReminderTitle = computed(() => {
+  if (displayedCreditBalance.value <= 0) return 'You are out of credits'
+  return 'Renewal coming up'
+})
+
+const nextPaymentReminderDescription = computed(() => {
+  const next = formatDateLabel(membership.value?.current_period_end ?? null) ?? 'your next billing date'
+  if (displayedCreditBalance.value <= 0) {
+    return `Your next membership payment is scheduled for ${next}.`
+  }
+  const days = daysUntilNextPayment.value ?? 0
+  return `Your next membership payment is in ${days} day${days === 1 ? '' : 's'} (${next}).`
+})
+
+function showRefreshPageToast() {
+  toast.add({
+    title: 'Update saved',
+    description: 'Refresh this page if any billing or credit values still look stale.',
+    color: 'info',
+    actions: [{
+      label: 'Refresh page',
+      color: 'neutral',
+      variant: 'soft',
+      onClick: () => {
+        if (import.meta.client) window.location.reload()
+      }
+    }]
+  })
+}
+
 function formatPrice(cents: number | null, currency = 'USD') {
   if (cents === null) return '—'
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100)
 }
 
-function formatOptionUnit(option: CreditTopupOption) {
+function _formatOptionUnit(option: CreditTopupOption) {
   const perCredit = option.effectivePriceCents / option.credits
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(perCredit / 100)
 }
@@ -434,7 +501,7 @@ function fallbackDateTime(dt: Date) {
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
 }
 
-function formatSaleWindow(start: string | null, end: string | null) {
+function _formatSaleWindow(start: string | null, end: string | null) {
   const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
   const fromDate = parseDate(start)
   const toDate = parseDate(end)
@@ -509,7 +576,7 @@ function formatPeakCredits(value: number | null | undefined) {
   return value.toFixed(2).replace(/\.?0+$/, '')
 }
 
-function formatLedgerTimestamp(value: string) {
+function _formatLedgerTimestamp(value: string) {
   const dt = parseDate(value)
   if (!dt) return value
   if (!dashboardHydrated.value) return fallbackDateTime(dt)
@@ -654,9 +721,25 @@ async function refreshAll() {
     refreshPaymentMethods(),
     refreshHoldSummary(),
     refreshHoldTopupOffer(),
-    refreshDoorCodeState()
+    refreshDoorCodeState(),
+    refreshWaiverState()
   ])
 }
+
+const waiverStatusLabel = computed(() => {
+  const status = waiverState.value?.status
+  if (status === 'current') return 'Current'
+  if (status === 'expired') return 'Expired'
+  if (status === 'stale_version') return 'Needs re-sign'
+  return 'Missing'
+})
+
+const waiverStatusColor = computed(() => {
+  const status = waiverState.value?.status
+  if (status === 'current') return 'success'
+  if (status === 'expired') return 'warning'
+  return 'error'
+})
 
 async function requestDoorCodeChange() {
   if (doorCodeRequestLoading.value || !doorCodeState.value?.canRequestChange) return
@@ -669,6 +752,7 @@ async function requestDoorCodeChange() {
       description: 'Your request was sent to the admin team for manual update.',
       color: 'success'
     })
+    showRefreshPageToast()
     await refreshDoorCodeState()
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
@@ -719,6 +803,7 @@ async function schedulePlanChange(tierId: string, cadence: string) {
       description: `${res.target.displayName} (${formatCadence(res.target.cadence)}) starts ${effective}.${validatedPromoCode ? ` Promo ${validatedPromoCode} applied.` : ''}`,
       color: 'success'
     })
+    showRefreshPageToast()
     await refreshAll()
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
@@ -743,6 +828,7 @@ async function cancelMembershipAtPeriodEnd() {
       description: `Your membership remains active until ${effective}.`,
       color: 'warning'
     })
+    showRefreshPageToast()
     await refreshAll()
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
@@ -766,6 +852,7 @@ async function undoMembershipCancellation() {
       description: 'Your membership will continue as normal.',
       color: 'success'
     })
+    showRefreshPageToast()
     await refreshAll()
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
@@ -779,7 +866,7 @@ async function undoMembershipCancellation() {
   }
 }
 
-async function startTopup(optionKey: string) {
+async function _startTopup(optionKey: string) {
   topupLoadingKey.value = optionKey
   try {
     const res = await $fetch<{
@@ -817,7 +904,7 @@ async function startTopup(optionKey: string) {
   }
 }
 
-async function startHoldTopup() {
+async function _startHoldTopup() {
   if (holdTopupLoading.value) return
   holdTopupLoading.value = true
   try {
@@ -897,6 +984,7 @@ async function processPayment(payload: { sourceId?: string, cardId?: string }) {
           : 'Credit balance updated.',
         color: 'success'
       })
+      showRefreshPageToast()
     } else {
       const res = await $fetch<{
         status: 'processed' | 'pending' | 'failed'
@@ -925,6 +1013,7 @@ async function processPayment(payload: { sourceId?: string, cardId?: string }) {
           : 'Hold balance updated.',
         color: 'success'
       })
+      showRefreshPageToast()
     }
 
     paymentModalOpen.value = false
@@ -1406,6 +1495,14 @@ onUnmounted(() => {
               :title="'Cancellation scheduled'"
               :description="`Your membership remains active through ${formatDateLabel(subscriptionState.pendingCancel.effectiveDate) ?? 'the current billing cycle end'}.`"
             />
+            <UAlert
+              v-if="showNextPaymentReminder"
+              color="info"
+              variant="soft"
+              icon="i-lucide-calendar-clock"
+              :title="nextPaymentReminderTitle"
+              :description="nextPaymentReminderDescription"
+            />
 
             <!-- Plan summary -->
             <div class="grid gap-4 md:grid-cols-2">
@@ -1457,25 +1554,25 @@ onUnmounted(() => {
               </UCard>
 
               <!-- Tier features -->
-              <UCard>
+              <UCard class="border-primary/40 bg-primary/5">
                 <div class="space-y-3">
-                  <div class="text-xs text-dimmed uppercase tracking-wide">
+                  <div class="text-xs uppercase tracking-wide text-primary/80">
                     Plan features
                   </div>
                   <div class="space-y-2 text-sm">
-                    <div class="flex justify-between">
+                    <div class="flex items-center justify-between rounded-md border border-primary/20 bg-background/60 px-3 py-2">
                       <span class="text-dimmed">Booking window</span>
                       <span>{{ tier?.booking_window_days ?? '—' }} days</span>
                     </div>
-                    <div class="flex justify-between">
+                    <div class="flex items-center justify-between rounded-md border border-primary/20 bg-background/60 px-3 py-2">
                       <span class="text-dimmed">Peak-hour rate</span>
                       <span>{{ formatPeakCredits(tier?.peak_multiplier) }} credits/hr</span>
                     </div>
-                    <div class="flex justify-between">
+                    <div class="flex items-center justify-between rounded-md border border-primary/20 bg-background/60 px-3 py-2">
                       <span class="text-dimmed">Credit cap</span>
                       <span>{{ tier?.max_bank ?? '—' }} credits</span>
                     </div>
-                    <div class="flex justify-between">
+                    <div class="flex items-center justify-between rounded-md border border-primary/20 bg-background/60 px-3 py-2">
                       <span class="text-dimmed">Hold cap / month</span>
                       <span>{{ tier?.holds_included ?? 0 }} hold{{ (tier?.holds_included ?? 0) === 1 ? '' : 's' }}</span>
                     </div>
@@ -1484,197 +1581,196 @@ onUnmounted(() => {
               </UCard>
             </div>
 
-            <!-- Other cadence options for this tier -->
-            <UCard v-if="(variations?.length ?? 0) > 1">
-              <div class="space-y-3">
-                <div class="text-sm font-medium">
-                  Other billing options for {{ tier?.display_name }}
-                </div>
-                <p class="text-xs text-dimmed">
-                  Membership changes are scheduled for your next billing cycle. No prorated mid-cycle membership changes.
-                </p>
-                <UFormField
-                  label="Discount code (optional)"
-                  description="Applied to the selected scheduled cadence after validation."
-                >
-                  <div class="flex flex-wrap items-center gap-2">
-                    <UInput
-                      v-model="planChangePromoCode"
-                      placeholder="SPRING20"
-                      class="min-w-52"
-                      autocomplete="off"
-                    />
-                    <UButton
-                      v-if="planChangePromoCode.trim()"
-                      size="sm"
-                      color="neutral"
-                      variant="ghost"
-                      icon="i-lucide-x"
-                      @click="planChangePromoCode = ''"
-                    >
-                      Remove
-                    </UButton>
-                  </div>
-                </UFormField>
-                <div class="grid gap-2 sm:grid-cols-3">
-                  <div
-                    v-for="v in variations"
-                    :key="v.cadence"
-                    class="rounded-lg border p-3 text-sm"
-                    :class="v.cadence === membership?.cadence ? 'border-primary bg-primary/5' : 'border-default'"
-                  >
-                    <div class="font-medium flex items-center gap-1">
-                      {{ formatCadence(v.cadence) }}
-                      <UBadge
-                        v-if="v.cadence === membership?.cadence"
-                        color="primary"
-                        size="xs"
-                        variant="soft"
-                      >
-                        Current
-                      </UBadge>
-                      <UBadge
-                        v-if="getDiscountLabel(v.discount_label)"
-                        color="success"
-                        size="xs"
-                        variant="soft"
-                      >
-                        {{ getDiscountLabel(v.discount_label) }}
-                      </UBadge>
-                    </div>
-                    <div class="text-dimmed mt-1">
-                      {{ formatPrice(v.price_cents) }}{{ cadencePriceSuffix(v.cadence) }} · {{ v.credits_per_month }} {{ creditsCycleAbbrev(v.cadence) }}
-                    </div>
-                    <UButton
-                      v-if="v.cadence !== membership?.cadence"
-                      size="xs"
-                      class="mt-2"
-                      variant="soft"
-                      :disabled="Boolean(subscriptionState?.pendingCancel)"
-                      @click="schedulePlanChange(membership?.tier ?? 'creator', v.cadence)"
-                    >
-                      Schedule {{ formatCadence(v.cadence) }}
-                    </UButton>
-                  </div>
-                </div>
-              </div>
-            </UCard>
-
-            <!-- Actions -->
             <UCard>
-              <div class="text-sm font-medium mb-3">
-                Manage membership
-              </div>
-              <p class="mb-3 text-xs text-dimmed">
-                Upgrades and downgrades take effect on the next billing cycle.
-              </p>
-              <div class="flex flex-wrap gap-2">
-                <UButton
-                  color="neutral"
-                  variant="soft"
-                  icon="i-lucide-list-checks"
-                  @click="goMembershipSelector"
-                >
-                  Browse memberships
-                </UButton>
-                <UButton
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-rotate-ccw"
-                  :loading="membershipUndoCancelLoading"
-                  :disabled="!subscriptionState?.pendingCancel || membershipCancelLoading || membershipUndoCancelLoading"
-                  @click="undoMembershipCancellation"
-                >
-                  Undo cancel
-                </UButton>
-                <UButton
-                  color="warning"
-                  variant="soft"
-                  icon="i-lucide-calendar-x"
-                  :loading="membershipCancelLoading"
-                  :disabled="Boolean(subscriptionState?.pendingCancel) || membershipCancelLoading || membershipUndoCancelLoading"
-                  @click="cancelMembershipAtPeriodEnd"
-                >
-                  Cancel at period end
-                </UButton>
-              </div>
-              <p class="mt-3 text-xs text-dimmed">
-                Plan and cancellation actions are synchronized with Square. If your subscription status looks out of sync, refresh this page or contact support.
-              </p>
-
-              <div class="mt-4 border-t border-default pt-4">
-                <div class="text-xs text-dimmed uppercase tracking-wide">
-                  Door access code
+              <div class="space-y-5">
+                <div>
+                  <div class="text-sm font-medium">
+                    Billing and membership actions
+                  </div>
+                  <p class="mt-1 text-xs text-dimmed">
+                    Changes sync to Square and take effect on the next billing cycle.
+                  </p>
                 </div>
-                <div class="mt-1 flex items-center gap-2">
-                  <span class="font-mono text-xl font-semibold">
-                    {{ doorCodeState?.doorCode ?? 'Not assigned yet' }}
-                  </span>
-                  <UBadge
-                    v-if="doorCodeState?.latestRequest?.status === 'pending'"
+
+                <div
+                  v-if="(variations?.length ?? 0) > 1"
+                  class="space-y-3 border-t border-default pt-4"
+                >
+                  <div class="text-sm font-medium">
+                    Other billing options for {{ tier?.display_name }}
+                  </div>
+                  <p class="text-xs text-dimmed">
+                    No prorated mid-cycle membership changes.
+                  </p>
+                  <UFormField
+                    label="Discount code (optional)"
+                    description="Applied to the selected scheduled cadence after validation."
+                  >
+                    <div class="flex flex-wrap items-center gap-2">
+                      <UInput
+                        v-model="planChangePromoCode"
+                        placeholder="SPRING20"
+                        class="min-w-52"
+                        autocomplete="off"
+                      />
+                      <UButton
+                        v-if="planChangePromoCode.trim()"
+                        size="sm"
+                        color="neutral"
+                        variant="ghost"
+                        icon="i-lucide-x"
+                        @click="planChangePromoCode = ''"
+                      >
+                        Remove
+                      </UButton>
+                    </div>
+                  </UFormField>
+                  <div class="grid gap-2 sm:grid-cols-3">
+                    <div
+                      v-for="v in variations"
+                      :key="v.cadence"
+                      class="rounded-lg border p-3 text-sm"
+                      :class="v.cadence === membership?.cadence ? 'border-primary bg-primary/5' : 'border-default'"
+                    >
+                      <div class="font-medium flex items-center gap-1">
+                        {{ formatCadence(v.cadence) }}
+                        <UBadge
+                          v-if="v.cadence === membership?.cadence"
+                          color="primary"
+                          size="xs"
+                          variant="soft"
+                        >
+                          Current
+                        </UBadge>
+                        <UBadge
+                          v-if="getDiscountLabel(v.discount_label)"
+                          color="success"
+                          size="xs"
+                          variant="soft"
+                        >
+                          {{ getDiscountLabel(v.discount_label) }}
+                        </UBadge>
+                      </div>
+                      <div class="text-dimmed mt-1">
+                        {{ formatPrice(v.price_cents) }}{{ cadencePriceSuffix(v.cadence) }} · {{ v.credits_per_month }} {{ creditsCycleAbbrev(v.cadence) }}
+                      </div>
+                      <UButton
+                        v-if="v.cadence !== membership?.cadence"
+                        size="xs"
+                        class="mt-2"
+                        variant="soft"
+                        :disabled="Boolean(subscriptionState?.pendingCancel)"
+                        @click="schedulePlanChange(membership?.tier ?? 'creator', v.cadence)"
+                      >
+                        Schedule {{ formatCadence(v.cadence) }}
+                      </UButton>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                  <UButton
+                    color="neutral"
+                    variant="soft"
+                    icon="i-lucide-list-checks"
+                    @click="goMembershipSelector"
+                  >
+                    Browse memberships
+                  </UButton>
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-rotate-ccw"
+                    :loading="membershipUndoCancelLoading"
+                    :disabled="!subscriptionState?.pendingCancel || membershipCancelLoading || membershipUndoCancelLoading"
+                    @click="undoMembershipCancellation"
+                  >
+                    Undo cancel
+                  </UButton>
+                  <UButton
+                    v-if="!subscriptionState?.pendingCancel"
                     color="warning"
                     variant="soft"
-                    size="xs"
+                    icon="i-lucide-calendar-x"
+                    :loading="membershipCancelLoading"
+                    :disabled="membershipCancelLoading || membershipUndoCancelLoading"
+                    @click="cancelMembershipAtPeriodEnd"
                   >
-                    Change requested
-                  </UBadge>
+                    Cancel at period end
+                  </UButton>
                 </div>
-                <p class="mt-1 text-xs text-dimmed">
-                  This code stays the same when you change plans. You can request one manual change every 30 days.
+                <p class="text-xs text-dimmed">
+                  If status looks out of sync after an update, use refresh from the top-right of this page.
                 </p>
-                <div class="mt-2 flex flex-wrap items-center gap-2">
-                  <UButton
-                    size="xs"
-                    color="neutral"
-                    variant="soft"
-                    :loading="doorCodeRequestLoading"
-                    :disabled="!doorCodeState?.canRequestChange || doorCodeRequestLoading"
-                    @click="requestDoorCodeChange"
-                  >
-                    Request code change
-                  </UButton>
-                  <span
-                    v-if="doorCodeState?.cooldownEndsAt && !doorCodeState?.canRequestChange"
-                    class="text-xs text-dimmed"
-                  >
-                    Next request: {{ formatDateLabel(doorCodeState.cooldownEndsAt) ?? doorCodeState.cooldownEndsAt }}
-                  </span>
-                </div>
-              </div>
-            </UCard>
 
-            <UCard id="credits">
-              <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
+                <div class="border-t border-default pt-4">
                   <div class="text-xs text-dimmed uppercase tracking-wide">
-                    Credits
+                    Door access code
                   </div>
-                  <div class="mt-1 text-3xl font-semibold">
-                    {{ formatCredits(displayedCreditBalance) }}
+                  <div class="mt-1 flex items-center gap-2">
+                    <span class="font-mono text-xl font-semibold">
+                      {{ doorCodeState?.doorCode ?? 'Not assigned yet' }}
+                    </span>
+                    <UBadge
+                      v-if="doorCodeState?.latestRequest?.status === 'pending'"
+                      color="warning"
+                      variant="soft"
+                      size="xs"
+                    >
+                      Change requested
+                    </UBadge>
                   </div>
-                  <div class="mt-1 text-xs text-dimmed">
-                    Plan bank: {{ formatCredits(creditSummary?.bankBalance ?? 0) }}
-                    <span v-if="creditSummary"> / {{ formatCredits(creditSummary.maxBank) }}</span>
-                    · Top-off: {{ formatCredits(creditSummary?.topoffBalance ?? 0) }}
+                  <p class="mt-1 text-xs text-dimmed">
+                    This code stays the same when you change plans. You can request one manual change every 30 days.
+                  </p>
+                  <div class="mt-2 flex flex-wrap items-center gap-2">
+                    <UButton
+                      size="xs"
+                      color="neutral"
+                      variant="soft"
+                      :loading="doorCodeRequestLoading"
+                      :disabled="!doorCodeState?.canRequestChange || doorCodeRequestLoading"
+                      @click="requestDoorCodeChange"
+                    >
+                      Request code change
+                    </UButton>
+                    <span
+                      v-if="doorCodeState?.cooldownEndsAt && !doorCodeState?.canRequestChange"
+                      class="text-xs text-dimmed"
+                    >
+                      Next request: {{ formatDateLabel(doorCodeState.cooldownEndsAt) ?? doorCodeState.cooldownEndsAt }}
+                    </span>
                   </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
-                  <UButton
-                    color="neutral"
-                    variant="soft"
-                    icon="i-lucide-wallet"
-                    to="/dashboard/credits"
-                  >
-                    Manage credits
-                  </UButton>
-                  <UButton
-                    color="neutral"
-                    variant="soft"
-                    icon="i-lucide-calendar-plus"
-                    to="/dashboard/book"
-                  >
-                    Book studio
-                  </UButton>
+
+                <div class="border-t border-default pt-4">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-xs text-dimmed uppercase tracking-wide">
+                      Waiver status
+                    </div>
+                    <UBadge
+                      :color="waiverStatusColor"
+                      size="xs"
+                      variant="soft"
+                    >
+                      {{ waiverStatusLabel }}
+                    </UBadge>
+                  </div>
+                  <div class="mt-2 text-xs text-dimmed space-y-1">
+                    <div>Active version: {{ waiverState?.activeTemplate?.version ?? '—' }}</div>
+                    <div>Signed version: {{ waiverState?.latestSignature?.templateVersion ?? '—' }}</div>
+                    <div>Expires: {{ formatDateLabel(waiverState?.latestSignature?.expiresAt ?? null) ?? '—' }}</div>
+                  </div>
+                  <div class="mt-3">
+                    <UButton
+                      size="xs"
+                      color="neutral"
+                      variant="soft"
+                      to="/dashboard/waiver"
+                    >
+                      View waiver
+                    </UButton>
+                  </div>
                 </div>
               </div>
             </UCard>

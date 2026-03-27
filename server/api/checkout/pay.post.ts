@@ -311,13 +311,14 @@ export default defineEventHandler(async (event) => {
     cardIdSuffix: selectedCardId.slice(-6)
   })
 
-  let paymentId: string | null = null
+  const paymentId: string | null = null
 
   let subscriptionId: string | null = session.square_subscription_id?.trim() || null
   if (!subscriptionId) {
     const startDate = todayIsoDate()
     let subscriptionPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, planVariationId)
     const promoSquareDiscountId = readMetadataPromoSquareDiscountId(session.metadata)
+    let promoAttachedToPhase = false
 
     if (promoSquareDiscountId) {
       try {
@@ -354,6 +355,7 @@ export default defineEventHandler(async (event) => {
         if (!currentDiscountIds.includes(promoSquareDiscountId)) {
           currentDiscountIds.push(promoSquareDiscountId)
         }
+        promoAttachedToPhase = true
 
         return {
           ...p,
@@ -364,6 +366,58 @@ export default defineEventHandler(async (event) => {
           }
         }
       })
+
+      if (!promoAttachedToPhase) {
+        try {
+          const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId)
+
+          if (Array.isArray(subscriptionPhases) && subscriptionPhases.length > 0) {
+            subscriptionPhases = subscriptionPhases.map((phase) => {
+              const p = phase as Record<string, unknown>
+              const normalizedPricing: Record<string, unknown> = {
+                type: 'RELATIVE',
+                discountIds: [promoSquareDiscountId]
+              }
+
+              return {
+                ...p,
+                orderTemplateId,
+                pricing: normalizedPricing
+              }
+            })
+          } else {
+            const cadenceMap: Record<Cadence, string> = {
+              daily: 'DAILY',
+              weekly: 'WEEKLY',
+              monthly: 'MONTHLY',
+              quarterly: 'QUARTERLY',
+              annual: 'ANNUAL'
+            }
+            subscriptionPhases = [{
+              ordinal: 0n,
+              cadence: cadenceMap[session.cadence],
+              orderTemplateId,
+              pricing: {
+                type: 'RELATIVE',
+                discountIds: [promoSquareDiscountId]
+              }
+            }]
+          }
+
+          promoAttachedToPhase = true
+          console.info(logPrefix, 'promo-relative-fallback-applied', {
+            sessionId: session.id,
+            planVariationId,
+            orderTemplateId,
+            phaseCount: subscriptionPhases.length
+          })
+        } catch (error) {
+          throw createError({
+            statusCode: 409,
+            statusMessage: `Promo could not be applied to this plan: ${readSquareErrorMessage(error)}`
+          })
+        }
+      }
     }
 
     const hasRelativePhaseWithoutOrderTemplate = Array.isArray(subscriptionPhases) && subscriptionPhases.some((phase) => {
@@ -372,7 +426,7 @@ export default defineEventHandler(async (event) => {
       const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
       const orderTemplateId = typeof p.orderTemplateId === 'string' && p.orderTemplateId.trim()
         ? p.orderTemplateId.trim()
-      : null
+        : null
       return pricingType === 'RELATIVE' && !orderTemplateId
     })
 

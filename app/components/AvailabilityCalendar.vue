@@ -16,11 +16,13 @@ type CalendarEvent = EventInput & {
   end?: string
   title?: string
   extendedProps?: {
-    type?: 'booking' | 'hold'
+    type?: 'booking' | 'hold' | 'external'
     isOwn?: boolean
     status?: string
     bookingId?: string
     notes?: string
+    provider?: string
+    location?: string
   }
 }
 
@@ -34,9 +36,12 @@ type PeakWindow = {
   multiplier: number | null
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   endpoint: string // '/api/calendar/public' or '/api/calendar/member'
-}>()
+  fullDay?: boolean
+}>(), {
+  fullDay: false
+})
 
 const emit = defineEmits<{
   (e: 'select', payload: { start: Date, end: Date }): void
@@ -55,7 +60,11 @@ const visibleTitle = ref('This week')
 const visibleRange = ref('Loading schedule')
 const lastRefreshedAt = ref<string | null>(null)
 const bookingWindowDays = ref<number | null>(null)
+const guestBookingStartHour = ref<number | null>(null)
+const guestBookingEndHour = ref<number | null>(null)
 const peakWindow = ref<PeakWindow | null>(null)
+const nowTickMs = ref(Date.now())
+let nowTickTimer: ReturnType<typeof setInterval> | null = null
 const instance = getCurrentInstance()
 const STUDIO_TZ = 'America/Los_Angeles'
 
@@ -63,6 +72,8 @@ type CalendarResponse = {
   from?: string
   to?: string
   bookingWindowDays?: number
+  guestBookingStartHour?: number
+  guestBookingEndHour?: number
   peakWindow?: PeakWindow | null
   events: CalendarEvent[]
 }
@@ -138,7 +149,7 @@ function calendarDateToStudioDate(value: Date) {
 }
 
 function mapApiEventsToCalendar(events: CalendarEvent[]) {
-  return events.map((event) => ({
+  return events.map(event => ({
     ...event,
     start: event.start ? studioInstantToCalendarIso(event.start) : event.start,
     end: event.end ? studioInstantToCalendarIso(event.end) : event.end
@@ -151,7 +162,7 @@ function escapeHtml(value: string) {
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
+    .replaceAll('\'', '&#39;')
 }
 
 function formatNoteHtml(value: string) {
@@ -169,6 +180,12 @@ async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
     const res = await $fetch<CalendarResponse>(props.endpoint, { query: q })
     events.value = mapApiEventsToCalendar(res.events ?? [])
     bookingWindowDays.value = res.bookingWindowDays ?? null
+    guestBookingStartHour.value = Number.isFinite(Number(res.guestBookingStartHour))
+      ? Number(res.guestBookingStartHour)
+      : null
+    guestBookingEndHour.value = Number.isFinite(Number(res.guestBookingEndHour))
+      ? Number(res.guestBookingEndHour)
+      : null
     peakWindow.value = res.peakWindow ?? null
     lastRefreshedAt.value = new Date().toLocaleTimeString('en-US', {
       hour: 'numeric',
@@ -184,6 +201,7 @@ const ownBookingCount = computed(() =>
   events.value.filter(event => event.extendedProps?.isOwn).length
 )
 const isMemberFeed = computed(() => props.endpoint.includes('/member'))
+const isPublicFeed = computed(() => props.endpoint.includes('/public'))
 
 function eventClassNames(arg: { event: { display: string, end?: Date | null, extendedProps: CalendarEvent['extendedProps'] } }) {
   const classes = ['fc-event-block']
@@ -196,6 +214,9 @@ function eventClassNames(arg: { event: { display: string, end?: Date | null, ext
   if (type === 'hold') {
     classes.push('fc-event-hold')
     classes.push(arg.event.extendedProps?.isOwn ? 'fc-event-hold-own' : 'fc-event-hold-other')
+  }
+  if (type === 'external') {
+    classes.push('fc-event-external')
   }
   if (type === 'booking') {
     classes.push('fc-event-booked')
@@ -210,15 +231,19 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
   if (arg.event.display === 'background') return undefined
 
   const isHold = arg.event.extendedProps?.type === 'hold'
+  const isExternal = arg.event.extendedProps?.type === 'external'
   const isOwnBooking = arg.event.extendedProps?.type === 'booking' && arg.event.extendedProps?.isOwn
   const isUnownedBooking = arg.event.extendedProps?.type === 'booking' && !arg.event.extendedProps?.isOwn
   const noteRaw = isOwnBooking ? (arg.event.extendedProps?.notes ?? '').trim() : ''
   const note = noteRaw ? `<div class="fc-event-note">${formatNoteHtml(noteRaw)}</div>` : ''
-  const label = isHold
-    ? '<div class="fc-event-label">Equipement Hold</div>'
-    : isUnownedBooking
-      ? '<div class="fc-event-label">Blocked</div>'
-      : ''
+  let label = ''
+  if (isHold) {
+    label = '<div class="fc-event-label">Equipement Hold</div>'
+  } else if (isExternal) {
+    label = '<div class="fc-event-label">Blocked</div>'
+  } else if (isUnownedBooking) {
+    label = '<div class="fc-event-label">Blocked</div>'
+  }
   const time = arg.timeText ? `<div class="fc-event-time">${arg.timeText}</div>` : ''
   return {
     html: `${label}${time}${note}`
@@ -236,6 +261,9 @@ function eventDidMount(arg: { el: HTMLElement, event: { end?: Date | null, exten
   if (type === 'hold') {
     harness.classList.add('fc-hold-harness')
     harness.classList.add(arg.event.extendedProps?.isOwn ? 'fc-hold-harness-own' : 'fc-hold-harness-other')
+  } else if (type === 'external') {
+    harness.classList.add('fc-booking-harness')
+    harness.classList.add('fc-external-harness')
   } else if (type === 'booking') {
     harness.classList.add('fc-booking-harness')
   }
@@ -268,6 +296,10 @@ const visibleRangeLabel = computed(() => {
 function hourToTimeLabel(hour: number) {
   const safe = Math.max(0, Math.min(24, Math.floor(hour)))
   return `${safe.toString().padStart(2, '0')}:00:00`
+}
+
+function toHourValue(dateTime: DateTime) {
+  return dateTime.hour + (dateTime.minute / 60) + (dateTime.second / 3600)
 }
 
 const peakEvents = computed<CalendarEvent[]>(() => {
@@ -311,6 +343,20 @@ const memberValidRange = computed(() => {
   }
 })
 
+const calendarSlotMinTime = computed(() => {
+  if (props.fullDay) return '00:00:00'
+  if (!isPublicFeed.value) return '00:00:00'
+  if (guestBookingStartHour.value === null) return '00:00:00'
+  return hourToTimeLabel(guestBookingStartHour.value)
+})
+
+const calendarSlotMaxTime = computed(() => {
+  if (props.fullDay) return '24:00:00'
+  if (!isPublicFeed.value) return '24:00:00'
+  if (guestBookingEndHour.value === null) return '24:00:00'
+  return hourToTimeLabel(guestBookingEndHour.value)
+})
+
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
   initialView: 'timeGridWeek',
@@ -325,21 +371,37 @@ const calendarOptions = computed(() => ({
   },
   selectAllow: (selectionInfo: { start: Date, end: Date, allDay?: boolean }) => {
     const selectionStart = calendarDateToStudioDate(selectionInfo.start)
+    const selectionEnd = calendarDateToStudioDate(selectionInfo.end)
     if (selectionStart < new Date()) return false
 
     // In month view, require users to pick an actual time slot in day/week view.
     if (selectionInfo.allDay) return false
+
+    if (isPublicFeed.value) {
+      const startLA = DateTime.fromJSDate(selectionStart, { zone: STUDIO_TZ })
+      const endLA = DateTime.fromJSDate(selectionEnd, { zone: STUDIO_TZ })
+      if (!startLA.hasSame(endLA, 'day')) return false
+
+      if (guestBookingStartHour.value !== null && guestBookingEndHour.value !== null) {
+        const startHourValue = toHourValue(startLA)
+        const endHourValue = toHourValue(endLA)
+        if (startHourValue < guestBookingStartHour.value || endHourValue > guestBookingEndHour.value) {
+          return false
+        }
+      }
+    }
 
     if (!bookingWindowDays.value) return true
     const maxStart = new Date(Date.now() + bookingWindowDays.value * 24 * 60 * 60 * 1000)
     return selectionStart <= maxStart
   },
   selectMirror: true,
+  now: studioInstantToCalendarIso(new Date(nowTickMs.value)),
   nowIndicator: true,
   allDaySlot: false,
   height: 'auto',
-  slotMinTime: '00:00:00',
-  slotMaxTime: '24:00:00',
+  slotMinTime: calendarSlotMinTime.value,
+  slotMaxTime: calendarSlotMaxTime.value,
   slotDuration: '01:00:00',
   slotLabelInterval: '02:00:00',
   eventTimeFormat: {
@@ -402,7 +464,18 @@ const calendarOptions = computed(() => ({
   }
 }))
 
-onMounted(() => loadEvents())
+onMounted(() => {
+  loadEvents()
+  nowTickTimer = setInterval(() => {
+    nowTickMs.value = Date.now()
+  }, 60_000)
+})
+
+onUnmounted(() => {
+  if (!nowTickTimer) return
+  clearInterval(nowTickTimer)
+  nowTickTimer = null
+})
 </script>
 
 <template>
@@ -446,6 +519,21 @@ onMounted(() => loadEvents())
       </div>
     </div>
 
-    <FullCalendar :options="calendarOptions" />
+    <div class="relative">
+      <FullCalendar :options="calendarOptions" />
+
+      <div
+        v-if="loading"
+        class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[1.25rem] bg-[rgba(250,241,224,0.58)] backdrop-blur-[1px] dark:bg-[rgba(40,40,40,0.45)]"
+      >
+        <div class="flex items-center gap-2 rounded-full bg-[color:var(--gruv-bg-0)] px-3 py-1.5 text-xs font-medium text-[color:var(--gruv-ink-1)] shadow-sm dark:bg-[color:var(--gruv-bg-0)]">
+          <UIcon
+            name="i-lucide-loader-circle"
+            class="size-4 animate-spin"
+          />
+          Loading bookings…
+        </div>
+      </div>
+    </div>
   </div>
 </template>

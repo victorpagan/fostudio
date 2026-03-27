@@ -33,6 +33,12 @@ const sections = [
     to: '/dashboard/admin/members'
   },
   {
+    title: 'Waiver templates',
+    description: 'Draft and publish member waiver versions. Publishing forces member re-signing.',
+    icon: 'i-lucide-file-signature',
+    to: '/dashboard/admin/waiver'
+  },
+  {
     title: 'Bookings',
     description: 'Review all bookings and run admin-level cancellation/refund actions.',
     icon: 'i-lucide-calendar-range',
@@ -43,6 +49,18 @@ const sections = [
     description: 'Manage LA peak windows, booking windows, and blackout blocks.',
     icon: 'i-lucide-calendar-clock',
     to: '/dashboard/admin/calendar'
+  },
+  {
+    title: 'Google Calendar',
+    description: 'Connect and sync the external Peerspace Google Calendar into booking availability blocks.',
+    icon: 'i-lucide-calendar-sync',
+    to: '/dashboard/admin/google-calendar'
+  },
+  {
+    title: 'Email',
+    description: 'Manage customer mail preferences, admin copy behavior, and SendGrid template mappings.',
+    icon: 'i-lucide-mail',
+    to: '/dashboard/admin/email'
   },
   {
     title: 'Holds',

@@ -1,12 +1,106 @@
 <script setup lang="ts">
 import type { CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui'
+import { formatMembershipTierLabel } from '~~/app/utils/membershipTierLabel'
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
 const open = ref(false)
 const route = useRoute()
 const router = useRouter()
+const supabase = useSupabaseClient()
+const user = useSupabaseUser()
+const colorMode = useColorMode()
 const { isAdmin } = useCurrentUser()
 const topupRecoveryRunning = useState<boolean>('topup-recovery-running', () => false)
 const lastTopupRecoveryAt = useState<number>('topup-recovery-last-at', () => 0)
+
+type SidebarMembershipRow = {
+  tier: string | null
+  cadence: string | null
+  status: string | null
+  current_period_end: string | null
+  canceled_at: string | null
+}
+
+const { data: sidebarMembership } = await useAsyncData('dash:sidebar:membership', async () => {
+  if (!user.value?.sub) return null
+  const { data, error } = await supabase
+    .from('memberships')
+    .select('tier,cadence,status,current_period_end,canceled_at')
+    .eq('user_id', user.value.sub)
+    .maybeSingle()
+  if (error) throw error
+  return data as SidebarMembershipRow | null
+}, { watch: [() => user.value?.sub] })
+
+const { data: sidebarCredits } = await useAsyncData('dash:sidebar:credits', async () => {
+  if (!user.value?.sub) return null
+  const { data, error } = await supabase
+    .from('credit_balance')
+    .select('balance')
+    .eq('user_id', user.value.sub)
+    .maybeSingle()
+  if (error) throw error
+  return typeof data?.balance === 'number' ? data.balance : Number(data?.balance ?? 0)
+}, { watch: [() => user.value?.sub] })
+
+const { data: sidebarCreditCap } = await useAsyncData('dash:sidebar:credit-cap', async () => {
+  const tierId = sidebarMembership.value?.tier
+  if (!tierId) return null
+
+  const { data, error } = await supabase
+    .from('membership_tiers')
+    .select('max_bank')
+    .eq('id', tierId)
+    .maybeSingle()
+  if (error) throw error
+
+  return typeof data?.max_bank === 'number' ? data.max_bank : Number(data?.max_bank ?? 0)
+}, { watch: [() => sidebarMembership.value?.tier] })
+
+const sidebarMembershipState = computed(() => resolveMembershipUiState(sidebarMembership.value))
+
+const sidebarTierLabel = computed(() => {
+  const row = sidebarMembership.value
+  if (!row) return null
+  const tierLabel = formatMembershipTierLabel(row.tier)
+  const cadence = row.cadence ?? null
+  return [tierLabel, cadence].filter(Boolean).join(' · ')
+})
+
+const sidebarMembershipCta = computed(() => {
+  if (sidebarMembershipState.value === 'active') return { label: 'Manage membership', to: '/dashboard/membership' }
+  if (sidebarMembershipState.value === 'pending_checkout') return { label: 'Finish checkout', to: '/dashboard/memberships' }
+  return { label: 'Get membership', to: '/dashboard/memberships' }
+})
+
+const sidebarStatusLabel = computed(() => sidebarMembershipState.value.replace(/_/g, ' '))
+
+const sidebarStatusColor = computed(() => {
+  if (sidebarMembershipState.value === 'active') return 'success'
+  if (sidebarMembershipState.value === 'pending_checkout') return 'warning'
+  if (sidebarMembershipState.value === 'past_due') return 'error'
+  return 'neutral'
+})
+
+const showSidebarBalanceCta = computed(() => {
+  if (sidebarMembershipState.value !== 'active') return true
+  return (sidebarCredits.value ?? 0) <= 0
+})
+
+const sidebarCreditsValue = computed(() => Number(sidebarCredits.value ?? 0))
+const sidebarMaxBank = computed(() => Number(sidebarCreditCap.value ?? 0))
+
+const sidebarCreditsOverCap = computed(() => {
+  if (sidebarMaxBank.value <= 0) return false
+  return sidebarCreditsValue.value > sidebarMaxBank.value
+})
+
+const sidebarCreditsProgress = computed(() => {
+  if (sidebarCreditsOverCap.value) return 100
+  if (sidebarMaxBank.value <= 0) return 0
+  const ratio = (sidebarCreditsValue.value / sidebarMaxBank.value) * 100
+  return Math.max(0, Math.min(100, ratio))
+})
 
 const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
   ? [
@@ -47,6 +141,12 @@ const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
         onSelect: () => { open.value = false }
       },
       {
+        label: 'Waiver Templates',
+        icon: 'i-lucide-file-signature',
+        to: '/dashboard/admin/waiver',
+        onSelect: () => { open.value = false }
+      },
+      {
         label: 'Bookings',
         icon: 'i-lucide-calendar-range',
         to: '/dashboard/admin/bookings',
@@ -56,6 +156,18 @@ const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
         label: 'Calendar Settings',
         icon: 'i-lucide-calendar-clock',
         to: '/dashboard/admin/calendar',
+        onSelect: () => { open.value = false }
+      },
+      {
+        label: 'Google Calendar',
+        icon: 'i-lucide-calendar-sync',
+        to: '/dashboard/admin/google-calendar',
+        onSelect: () => { open.value = false }
+      },
+      {
+        label: 'Email',
+        icon: 'i-lucide-mail',
+        to: '/dashboard/admin/email',
         onSelect: () => { open.value = false }
       },
       {
@@ -91,6 +203,12 @@ const primaryLinks = computed<NavigationMenuItem[]>(() => [
     label: 'Membership',
     icon: 'i-lucide-badge-check',
     to: '/dashboard/membership',
+    onSelect: () => { open.value = false }
+  },
+  {
+    label: 'Waiver',
+    icon: 'i-lucide-file-signature',
+    to: '/dashboard/waiver',
     onSelect: () => { open.value = false }
   },
   {
@@ -139,6 +257,46 @@ const groups = computed<CommandPaletteGroup[]>(() => [{
   label: 'Go to',
   items: searchItems.value
 }])
+
+const colorModePreference = computed<'light' | 'dark' | 'system'>({
+  get: () => {
+    const pref = colorMode.preference
+    return pref === 'light' || pref === 'dark' || pref === 'system' ? pref : 'system'
+  },
+  set: (value) => {
+    colorMode.preference = value
+  }
+})
+
+const colorModeLabel = computed(() => {
+  if (colorModePreference.value === 'light') return 'Light'
+  if (colorModePreference.value === 'dark') return 'Dark'
+  return 'System'
+})
+
+const colorModeIcon = computed(() => {
+  if (colorModePreference.value === 'light') return 'i-lucide-sun'
+  if (colorModePreference.value === 'dark') return 'i-lucide-moon'
+  return 'i-lucide-monitor'
+})
+
+function cycleColorMode() {
+  if (colorModePreference.value === 'light') {
+    colorModePreference.value = 'dark'
+    return
+  }
+  if (colorModePreference.value === 'dark') {
+    colorModePreference.value = 'system'
+    return
+  }
+  colorModePreference.value = 'light'
+}
+
+function formatSidebarCreditValue(value: number) {
+  if (!Number.isFinite(value)) return '0'
+  if (Number.isInteger(value)) return String(value)
+  return value.toFixed(2).replace(/\.?0+$/, '')
+}
 
 function readQueryString(value: unknown) {
   if (typeof value === 'string' && value.trim()) return value.trim()
@@ -240,12 +398,119 @@ watch(
           popover
         />
 
+        <UCard
+          v-if="!collapsed"
+          class="mt-4 border-default/70 bg-elevated/60"
+        >
+          <div class="space-y-2">
+            <div class="text-[11px] uppercase tracking-wide text-dimmed">
+              Membership
+            </div>
+            <div class="text-sm font-medium">
+              {{ sidebarTierLabel ?? 'No active membership' }}
+            </div>
+            <div>
+              <UBadge
+                size="xs"
+                variant="soft"
+                :color="sidebarStatusColor"
+              >
+                {{ sidebarStatusLabel }}
+              </UBadge>
+            </div>
+            <div class="space-y-1.5 text-xs">
+              <div class="flex items-center justify-between text-dimmed">
+                <span>Credits</span>
+                <span>
+                  {{ formatSidebarCreditValue(sidebarCreditsValue) }}
+                  <template v-if="sidebarMaxBank > 0">
+                    / {{ formatSidebarCreditValue(sidebarMaxBank) }}
+                  </template>
+                </span>
+              </div>
+              <div class="h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  class="h-full rounded-full transition-all duration-300"
+                  :class="sidebarCreditsOverCap ? 'bg-red-500' : 'bg-primary'"
+                  :style="{ width: `${sidebarCreditsProgress}%` }"
+                />
+              </div>
+              <div
+                v-if="sidebarCreditsOverCap"
+                class="text-[11px] font-medium text-error"
+              >
+                Over cap
+              </div>
+            </div>
+            <div
+              v-if="showSidebarBalanceCta"
+              class="pt-1"
+            >
+              <UButton
+                size="xs"
+                block
+                color="primary"
+                :to="sidebarMembershipState === 'active' ? '/dashboard/credits' : sidebarMembershipCta.to"
+              >
+                {{ sidebarMembershipState === 'active' ? 'Buy credits' : sidebarMembershipCta.label }}
+              </UButton>
+            </div>
+          </div>
+        </UCard>
+
         <UNavigationMenu
           :collapsed="collapsed"
           :items="supportLinks"
           orientation="vertical"
           tooltip
           class="mt-auto"
+        />
+
+        <UCard
+          v-if="!collapsed"
+          class="mt-3 border-default/70 bg-elevated/60"
+        >
+          <div class="space-y-2">
+            <div class="text-[11px] uppercase tracking-wide text-dimmed">
+              Color mode
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <UButton
+                size="xs"
+                :variant="colorModePreference === 'light' ? 'solid' : 'soft'"
+                color="neutral"
+                @click="colorModePreference = 'light'"
+              >
+                Light
+              </UButton>
+              <UButton
+                size="xs"
+                :variant="colorModePreference === 'dark' ? 'solid' : 'soft'"
+                color="neutral"
+                @click="colorModePreference = 'dark'"
+              >
+                Dark
+              </UButton>
+              <UButton
+                size="xs"
+                :variant="colorModePreference === 'system' ? 'solid' : 'soft'"
+                color="neutral"
+                @click="colorModePreference = 'system'"
+              >
+                System
+              </UButton>
+            </div>
+          </div>
+        </UCard>
+
+        <UButton
+          v-else
+          class="mt-3"
+          color="neutral"
+          variant="soft"
+          :icon="colorModeIcon"
+          :label="colorModeLabel"
+          @click="cycleColorMode"
         />
       </template>
 

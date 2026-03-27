@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const colorMode = useColorMode()
 
-const color = computed(() => colorMode.value === 'dark' ? '#1d2021' : '#f9f5d7')
+const color = computed(() => colorMode.value === 'dark' ? '#131413' : '#FCFAED')
 
 useHead({
   titleTemplate: title => title ? `${title} | FO Studio` : 'FO Studio',

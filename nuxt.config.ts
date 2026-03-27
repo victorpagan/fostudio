@@ -1,27 +1,52 @@
+const modules = [
+  '@nuxt/eslint',
+  '@nuxt/image',
+  '@nuxt/ui',
+  '@nuxt/content',
+  'nuxt-studio',
+  '@vueuse/nuxt',
+  'nuxt-og-image',
+  '@nuxtjs/supabase'
+]
+
+const studioRepoPrivate = process.env.STUDIO_REPOSITORY_PRIVATE
+  ? process.env.STUDIO_REPOSITORY_PRIVATE.toLowerCase() !== 'false'
+  : true
+
+const normalizeStudioRootDir = (value?: string) => {
+  const normalized = (value ?? '').trim().replace(/^\/+|\/+$/g, '')
+  return normalized
+}
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  modules: [
-    '@nuxt/eslint',
-    '@nuxt/image',
-    '@nuxt/ui',
-    '@nuxt/content',
-    'nuxt-studio',
-    '@vueuse/nuxt',
-    'nuxt-og-image',
-    '@nuxtjs/supabase'
-  ],
+  modules,
+  studio: {
+    repository: {
+      provider: process.env.STUDIO_REPOSITORY_PROVIDER || 'github',
+      owner: process.env.STUDIO_REPOSITORY_OWNER || 'victorpagan',
+      repo: process.env.STUDIO_REPOSITORY_REPO || 'fostudio',
+      branch: process.env.STUDIO_REPOSITORY_BRANCH || 'main',
+      rootDir: normalizeStudioRootDir(process.env.STUDIO_REPOSITORY_ROOT_DIR),
+      private: studioRepoPrivate
+    }
+  },
 
   components: [
     { path: '~/components', pathPrefix: false }
   ],
 
   devtools: {
-    enabled: true
+    enabled: process.env.NODE_ENV !== 'production'
   },
 
   css: ['~/assets/css/main.css'],
 
   vite: {
+    build: {
+      target: 'es2022',
+      sourcemap: false
+    },
     optimizeDeps: {
       include: []
     }
@@ -42,10 +67,23 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-07-11',
 
   nitro: {
+    minify: false,
+    esbuild: {
+      options: {
+        target: 'es2022'
+      }
+    },
+    hooks: {
+      'prerender:routes'(routes) {
+        for (const route of Array.from(routes)) {
+          if (route.startsWith('/__nuxt_content/')) {
+            routes.delete(route)
+          }
+        }
+      }
+    },
     prerender: {
-      routes: [
-        '/'
-      ],
+      routes: [],
       crawlLinks: false
     }
   },
@@ -90,6 +128,8 @@ export default defineNuxtConfig({
         '/equipment',
         '/faq',
         '/contact',
+        '/site',
+        '/site/**',
         '/policies',
         '/pricing',
         // Auth pages

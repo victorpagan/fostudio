@@ -1,0 +1,26 @@
+title: Contact
+detailsPanel:
+  title: Studio details
+  intro: ""
+followupPanel:
+  title: What happens after you send
+  body: Messages go to the studio inbox through the server-side contact endpoint. The reply will come back to the email you enter below, so use the address you actually want us to answer.
+formPanel:
+  title: Send a message
+  description: Share what you are planning, what you need help with, and how best to reach you back.
+  submittedTitle: Message sent
+  submittedBody: Your note is in the queue. We will reply to the email you provided as soon as we can.
+  submitLabel: Send message
+hero:
+  kicker: Contact
+  title: Reach out before the next shoot comes together.
+  description: Use this page for membership questions, booking help, studio fit checks, or anything else that helps you decide whether FO Studio matches the way you work.
+mapPanel:
+  title: Find the studio
+  description: Use the map for quick routing, parking planning, and client arrival coordination.
+reasonsPanel:
+  title: Best reasons to reach out
+  items:
+    - You are comparing memberships and want a quick recommendation.
+    - You have a client date in mind and want to confirm the booking path.
+    - You need to clarify equipment, access, or whether the room fits your production.

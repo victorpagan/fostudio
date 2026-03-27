@@ -1,0 +1,17 @@
+title: Calendar
+hero:
+  kicker: Calendar
+  title: Current Studio Availability
+  description: ""
+nextMovePanel:
+  title: ""
+  points: []
+  primaryCta:
+    label: Explore memberships
+    to: /memberships
+  secondaryCta:
+    label: Book as a guest
+    to: /book
+readingPanel:
+  title: Plan your next booking
+  points: []

@@ -140,7 +140,7 @@ function formatPeakCredits(value: number) {
 
       <template v-else>
         <div class="space-y-6">
-          <section class="studio-grid overflow-hidden rounded-[2rem] border border-[color:var(--gruv-line)] px-5 py-6 sm:px-8 sm:py-8">
+          <section class="studio-grid overflow-hidden rounded-[2rem] px-5 py-6 sm:px-8 sm:py-8">
             <div class="grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(17rem,0.8fr)]">
               <div class="space-y-5">
                 <span class="studio-kicker">Guest booking</span>
@@ -261,7 +261,7 @@ function formatPeakCredits(value: number) {
             <!-- Time -->
             <div
               v-if="selectedSlot"
-              class="rounded-2xl border border-[color:var(--gruv-line)] bg-[rgba(181,118,20,0.08)] p-4 space-y-1.5 text-sm"
+              class="rounded-2xl bg-[rgba(181,118,20,0.08)] p-4 space-y-1.5 text-sm"
             >
               <div class="flex justify-between">
                 <span class="text-dimmed">Start</span><span class="font-medium">{{ formatDateTime(selectedSlot.start) }}</span>
@@ -272,7 +272,7 @@ function formatPeakCredits(value: number) {
             </div>
 
             <!-- Pricing -->
-            <div class="rounded-2xl border border-[color:var(--gruv-line)] p-4 space-y-2">
+            <div class="rounded-2xl bg-[color:var(--gruv-bg-1)]/75 p-4 space-y-2">
               <div class="text-sm font-medium text-[color:var(--gruv-ink-0)]">
                 Pricing
               </div>

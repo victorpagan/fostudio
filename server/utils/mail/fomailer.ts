@@ -64,7 +64,7 @@ export async function sendViaFomailer(event: H3Event, input: FomailerRequest | F
   }
 
   const request = resolveRequest(input)
-  await $fetch(resolveEndpoint(mailHost, request.endpoint), {
+  const data = await $fetch(resolveEndpoint(mailHost, request.endpoint), {
     method: 'POST',
     headers: {
       'x-mail-key': mailApiKey,
@@ -73,5 +73,5 @@ export async function sendViaFomailer(event: H3Event, input: FomailerRequest | F
     body: request.body
   })
 
-  return { ok: true as const }
+  return { ok: true as const, data }
 }

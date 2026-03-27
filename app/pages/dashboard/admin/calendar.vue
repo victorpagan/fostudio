@@ -7,6 +7,8 @@ type CalendarSettings = {
   peakEndHour: number
   guestPeakMultiplier: number
   guestBookingWindowDays: number
+  guestBookingStartHour: number
+  guestBookingEndHour: number
   memberRescheduleNoticeHours: number
 }
 
@@ -34,6 +36,8 @@ const calendarSettings = reactive<CalendarSettings>({
   peakEndHour: 16,
   guestPeakMultiplier: 2,
   guestBookingWindowDays: 7,
+  guestBookingStartHour: 11,
+  guestBookingEndHour: 19,
   memberRescheduleNoticeHours: 24
 })
 
@@ -71,6 +75,8 @@ const { pending, refresh } = await useAsyncData('admin:calendar:settings', async
   calendarSettings.peakEndHour = Number(res.settings.peakEndHour ?? 16)
   calendarSettings.guestPeakMultiplier = Number(res.settings.guestPeakMultiplier ?? 2)
   calendarSettings.guestBookingWindowDays = Number(res.settings.guestBookingWindowDays ?? 7)
+  calendarSettings.guestBookingStartHour = Number(res.settings.guestBookingStartHour ?? 11)
+  calendarSettings.guestBookingEndHour = Number(res.settings.guestBookingEndHour ?? 19)
   calendarSettings.memberRescheduleNoticeHours = Number(res.settings.memberRescheduleNoticeHours ?? 24)
   return res.settings
 })
@@ -144,6 +150,8 @@ async function saveCalendarSettings() {
         peakEndHour: calendarSettings.peakEndHour,
         guestPeakMultiplier: calendarSettings.guestPeakMultiplier,
         guestBookingWindowDays: calendarSettings.guestBookingWindowDays,
+        guestBookingStartHour: calendarSettings.guestBookingStartHour,
+        guestBookingEndHour: calendarSettings.guestBookingEndHour,
         memberRescheduleNoticeHours: calendarSettings.memberRescheduleNoticeHours
       }
     })
@@ -210,7 +218,6 @@ async function deleteBlock(id: string) {
     deletingBlockId.value = null
   }
 }
-
 </script>
 
 <template>
@@ -252,7 +259,7 @@ async function deleteBlock(id: string) {
             </UButton>
           </div>
 
-          <div class="mt-4 grid gap-3 md:grid-cols-5">
+          <div class="mt-4 grid gap-3 md:grid-cols-4 lg:grid-cols-8">
             <UFormField label="Peak days">
               <USelectMenu v-model="selectedPeakDays" multiple :items="peakDayItems" />
             </UFormField>
@@ -267,6 +274,12 @@ async function deleteBlock(id: string) {
             </UFormField>
             <UFormField label="Guest booking window (days)">
               <UInput v-model.number="calendarSettings.guestBookingWindowDays" type="number" min="1" max="60" />
+            </UFormField>
+            <UFormField label="Guest start hour (LA)">
+              <UInput v-model.number="calendarSettings.guestBookingStartHour" type="number" min="0" max="23" />
+            </UFormField>
+            <UFormField label="Guest end hour (LA)">
+              <UInput v-model.number="calendarSettings.guestBookingEndHour" type="number" min="1" max="24" />
             </UFormField>
             <UFormField label="Member reschedule notice (hours)">
               <UInput v-model.number="calendarSettings.memberRescheduleNoticeHours" type="number" min="1" max="240" />
@@ -344,7 +357,6 @@ async function deleteBlock(id: string) {
             </div>
           </div>
         </UCard>
-
       </div>
     </template>
   </UDashboardPanel>

@@ -3,6 +3,7 @@ import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
 import { buildExpiryIsoFromDays, resolveTopoffCreditExpiryDays } from '~~/server/utils/credits/buckets'
+import { sendViaFomailer } from '~~/server/utils/mail/fomailer'
 
 const bodySchema = z.object({
   token: z.string().uuid().optional(),
@@ -53,6 +54,48 @@ function readString(source: Record<string, unknown> | null | undefined, ...keys:
     if (typeof value === 'string' && value.trim()) return value.trim()
   }
   return null
+}
+
+async function sendTopupPurchasedMail(params: {
+  event: Parameters<typeof sendViaFomailer>[0]
+  to: string | null
+  userId: string
+  membershipId: string | null
+  creditsAdded: number | null
+  newBalance: number
+  amountCents: number | null
+  optionLabel: string | null
+  paymentId: string | null
+  customerName: string | null
+  customerEmail: string | null
+}) {
+  const to = typeof params.to === 'string' ? params.to.trim().toLowerCase() : ''
+  if (!to) return
+
+  try {
+    await sendViaFomailer(params.event, {
+      type: 'credits.topupPurchased',
+      payload: {
+        to,
+        userId: params.userId,
+        eventType: 'credits.topupPurchased',
+        membershipId: params.membershipId,
+        creditsAdded: params.creditsAdded,
+        newBalance: params.newBalance,
+        amountCents: params.amountCents,
+        optionLabel: params.optionLabel,
+        paymentId: params.paymentId,
+        customerName: params.customerName,
+        customerEmail: params.customerEmail
+      }
+    })
+  } catch (error) {
+    console.warn('[credits/topup/claim] top-up mail send failed (non-blocking)', {
+      userId: params.userId,
+      paymentId: params.paymentId,
+      message: error instanceof Error ? error.message : String(error)
+    })
+  }
 }
 
 async function readBalance(supabase: any, userId: string) {
@@ -259,6 +302,21 @@ export default defineEventHandler(async (event) => {
     if (updateErr) throw createError({ statusCode: 500, statusMessage: updateErr.message })
 
     const newBalance = await readBalance(supabase, user.sub)
+    const optionLabel = readString(topup.metadata, 'option_label', 'optionLabel')
+    await sendTopupPurchasedMail({
+      event,
+      to: user.email ?? null,
+      userId: user.sub,
+      membershipId: topup.membership_id,
+      creditsAdded: asNumber(topup.credits) ?? null,
+      newBalance,
+      amountCents: asNumber(topup.amount_cents),
+      optionLabel,
+      paymentId: orderId,
+      customerName: [user.user_metadata?.first_name, user.user_metadata?.last_name].filter(Boolean).join(' ').trim() || null,
+      customerEmail: user.email ?? null
+    })
+
     return {
       ok: true,
       status: 'processed' as const,
