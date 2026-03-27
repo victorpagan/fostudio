@@ -60,110 +60,112 @@ const content = computed<SiteEquipmentContent>(() => {
 </script>
 
 <template>
-  <UContainer class="py-10 sm:py-14">
-    <div class="mx-auto max-w-5xl space-y-10">
-      <div class="max-w-3xl">
-        <h1 class="text-3xl font-semibold tracking-tight sm:text-5xl">
+  <UContainer class="equipment-page py-10 sm:py-14">
+    <div class="equipment-layout">
+      <div class="equipment-hero">
+        <h1 class="equipment-hero-title">
           {{ content.heroTitle }}
         </h1>
-        <p class="mt-4 text-base text-gray-600 dark:text-gray-300 sm:text-lg">
+        <p class="equipment-hero-body">
           {{ content.heroBody }}
         </p>
       </div>
 
-      <div class="grid gap-6 lg:grid-cols-3">
-        <UCard>
-          <template #header>
-            <div class="text-lg font-semibold">
-              {{ content.includedHeader }}
+      <div class="equipment-cards-frame">
+        <div class="equipment-card-grid lg:grid-cols-3">
+          <UCard class="equipment-card">
+            <template #header>
+              <div class="equipment-card-title">
+                {{ content.includedHeader }}
+              </div>
+            </template>
+
+            <ul class="equipment-list">
+              <li
+                v-for="item in content.includedGear"
+                :key="item"
+                class="equipment-list-item"
+              >
+                <UIcon
+                  name="i-lucide-check"
+                  class="equipment-list-icon equipment-list-icon--success"
+                />
+                <span>{{ item }}</span>
+              </li>
+            </ul>
+          </UCard>
+
+          <UCard class="equipment-card">
+            <template #header>
+              <div class="equipment-card-title">
+                {{ content.equipmentListHeader }}
+              </div>
+            </template>
+
+            <ul class="equipment-list">
+              <li
+                v-for="item in content.equipmentList"
+                :key="item"
+                class="equipment-list-item"
+              >
+                <UIcon
+                  name="i-lucide-camera"
+                  class="equipment-list-icon"
+                />
+                <span>{{ item }}</span>
+              </li>
+            </ul>
+          </UCard>
+
+          <UCard class="equipment-card">
+            <template #header>
+              <div class="equipment-card-title">
+                {{ content.guidelinesHeader }}
+              </div>
+            </template>
+
+            <ul class="equipment-list">
+              <li
+                v-for="item in content.sessionGuidelines"
+                :key="item"
+                class="equipment-list-item"
+              >
+                <UIcon
+                  name="i-lucide-arrow-right"
+                  class="equipment-list-icon"
+                />
+                <span>{{ item }}</span>
+              </li>
+            </ul>
+          </UCard>
+        </div>
+
+        <UCard class="equipment-card equipment-cta-card">
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div class="equipment-cta-title">
+                {{ content.cta.title }}
+              </div>
+              <p class="equipment-cta-body">
+                {{ content.cta.body }}
+              </p>
             </div>
-          </template>
 
-          <ul class="space-y-3 text-sm text-gray-600 dark:text-gray-300">
-            <li
-              v-for="item in content.includedGear"
-              :key="item"
-              class="flex gap-3"
-            >
-              <UIcon
-                name="i-lucide-check"
-                class="mt-0.5 size-4 shrink-0 text-green-600 dark:text-green-400"
-              />
-              <span>{{ item }}</span>
-            </li>
-          </ul>
-        </UCard>
-
-        <UCard>
-          <template #header>
-            <div class="text-lg font-semibold">
-              {{ content.equipmentListHeader }}
+            <div class="flex flex-wrap gap-2">
+              <UButton :to="content.cta.primaryCta.to">
+                {{ content.cta.primaryCta.label }}
+              </UButton>
+              <UButton
+                color="neutral"
+                variant="soft"
+                :to="content.cta.secondaryCta.to"
+              >
+                {{ content.cta.secondaryCta.label }}
+              </UButton>
             </div>
-          </template>
-
-          <ul class="space-y-3 text-sm text-gray-600 dark:text-gray-300">
-            <li
-              v-for="item in content.equipmentList"
-              :key="item"
-              class="flex gap-3"
-            >
-              <UIcon
-                name="i-lucide-camera"
-                class="mt-0.5 size-4 shrink-0 text-gray-500 dark:text-gray-400"
-              />
-              <span>{{ item }}</span>
-            </li>
-          </ul>
-        </UCard>
-
-        <UCard>
-          <template #header>
-            <div class="text-lg font-semibold">
-              {{ content.guidelinesHeader }}
-            </div>
-          </template>
-
-          <ul class="space-y-3 text-sm text-gray-600 dark:text-gray-300">
-            <li
-              v-for="item in content.sessionGuidelines"
-              :key="item"
-              class="flex gap-3"
-            >
-              <UIcon
-                name="i-lucide-arrow-right"
-                class="mt-0.5 size-4 shrink-0 text-gray-500 dark:text-gray-400"
-              />
-              <span>{{ item }}</span>
-            </li>
-          </ul>
+          </div>
         </UCard>
       </div>
-
-      <UCard>
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div class="text-sm font-medium">
-              {{ content.cta.title }}
-            </div>
-            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
-              {{ content.cta.body }}
-            </p>
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            <UButton :to="content.cta.primaryCta.to">
-              {{ content.cta.primaryCta.label }}
-            </UButton>
-            <UButton
-              color="neutral"
-              variant="soft"
-              :to="content.cta.secondaryCta.to"
-            >
-              {{ content.cta.secondaryCta.label }}
-            </UButton>
-          </div>
-        </div>
-      </UCard>
     </div>
   </UContainer>
 </template>

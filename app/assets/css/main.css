@@ -461,6 +461,115 @@ body {
   border-color: rgba(245, 245, 245, 0.22);
 }
 
+.equipment-layout {
+  margin-inline: auto;
+  width: min(100%, 80rem);
+  display: grid;
+  gap: 1.25rem;
+}
+
+.equipment-hero {
+  max-width: 52rem;
+}
+
+.equipment-hero-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4.6vw, 3.5rem);
+  line-height: 1.02;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: color-mix(in srgb, var(--gruv-ink-1) 76%, var(--gruv-accent) 24%);
+}
+
+.equipment-hero-body {
+  margin-top: 0.9rem;
+  font-size: clamp(0.96rem, 1.45vw, 1.1rem);
+  line-height: 1.86;
+  color: var(--gruv-ink-2);
+}
+
+.equipment-cards-frame {
+  border: 1px solid var(--gruv-line);
+  background: color-mix(in srgb, var(--gruv-bg-0) 94%, var(--gruv-bg-1) 6%);
+}
+
+.dark .equipment-cards-frame {
+  background: color-mix(in srgb, var(--gruv-bg-0) 80%, var(--gruv-bg-1) 20%);
+}
+
+.equipment-card-grid {
+  display: grid;
+  gap: 0;
+}
+
+.equipment-card {
+  border-radius: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.equipment-card-grid .equipment-card {
+  border-right: 1px solid var(--gruv-line) !important;
+}
+
+.equipment-card-grid .equipment-card:last-child {
+  border-right: 0 !important;
+}
+
+.equipment-cta-card {
+  border-top: 1px solid var(--gruv-line) !important;
+}
+
+.equipment-card-title {
+  font-size: 1.05rem;
+  line-height: 1.2;
+  font-weight: 600;
+  color: var(--gruv-ink-0);
+}
+
+.equipment-list {
+  display: grid;
+  gap: 0.7rem;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--gruv-ink-1);
+}
+
+.equipment-list-item {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
+.equipment-list-icon {
+  margin-top: 0.2rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: 0 0 auto;
+  color: var(--gruv-ink-2);
+}
+
+.equipment-list-icon--success {
+  color: color-mix(in srgb, var(--gruv-accent) 72%, var(--gruv-ink-0) 28%);
+}
+
+.equipment-cta-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--gruv-accent) 65%, var(--gruv-ink-1) 35%);
+}
+
+.equipment-cta-body {
+  margin-top: 0.4rem;
+  font-size: 0.92rem;
+  line-height: 1.72;
+  color: var(--gruv-ink-2);
+}
+
 .studio-grid {
   position: relative;
   border: 1px solid var(--gruv-line);
@@ -1656,6 +1765,15 @@ body {
 }
 
 @media (max-width: 1023px) {
+  .equipment-card-grid .equipment-card {
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--gruv-line) !important;
+  }
+
+  .equipment-card-grid .equipment-card:last-child {
+    border-bottom: 0 !important;
+  }
+
   .site-header {
     padding-block: 0.5rem;
   }
