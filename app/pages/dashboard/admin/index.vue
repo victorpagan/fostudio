@@ -33,6 +33,12 @@ const sections = [
     to: '/dashboard/admin/members'
   },
   {
+    title: 'Door codes',
+    description: 'Manage member codes and permanent lock codes that remain active outside booking windows.',
+    icon: 'i-lucide-key-round',
+    to: '/dashboard/admin/door-codes'
+  },
+  {
     title: 'Waiver templates',
     description: 'Draft and publish member waiver versions. Publishing forces member re-signing.',
     icon: 'i-lucide-file-signature',

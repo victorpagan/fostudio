@@ -80,7 +80,12 @@ export default defineEventHandler(async (event) => {
       .eq('active', true)
       .maybeSingle()
 
-    if (permanentErr) throw createError({ statusCode: 500, statusMessage: permanentErr.message })
+    if (permanentErr) {
+      const code = (permanentErr as { code?: unknown } | null)?.code
+      if (code !== '42P01') {
+        throw createError({ statusCode: 500, statusMessage: permanentErr.message })
+      }
+    }
 
     if (permanentCode?.id) {
       return {
