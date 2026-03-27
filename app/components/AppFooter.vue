@@ -9,7 +9,7 @@ const footerAddress = computed(() => config.public.contactLocation?.trim() || ''
 const footerAddressLines = computed(() => {
   if (!footerAddress.value) return []
   return footerAddress.value
-    .split(/\n|,/)
+    .split(/\n+/)
     .map(line => line.trim())
     .filter(Boolean)
 })
