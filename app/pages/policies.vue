@@ -112,10 +112,13 @@ const currentPolicy = computed(() => policyContent[activeTab.value])
 
       <section class="policies-panel-grid p-5 sm:p-6">
         <div class="max-w-4xl">
-          <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)] sm:text-5xl">
+          <p class="policies-kicker">
+            Policy / {{ currentPolicy.title }}
+          </p>
+          <div class="policies-title">
             {{ currentPolicy.title }}
           </div>
-          <p class="mt-4 text-sm leading-8 text-[color:var(--gruv-ink-2)] sm:text-base">
+          <p class="policies-intro">
             {{ currentPolicy.intro }}
           </p>
         </div>
@@ -126,10 +129,10 @@ const currentPolicy = computed(() => policyContent[activeTab.value])
             :key="block.heading"
             class="policies-block p-5"
           >
-            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
+            <div class="policies-block-title">
               {{ block.heading }}
             </div>
-            <p class="mt-3 text-sm leading-8 text-[color:var(--gruv-ink-2)] sm:text-base">
+            <p class="policies-block-body">
               {{ block.body }}
             </p>
           </div>
