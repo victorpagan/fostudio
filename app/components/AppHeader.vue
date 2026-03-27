@@ -8,7 +8,6 @@ const { user, isAdmin } = useCurrentUser()
 let scrollRaf: number | null = null
 
 const isAuthed = computed(() => !!user.value)
-const dashboardHref = computed(() => (isAuthed.value ? '/dashboard' : '/login'))
 
 const links = [
   { label: 'Calendar', to: '/calendar' },
@@ -115,24 +114,10 @@ async function logout() {
             <template v-if="!isAuthed">
               <NuxtLink
                 to="/login"
-                class="site-auth-link hidden sm:inline-flex"
+                class="site-auth-link"
               >
                 Login
               </NuxtLink>
-              <NuxtLink
-                :to="dashboardHref"
-                class="site-auth-link sm:hidden"
-              >
-                Dashboard
-              </NuxtLink>
-              <UButton
-                :to="dashboardHref"
-                color="neutral"
-                variant="soft"
-                class="hidden sm:inline-flex"
-              >
-                Dashboard
-              </UButton>
             </template>
 
             <template v-else>
@@ -190,13 +175,6 @@ async function logout() {
           <div class="my-2 h-px bg-[color:var(--gruv-accent-soft)]" />
 
           <template v-if="!isAuthed">
-            <NuxtLink
-              :to="dashboardHref"
-              class="site-mobile-link"
-              @click="isOpen = false"
-            >
-              Dashboard
-            </NuxtLink>
             <NuxtLink
               to="/login"
               class="site-mobile-link"
