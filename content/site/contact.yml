@@ -1,7 +1,7 @@
 title: Contact
 detailsPanel:
   title: Studio details
-  intro: ""
+  intro: Studio location and contact details for planning your session.
 followupPanel:
   title: What happens after you send
   body: Messages go to the studio inbox through the server-side contact endpoint. The reply will come back to the email you enter below, so use the address you actually want us to answer.

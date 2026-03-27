@@ -1,12 +1,11 @@
 title: Memberships
 creditsExplainer:
-  title: What Credits Are (and Why They Work)
-  description: Credits are your booking currency. Instead of tracking multiple booking rules manually, you get a clear monthly credit amount and spend it only when you reserve studio time.
+  title: How credits work
+  description: Credits keep booking simple. Your plan adds credits each month, and you spend them only when you reserve time, so your cost tracks your real production volume.
   bullets:
-    - "Predictable: your plan gives you a known credit budget each month."
-    - "Flexible: use credits when work is busy, then bank extras up to your cap."
-    - "Fair: peak windows consume credits at a higher rate, while off-peak bookings stretch your balance further. Every membership starts at 1 credit per one hour on off peak times and consumes more credits depending on your chosen membership plan for peak hours."
-    - "Scalable: quarterly and annual options are designed for higher monthly output."
+    - You can bank unused credits up to your plan cap.
+    - Off-peak sessions stretch your credits further while peak windows are priced higher.
+    - Quarterly and annual options are built for heavier usage and stronger month-to-month output.
 hero:
   kicker: Memberships
   title: Credit-based studio booking for real production workflows.
