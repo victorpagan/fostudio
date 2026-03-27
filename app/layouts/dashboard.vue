@@ -8,6 +8,7 @@ const route = useRoute()
 const router = useRouter()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
+const colorMode = useColorMode()
 const { isAdmin } = useCurrentUser()
 const topupRecoveryRunning = useState<boolean>('topup-recovery-running', () => false)
 const lastTopupRecoveryAt = useState<number>('topup-recovery-last-at', () => 0)
@@ -257,6 +258,40 @@ const groups = computed<CommandPaletteGroup[]>(() => [{
   items: searchItems.value
 }])
 
+const colorModePreference = computed<'light' | 'dark' | 'system'>({
+  get: () => {
+    const pref = colorMode.preference
+    return pref === 'light' || pref === 'dark' || pref === 'system' ? pref : 'system'
+  },
+  set: (value) => {
+    colorMode.preference = value
+  }
+})
+
+const colorModeLabel = computed(() => {
+  if (colorModePreference.value === 'light') return 'Light'
+  if (colorModePreference.value === 'dark') return 'Dark'
+  return 'System'
+})
+
+const colorModeIcon = computed(() => {
+  if (colorModePreference.value === 'light') return 'i-lucide-sun'
+  if (colorModePreference.value === 'dark') return 'i-lucide-moon'
+  return 'i-lucide-monitor'
+})
+
+function cycleColorMode() {
+  if (colorModePreference.value === 'light') {
+    colorModePreference.value = 'dark'
+    return
+  }
+  if (colorModePreference.value === 'dark') {
+    colorModePreference.value = 'system'
+    return
+  }
+  colorModePreference.value = 'light'
+}
+
 function formatSidebarCreditValue(value: number) {
   if (!Number.isFinite(value)) return '0'
   if (Number.isInteger(value)) return String(value)
@@ -429,6 +464,53 @@ watch(
           orientation="vertical"
           tooltip
           class="mt-auto"
+        />
+
+        <UCard
+          v-if="!collapsed"
+          class="mt-3 border-default/70 bg-elevated/60"
+        >
+          <div class="space-y-2">
+            <div class="text-[11px] uppercase tracking-wide text-dimmed">
+              Color mode
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <UButton
+                size="xs"
+                :variant="colorModePreference === 'light' ? 'solid' : 'soft'"
+                color="neutral"
+                @click="colorModePreference = 'light'"
+              >
+                Light
+              </UButton>
+              <UButton
+                size="xs"
+                :variant="colorModePreference === 'dark' ? 'solid' : 'soft'"
+                color="neutral"
+                @click="colorModePreference = 'dark'"
+              >
+                Dark
+              </UButton>
+              <UButton
+                size="xs"
+                :variant="colorModePreference === 'system' ? 'solid' : 'soft'"
+                color="neutral"
+                @click="colorModePreference = 'system'"
+              >
+                System
+              </UButton>
+            </div>
+          </div>
+        </UCard>
+
+        <UButton
+          v-else
+          class="mt-3"
+          color="neutral"
+          variant="soft"
+          :icon="colorModeIcon"
+          :label="colorModeLabel"
+          @click="cycleColorMode"
         />
       </template>
 

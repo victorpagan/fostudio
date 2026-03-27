@@ -90,12 +90,8 @@ async function logout() {
           to="/"
           class="site-brand"
         >
-          <div class="site-brand-mark">
-            <span class="studio-display text-lg leading-none">FO</span>
-          </div>
           <div class="leading-none">
             <div class="site-brand-title">FO Studio</div>
-            <div class="site-brand-subtitle">24/7 production studio</div>
           </div>
         </NuxtLink>
 

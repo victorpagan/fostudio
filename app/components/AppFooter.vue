@@ -10,7 +10,7 @@ const footerLinks = [
 ]
 
 function toggleColorMode() {
-  colorMode.value = isDarkMode.value ? 'light' : 'dark'
+  colorMode.preference = isDarkMode.value ? 'light' : 'dark'
 }
 </script>
 
