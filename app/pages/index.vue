@@ -135,6 +135,102 @@ function tierDetailsHref(tierId: string) {
         loading="eager"
         class="landing-hero-william"
       >
+
+      <div class="landing-hero-content">
+        <p class="max-w-2xl text-sm leading-7 text-white/92 sm:text-base sm:leading-8">
+          {{ landingContent.hero.subheadline }}
+        </p>
+
+        <div class="flex flex-wrap gap-3">
+          <UButton
+            :to="landingContent.hero.primaryCta.to"
+            size="xl"
+          >
+            {{ landingContent.hero.primaryCta.label }}
+          </UButton>
+          <UButton
+            :to="landingContent.hero.secondaryCta.to"
+            color="neutral"
+            variant="soft"
+            size="xl"
+          >
+            {{ landingContent.hero.secondaryCta.label }}
+          </UButton>
+
+          <UModal v-model:open="openWaitlist">
+            <UButton
+              color="neutral"
+              variant="ghost"
+              size="xl"
+              @click="openWaitlist = true"
+            >
+              {{ landingContent.hero.waitlistCtaLabel }}
+            </UButton>
+
+            <template #content>
+              <UCard class="studio-panel">
+                <template #header>
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
+                        Join the waitlist
+                      </div>
+                      <p class="mt-1 text-sm text-[color:var(--gruv-ink-2)]">
+                        We keep membership counts limited so booking stays usable.
+                      </p>
+                    </div>
+                    <UButton
+                      icon="i-heroicons-x-mark"
+                      color="neutral"
+                      variant="ghost"
+                      @click="openWaitlist = false"
+                    />
+                  </div>
+                </template>
+
+                <div class="space-y-3">
+                  <UInput placeholder="Email" />
+                  <UInput placeholder="Phone (optional)" />
+                  <USelect
+                    :options="[
+                      { label: 'Creator', value: 'creator' },
+                      { label: 'Pro', value: 'pro' },
+                      { label: 'Studio+', value: 'studio_plus' }
+                    ]"
+                    placeholder="Plan you are watching"
+                  />
+                </div>
+
+                <template #footer>
+                  <div class="flex justify-end gap-2">
+                    <UButton
+                      color="neutral"
+                      variant="soft"
+                      @click="openWaitlist = false"
+                    >
+                      Close
+                    </UButton>
+                    <UButton @click="openWaitlist = false">
+                      Notify me
+                    </UButton>
+                  </div>
+                </template>
+              </UCard>
+            </template>
+          </UModal>
+        </div>
+
+        <div class="flex flex-wrap gap-2">
+          <UBadge
+            v-for="chip in landingContent.hero.chips"
+            :key="chip"
+            color="neutral"
+            variant="soft"
+          >
+            {{ chip }}
+          </UBadge>
+        </div>
+      </div>
     </section>
 
     <section>
@@ -148,99 +244,6 @@ function tierDetailsHref(tierId: string) {
                 <h1 class="studio-display max-w-4xl text-6xl leading-[0.92] text-[color:var(--gruv-ink-0)] sm:text-8xl">
                   {{ landingContent.hero.headline }}
                 </h1>
-                <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
-                  {{ landingContent.hero.subheadline }}
-                </p>
-              </div>
-
-              <div class="flex flex-wrap gap-3">
-                <UButton
-                  :to="landingContent.hero.primaryCta.to"
-                  size="xl"
-                >
-                  {{ landingContent.hero.primaryCta.label }}
-                </UButton>
-                <UButton
-                  :to="landingContent.hero.secondaryCta.to"
-                  color="neutral"
-                  variant="soft"
-                  size="xl"
-                >
-                  {{ landingContent.hero.secondaryCta.label }}
-                </UButton>
-
-                <UModal v-model:open="openWaitlist">
-                  <UButton
-                    color="neutral"
-                    variant="ghost"
-                    size="xl"
-                    @click="openWaitlist = true"
-                  >
-                    {{ landingContent.hero.waitlistCtaLabel }}
-                  </UButton>
-
-                  <template #content>
-                    <UCard class="studio-panel">
-                      <template #header>
-                        <div class="flex items-center justify-between gap-3">
-                          <div>
-                            <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
-                              Join the waitlist
-                            </div>
-                            <p class="mt-1 text-sm text-[color:var(--gruv-ink-2)]">
-                              We keep membership counts limited so booking stays usable.
-                            </p>
-                          </div>
-                          <UButton
-                            icon="i-heroicons-x-mark"
-                            color="neutral"
-                            variant="ghost"
-                            @click="openWaitlist = false"
-                          />
-                        </div>
-                      </template>
-
-                      <div class="space-y-3">
-                        <UInput placeholder="Email" />
-                        <UInput placeholder="Phone (optional)" />
-                        <USelect
-                          :options="[
-                            { label: 'Creator', value: 'creator' },
-                            { label: 'Pro', value: 'pro' },
-                            { label: 'Studio+', value: 'studio_plus' }
-                          ]"
-                          placeholder="Plan you are watching"
-                        />
-                      </div>
-
-                      <template #footer>
-                        <div class="flex justify-end gap-2">
-                          <UButton
-                            color="neutral"
-                            variant="soft"
-                            @click="openWaitlist = false"
-                          >
-                            Close
-                          </UButton>
-                          <UButton @click="openWaitlist = false">
-                            Notify me
-                          </UButton>
-                        </div>
-                      </template>
-                    </UCard>
-                  </template>
-                </UModal>
-              </div>
-
-              <div class="flex flex-wrap gap-2">
-                <UBadge
-                  v-for="chip in landingContent.hero.chips"
-                  :key="chip"
-                  color="neutral"
-                  variant="soft"
-                >
-                  {{ chip }}
-                </UBadge>
               </div>
             </div>
 
