@@ -432,6 +432,12 @@ body {
   isolation: isolate;
 }
 
+.landing-hero,
+.landing-hero * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .landing-hero-image {
   position: absolute;
   inset: 0;
@@ -439,6 +445,7 @@ body {
   height: 100%;
   object-fit: cover;
   filter: grayscale(28%) contrast(1.15) brightness(0.86);
+  -webkit-user-drag: none;
 }
 
 .landing-hero-image-sky {
@@ -508,12 +515,14 @@ body {
 }
 
 .landing-hero-cta {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 0.8rem;
-  border: 2px solid color-mix(in srgb, white 66%, transparent);
-  background: color-mix(in srgb, var(--gruv-accent) 8%, transparent);
+  clip-path: polygon(0 0, calc(100% - 0.9rem) 0, calc(100% - 0.9rem) 0.9rem, 100% 0.9rem, 100% 100%, 0 100%);
+  border: 0;
+  background: var(--gruv-accent);
   padding: 0.68rem 1.15rem;
   font-size: 0.83rem;
   font-weight: 700;
@@ -524,18 +533,24 @@ body {
 }
 
 .landing-hero-cta:hover {
-  border-color: var(--gruv-accent);
-  background: color-mix(in srgb, var(--gruv-accent) 18%, transparent);
+  background: var(--gruv-accent-strong);
   color: white;
-  transform: translateY(-1px);
+}
+
+.landing-hero-cta::after {
+  content: '↗';
+  position: absolute;
+  top: -0.58rem;
+  right: -0.66rem;
+  font-size: 0.72rem;
+  line-height: 1;
+  color: white;
+  pointer-events: none;
 }
 
 .landing-hero-badges {
-  position: absolute;
-  z-index: 3;
-  right: clamp(0.85rem, 8vw, 6rem);
-  top: 54%;
-  transform: translateY(-50%);
+  margin-top: clamp(0.5rem, 1.8vw, 1.2rem);
+  align-self: flex-end;
   display: grid;
   gap: 0.45rem;
   justify-items: end;
@@ -1054,8 +1069,7 @@ body {
   }
 
   .landing-hero-badges {
-    right: clamp(0.75rem, 4vw, 1.8rem);
-    top: 56%;
+    margin-top: clamp(0.35rem, 1vw, 0.8rem);
   }
 }
 
@@ -1120,11 +1134,7 @@ body {
   }
 
   .landing-hero-badges {
-    left: 50%;
-    right: auto;
-    top: auto;
-    bottom: 7.1rem;
-    transform: translateX(-50%);
+    align-self: center;
     width: calc(100% - 1.5rem);
     max-width: 24rem;
     display: flex;
