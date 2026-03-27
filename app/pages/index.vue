@@ -210,7 +210,7 @@ function tierAccentClass(tierId: string, index: number) {
       </div>
     </section>
 
-    <section class="editorial-section">
+    <section class="editorial-section landing-tiers-section">
       <div class="editorial-frame">
         <div class="editorial-grid editorial-grid-plans">
           <div class="editorial-cell editorial-meta">

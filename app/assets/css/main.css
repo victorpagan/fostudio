@@ -758,6 +758,67 @@ body {
   color: var(--gruv-ink-2);
 }
 
+.landing-tiers-section {
+  background: #2b2b2b;
+  padding: clamp(0.85rem, 2.4vw, 1.4rem);
+}
+
+.landing-tiers-section .editorial-frame {
+  background: #2b2b2b;
+  border-color: rgba(245, 245, 245, 0.18);
+}
+
+.landing-tiers-section .editorial-meta {
+  border-color: rgba(245, 245, 245, 0.18);
+}
+
+.landing-tiers-section .editorial-copy-texture::before {
+  background-image:
+    linear-gradient(to right, rgba(245, 245, 245, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(245, 245, 245, 0.03) 1px, transparent 1px);
+  mix-blend-mode: screen;
+}
+
+.landing-tiers-section .editorial-label {
+  color: rgba(255, 84, 121, 0.9);
+}
+
+.landing-tiers-section .editorial-title {
+  color: #f6f7f8;
+}
+
+.landing-tiers-section .editorial-body {
+  color: rgba(242, 244, 247, 0.82);
+}
+
+.landing-tiers-section .editorial-plan-list {
+  border-color: rgba(245, 245, 245, 0.18);
+}
+
+.landing-tiers-section .editorial-plan-card {
+  border-color: rgba(245, 245, 245, 0.18);
+}
+
+.landing-tiers-section .editorial-plan-title {
+  color: #f8f9fb;
+}
+
+.landing-tiers-section .editorial-plan-body {
+  color: rgba(244, 246, 250, 0.84);
+}
+
+.landing-tiers-section .editorial-plan-card--accent-a {
+  background: rgba(161, 175, 197, 0.18);
+}
+
+.landing-tiers-section .editorial-plan-card--accent-b {
+  background: rgba(255, 74, 111, 0.18);
+}
+
+.landing-tiers-section .editorial-plan-card--accent-c {
+  background: rgba(23, 32, 44, 0.56);
+}
+
 .memberships-page {
   padding-inline: clamp(0.85rem, 2.6vw, 2.4rem);
 }
