@@ -391,8 +391,25 @@ body {
   box-shadow: 0 20px 32px -24px rgba(0, 0, 0, 0.65);
 }
 
-.policies-panel {
+.policies-panel-grid {
+  border: 1px solid var(--gruv-line);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--gruv-bg-0) 94%, var(--gruv-bg-1) 6%);
   box-shadow: none;
+}
+
+.policies-block {
+  border: 1px solid var(--gruv-line);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--gruv-bg-0) 96%, var(--gruv-bg-1) 4%);
+}
+
+.dark .policies-panel-grid {
+  background: color-mix(in srgb, var(--gruv-bg-0) 76%, var(--gruv-bg-1) 24%);
+}
+
+.dark .policies-block {
+  background: color-mix(in srgb, var(--gruv-bg-0) 83%, var(--gruv-bg-1) 17%);
 }
 
 .studio-grid {

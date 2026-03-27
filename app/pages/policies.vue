@@ -110,7 +110,7 @@ const currentPolicy = computed(() => policyContent[activeTab.value])
         </button>
       </div>
 
-      <section class="studio-panel policies-panel p-5 sm:p-6">
+      <section class="policies-panel-grid p-5 sm:p-6">
         <div class="max-w-4xl">
           <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)] sm:text-5xl">
             {{ currentPolicy.title }}
@@ -124,7 +124,7 @@ const currentPolicy = computed(() => policyContent[activeTab.value])
           <div
             v-for="block in currentPolicy.blocks"
             :key="block.heading"
-            class="rounded-[1.4rem] bg-[rgba(181,118,20,0.08)] p-5"
+            class="policies-block p-5"
           >
             <div class="studio-display text-3xl text-[color:var(--gruv-ink-0)]">
               {{ block.heading }}
