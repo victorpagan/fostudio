@@ -106,7 +106,8 @@ const landingContent = computed<SiteLandingContent>(() => {
 })
 
 const galleryImages = computed(() => landingContent.value.gallery.images ?? [])
-const galleryShowcaseImages = computed(() => galleryImages.value)
+const galleryLeadImage = computed(() => galleryImages.value[0] ?? null)
+const gallerySecondaryImage = computed(() => galleryImages.value[1] ?? galleryImages.value[0] ?? null)
 
 function tierDetailsHref(tierId: string) {
   return `/memberships#plan-${encodeURIComponent(tierId)}`
@@ -162,73 +163,85 @@ function tierDetailsHref(tierId: string) {
 
     <section>
       <UContainer>
-        <div class="flex items-end justify-between gap-4">
-          <div>
-            <span class="studio-kicker">Studio preview</span>
-            <h2 class="mt-2 studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-6xl">
-              {{ landingContent.gallery.title }}
-            </h2>
+        <div class="editorial-frame">
+          <div class="editorial-grid editorial-grid-intro">
+            <div class="editorial-cell editorial-meta">
+              <p class="editorial-label">INTRO / STUDIO</p>
+            </div>
+
+            <div class="editorial-cell editorial-copy">
+              <h2 class="editorial-title">
+                {{ landingContent.infoCard.title }}
+              </h2>
+              <p class="editorial-body">
+                {{ landingContent.infoCard.body }}
+              </p>
+            </div>
+
+            <div class="editorial-cell editorial-image-large editorial-texture">
+              <img
+                v-if="galleryLeadImage"
+                :src="galleryLeadImage.src"
+                :alt="galleryLeadImage.alt || 'Studio image'"
+                :loading="galleryLeadImage.loading || 'lazy'"
+                class="editorial-image"
+              >
+            </div>
+
+            <div class="editorial-cell editorial-image-side editorial-texture">
+              <img
+                v-if="gallerySecondaryImage"
+                :src="gallerySecondaryImage.src"
+                :alt="gallerySecondaryImage.alt || 'Studio image'"
+                :loading="gallerySecondaryImage.loading || 'lazy'"
+                class="editorial-image"
+              >
+              <div class="editorial-side-mark">/</div>
+            </div>
           </div>
-        </div>
-
-        <div class="mt-5 flex flex-wrap gap-2">
-          <UBadge
-            v-for="feature in landingContent.infoCard.features"
-            :key="feature"
-            color="neutral"
-            variant="soft"
-            class="px-3 py-1 text-xs sm:text-sm"
-          >
-            {{ feature }}
-          </UBadge>
-        </div>
-
-        <div class="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <img
-            v-for="image in galleryShowcaseImages"
-            :key="image.src"
-            :src="image.src"
-            :alt="image.alt || 'Studio image'"
-            :loading="image.loading || 'lazy'"
-            class="h-[240px] w-full rounded-3xl object-cover"
-          >
         </div>
       </UContainer>
     </section>
 
     <section>
       <UContainer>
-        <div class="max-w-3xl">
-          <span class="studio-kicker">Plans</span>
-          <h2 class="mt-2 studio-display text-5xl leading-none text-[color:var(--gruv-ink-0)] sm:text-6xl">
-            {{ landingContent.tiersPreview.title }}
-          </h2>
-          <p class="mt-3 text-base leading-8 text-[color:var(--gruv-ink-2)]">
-            {{ landingContent.tiersPreview.subtitle }}
-          </p>
-        </div>
-
-        <div class="mt-8 grid gap-4 lg:grid-cols-3">
-          <UCard
-            v-for="tier in landingContent.tiersPreview.items"
-            :key="tier.id"
-            class="studio-panel h-full"
-          >
-            <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
-              {{ tier.title }}
+        <div class="editorial-frame">
+          <div class="editorial-grid editorial-grid-plans">
+            <div class="editorial-cell editorial-meta">
+              <p class="editorial-label">MEMBERSHIP / TIERS</p>
             </div>
-            <p class="mt-4 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
-              {{ tier.body }}
-            </p>
-            <UButton
-              class="mt-6"
-              color="neutral"
-              variant="soft"
-              :to="tierDetailsHref(tier.id)"
-            >
-              {{ tier.buttonLabel }}
-            </UButton>
-          </UCard>
+
+            <div class="editorial-cell editorial-copy">
+              <h2 class="editorial-title">
+                {{ landingContent.tiersPreview.title }}
+              </h2>
+              <p class="editorial-body">
+                {{ landingContent.tiersPreview.subtitle }}
+              </p>
+            </div>
+
+            <div class="editorial-cell editorial-plan-list editorial-texture">
+              <div
+                v-for="tier in landingContent.tiersPreview.items"
+                :key="tier.id"
+                class="editorial-plan-card"
+              >
+                <div class="editorial-plan-title">
+                  {{ tier.title }}
+                </div>
+                <p class="editorial-plan-body">
+                  {{ tier.body }}
+                </p>
+                <UButton
+                  color="neutral"
+                  variant="soft"
+                  :to="tierDetailsHref(tier.id)"
+                >
+                  {{ tier.buttonLabel }}
+                </UButton>
+              </div>
+            </div>
+          </div>
         </div>
       </UContainer>
     </section>
