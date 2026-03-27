@@ -130,7 +130,13 @@ function tierAccentClass(tierId: string, index: number) {
         src="/images/sky.png"
         alt="Sky background"
         loading="eager"
-        class="landing-hero-image landing-hero-image-sky"
+        class="landing-hero-image landing-hero-image-sky dark:hidden"
+      >
+      <img
+        src="/images/studiobg.png"
+        alt="Studio background"
+        loading="eager"
+        class="landing-hero-image landing-hero-image-sky hidden dark:block"
       >
       <div class="landing-hero-scrim" />
       <div class="landing-hero-wordmark">
@@ -141,7 +147,13 @@ function tierAccentClass(tierId: string, index: number) {
         src="/images/william.png"
         alt="William portrait"
         loading="eager"
-        class="landing-hero-william"
+        class="landing-hero-william dark:hidden"
+      >
+      <img
+        src="/images/amanda.png"
+        alt="Amanda portrait"
+        loading="eager"
+        class="landing-hero-william hidden dark:block"
       >
 
       <div class="landing-hero-badges">
