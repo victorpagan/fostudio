@@ -136,7 +136,7 @@ function tierAccentClass(tierId: string, index: number) {
         src="/images/studiobg.png"
         alt="Studio background"
         loading="eager"
-        class="landing-hero-image landing-hero-image-sky hidden dark:block"
+        class="landing-hero-image landing-hero-image-studiobg hidden dark:block"
       >
       <div class="landing-hero-scrim" />
       <div class="landing-hero-wordmark">

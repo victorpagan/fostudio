@@ -511,6 +511,10 @@ body {
   object-position: 50% 35%;
 }
 
+.landing-hero-image-studiobg {
+  object-position: 50% 58%;
+}
+
 .landing-hero-scrim {
   position: absolute;
   inset: 0;
@@ -573,7 +577,10 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: 50% 50%;
+  object-position: 50% 58%;
+  transform: translate3d(0, calc(4% - (var(--site-scroll-y, 0px) * 0.08)), 0);
+  transform-origin: center center;
+  will-change: transform;
   pointer-events: none;
   -webkit-user-drag: none;
 }
@@ -1837,6 +1844,10 @@ body {
     transform: translate3d(-50%, calc(7% - (var(--site-scroll-y, 0px) * 0.1)), 0);
   }
 
+  .landing-hero-amanda {
+    transform: translate3d(0, calc(3% - (var(--site-scroll-y, 0px) * 0.06)), 0);
+  }
+
   .landing-hero-content {
     left: 0.75rem;
     bottom: 1.1rem;
@@ -1920,7 +1931,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .landing-hero-william {
+  .landing-hero-william,
+  .landing-hero-amanda {
     transform: none !important;
     transition: none !important;
   }
