@@ -124,7 +124,7 @@ function tierAccentClass(tierId: string, index: number) {
 </script>
 
 <template>
-  <div class="space-y-12 pb-12 sm:space-y-16 sm:pb-16">
+  <div class="pb-12 sm:pb-16">
     <section class="landing-hero">
       <img
         src="/images/sky.png"
@@ -182,86 +182,88 @@ function tierAccentClass(tierId: string, index: number) {
       </div>
     </section>
 
-    <section class="editorial-section">
-      <div class="editorial-frame">
-        <div class="editorial-grid editorial-grid-intro">
-          <div class="editorial-cell editorial-meta">
-            <p class="editorial-label">INTRO / STUDIO</p>
-          </div>
+    <div class="mx-auto mt-12 w-full max-w-[1520px] space-y-12 px-3 sm:mt-16 sm:space-y-16 sm:px-5 lg:px-8">
+      <section class="editorial-section">
+        <div class="editorial-frame">
+          <div class="editorial-grid editorial-grid-intro">
+            <div class="editorial-cell editorial-meta">
+              <p class="editorial-label">INTRO / STUDIO</p>
+            </div>
 
-          <div class="editorial-cell editorial-copy editorial-copy-texture">
-            <h2 class="editorial-title">
-              {{ landingContent.infoCard.title }}
-            </h2>
-            <p class="editorial-body">
-              {{ landingContent.infoCard.body }}
-            </p>
-          </div>
-
-          <div class="editorial-cell editorial-image-large">
-            <img
-              v-if="galleryLeadImage"
-              :src="galleryLeadImage.src"
-              :alt="galleryLeadImage.alt || 'Studio image'"
-              :loading="galleryLeadImage.loading || 'lazy'"
-              class="editorial-image"
-            >
-          </div>
-
-          <div class="editorial-cell editorial-image-side">
-            <img
-              v-if="gallerySecondaryImage"
-              :src="gallerySecondaryImage.src"
-              :alt="gallerySecondaryImage.alt || 'Studio image'"
-              :loading="gallerySecondaryImage.loading || 'lazy'"
-              class="editorial-image"
-            >
-            <div class="editorial-side-mark">/</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="editorial-section landing-tiers-section">
-      <div class="editorial-frame">
-        <div class="editorial-grid editorial-grid-plans">
-          <div class="editorial-cell editorial-meta">
-            <p class="editorial-label">MEMBERSHIP / TIERS</p>
-          </div>
-
-          <div class="editorial-cell editorial-copy editorial-copy-texture">
-            <h2 class="editorial-title">
-              {{ landingContent.tiersPreview.title }}
-            </h2>
-            <p class="editorial-body">
-              {{ landingContent.tiersPreview.subtitle }}
-            </p>
-          </div>
-
-          <div class="editorial-cell editorial-plan-list">
-            <div
-              v-for="(tier, index) in landingContent.tiersPreview.items"
-              :key="tier.id"
-              class="editorial-plan-card"
-              :class="tierAccentClass(tier.id, index)"
-            >
-              <div class="editorial-plan-title">
-                {{ tier.title }}
-              </div>
-              <p class="editorial-plan-body">
-                {{ tier.body }}
+            <div class="editorial-cell editorial-copy editorial-copy-texture">
+              <h2 class="editorial-title">
+                {{ landingContent.infoCard.title }}
+              </h2>
+              <p class="editorial-body">
+                {{ landingContent.infoCard.body }}
               </p>
-              <UButton
-                color="neutral"
-                variant="soft"
-                :to="tierDetailsHref(tier.id)"
+            </div>
+
+            <div class="editorial-cell editorial-image-large">
+              <img
+                v-if="galleryLeadImage"
+                :src="galleryLeadImage.src"
+                :alt="galleryLeadImage.alt || 'Studio image'"
+                :loading="galleryLeadImage.loading || 'lazy'"
+                class="editorial-image"
               >
-                {{ tier.buttonLabel }}
-              </UButton>
+            </div>
+
+            <div class="editorial-cell editorial-image-side">
+              <img
+                v-if="gallerySecondaryImage"
+                :src="gallerySecondaryImage.src"
+                :alt="gallerySecondaryImage.alt || 'Studio image'"
+                :loading="gallerySecondaryImage.loading || 'lazy'"
+                class="editorial-image"
+              >
+              <div class="editorial-side-mark">/</div>
             </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
+
+      <section class="editorial-section landing-tiers-section">
+        <div class="editorial-frame">
+          <div class="editorial-grid editorial-grid-plans">
+            <div class="editorial-cell editorial-meta">
+              <p class="editorial-label">MEMBERSHIP / TIERS</p>
+            </div>
+
+            <div class="editorial-cell editorial-copy editorial-copy-texture">
+              <h2 class="editorial-title">
+                {{ landingContent.tiersPreview.title }}
+              </h2>
+              <p class="editorial-body">
+                {{ landingContent.tiersPreview.subtitle }}
+              </p>
+            </div>
+
+            <div class="editorial-cell editorial-plan-list">
+              <div
+                v-for="(tier, index) in landingContent.tiersPreview.items"
+                :key="tier.id"
+                class="editorial-plan-card"
+                :class="tierAccentClass(tier.id, index)"
+              >
+                <div class="editorial-plan-title">
+                  {{ tier.title }}
+                </div>
+                <p class="editorial-plan-body">
+                  {{ tier.body }}
+                </p>
+                <UButton
+                  color="neutral"
+                  variant="soft"
+                  :to="tierDetailsHref(tier.id)"
+                >
+                  {{ tier.buttonLabel }}
+                </UButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
