@@ -20,43 +20,45 @@ function toggleColorMode() {
 </script>
 
 <template>
-  <UFooter class="site-footer">
-    <UContainer class="site-footer-row">
-      <div class="site-footer-brand">
-        <div class="site-footer-contact">
-          <span
-            v-for="line in footerAddressLines"
-            :key="line"
-            class="site-footer-contact-item"
+  <footer class="site-footer">
+    <div class="site-footer-frame">
+      <div class="site-footer-row">
+        <div class="site-footer-brand">
+          <div class="site-footer-contact">
+            <span
+              v-for="line in footerAddressLines"
+              :key="line"
+              class="site-footer-contact-item"
+            >
+              {{ line }}
+            </span>
+          </div>
+          <div class="site-footer-copyright">
+            © {{ year }}
+          </div>
+        </div>
+
+        <div class="site-footer-links-wrap">
+          <NuxtLink
+            v-for="l in footerLinks"
+            :key="l.to"
+            :to="l.to"
+            class="site-footer-link"
           >
-            {{ line }}
-          </span>
-        </div>
-        <div class="site-footer-copyright">
-          © {{ year }}
+            {{ l.label }}
+          </NuxtLink>
+
+          <UButton
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            :icon="isDarkMode ? 'i-lucide-moon' : 'i-lucide-sun'"
+            class="site-footer-theme-toggle"
+            :aria-label="isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'"
+            @click="toggleColorMode"
+          />
         </div>
       </div>
-
-      <div class="site-footer-links-wrap">
-        <NuxtLink
-          v-for="l in footerLinks"
-          :key="l.to"
-          :to="l.to"
-          class="site-footer-link"
-        >
-          {{ l.label }}
-        </NuxtLink>
-
-        <UButton
-          color="neutral"
-          variant="ghost"
-          size="sm"
-          :icon="isDarkMode ? 'i-lucide-moon' : 'i-lucide-sun'"
-          class="site-footer-theme-toggle"
-          :aria-label="isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'"
-          @click="toggleColorMode"
-        />
-      </div>
-    </UContainer>
-  </UFooter>
+    </div>
+  </footer>
 </template>
