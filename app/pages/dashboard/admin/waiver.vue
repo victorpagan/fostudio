@@ -149,6 +149,41 @@ const waiverEditorToolbarItems = [[{
   tooltip: { text: 'Clear formatting' }
 }]]
 
+const waiverEditorBubbleToolbarItems = [[{
+  kind: 'mark',
+  mark: 'bold',
+  icon: 'i-lucide-bold',
+  tooltip: { text: 'Bold' }
+}, {
+  kind: 'mark',
+  mark: 'italic',
+  icon: 'i-lucide-italic',
+  tooltip: { text: 'Italic' }
+}, {
+  kind: 'mark',
+  mark: 'underline',
+  icon: 'i-lucide-underline',
+  tooltip: { text: 'Underline' }
+}, {
+  kind: 'mark',
+  mark: 'strike',
+  icon: 'i-lucide-strikethrough',
+  tooltip: { text: 'Strikethrough' }
+}, {
+  kind: 'mark',
+  mark: 'code',
+  icon: 'i-lucide-code',
+  tooltip: { text: 'Inline code' }
+}], [{
+  kind: 'link',
+  icon: 'i-lucide-link',
+  tooltip: { text: 'Link' }
+}, {
+  kind: 'clearFormatting',
+  icon: 'i-lucide-eraser',
+  tooltip: { text: 'Clear formatting' }
+}]]
+
 const { data, pending, refresh } = await useAsyncData('admin:waiver:templates', async () => {
   return await $fetch<{
     templates: WaiverTemplate[]
@@ -241,7 +276,7 @@ function getBodyHtml(value: unknown) {
 const getErrorMessage = (error: unknown) => {
   if (!error || typeof error !== 'object') return 'Request failed.'
   if ('data' in error && error.data && typeof error.data === 'object') {
-    const data = error.data as { statusMessage?: string; message?: string; }
+    const data = error.data as { statusMessage?: string, message?: string }
     if (typeof data.statusMessage === 'string') return data.statusMessage
     if (typeof data.message === 'string') return data.message
   }
@@ -370,7 +405,10 @@ function hasPreviewBody(value: unknown) {
 <template>
   <UDashboardPanel id="admin-waiver">
     <template #header>
-      <UDashboardNavbar title="Waiver Templates" :ui="{ right: 'gap-2' }">
+      <UDashboardNavbar
+        title="Waiver Templates"
+        :ui="{ right: 'gap-2' }"
+      >
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
@@ -401,16 +439,28 @@ function hasPreviewBody(value: unknown) {
         <UCard>
           <div class="grid gap-3 sm:grid-cols-4 text-sm">
             <div>
-              <div class="text-xs uppercase tracking-wide text-dimmed">Active version</div>
-              <div class="mt-1 font-medium">{{ activeTemplate ? `v${activeTemplate.version}` : '—' }}</div>
+              <div class="text-xs uppercase tracking-wide text-dimmed">
+                Active version
+              </div>
+              <div class="mt-1 font-medium">
+                {{ activeTemplate ? `v${activeTemplate.version}` : '—' }}
+              </div>
             </div>
             <div>
-              <div class="text-xs uppercase tracking-wide text-dimmed">Published</div>
-              <div class="mt-1">{{ formatDate(activeTemplate?.published_at ?? null) }}</div>
+              <div class="text-xs uppercase tracking-wide text-dimmed">
+                Published
+              </div>
+              <div class="mt-1">
+                {{ formatDate(activeTemplate?.published_at ?? null) }}
+              </div>
             </div>
             <div class="sm:col-span-2">
-              <div class="text-xs uppercase tracking-wide text-dimmed">Title</div>
-              <div class="mt-1 font-medium truncate">{{ activeTemplate?.title ?? 'No active template' }}</div>
+              <div class="text-xs uppercase tracking-wide text-dimmed">
+                Title
+              </div>
+              <div class="mt-1 font-medium truncate">
+                {{ activeTemplate?.title ?? 'No active template' }}
+              </div>
             </div>
           </div>
         </UCard>
@@ -456,7 +506,10 @@ function hasPreviewBody(value: unknown) {
           </div>
 
           <div class="mt-4 grid gap-4">
-            <UFormField label="Title" class="w-full">
+            <UFormField
+              label="Title"
+              class="w-full"
+            >
               <UInput
                 v-model="form.title"
                 class="w-full max-w-none"
@@ -464,24 +517,35 @@ function hasPreviewBody(value: unknown) {
               />
             </UFormField>
 
-            <UFormField label="Waiver Body" class="w-full">
+            <UFormField
+              label="Waiver Body"
+              class="w-full"
+            >
               <template #description>
                 Rich text/HTML supported for member-facing waiver copy.
               </template>
               <UEditor
+                v-slot="{ editor }"
                 v-model="form.body"
                 content-type="html"
+                :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
                 class="waiver-editor-shell w-full max-w-none rounded-md border border-default bg-default overflow-hidden"
                 placeholder="Write waiver content..."
               >
-                <template #default="{ editor }">
-                  <UEditorToolbar
-                    :editor="editor"
-                    :items="waiverEditorToolbarItems"
-                    class="sticky top-0 inset-x-0 z-10 border-b border-default bg-default/95 p-1.5 backdrop-blur overflow-x-auto"
-                  />
-                </template>
+                <UEditorToolbar
+                  :editor="editor"
+                  :items="waiverEditorToolbarItems"
+                  class="sticky top-0 inset-x-0 z-10 border-b border-default bg-default/95 p-1.5 backdrop-blur overflow-x-auto"
+                />
+                <UEditorToolbar
+                  :editor="editor"
+                  :items="waiverEditorBubbleToolbarItems"
+                  layout="bubble"
+                />
               </UEditor>
+              <p class="mt-2 text-xs text-dimmed">
+                Enter creates a new paragraph. Use Shift+Enter for a single line break.
+              </p>
             </UFormField>
 
             <UFormField label="Metadata (JSON)">
@@ -489,14 +553,16 @@ function hasPreviewBody(value: unknown) {
                 v-model="form.metadataJson"
                 :rows="8"
                 autoresize
-                placeholder='{"documentKey":"member_waiver_v1"}'
+                placeholder="{&quot;documentKey&quot;:&quot;member_waiver_v1&quot;}"
               />
             </UFormField>
           </div>
         </UCard>
 
         <UCard>
-          <div class="text-sm font-medium">Preview</div>
+          <div class="text-sm font-medium">
+            Preview
+          </div>
           <div
             class="waiver-rich-content mt-3 max-w-none rounded-md border border-default p-4 text-sm leading-6"
             v-html="previewBodyHtml"

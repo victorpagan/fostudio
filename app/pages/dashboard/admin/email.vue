@@ -211,6 +211,41 @@ const emailEditorToolbarItems = [[{
   tooltip: { text: 'Clear formatting' }
 }]]
 
+const emailEditorBubbleToolbarItems = [[{
+  kind: 'mark',
+  mark: 'bold',
+  icon: 'i-lucide-bold',
+  tooltip: { text: 'Bold' }
+}, {
+  kind: 'mark',
+  mark: 'italic',
+  icon: 'i-lucide-italic',
+  tooltip: { text: 'Italic' }
+}, {
+  kind: 'mark',
+  mark: 'underline',
+  icon: 'i-lucide-underline',
+  tooltip: { text: 'Underline' }
+}, {
+  kind: 'mark',
+  mark: 'strike',
+  icon: 'i-lucide-strikethrough',
+  tooltip: { text: 'Strikethrough' }
+}, {
+  kind: 'mark',
+  mark: 'code',
+  icon: 'i-lucide-code',
+  tooltip: { text: 'Inline code' }
+}], [{
+  kind: 'link',
+  icon: 'i-lucide-link',
+  tooltip: { text: 'Link' }
+}, {
+  kind: 'clearFormatting',
+  icon: 'i-lucide-eraser',
+  tooltip: { text: 'Clear formatting' }
+}]]
+
 function readErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Unknown error'
   const maybe = error as { data?: { statusMessage?: string }, message?: string }
@@ -629,19 +664,27 @@ async function sendTemplateTest() {
                   Use <code v-pre>{{ variableName }}</code> tokens only. No <code v-pre>{{#if}}</code> or <code v-pre>{{/if}}</code> blocks. This value is passed to SendGrid as <code v-pre>{{ body }}</code>, <code v-pre>{{ bodyHtml }}</code>, and <code v-pre>{{ bodyHTML }}</code>.
                 </template>
                 <UEditor
+                  v-slot="{ editor }"
                   v-model="templateDraft.bodyTemplate"
                   content-type="html"
-                  class="w-full rounded-md border border-warning/30 bg-default [&_.ProseMirror]:min-h-[24rem] [&_.tiptap.ProseMirror]:min-h-[24rem]"
+                  :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
+                  class="email-editor-shell w-full rounded-md border border-warning/30 bg-default overflow-hidden"
                   placeholder="Write HTML body content. Example: <p>Your {{ tierName }} membership is active.</p>"
                 >
-                  <template #default="{ editor }">
-                    <UEditorToolbar
-                      :editor="editor"
-                      :items="emailEditorToolbarItems"
-                      class="border-b border-warning/25 sticky top-0 inset-x-0 p-1.5 z-10 bg-warning/8 backdrop-blur overflow-x-auto"
-                    />
-                  </template>
+                  <UEditorToolbar
+                    :editor="editor"
+                    :items="emailEditorToolbarItems"
+                    class="border-b border-warning/25 sticky top-0 inset-x-0 p-1.5 z-10 bg-warning/8 backdrop-blur overflow-x-auto"
+                  />
+                  <UEditorToolbar
+                    :editor="editor"
+                    :items="emailEditorBubbleToolbarItems"
+                    layout="bubble"
+                  />
                 </UEditor>
+                <p class="mt-2 text-xs text-dimmed">
+                  Enter creates a new paragraph. Use Shift+Enter for a single line break.
+                </p>
               </UFormField>
             </div>
 
@@ -700,3 +743,85 @@ async function sendTemplateTest() {
     </UModal>
   </div>
 </template>
+
+<style scoped>
+.email-editor-shell :deep(.tiptap.ProseMirror),
+.email-editor-shell :deep(.ProseMirror) {
+  min-height: 24rem;
+  max-height: 36rem;
+  overflow-y: auto;
+  padding: 0.95rem;
+  line-height: 1.55;
+}
+
+.email-editor-shell :deep(p) {
+  margin: 0 0 0.75rem;
+}
+
+.email-editor-shell :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.email-editor-shell :deep(ul) {
+  list-style: disc;
+  margin: 0 0 0.9rem;
+  padding-left: 1.25rem;
+}
+
+.email-editor-shell :deep(ol) {
+  list-style: decimal;
+  margin: 0 0 0.9rem;
+  padding-left: 1.25rem;
+}
+
+.email-editor-shell :deep(li) {
+  margin: 0.2rem 0;
+}
+
+.email-editor-shell :deep(h1),
+.email-editor-shell :deep(h2),
+.email-editor-shell :deep(h3),
+.email-editor-shell :deep(h4) {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1rem 0 0.55rem;
+}
+
+.email-editor-shell :deep(h1) {
+  font-size: 1.45rem;
+}
+
+.email-editor-shell :deep(h2) {
+  font-size: 1.2rem;
+}
+
+.email-editor-shell :deep(h3) {
+  font-size: 1.05rem;
+}
+
+.email-editor-shell :deep(h4) {
+  font-size: 0.95rem;
+}
+
+.email-editor-shell :deep(blockquote) {
+  border-left: 3px solid var(--ui-border-muted);
+  margin: 0 0 0.9rem;
+  padding-left: 0.85rem;
+  color: var(--ui-text-muted);
+}
+
+.email-editor-shell :deep(pre) {
+  overflow-x: auto;
+  border-radius: 0.375rem;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg-elevated);
+  padding: 0.75rem;
+  margin: 0 0 0.9rem;
+}
+
+.email-editor-shell :deep(hr) {
+  border: 0;
+  border-top: 1px solid var(--ui-border);
+  margin: 0.9rem 0;
+}
+</style>
