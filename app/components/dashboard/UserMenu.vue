@@ -62,33 +62,35 @@ const items = computed<DropdownMenuItem[][]>(() => ([
 
 <template>
   <div
-    class="flex items-center gap-2"
-    :class="collapsed ? 'justify-center' : 'w-full'"
+    class="flex w-full items-center"
+    :class="collapsed ? 'justify-center gap-2' : 'gap-3'"
   >
-    <UDropdownMenu
-      :items="items"
-      :content="{ align: 'center', collisionPadding: 12 }"
-      :ui="{ content: collapsed ? 'w-56' : 'w-(--reka-dropdown-menu-trigger-width)' }"
-      :class="collapsed ? '' : 'min-w-0 flex-1'"
-    >
-      <UButton
-        v-bind="{
-          label: collapsed ? undefined : displayName,
-          trailingIcon: collapsed ? undefined : 'i-lucide-chevrons-up-down'
-        }"
-        :avatar="avatar"
-        color="neutral"
-        variant="ghost"
-        block
-        :square="collapsed"
-        class="data-[state=open]:bg-elevated"
-        :ui="{ trailingIcon: 'text-dimmed' }"
-      />
-    </UDropdownMenu>
+    <div :class="collapsed ? '' : 'min-w-0 flex-1'">
+      <UDropdownMenu
+        :items="items"
+        :content="{ align: 'center', collisionPadding: 12 }"
+        :ui="{ content: collapsed ? 'w-56' : 'w-(--reka-dropdown-menu-trigger-width)' }"
+      >
+        <UButton
+          v-bind="{
+            label: collapsed ? undefined : displayName,
+            trailingIcon: collapsed ? undefined : 'i-lucide-chevrons-up-down'
+          }"
+          :avatar="avatar"
+          color="neutral"
+          variant="ghost"
+          block
+          :square="collapsed"
+          :class="collapsed ? 'data-[state=open]:bg-elevated' : 'w-full data-[state=open]:bg-elevated'"
+          :ui="{ trailingIcon: 'text-dimmed' }"
+        />
+      </UDropdownMenu>
+    </div>
 
     <UColorModeButton
       color="neutral"
       variant="ghost"
+      class="shrink-0"
       :aria-label="colorMode.value === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
     />
   </div>
