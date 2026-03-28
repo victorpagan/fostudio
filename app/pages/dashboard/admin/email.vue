@@ -1055,7 +1055,7 @@ async function saveBroadcastTemplateOnly() {
                     v-slot="{ ui }"
                     :editor="editor"
                     :options="emailEditorDragHandleOptions"
-                    :ui="{ handle: 'translate-x-3 rounded border border-default bg-default/90' }"
+                    :ui="{ handle: 'translate-x-1 rounded border border-default bg-default/90' }"
                   >
                     <UButton
                       icon="i-lucide-grip-vertical"
@@ -1273,7 +1273,7 @@ async function saveBroadcastTemplateOnly() {
                     v-slot="{ ui }"
                     :editor="editor"
                     :options="emailEditorDragHandleOptions"
-                    :ui="{ handle: 'translate-x-3 rounded border border-default bg-default/90' }"
+                    :ui="{ handle: 'translate-x-1 rounded border border-default bg-default/90' }"
                   >
                     <UButton
                       icon="i-lucide-grip-vertical"
