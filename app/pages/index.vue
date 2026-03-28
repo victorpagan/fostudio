@@ -105,6 +105,7 @@ const landingContent = computed<SiteLandingContent>(() => {
   return (siteLanding.value as SiteLandingContent | null) ?? fallbackLanding
 })
 
+const showIntroStudioSection = false
 const galleryImages = computed(() => landingContent.value.gallery.images ?? [])
 const galleryLeadImage = computed(() => galleryImages.value[0] ?? null)
 const gallerySecondaryImage = computed(() => galleryImages.value[1] ?? galleryImages.value[0] ?? null)
@@ -183,7 +184,10 @@ function tierAccentClass(tierId: string, index: number) {
     </section>
 
     <div class="mx-auto mt-12 w-full max-w-[1520px] space-y-12 px-3 sm:mt-16 sm:space-y-16 sm:px-5 lg:px-8">
-      <section class="editorial-section">
+      <section
+        v-if="showIntroStudioSection"
+        class="editorial-section"
+      >
         <div class="editorial-frame">
           <div class="editorial-grid editorial-grid-intro">
             <div class="editorial-cell editorial-meta">
