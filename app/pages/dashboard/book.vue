@@ -324,11 +324,12 @@ const ownBookingCanCancel = computed(() => {
 })
 
 const ownBookingCanExtend = computed(() => {
-  if (!clickedBooking.value?.end) return false
+  if (!clickedBooking.value?.start || !clickedBooking.value?.end) return false
   const status = String(clickedBooking.value.status ?? '').toLowerCase()
   if (!['confirmed', 'requested', 'pending_payment'].includes(status)) return false
+  const startMs = new Date(clickedBooking.value.start).getTime()
   const endMs = new Date(clickedBooking.value.end).getTime()
-  return Number.isFinite(endMs) && endMs > Date.now()
+  return Number.isFinite(startMs) && Number.isFinite(endMs) && startMs <= Date.now() && endMs > Date.now()
 })
 
 const ownBookingCanEditNote = computed(() => !ownBookingHasPassed.value)
@@ -867,10 +868,11 @@ function formatPeakCredits(value: number) {
                 Modify / reschedule
               </UButton>
               <UButton
+                v-if="ownBookingCanExtend"
                 color="primary"
                 variant="soft"
                 class="disabled:opacity-100"
-                :disabled="ownBookingActionLoading || !ownBookingCanExtend"
+                :disabled="ownBookingActionLoading"
                 @click="extendClickedBooking"
               >
                 Extend

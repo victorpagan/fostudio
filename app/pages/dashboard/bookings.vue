@@ -551,7 +551,7 @@ function canReschedule(booking: Booking) {
 
 function canExtend(booking: Booking) {
   if (!['confirmed', 'requested', 'pending_payment'].includes(String(booking.status ?? '').toLowerCase())) return false
-  return !hasEnded(booking)
+  return hasPassed(booking) && !hasEnded(booking)
 }
 
 function rescheduleLockReason(booking: Booking) {
@@ -567,6 +567,7 @@ function extendLockReason(booking: Booking) {
   if (!['confirmed', 'requested', 'pending_payment'].includes(status)) {
     return `Extension unavailable for booking status "${booking.status}".`
   }
+  if (!hasPassed(booking)) return 'Extension becomes available once your booking has started.'
   if (hasEnded(booking)) return 'Extension unavailable: booking has already ended.'
   return 'Extension unavailable.'
 }
@@ -1763,15 +1764,13 @@ watch(
                         </UButton>
                       </UDropdownMenu>
                       <UTooltip
-                        :text="canExtend(booking)
-                          ? 'Extend end time if the next slot is open.'
-                          : extendLockReason(booking)"
+                        v-if="canExtend(booking)"
+                        text="Extend end time if the next slot is open."
                       >
                         <UButton
                           size="sm"
                           color="primary"
                           variant="soft"
-                          :disabled="!canExtend(booking)"
                           @click="openExtension(booking)"
                         >
                           Extend
