@@ -66,6 +66,8 @@ function buildTestPayload(params: {
 }) {
   const currentPeriodStart = isoDate(-1)
   const currentPeriodEnd = isoDate(29)
+  const bookingStart = isoDate(1)
+  const bookingEnd = isoDate(1 + (2 / 24))
   const humanPeriodStart = formatHumanDate(currentPeriodStart)
   const humanPeriodEnd = formatHumanDate(currentPeriodEnd)
   const tierName = 'Nano'
@@ -116,6 +118,16 @@ function buildTestPayload(params: {
     customerName: 'FO Studio Test',
     customerEmail: params.recipient,
     doorCode: '123456',
+    doorCodeUpdatedAt: new Date().toISOString(),
+    guestName: 'FO Studio Guest',
+    guestEmail: params.recipient,
+    bookingId: 'test-booking-001',
+    bookingStart,
+    bookingEnd,
+    accessCode: '654321',
+    calendarUrl: `${params.origin}/calendar`,
+    manageUrl: `${params.origin}/dashboard/bookings`,
+    studioAddress: '3131 N. San Fernando Rd., Los Angeles, CA 90065',
     orderNumber: 'TEST-0001',
     orderDate: new Date().toLocaleString('en-US'),
     phoneNumber: '(555) 010-0200',
