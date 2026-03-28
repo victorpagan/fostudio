@@ -1,6 +1,7 @@
 import { requireServerAdmin } from '~~/server/utils/auth'
 import {
   getAvailableVariablesByEvent,
+  getDefaultTemplateCopyForEvent,
   getRegisteredMailEvents,
   type MailTemplateCategory
 } from '~~/server/utils/mail/templateVariables'
@@ -25,15 +26,14 @@ type MailAdminCopyPreferencesRow = {
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
-  const db = supabase as any
 
   const [{ data: prefRowRaw, error: prefError }, { data: templateRowsRaw, error: templateError }] = await Promise.all([
-    db
+    supabase
       .from('mail_admin_copy_preferences')
       .select('scope,critical_enabled,non_critical_enabled,recipients')
       .eq('scope', 'global')
       .maybeSingle(),
-    db
+    supabase
       .from('mail_template_registry')
       .select('event_type,sendgrid_template_id,category,active,description,subject_template,preheader_template,body_template')
       .order('event_type', { ascending: true })
@@ -51,6 +51,7 @@ export default defineEventHandler(async (event) => {
 
   const mergedTemplates = registeredEvents.map((registryItem) => {
     const row = templateMap.get(registryItem.eventType) ?? null
+    const defaultCopy = getDefaultTemplateCopyForEvent(registryItem.eventType)
     if (row) templateMap.delete(registryItem.eventType)
 
     return {
@@ -59,9 +60,9 @@ export default defineEventHandler(async (event) => {
       category: row?.category ?? registryItem.category,
       active: row?.active ?? true,
       description: row?.description ?? registryItem.description,
-      subjectTemplate: row?.subject_template ?? '',
-      preheaderTemplate: row?.preheader_template ?? '',
-      bodyTemplate: row?.body_template ?? ''
+      subjectTemplate: (row?.subject_template?.trim() || defaultCopy?.subjectTemplate || ''),
+      preheaderTemplate: (row?.preheader_template?.trim() || defaultCopy?.preheaderTemplate || ''),
+      bodyTemplate: (row?.body_template?.trim() || defaultCopy?.bodyTemplate || '')
     }
   })
 

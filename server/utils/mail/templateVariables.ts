@@ -7,6 +7,12 @@ export type RegisteredMailEvent = {
   description: string
 }
 
+export type MailTemplateDefaultCopy = {
+  subjectTemplate: string
+  preheaderTemplate: string
+  bodyTemplate: string
+}
+
 const COMMON_VARIABLES = [
   'to',
   'userId',
@@ -191,6 +197,29 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
   ]
 }
 
+const EVENT_DEFAULT_COPY: Record<string, MailTemplateDefaultCopy> = {
+  'membership.started': {
+    subjectTemplate: 'FO Studio: Your {{ membershipPlanName }} membership is active',
+    preheaderTemplate: 'Your door code, membership period, waiver link, and booking link are inside.',
+    bodyTemplate: `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;max-width:640px;margin:0 auto;">
+<h1 style="font-size:24px;margin:0 0 12px;">Welcome to FO Studio {{ customerName }}!</h1>
+<p style="margin:0 0 16px;">Your membership is active and you are ready to book. Here are the essentials to get started right away.</p>
+<div style="background:#f6f6f6;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin:0 0 18px;">
+<p style="margin:0 0 8px;"><strong>Membership:</strong> {{ membershipPlanName }}</p>
+<p style="margin:0 0 8px;"><strong>Period:</strong> {{ startPeriodHuman }} to {{ endPeriodHuman }}</p>
+<p style="margin:0;"><strong>Door Code:</strong> <span style="font-size:18px;letter-spacing:1px;">{{ doorCode }}</span></p>
+</div>
+<h2 style="font-size:18px;margin:0 0 10px;">Next steps</h2>
+<ol style="margin:0 0 18px 20px;padding:0;">
+<li style="margin:0 0 8px;">Sign your waiver before your first session: <a href="https://fo.studio/dashboard/waiver">Complete waiver</a></li>
+<li style="margin:0 0 8px;">Book your first studio time: <a href="https://fo.studio/dashboard/book">Book now</a></li>
+<li style="margin:0;">Save your door code somewhere secure for day-of access.</li>
+</ol>
+<p style="margin:0;">Need help? Reply to this email or contact <a href="mailto:hello@lafilmlab.com">hello@lafilmlab.com</a>.</p>
+</div>`
+  }
+}
+
 export function getRegisteredMailEvents(): RegisteredMailEvent[] {
   return REGISTERED_MAIL_EVENTS
     .map(event => ({ ...event }))
@@ -207,4 +236,12 @@ export function getAvailableVariablesByEvent(): AvailableVariablesByEvent {
   }
 
   return merged
+}
+
+export function getDefaultTemplateCopyForEvent(eventType: string): MailTemplateDefaultCopy | null {
+  const key = String(eventType ?? '').trim()
+  if (!key) return null
+  const copy = EVENT_DEFAULT_COPY[key]
+  if (!copy) return null
+  return { ...copy }
 }
