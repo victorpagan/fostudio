@@ -337,10 +337,21 @@ const ownBookingNoteDirty = computed(() =>
 )
 
 const ownBookingLockReason = computed(() => {
-  if (ownBookingHasPassed.value) return 'This booking has already started or passed and can no longer be modified or canceled.'
+  if (ownBookingHasPassed.value) {
+    if (ownBookingCanExtend.value) return 'This booking has already started. It can only be extended'
+    return 'This booking has already started or passed and can no longer be modified or canceled.'
+  }
   if (!isAdmin.value && ownBookingWithinNoticeWindow.value) return `Members cannot modify/cancel within ${memberRescheduleNoticeHours.value} hours of start.`
   return ''
 })
+
+async function refreshSidebarMembershipCredits() {
+  await Promise.allSettled([
+    refreshNuxtData('dash:sidebar:membership'),
+    refreshNuxtData('dash:sidebar:credits'),
+    refreshNuxtData('dash:sidebar:credit-cap')
+  ])
+}
 
 function closeOwnBookingActions() {
   if (ownBookingActionLoading.value) return
@@ -395,7 +406,11 @@ async function cancelClickedBooking() {
     toast.add({ title: 'Booking canceled', color: 'success' })
     closeOwnBookingActions()
     calendarKey.value++
-    await refreshHoldSummary()
+    await Promise.allSettled([
+      refreshCreditBalance(),
+      refreshHoldSummary(),
+      refreshSidebarMembershipCredits()
+    ])
   } catch (error: unknown) {
     const maybe = error as ApiErrorLike
     toast.add({
@@ -456,7 +471,11 @@ async function confirmBooking() {
     })
     closeModal(true)
     calendarKey.value++ // refresh calendar events
-    await refreshCreditBalance()
+    await Promise.allSettled([
+      refreshCreditBalance(),
+      refreshHoldSummary(),
+      refreshSidebarMembershipCredits()
+    ])
   } catch (error: unknown) {
     const maybe = error as ApiErrorLike
     const msg = maybe.data?.statusMessage ?? maybe.message ?? 'Booking failed'
@@ -831,6 +850,7 @@ function formatPeakCredits(value: number) {
               <UButton
                 color="neutral"
                 variant="soft"
+                class="disabled:opacity-100"
                 :loading="ownBookingActionLoading && ownBookingNoteDirty"
                 :disabled="ownBookingActionLoading || !ownBookingCanEditNote || !ownBookingNoteDirty"
                 @click="saveClickedBookingNote"
@@ -840,6 +860,7 @@ function formatPeakCredits(value: number) {
               <UButton
                 color="neutral"
                 variant="soft"
+                class="disabled:opacity-100"
                 :disabled="ownBookingActionLoading || !ownBookingCanModify"
                 @click="manageClickedBooking"
               >
@@ -848,6 +869,7 @@ function formatPeakCredits(value: number) {
               <UButton
                 color="primary"
                 variant="soft"
+                class="disabled:opacity-100"
                 :disabled="ownBookingActionLoading || !ownBookingCanExtend"
                 @click="extendClickedBooking"
               >
@@ -855,6 +877,7 @@ function formatPeakCredits(value: number) {
               </UButton>
               <UButton
                 color="error"
+                class="disabled:opacity-100"
                 :loading="ownBookingActionLoading"
                 :disabled="!ownBookingCanCancel"
                 @click="cancelClickedBooking"

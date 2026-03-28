@@ -203,7 +203,19 @@ function getDiscountLabel(label?: string | null) {
 
 async function refreshAll() {
   nowIso.value = new Date().toISOString()
-  await Promise.all([refreshUpcoming(), refreshPast()])
+  await Promise.allSettled([
+    refreshUpcoming(),
+    refreshPast(),
+    refreshSidebarMembershipCredits()
+  ])
+}
+
+async function refreshSidebarMembershipCredits() {
+  await Promise.allSettled([
+    refreshNuxtData('dash:sidebar:membership'),
+    refreshNuxtData('dash:sidebar:credits'),
+    refreshNuxtData('dash:sidebar:credit-cap')
+  ])
 }
 
 const cancellingId = ref<string | null>(null)
@@ -282,7 +294,11 @@ async function cancelBooking(id: string): Promise<boolean> {
         : 'Booking canceled.'
 
     toast.add({ title: 'Booking canceled', description: msg, color: 'success' })
-    await refreshUpcoming()
+    await Promise.allSettled([
+      refreshUpcoming(),
+      refreshHoldSummary(),
+      refreshSidebarMembershipCredits()
+    ])
     if (cancelTarget.value?.id === id) {
       cancelConfirmOpen.value = false
       cancelTarget.value = null
@@ -314,7 +330,11 @@ async function cancelBookingHold(id: string) {
       : result.message ?? 'Hold removed.'
 
     toast.add({ title: 'Hold updated', description: msg, color: 'success' })
-    await refreshUpcoming()
+    await Promise.allSettled([
+      refreshUpcoming(),
+      refreshHoldSummary(),
+      refreshSidebarMembershipCredits()
+    ])
     if (cancelTarget.value?.id === id && !cancellingId.value) {
       closeCancelConfirm()
     }
@@ -461,7 +481,10 @@ function canExtend(booking: Booking) {
 }
 
 function rescheduleLockReason(booking: Booking) {
-  if (hasPassed(booking)) return 'Reschedule unavailable: booking has already started/passed.'
+  if (hasPassed(booking)) {
+    if (!hasEnded(booking) && canExtend(booking)) return 'This booking has already started. It can only be extended'
+    return 'Reschedule unavailable: booking has already started/passed.'
+  }
   return `Reschedule locked within ${memberRescheduleNoticeHours.value}h of start.`
 }
 
@@ -638,7 +661,8 @@ async function saveReschedule() {
     const refreshResults = await Promise.allSettled([
       refreshUpcoming(),
       refreshPast(),
-      refreshHoldSummary()
+      refreshHoldSummary(),
+      refreshSidebarMembershipCredits()
     ])
     if (refreshResults.some(result => result.status === 'rejected')) {
       toast.add({
@@ -815,6 +839,38 @@ function mergeIntervals(intervals: Array<{ startMinute: number, endMinute: numbe
   return merged
 }
 
+function subtractInterval(
+  intervals: Array<{ startMinute: number, endMinute: number }>,
+  removal: { startMinute: number, endMinute: number }
+) {
+  if (!intervals.length) return []
+  if (removal.endMinute <= removal.startMinute) return [...intervals]
+
+  const clipped: Array<{ startMinute: number, endMinute: number }> = []
+  for (const interval of intervals) {
+    if (removal.endMinute <= interval.startMinute || removal.startMinute >= interval.endMinute) {
+      clipped.push(interval)
+      continue
+    }
+
+    if (interval.startMinute < removal.startMinute) {
+      clipped.push({
+        startMinute: interval.startMinute,
+        endMinute: Math.max(interval.startMinute, removal.startMinute)
+      })
+    }
+
+    if (interval.endMinute > removal.endMinute) {
+      clipped.push({
+        startMinute: Math.min(interval.endMinute, removal.endMinute),
+        endMinute: interval.endMinute
+      })
+    }
+  }
+
+  return clipped.filter(interval => interval.endMinute > interval.startMinute)
+}
+
 function getOpenWindowsForDay(key: string) {
   const intervals = dayOccupiedIntervals.value[key] ?? []
   if (!intervals.length) {
@@ -936,6 +992,23 @@ async function loadRescheduleMonthHints(anchorValue: string) {
     const targetHold = rescheduleTarget.value?.booking_holds?.[0] ?? null
     const targetHoldStartMs = targetHold ? new Date(targetHold.hold_start).getTime() : Number.NaN
     const targetHoldEndMs = targetHold ? new Date(targetHold.hold_end).getTime() : Number.NaN
+    const targetHoldSegmentsByDay: Record<string, { startMinute: number, endMinute: number }> = {}
+    if (Number.isFinite(targetHoldStartMs) && Number.isFinite(targetHoldEndMs) && targetHoldEndMs > targetHoldStartMs) {
+      let holdCursor = DateTime.fromMillis(targetHoldStartMs, { zone: 'utc' }).setZone(STUDIO_TZ)
+      const holdEnd = DateTime.fromMillis(targetHoldEndMs, { zone: 'utc' }).setZone(STUDIO_TZ)
+      while (holdCursor < holdEnd) {
+        const dayStart = holdCursor.startOf('day')
+        const dayEnd = dayStart.plus({ days: 1 })
+        const segmentEnd = holdEnd < dayEnd ? holdEnd : dayEnd
+        const key = toDayKey(dayStart)
+        const startMinute = Math.max(0, Math.round(holdCursor.diff(dayStart, 'minutes').minutes))
+        const endMinute = Math.min(24 * 60, Math.round(segmentEnd.diff(dayStart, 'minutes').minutes))
+        if (endMinute > startMinute) {
+          targetHoldSegmentsByDay[key] = { startMinute, endMinute }
+        }
+        holdCursor = segmentEnd
+      }
+    }
 
     const intervalsByDay: Record<string, Array<{ startMinute: number, endMinute: number }>> = {}
     for (const rawEvent of (res.events ?? [])) {
@@ -979,7 +1052,11 @@ async function loadRescheduleMonthHints(anchorValue: string) {
     const occupiedMinutesByDay: Record<string, number> = {}
     const mergedByDay: Record<string, Array<{ startMinute: number, endMinute: number }>> = {}
     for (const [key, intervals] of Object.entries(intervalsByDay)) {
-      const merged = mergeIntervals(intervals)
+      let merged = mergeIntervals(intervals)
+      const ownHoldSegment = targetHoldSegmentsByDay[key]
+      if (ownHoldSegment) {
+        merged = subtractInterval(merged, ownHoldSegment)
+      }
       mergedByDay[key] = merged
       occupiedMinutesByDay[key] = merged.reduce((sum, segment) => sum + Math.max(0, segment.endMinute - segment.startMinute), 0)
     }
