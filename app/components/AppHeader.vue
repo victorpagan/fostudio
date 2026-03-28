@@ -157,20 +157,23 @@ async function logout() {
               color="neutral"
               variant="ghost"
               aria-label="Menu"
+              :aria-expanded="isOpen"
               class="lg:hidden"
-              @click="isOpen = !isOpen"
+              @click.stop.prevent="isOpen = !isOpen"
             />
           </div>
         </div>
       </div>
     </div>
 
-    <Transition name="fade-slide">
-      <div
-        v-if="isOpen"
-        class="site-mobile-menu lg:hidden"
-      >
-        <div class="site-mobile-menu-inner space-y-2 py-4">
+    <USlideover
+      v-model:open="isOpen"
+      title="Menu"
+      side="right"
+      class="lg:hidden"
+    >
+      <template #body>
+        <div class="site-mobile-menu-inner space-y-2 py-2">
           <NuxtLink
             v-for="l in links"
             :key="l.to"
@@ -242,7 +245,7 @@ async function logout() {
             </button>
           </template>
         </div>
-      </div>
-    </Transition>
+      </template>
+    </USlideover>
   </header>
 </template>
