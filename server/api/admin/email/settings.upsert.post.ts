@@ -36,9 +36,21 @@ function normalizeBodyTemplate(value: string): string | null {
   return value
 }
 
+function findUnsupportedTemplateSyntax(value: string): string | null {
+  if (!value.trim()) return null
+
+  if (/{{{\s*[^}]+\s*}}}/.test(value)) {
+    return 'Triple-brace tokens are not supported in registry copy. Use {{ variableName }} tokens only.'
+  }
+  if (/{{\s*[#/][^}]+}}/.test(value)) {
+    return 'Handlebars control blocks (for example {{#if}}...{{/if}}) are not supported. Use plain {{ variableName }} tokens only.'
+  }
+
+  return null
+}
+
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
-  const db = supabase as any
   const body = bodySchema.parse(await readBody(event))
 
   const recipients = [...new Set(
@@ -60,6 +72,30 @@ export default defineEventHandler(async (event) => {
 
   for (const template of body.templates) {
     const eventType = template.eventType.trim()
+    const unsupportedSubject = findUnsupportedTemplateSyntax(template.subjectTemplate)
+    if (unsupportedSubject) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `${eventType} subject template: ${unsupportedSubject}`
+      })
+    }
+
+    const unsupportedPreheader = findUnsupportedTemplateSyntax(template.preheaderTemplate)
+    if (unsupportedPreheader) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `${eventType} preheader template: ${unsupportedPreheader}`
+      })
+    }
+
+    const unsupportedBody = findUnsupportedTemplateSyntax(template.bodyTemplate)
+    if (unsupportedBody) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `${eventType} body template: ${unsupportedBody}`
+      })
+    }
+
     normalizedTemplates.set(eventType, {
       event_type: eventType,
       sendgrid_template_id: template.sendgridTemplateId.trim(),
@@ -72,7 +108,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { error: prefError } = await db
+  const { error: prefError } = await supabase
     .from('mail_admin_copy_preferences')
     .upsert([{
       scope: 'global',
@@ -84,7 +120,7 @@ export default defineEventHandler(async (event) => {
   if (prefError) throw createError({ statusCode: 500, statusMessage: prefError.message })
 
   const templates = [...normalizedTemplates.values()]
-  const { data: existingTemplatesRaw, error: existingTemplatesError } = await db
+  const { data: existingTemplatesRaw, error: existingTemplatesError } = await supabase
     .from('mail_template_registry')
     .select('event_type')
 
@@ -93,7 +129,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (templates.length > 0) {
-    const { error: templatesError } = await db
+    const { error: templatesError } = await supabase
       .from('mail_template_registry')
       .upsert(templates, { onConflict: 'event_type' })
 
@@ -106,7 +142,7 @@ export default defineEventHandler(async (event) => {
     .filter((eventType: string) => !incomingEventTypes.has(eventType))
 
   if (eventTypesToDelete.length > 0) {
-    const { error: deleteError } = await db
+    const { error: deleteError } = await supabase
       .from('mail_template_registry')
       .delete()
       .in('event_type', eventTypesToDelete)

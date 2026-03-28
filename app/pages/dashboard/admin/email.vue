@@ -331,7 +331,7 @@ async function sendTemplateTest() {
 
     toast.add({
       title: 'Test email sent',
-      description: `Sent to ${res.recipient}`,
+      description: `Sent to ${res.recipient} using sample dynamic data.`,
       color: 'success'
     })
   } catch (error: unknown) {
@@ -377,7 +377,7 @@ async function sendTemplateTest() {
             variant="soft"
             icon="i-lucide-mail"
             title="Centralized mail controls"
-            description="Configure admin copies and SendGrid template mapping by event type. Supports {{ variableName }} interpolation for subject, preheader, and body (single-pass, unresolved variables render blank)."
+            description="Configure admin copies and SendGrid template mapping by event type. Supports {{ variableName }} interpolation for subject, preheader, and body (single-pass, unresolved variables render blank). Handlebars control blocks like {{#if}} are not supported."
           />
 
           <UCard>
@@ -626,7 +626,7 @@ async function sendTemplateTest() {
                   <span class="text-warning-700 dark:text-warning-300">Body template (HTML)</span>
                 </template>
                 <template #description>
-                  Use <code v-pre>{{ variableName }}</code> tokens. This value is passed to SendGrid as <code v-pre>{{ body }}</code>.
+                  Use <code v-pre>{{ variableName }}</code> tokens only. No <code v-pre>{{#if}}</code> or <code v-pre>{{/if}}</code> blocks. This value is passed to SendGrid as <code v-pre>{{ body }}</code>, <code v-pre>{{ bodyHtml }}</code>, and <code v-pre>{{ bodyHTML }}</code>.
                 </template>
                 <UEditor
                   v-model="templateDraft.bodyTemplate"

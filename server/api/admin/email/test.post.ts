@@ -24,6 +24,16 @@ function isoDate(offsetDays = 0) {
   return at.toISOString()
 }
 
+function formatHumanDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  }).format(date)
+}
+
 function readUpstreamErrorDetails(error: unknown) {
   if (!error || typeof error !== 'object') return null
   const value = error as {
@@ -54,6 +64,12 @@ function buildTestPayload(params: {
   templateId: string
   origin: string
 }) {
+  const currentPeriodStart = isoDate(-1)
+  const currentPeriodEnd = isoDate(29)
+  const humanPeriodStart = formatHumanDate(currentPeriodStart)
+  const humanPeriodEnd = formatHumanDate(currentPeriodEnd)
+  const tierName = 'Nano'
+
   const base = {
     to: params.recipient,
     userId: params.userId,
@@ -71,7 +87,8 @@ function buildTestPayload(params: {
   return {
     ...base,
     tierId: 'nano',
-    tierName: 'Nano',
+    tierName,
+    membershipPlanName: tierName,
     cadence: 'daily',
     cadenceLabel: 'Daily',
     checkoutUrl: `${params.origin}/checkout?tier=nano&cadence=daily`,
@@ -79,8 +96,10 @@ function buildTestPayload(params: {
     checkoutToken: 'test-token',
     planVariationId: 'test-plan-variation',
     paymentLinkId: 'test-payment-link',
-    currentPeriodStart: isoDate(-1),
-    currentPeriodEnd: isoDate(29),
+    currentPeriodStart,
+    currentPeriodEnd,
+    startPeriodHuman: humanPeriodStart,
+    endPeriodHuman: humanPeriodEnd,
     subscriptionId: 'test-subscription',
     squareStatus: 'ACTIVE',
     membershipId: 'test-membership',
@@ -96,7 +115,7 @@ function buildTestPayload(params: {
     isPriorityMember: true,
     customerName: 'FO Studio Test',
     customerEmail: params.recipient,
-    doorCode: '2468',
+    doorCode: '123456',
     orderNumber: 'TEST-0001',
     orderDate: new Date().toLocaleString('en-US'),
     phoneNumber: '(555) 010-0200',
