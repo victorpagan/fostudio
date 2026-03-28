@@ -913,6 +913,28 @@ function mergeIntervals(intervals: Array<{ startMinute: number, endMinute: numbe
   return merged
 }
 
+function getTargetHoldSegmentForDay(key: string) {
+  const targetHold = rescheduleTarget.value?.booking_holds?.[0] ?? null
+  if (!targetHold) return null
+  const holdStart = DateTime.fromISO(targetHold.hold_start, { setZone: true }).setZone(STUDIO_TZ)
+  const holdEnd = DateTime.fromISO(targetHold.hold_end, { setZone: true }).setZone(STUDIO_TZ)
+  if (!holdStart.isValid || !holdEnd.isValid || holdEnd <= holdStart) return null
+
+  const dayStart = dayKeyToDateTime(key)
+  if (!dayStart) return null
+  const dayEnd = dayStart.plus({ days: 1 })
+
+  const segmentStart = holdStart > dayStart ? holdStart : dayStart
+  const segmentEnd = holdEnd < dayEnd ? holdEnd : dayEnd
+  if (segmentEnd <= segmentStart) return null
+
+  const startMinute = Math.max(0, Math.round(segmentStart.diff(dayStart, 'minutes').minutes))
+  const endMinute = Math.min(24 * 60, Math.round(segmentEnd.diff(dayStart, 'minutes').minutes))
+  if (endMinute <= startMinute) return null
+
+  return { startMinute, endMinute }
+}
+
 function subtractInterval(
   intervals: Array<{ startMinute: number, endMinute: number }>,
   removal: { startMinute: number, endMinute: number }
@@ -945,8 +967,16 @@ function subtractInterval(
   return clipped.filter(interval => interval.endMinute > interval.startMinute)
 }
 
-function getOpenWindowsForDay(key: string) {
-  const intervals = dayOccupiedIntervals.value[key] ?? []
+function getEditableIntervalsForDay(key: string) {
+  let intervals = [...(dayOccupiedIntervals.value[key] ?? [])]
+  const ownHoldSegment = getTargetHoldSegmentForDay(key)
+  if (ownHoldSegment) {
+    intervals = subtractInterval(intervals, ownHoldSegment)
+  }
+  return mergeIntervals(intervals)
+}
+
+function getOpenWindowsFromIntervals(intervals: Array<{ startMinute: number, endMinute: number }>) {
   if (!intervals.length) {
     return [{ startMinute: 0, endMinute: 24 * 60 }]
   }
@@ -962,6 +992,10 @@ function getOpenWindowsForDay(key: string) {
     windows.push({ startMinute: cursor, endMinute: 24 * 60 })
   }
   return windows.filter(window => (window.endMinute - window.startMinute) >= 30)
+}
+
+function getOpenWindowsForDay(key: string) {
+  return getOpenWindowsFromIntervals(getEditableIntervalsForDay(key))
 }
 
 function minuteToAligned30(minute: number) {
@@ -1194,50 +1228,73 @@ const selectedStartMinute = computed(() => {
 })
 
 const selectedDayEndOptions = computed(() => {
+  const buildOptions = (params: {
+    key: string
+    fromMinute: number
+    toMinute: number
+    minExclusive?: number | null
+  }) => {
+    if (params.toMinute <= params.fromMinute) return [] as Array<{ label: string, value: string }>
+
+    const values: number[] = []
+    let minute = minuteToAligned30(params.fromMinute + 30)
+    while (minute <= params.toMinute) {
+      values.push(minute)
+      minute += 30
+    }
+    if (!values.includes(params.toMinute)) {
+      values.push(params.toMinute)
+    }
+
+    return Array.from(new Set(values))
+      .sort((a, b) => a - b)
+      .filter(endMinute => params.minExclusive == null || endMinute > params.minExclusive)
+      .map((endMinute) => {
+        const value = toLocalInputForDayMinute(params.key, endMinute)
+        if (!value) return null
+        const labelDate = DateTime.fromFormat(value, 'yyyy-LL-dd\'T\'HH:mm', { zone: STUDIO_TZ })
+        return {
+          value,
+          label: labelDate.isValid ? labelDate.toFormat('EEE, LLL d · h:mm a') : value
+        }
+      })
+      .filter((option): option is { label: string, value: string } => Boolean(option))
+  }
+
+  if (rescheduleMode.value === 'extend') {
+    const baseEnd = localInputToDateTime(rescheduleBaseEndTime.value)?.setZone(STUDIO_TZ)
+    if (!baseEnd || !baseEnd.isValid) return [] as Array<{ label: string, value: string }>
+    const key = toDayKey(baseEnd)
+    const baseEndMinute = baseEnd.hour * 60 + baseEnd.minute
+    const intervals = getEditableIntervalsForDay(key)
+    const nextOccupiedStart = intervals.find(interval => interval.startMinute >= baseEndMinute)?.startMinute ?? (24 * 60)
+    return buildOptions({
+      key,
+      fromMinute: baseEndMinute,
+      toMinute: nextOccupiedStart,
+      minExclusive: baseEndMinute
+    })
+  }
+
   const key = selectedRescheduleDay.value
   const startMinute = selectedStartMinute.value
   if (!key || startMinute === null) return [] as Array<{ label: string, value: string }>
 
-  const intervals = dayOccupiedIntervals.value[key] ?? []
-  const containingWindow = getOpenWindowsForDay(key).find(window =>
+  const intervals = getEditableIntervalsForDay(key)
+  const containingWindow = getOpenWindowsFromIntervals(intervals).find(window =>
     startMinute >= window.startMinute && startMinute < window.endMinute
   )
   if (!containingWindow) return [] as Array<{ label: string, value: string }>
-
-  const values: number[] = []
-  let minute = minuteToAligned30(startMinute + 30)
-  while (minute <= containingWindow.endMinute) {
-    values.push(minute)
-    minute += 30
-  }
-  if (!values.includes(containingWindow.endMinute)) {
-    values.push(containingWindow.endMinute)
-  }
 
   // If the selected start is inside an occupied interval due to stale state, keep empty.
   const overlapsOccupied = intervals.some(interval => startMinute >= interval.startMinute && startMinute < interval.endMinute)
   if (overlapsOccupied) return [] as Array<{ label: string, value: string }>
 
-  const baseEndMinute = (() => {
-    if (rescheduleMode.value !== 'extend') return null
-    const baseEnd = localInputToDateTime(rescheduleBaseEndTime.value)?.setZone(STUDIO_TZ)
-    if (!baseEnd || !baseEnd.isValid || toDayKey(baseEnd) !== key) return null
-    return baseEnd.hour * 60 + baseEnd.minute
-  })()
-
-  return Array.from(new Set(values))
-    .sort((a, b) => a - b)
-    .filter(endMinute => baseEndMinute === null || endMinute > baseEndMinute)
-    .map((endMinute) => {
-      const value = toLocalInputForDayMinute(key, endMinute)
-      if (!value) return null
-      const labelDate = DateTime.fromFormat(value, 'yyyy-LL-dd\'T\'HH:mm', { zone: STUDIO_TZ })
-      return {
-        value,
-        label: labelDate.isValid ? labelDate.toFormat('EEE, LLL d · h:mm a') : value
-      }
-    })
-    .filter((option): option is { label: string, value: string } => Boolean(option))
+  return buildOptions({
+    key,
+    fromMinute: startMinute,
+    toMinute: containingWindow.endMinute
+  })
 })
 
 watch(selectedDayEndOptions, (options) => {
