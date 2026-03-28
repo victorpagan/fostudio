@@ -1659,18 +1659,47 @@ h6 {
 }
 
 .availability-chip-peak {
-  background: rgba(255, 49, 92, 0.14);
-  color: var(--gruv-ink-1);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(225, 161, 94, 0.42) 0,
+      rgba(225, 161, 94, 0.42) 8px,
+      rgba(193, 119, 56, 0.38) 8px,
+      rgba(193, 119, 56, 0.38) 16px
+    );
+  color: color-mix(in srgb, var(--gruv-ink-1) 94%, #2b1808 6%);
+  border: 1px solid color-mix(in srgb, #c17738 56%, var(--gruv-line) 44%);
 }
 
 .dark .availability-chip-peak {
-  background: rgba(255, 74, 111, 0.26);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(225, 161, 94, 0.44) 0,
+      rgba(225, 161, 94, 0.44) 8px,
+      rgba(193, 119, 56, 0.4) 8px,
+      rgba(193, 119, 56, 0.4) 16px
+    );
+  color: #f6efe4;
+  border: 1px solid rgba(232, 173, 111, 0.52);
 }
 
 .availability-dot {
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 999px;
+}
+
+.availability-dot-peak {
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      #f4c58c 0,
+      #f4c58c 4px,
+      #c17738 4px,
+      #c17738 8px
+    );
+  border: 1px solid rgba(111, 62, 20, 0.46);
 }
 
 .availability-shell .fc {
@@ -1762,13 +1791,27 @@ h6 {
 }
 
 .availability-shell .fc .fc-bg-event.fc-peak-window {
-  background: rgba(184, 93, 74, 0.2);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(225, 161, 94, 0.26) 0,
+      rgba(225, 161, 94, 0.26) 10px,
+      rgba(193, 119, 56, 0.26) 10px,
+      rgba(193, 119, 56, 0.26) 20px
+    );
   opacity: 1;
   border-radius: 0;
 }
 
 .dark .availability-shell .fc .fc-bg-event.fc-peak-window {
-  background: rgba(184, 93, 74, 0.28);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(225, 161, 94, 0.24) 0,
+      rgba(225, 161, 94, 0.24) 10px,
+      rgba(193, 119, 56, 0.24) 10px,
+      rgba(193, 119, 56, 0.24) 20px
+    );
 }
 
 .availability-shell .fc .fc-event {

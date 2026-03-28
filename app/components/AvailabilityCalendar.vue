@@ -518,7 +518,7 @@ onUnmounted(() => {
           v-if="peakChip"
           class="availability-chip availability-chip-peak"
         >
-          <span class="availability-dot bg-[color:var(--gruv-accent)]" />
+          <span class="availability-dot availability-dot-peak" />
           {{ peakChip }}
         </div>
         <div
