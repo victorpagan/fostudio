@@ -1353,10 +1353,6 @@ h6 {
   background: rgba(23, 32, 44, 0.56);
 }
 
-.memberships-page {
-  padding-inline: clamp(0.85rem, 2.6vw, 2.4rem);
-}
-
 .memberships-hero-grid {
   grid-template-columns: minmax(11.5rem, 0.78fr) minmax(0, 1.22fr) minmax(0, 1fr);
   grid-template-areas: "meta copy info";
@@ -2207,10 +2203,6 @@ h6 {
     border-top: 1px solid var(--gruv-line);
   }
 
-  .memberships-page {
-    padding-inline: 0.75rem;
-  }
-
   .memberships-hero-grid {
     grid-template-columns: 1fr 1fr;
     grid-template-areas:
@@ -2279,10 +2271,6 @@ h6 {
   .site-footer-contact {
     margin-top: 0;
     gap: 0.15rem;
-  }
-
-  .memberships-page {
-    padding-inline: 0.55rem;
   }
 
   .calendar-page {

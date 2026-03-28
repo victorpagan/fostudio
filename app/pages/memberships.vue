@@ -314,7 +314,7 @@ async function submitWaitlist() {
 </script>
 
 <template>
-  <div class="memberships-page py-10 sm:py-14">
+  <UContainer class="memberships-page py-10 sm:py-14">
     <section class="editorial-section">
       <div class="editorial-frame">
         <div class="editorial-grid memberships-hero-grid">
@@ -585,5 +585,5 @@ async function submitWaitlist() {
         </UCard>
       </template>
     </UModal>
-  </div>
+  </UContainer>
 </template>
