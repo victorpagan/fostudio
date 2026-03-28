@@ -333,7 +333,7 @@ const EVENT_DEFAULT_COPY: Record<string, MailTemplateDefaultCopy> = {
 <div style="background:#f6f6f6;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin:0 0 16px;">
 <p style="margin:0 0 8px;"><strong>Credits added:</strong> {{ creditsAdded }}</p>
 <p style="margin:0 0 8px;"><strong>New balance:</strong> {{ newBalance }}</p>
-<p style="margin:0;"><strong>Amount:</strong> ${{ amountDollars }}</p>
+<p style="margin:0;"><strong>Amount:</strong> &#36;{{ amountDollars }}</p>
 </div>
 <p style="margin:0 0 14px;">Payment reference: {{ paymentId }}</p>
 <p style="margin:0;"><a href="https://fo.studio/dashboard/book">Use credits to book studio time</a></p>
@@ -348,7 +348,7 @@ const EVENT_DEFAULT_COPY: Record<string, MailTemplateDefaultCopy> = {
 <div style="background:#f6f6f6;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin:0 0 16px;">
 <p style="margin:0 0 8px;"><strong>Holds added:</strong> {{ holdsAdded }}</p>
 <p style="margin:0 0 8px;"><strong>New hold balance:</strong> {{ newHoldBalance }}</p>
-<p style="margin:0;"><strong>Amount:</strong> ${{ amountDollars }}</p>
+<p style="margin:0;"><strong>Amount:</strong> &#36;{{ amountDollars }}</p>
 </div>
 <p style="margin:0 0 14px;">Payment reference: {{ paymentId }}</p>
 <p style="margin:0;"><a href="https://fo.studio/dashboard/bookings">Manage your bookings and holds</a></p>
