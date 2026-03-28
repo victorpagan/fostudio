@@ -24,12 +24,33 @@ type AdminEmailSettingsResponse = {
   availableVariablesByEvent: Record<string, string[]>
 }
 
+type BroadcastSendResponse = {
+  ok: boolean
+  eventType: string
+  includeMembershipRecipients: boolean
+  templateId: string
+  counts: {
+    totalRecipients: number
+    memberRecipients: number
+    extraRecipients: number
+    sent: number
+    skipped: number
+    failed: number
+  }
+  failedRecipients: Array<{ recipient: string, source: 'member' | 'extra', message: string }>
+  skippedRecipients: Array<{ recipient: string, source: 'member' | 'extra', reason: string }>
+}
+
 const toast = useToast()
 const saving = ref(false)
 const sendingTest = ref(false)
+const sendingBroadcast = ref(false)
 const pending = ref(false)
 const recipientsInput = ref('')
 const testRecipient = ref('')
+const broadcastEventType = ref('')
+const broadcastIncludeMembershipRecipients = ref(true)
+const broadcastRecipientsInput = ref('')
 const templates = ref<AdminMailTemplate[]>([])
 const availableVariablesByEvent = ref<Record<string, string[]>>({ '*': [] })
 const templateModalOpen = ref(false)
@@ -79,6 +100,29 @@ async function loadSettings(options: { silent?: boolean } = {}) {
 onMounted(() => {
   void loadSettings({ silent: true })
 })
+
+const broadcastTemplateOptions = computed(() => {
+  return templates.value
+    .filter(template => hasTemplateId(template))
+    .map(template => ({
+      value: template.eventType,
+      label: template.eventType
+    }))
+})
+
+watch(
+  broadcastTemplateOptions,
+  (options) => {
+    if (!options.length) {
+      broadcastEventType.value = ''
+      return
+    }
+    if (!options.some(option => option.value === broadcastEventType.value)) {
+      broadcastEventType.value = options[0]?.value ?? ''
+    }
+  },
+  { immediate: true }
+)
 
 const selectedTemplateVariables = computed(() => {
   const draft = templateDraft.value
@@ -379,6 +423,56 @@ async function sendTemplateTest() {
     sendingTest.value = false
   }
 }
+
+async function sendBroadcastEmail() {
+  if (!broadcastEventType.value) {
+    toast.add({
+      title: 'Choose an event type',
+      description: 'Select a configured event template before sending.',
+      color: 'warning'
+    })
+    return
+  }
+
+  sendingBroadcast.value = true
+  try {
+    const response = await $fetch<BroadcastSendResponse>('/api/admin/email/broadcast', {
+      method: 'POST',
+      body: {
+        eventType: broadcastEventType.value,
+        includeMembershipRecipients: broadcastIncludeMembershipRecipients.value,
+        additionalRecipients: parseRecipients(broadcastRecipientsInput.value)
+      }
+    })
+
+    const counts = response.counts
+    toast.add({
+      title: 'Broadcast complete',
+      description: `Sent ${counts.sent}/${counts.totalRecipients} (${counts.skipped} skipped, ${counts.failed} failed).`,
+      color: counts.failed > 0 ? 'warning' : 'success'
+    })
+
+    if (counts.failed > 0 && response.failedRecipients.length > 0) {
+      const preview = response.failedRecipients
+        .slice(0, 3)
+        .map(item => `${item.recipient}: ${item.message}`)
+        .join(' | ')
+      toast.add({
+        title: 'Some recipients failed',
+        description: preview,
+        color: 'error'
+      })
+    }
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not send broadcast',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    sendingBroadcast.value = false
+  }
+}
 </script>
 
 <template>
@@ -414,6 +508,79 @@ async function sendTemplateTest() {
             title="Centralized mail controls"
             description="Configure admin copies and SendGrid template mapping by event type. Supports {{ variableName }} interpolation for subject, preheader, and body (single-pass, unresolved variables render blank). Handlebars control blocks like {{#if}} are not supported."
           />
+
+          <UCard>
+            <div class="space-y-4">
+              <div class="flex items-center justify-between gap-3">
+                <div class="text-sm font-medium">
+                  Member broadcast
+                </div>
+                <UBadge
+                  color="neutral"
+                  variant="soft"
+                  size="sm"
+                >
+                  Admin only
+                </UBadge>
+              </div>
+
+              <div class="text-xs text-dimmed">
+                Send one registry event to all membership emails, and optionally include extra recipients not in memberships.
+              </div>
+
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField label="Event type">
+                  <select
+                    v-model="broadcastEventType"
+                    class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
+                  >
+                    <option
+                      v-for="option in broadcastTemplateOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </UFormField>
+
+                <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2.5">
+                  <div>
+                    <div class="text-sm font-medium">
+                      Include membership recipients
+                    </div>
+                    <div class="text-xs text-dimmed">
+                      Uses unique customer emails from memberships.
+                    </div>
+                  </div>
+                  <USwitch v-model="broadcastIncludeMembershipRecipients" />
+                </div>
+              </div>
+
+              <UFormField
+                label="Additional recipients"
+                description="Optional. One email per line or comma-separated."
+              >
+                <UTextarea
+                  v-model="broadcastRecipientsInput"
+                  :rows="4"
+                  class="w-full"
+                  placeholder="freelancer@example.com&#10;agency@example.com"
+                />
+              </UFormField>
+
+              <div class="flex justify-end">
+                <UButton
+                  icon="i-lucide-send"
+                  :loading="sendingBroadcast"
+                  :disabled="!broadcastEventType"
+                  @click="sendBroadcastEmail"
+                >
+                  Send broadcast
+                </UButton>
+              </div>
+            </div>
+          </UCard>
 
           <UCard>
             <div class="space-y-4">
