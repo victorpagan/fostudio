@@ -293,7 +293,6 @@ h6 {
 }
 
 .site-nav {
-  display: inline-flex;
   align-items: center;
   gap: 0.15rem;
 }
@@ -306,7 +305,6 @@ h6 {
 }
 
 .site-auth-link {
-  display: inline-flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-display);
