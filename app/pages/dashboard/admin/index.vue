@@ -69,6 +69,12 @@ const sections = [
     to: '/dashboard/admin/email'
   },
   {
+    title: 'Email campaigns',
+    description: 'Build draft campaigns, choose a campaign template, and send member broadcast mailings.',
+    icon: 'i-lucide-megaphone',
+    to: '/dashboard/admin/email-campaigns'
+  },
+  {
     title: 'Holds',
     description: 'Configure hold fallback, hold top-up settings, and sync the hold item to Square.',
     icon: 'i-lucide-package-plus',

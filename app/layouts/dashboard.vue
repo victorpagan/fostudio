@@ -176,6 +176,12 @@ const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
         onSelect: () => { open.value = false }
       },
       {
+        label: 'Email Campaigns',
+        icon: 'i-lucide-megaphone',
+        to: '/dashboard/admin/email-campaigns',
+        onSelect: () => { open.value = false }
+      },
+      {
         label: 'Holds',
         icon: 'i-lucide-package-plus',
         to: '/dashboard/admin/holds',
