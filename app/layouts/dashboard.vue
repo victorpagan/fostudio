@@ -349,12 +349,12 @@ watch(
             <img
               src="/images/logo.png"
               alt="FO Studio logo"
-              class="h-6 w-6 shrink-0 object-contain dark:hidden"
+              class="h-7 w-7 shrink-0 object-contain dark:hidden"
             >
             <img
               src="/images/logo-white.png"
               alt="FO Studio logo"
-              class="hidden h-6 w-6 shrink-0 object-contain dark:block"
+              class="hidden h-7 w-7 shrink-0 object-contain dark:block"
             >
             <span
               v-if="!collapsed"
@@ -445,13 +445,6 @@ watch(
           tooltip
           class="mt-auto"
         />
-
-        <div
-          class="mt-3 flex"
-          :class="collapsed ? 'justify-center' : 'justify-start'"
-        >
-          <UColorModeButton />
-        </div>
       </template>
 
       <template #footer="{ collapsed }">

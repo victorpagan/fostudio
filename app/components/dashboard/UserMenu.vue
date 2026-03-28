@@ -6,6 +6,7 @@ defineProps<{ collapsed?: boolean }>()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const router = useRouter()
+const colorMode = useColorMode()
 
 const { data: customer } = await useAsyncData('userMenuCustomer', async () => {
   if (!user.value) return null
@@ -60,23 +61,35 @@ const items = computed<DropdownMenuItem[][]>(() => ([
 </script>
 
 <template>
-  <UDropdownMenu
-    :items="items"
-    :content="{ align: 'center', collisionPadding: 12 }"
-    :ui="{ content: collapsed ? 'w-56' : 'w-(--reka-dropdown-menu-trigger-width)' }"
+  <div
+    class="flex items-center gap-2"
+    :class="collapsed ? 'justify-center' : 'w-full'"
   >
-    <UButton
-      v-bind="{
-        label: collapsed ? undefined : displayName,
-        trailingIcon: collapsed ? undefined : 'i-lucide-chevrons-up-down'
-      }"
-      :avatar="avatar"
+    <UDropdownMenu
+      :items="items"
+      :content="{ align: 'center', collisionPadding: 12 }"
+      :ui="{ content: collapsed ? 'w-56' : 'w-(--reka-dropdown-menu-trigger-width)' }"
+      :class="collapsed ? '' : 'min-w-0 flex-1'"
+    >
+      <UButton
+        v-bind="{
+          label: collapsed ? undefined : displayName,
+          trailingIcon: collapsed ? undefined : 'i-lucide-chevrons-up-down'
+        }"
+        :avatar="avatar"
+        color="neutral"
+        variant="ghost"
+        block
+        :square="collapsed"
+        class="data-[state=open]:bg-elevated"
+        :ui="{ trailingIcon: 'text-dimmed' }"
+      />
+    </UDropdownMenu>
+
+    <UColorModeButton
       color="neutral"
       variant="ghost"
-      block
-      :square="collapsed"
-      class="data-[state=open]:bg-elevated"
-      :ui="{ trailingIcon: 'text-dimmed' }"
+      :aria-label="colorMode.value === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
     />
-  </UDropdownMenu>
+  </div>
 </template>

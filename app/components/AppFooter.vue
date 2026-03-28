@@ -2,22 +2,11 @@
 const year = new Date().getFullYear()
 const colorMode = useColorMode()
 const isDarkMode = computed(() => colorMode.value === 'dark')
-const config = useRuntimeConfig()
-
-const footerPhone = computed(() => config.public.contactPhone?.trim() || '')
-const footerAddress = computed(() => config.public.contactLocation?.trim() || '')
-const footerAddressLines = computed(() => {
-  if (!footerAddress.value) return []
-  return footerAddress.value
-    .split(/\n+/)
-    .map(line => line.trim())
-    .filter(Boolean)
-})
-const footerPhoneHref = computed(() => {
-  if (!footerPhone.value) return ''
-  const normalized = footerPhone.value.replace(/[^\d+]/g, '')
-  return normalized ? `tel:${normalized}` : ''
-})
+const footerAddressLines = [
+  'FO Studio',
+  '3131 N. San Fernando Rd.',
+  'Los Angeles, CA 90065'
+]
 
 const footerLinks = [
   { label: 'Policies', to: '/policies' },
@@ -34,13 +23,7 @@ function toggleColorMode() {
   <UFooter class="site-footer">
     <UContainer class="site-footer-row">
       <div class="site-footer-brand">
-        <div class="site-footer-copyright">
-          © {{ year }} FO Studio
-        </div>
-        <div
-          v-if="footerAddress || footerPhone"
-          class="site-footer-contact"
-        >
+        <div class="site-footer-contact">
           <span
             v-for="line in footerAddressLines"
             :key="line"
@@ -48,13 +31,9 @@ function toggleColorMode() {
           >
             {{ line }}
           </span>
-          <a
-            v-if="footerPhone"
-            :href="footerPhoneHref || undefined"
-            class="site-footer-contact-item site-footer-contact-phone"
-          >
-            {{ footerPhone }}
-          </a>
+        </div>
+        <div class="site-footer-copyright">
+          © {{ year }}
         </div>
       </div>
 
