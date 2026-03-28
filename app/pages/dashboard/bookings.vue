@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from '@nuxt/ui'
 import { DateTime } from 'luxon'
 import { normalizeDiscountLabel } from '~~/app/utils/membershipDiscount'
 import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
@@ -99,6 +100,7 @@ type CalendarLoadResponse = {
 }
 
 const STUDIO_TZ = 'America/Los_Angeles'
+const STUDIO_LOCATION_LABEL = 'FO Studio, 3131 N. San Fernando Rd., Los Angeles, CA 90065'
 const PAST_BOOKINGS_PAGE_SIZE = 10
 type BookingTab = 'active' | 'holds' | 'past'
 type RescheduleMode = 'reschedule' | 'extend'
@@ -425,6 +427,78 @@ function statusColor(status: string): 'success' | 'warning' | 'error' | 'neutral
 
 function formatStatus(status: string) {
   return status
+}
+
+function toGoogleCalendarDate(value: string) {
+  const dt = DateTime.fromISO(value, { setZone: true })
+  if (!dt.isValid) return null
+  return dt.toUTC().toFormat('yyyyLLdd\'T\'HHmmss\'Z\'')
+}
+
+function openGoogleCalendarExport(booking: Booking) {
+  const start = toGoogleCalendarDate(booking.start_time)
+  const end = toGoogleCalendarDate(booking.end_time)
+  if (!start || !end) {
+    toast.add({
+      title: 'Could not export booking',
+      description: 'Booking time could not be parsed for Google Calendar.',
+      color: 'error'
+    })
+    return
+  }
+
+  const details = [
+    'Booked via FO Studio dashboard.',
+    `Status: ${String(booking.status ?? 'confirmed')}`,
+    `Booking ID: ${booking.id}`,
+    booking.notes ? `Notes: ${booking.notes}` : null
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  const title = String(booking.status ?? '').toLowerCase() === 'canceled'
+    ? 'FO Studio Booking (Canceled)'
+    : 'FO Studio Booking'
+
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    dates: `${start}/${end}`,
+    details,
+    location: STUDIO_LOCATION_LABEL
+  })
+
+  const url = `https://calendar.google.com/calendar/render?${params.toString()}`
+  if (import.meta.client) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+}
+
+function openIcalExport(booking: Booking) {
+  if (!import.meta.client) return
+  const href = `/api/bookings/${encodeURIComponent(booking.id)}/ical`
+  window.open(href, '_blank', 'noopener,noreferrer')
+}
+
+function bookingExportItems(booking: Booking): DropdownMenuItem[][] {
+  return [[
+    {
+      label: 'Google Calendar',
+      icon: 'i-lucide-calendar-days',
+      onSelect: (event: Event) => {
+        event.preventDefault()
+        openGoogleCalendarExport(booking)
+      }
+    },
+    {
+      label: 'Download iCal (.ics)',
+      icon: 'i-lucide-download',
+      onSelect: (event: Event) => {
+        event.preventDefault()
+        openIcalExport(booking)
+      }
+    }
+  ]]
 }
 
 function hoursUntilStart(booking: Booking) {
@@ -1618,6 +1692,19 @@ watch(
                       </p>
                     </div>
                     <div class="shrink-0 flex items-center gap-2">
+                      <UDropdownMenu
+                        :items="bookingExportItems(booking)"
+                        :content="{ align: 'end' }"
+                      >
+                        <UButton
+                          size="sm"
+                          color="neutral"
+                          variant="soft"
+                          icon="i-lucide-calendar-plus"
+                        >
+                          Add to calendar
+                        </UButton>
+                      </UDropdownMenu>
                       <UTooltip
                         :text="canExtend(booking)
                           ? 'Extend end time if the next slot is open.'
@@ -1723,6 +1810,19 @@ watch(
                       </p>
                     </div>
                     <div class="shrink-0 flex items-center gap-2">
+                      <UDropdownMenu
+                        :items="bookingExportItems(booking)"
+                        :content="{ align: 'end' }"
+                      >
+                        <UButton
+                          size="sm"
+                          color="neutral"
+                          variant="soft"
+                          icon="i-lucide-calendar-plus"
+                        >
+                          Add to calendar
+                        </UButton>
+                      </UDropdownMenu>
                       <UTooltip
                         :text="isRefundEligible(booking) ? 'Cancel hold only · hold token can be returned' : 'Cancel hold only · no hold return (< 24h)'"
                       >
@@ -1762,7 +1862,7 @@ watch(
                     :key="booking.id"
                     :ui="{ body: 'p-4 sm:p-4' }"
                   >
-                    <div class="flex items-start gap-3">
+                    <div class="flex items-start justify-between gap-3">
                       <div class="min-w-0 flex-1">
                         <div class="flex items-center gap-2 flex-wrap">
                           <UBadge
@@ -1785,6 +1885,21 @@ watch(
                         >
                           {{ booking.notes }}
                         </p>
+                      </div>
+                      <div class="shrink-0">
+                        <UDropdownMenu
+                          :items="bookingExportItems(booking)"
+                          :content="{ align: 'end' }"
+                        >
+                          <UButton
+                            size="sm"
+                            color="neutral"
+                            variant="soft"
+                            icon="i-lucide-calendar-plus"
+                          >
+                            Add to calendar
+                          </UButton>
+                        </UDropdownMenu>
                       </div>
                     </div>
                   </UCard>
