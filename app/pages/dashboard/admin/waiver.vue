@@ -115,6 +115,18 @@ const waiverEditorToolbarItems = [[{
   icon: 'i-lucide-link',
   tooltip: { text: 'Link' }
 }, {
+  kind: 'image',
+  icon: 'i-lucide-image',
+  tooltip: { text: 'Insert image URL' }
+}, {
+  kind: 'mention',
+  icon: 'i-lucide-at-sign',
+  tooltip: { text: 'Mention menu' }
+}, {
+  kind: 'emoji',
+  icon: 'i-lucide-smile',
+  tooltip: { text: 'Emoji menu' }
+}, {
   kind: 'horizontalRule',
   icon: 'i-lucide-separator-horizontal',
   tooltip: { text: 'Horizontal rule' }
@@ -179,10 +191,90 @@ const waiverEditorBubbleToolbarItems = [[{
   icon: 'i-lucide-link',
   tooltip: { text: 'Link' }
 }, {
+  kind: 'image',
+  icon: 'i-lucide-image',
+  tooltip: { text: 'Insert image URL' }
+}, {
   kind: 'clearFormatting',
   icon: 'i-lucide-eraser',
   tooltip: { text: 'Clear formatting' }
 }]]
+
+const waiverSuggestionItems = [[
+  {
+    label: 'Paragraph',
+    description: 'Start with plain text',
+    icon: 'i-lucide-pilcrow',
+    kind: 'paragraph'
+  },
+  {
+    label: 'Heading 2',
+    description: 'Section heading',
+    icon: 'i-lucide-heading-2',
+    kind: 'heading',
+    level: 2
+  },
+  {
+    label: 'Bullet List',
+    description: 'Add list items',
+    icon: 'i-lucide-list',
+    kind: 'bulletList'
+  },
+  {
+    label: 'Numbered List',
+    description: 'Add ordered steps',
+    icon: 'i-lucide-list-ordered',
+    kind: 'orderedList'
+  },
+  {
+    label: 'Quote',
+    description: 'Insert blockquote',
+    icon: 'i-lucide-text-quote',
+    kind: 'blockquote'
+  },
+  {
+    label: 'Divider',
+    description: 'Insert horizontal rule',
+    icon: 'i-lucide-separator-horizontal',
+    kind: 'horizontalRule'
+  },
+  {
+    label: 'Image (URL)',
+    description: 'Insert image from URL',
+    icon: 'i-lucide-image',
+    kind: 'image'
+  }
+]]
+
+const waiverMentionItems = [
+  {
+    id: 'member',
+    label: 'Member',
+    description: 'Registered studio member',
+    icon: 'i-lucide-user-round'
+  },
+  {
+    id: 'guest',
+    label: 'Guest',
+    description: 'Guest under member supervision',
+    icon: 'i-lucide-user-round-plus'
+  },
+  {
+    id: 'support',
+    label: 'Studio Support',
+    description: 'hello@lafilmlab.com',
+    icon: 'i-lucide-mail'
+  }
+]
+
+const waiverEmojiItems = [
+  { name: 'Check', emoji: '✅', shortcodes: ['check'], tags: ['approved'] },
+  { name: 'Warning', emoji: '⚠️', shortcodes: ['warning'], tags: ['risk'] },
+  { name: 'No Entry', emoji: '⛔', shortcodes: ['no_entry'], tags: ['prohibited'] },
+  { name: 'Camera', emoji: '📷', shortcodes: ['camera'], tags: ['studio'] },
+  { name: 'Clipboard', emoji: '📋', shortcodes: ['clipboard'], tags: ['rules'] },
+  { name: 'Lock', emoji: '🔒', shortcodes: ['lock'], tags: ['security'] }
+]
 
 const { data, pending, refresh } = await useAsyncData('admin:waiver:templates', async () => {
   return await $fetch<{
@@ -528,6 +620,8 @@ function hasPreviewBody(value: unknown) {
                 v-slot="{ editor }"
                 v-model="form.body"
                 content-type="html"
+                :image="{ allowBase64: false }"
+                :mention="{ HTMLAttributes: { class: 'mention' } }"
                 :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
                 class="waiver-editor-shell w-full max-w-none rounded-md border border-default bg-default overflow-hidden"
                 placeholder="Write waiver content..."
@@ -541,6 +635,19 @@ function hasPreviewBody(value: unknown) {
                   :editor="editor"
                   :items="waiverEditorBubbleToolbarItems"
                   layout="bubble"
+                />
+                <UEditorDragHandle :editor="editor" />
+                <UEditorSuggestionMenu
+                  :editor="editor"
+                  :items="waiverSuggestionItems"
+                />
+                <UEditorMentionMenu
+                  :editor="editor"
+                  :items="waiverMentionItems"
+                />
+                <UEditorEmojiMenu
+                  :editor="editor"
+                  :items="waiverEmojiItems"
                 />
               </UEditor>
               <p class="mt-2 text-xs text-dimmed">
