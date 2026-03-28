@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { setDoorCodeForUser } from '~~/server/utils/membership/doorCode'
 import { enqueueMemberActiveRefresh } from '~~/server/utils/access/jobs'
+import { sendViaFomailer } from '~~/server/utils/mail/fomailer'
 
 const bodySchema = z.object({
   userId: z.string().uuid(),
@@ -14,7 +15,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: memberContext, error: memberContextErr } = await supabase
     .from('customers')
-    .select('email')
+    .select('email,first_name,last_name')
     .eq('user_id', body.userId)
     .maybeSingle()
 
@@ -50,6 +51,63 @@ export default defineEventHandler(async (event) => {
       error: (error as Error)?.message ?? String(error)
     })
   })
+
+  const memberEmail = String(memberContext?.email ?? '').trim().toLowerCase()
+  if (memberEmail) {
+    const { data: membershipRow, error: membershipErr } = await supabase
+      .from('memberships')
+      .select('tier,status')
+      .eq('user_id', body.userId)
+      .in('status', ['active', 'past_due', 'pending_checkout'])
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (membershipErr) {
+      console.warn('[mail] failed to load membership context for door code update mail', {
+        userId: body.userId,
+        message: membershipErr.message
+      })
+    }
+
+    const memberName = [
+      String(memberContext?.first_name ?? '').trim(),
+      String(memberContext?.last_name ?? '').trim()
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim() || null
+
+    const tierName = String(membershipRow?.tier ?? '').trim() || null
+    const mailResponse = await sendViaFomailer(event, {
+      type: 'membership.doorCodeUpdated',
+      payload: {
+        to: memberEmail,
+        userId: body.userId,
+        eventType: 'membership.doorCodeUpdated',
+        tierId: tierName,
+        tierName,
+        membershipPlanName: tierName,
+        customerName: memberName,
+        customerEmail: memberEmail,
+        doorCode: result.doorCode,
+        doorCodeUpdatedAt: new Date().toISOString()
+      }
+    }).catch((error) => {
+      console.warn('[mail] membership.doorCodeUpdated send failed', {
+        userId: body.userId,
+        message: error instanceof Error ? error.message : String(error)
+      })
+      return { ok: false as const, reason: 'request_failed' as const }
+    })
+
+    if (!mailResponse.ok) {
+      console.warn('[mail] membership.doorCodeUpdated was not sent', {
+        userId: body.userId,
+        reason: mailResponse.reason ?? 'unknown'
+      })
+    }
+  }
 
   return {
     ok: true,
