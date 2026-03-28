@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import type { Editor as TiptapEditor } from '@tiptap/vue-3'
 import { toRenderableHtml } from '~~/app/utils/richText'
+import { pickImageFromDevice } from '~~/app/utils/editorImageUpload'
 
 definePageMeta({ middleware: ['admin'] })
 
@@ -275,6 +277,38 @@ const waiverEmojiItems = [
   { name: 'Clipboard', emoji: '📋', shortcodes: ['clipboard'], tags: ['rules'] },
   { name: 'Lock', emoji: '🔒', shortcodes: ['lock'], tags: ['security'] }
 ]
+
+const WAIVER_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+
+const waiverEditorHandlers = {
+  image: {
+    canExecute: (editor: TiptapEditor) => editor.can().setImage({ src: 'https://fo.studio/images/logo.png' }),
+    execute: (editor: TiptapEditor) => {
+      void (async () => {
+        try {
+          const image = await pickImageFromDevice({ maxBytes: WAIVER_IMAGE_MAX_BYTES })
+          if (!image) return
+
+          editor
+            .chain()
+            .focus()
+            .setImage({ src: image.dataUrl, alt: image.file.name })
+            .run()
+        } catch (error: unknown) {
+          toast.add({
+            title: 'Could not insert image',
+            description: error instanceof Error ? error.message : 'Unknown error',
+            color: 'error'
+          })
+        }
+      })()
+
+      return editor.chain()
+    },
+    isActive: (editor: TiptapEditor) => editor.isActive('image'),
+    isDisabled: (editor: TiptapEditor) => !editor.can().setImage({ src: 'https://fo.studio/images/logo.png' })
+  }
+}
 
 const { data, pending, refresh } = await useAsyncData('admin:waiver:templates', async () => {
   return await $fetch<{
@@ -620,10 +654,11 @@ function hasPreviewBody(value: unknown) {
                 v-slot="{ editor }"
                 v-model="form.body"
                 content-type="html"
-                :image="{ allowBase64: false }"
+                :handlers="waiverEditorHandlers"
+                :image="{ allowBase64: true }"
                 :mention="{ HTMLAttributes: { class: 'mention' } }"
                 :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
-                class="waiver-editor-shell w-full max-w-none rounded-md border border-default bg-default overflow-hidden"
+                class="waiver-editor-shell w-full max-w-none rounded-md border border-default bg-default overflow-visible"
                 placeholder="Write waiver content..."
               >
                 <UEditorToolbar
@@ -636,7 +671,6 @@ function hasPreviewBody(value: unknown) {
                   :items="waiverEditorBubbleToolbarItems"
                   layout="bubble"
                 />
-                <UEditorDragHandle :editor="editor" />
                 <UEditorSuggestionMenu
                   :editor="editor"
                   :items="waiverSuggestionItems"
@@ -649,6 +683,18 @@ function hasPreviewBody(value: unknown) {
                   :editor="editor"
                   :items="waiverEmojiItems"
                 />
+                <UEditorDragHandle
+                  v-slot="{ ui }"
+                  :editor="editor"
+                >
+                  <UButton
+                    icon="i-lucide-grip-vertical"
+                    color="neutral"
+                    variant="ghost"
+                    size="sm"
+                    :class="ui.handle()"
+                  />
+                </UEditorDragHandle>
               </UEditor>
               <p class="mt-2 text-xs text-dimmed">
                 Enter creates a new paragraph. Use Shift+Enter for a single line break.

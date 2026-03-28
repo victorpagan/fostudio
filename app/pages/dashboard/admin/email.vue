@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Editor as TiptapEditor } from '@tiptap/vue-3'
+import { pickImageFromDevice } from '~~/app/utils/editorImageUpload'
 
 definePageMeta({ middleware: ['admin'] })
 
@@ -167,6 +168,8 @@ const emailEmojiItems = [
   { name: 'Waving Hand', emoji: '👋', shortcodes: ['wave'], tags: ['greeting'] }
 ]
 
+const EDITOR_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+
 const emailEditorHandlers = {
   insertToken: {
     canExecute: () => true,
@@ -176,6 +179,33 @@ const emailEditorHandlers = {
       return editor.chain().focus().insertContent(`{{ ${token} }}`)
     },
     isActive: () => false
+  },
+  image: {
+    canExecute: (editor: TiptapEditor) => editor.can().setImage({ src: 'https://fo.studio/images/logo.png' }),
+    execute: (editor: TiptapEditor) => {
+      void (async () => {
+        try {
+          const image = await pickImageFromDevice({ maxBytes: EDITOR_IMAGE_MAX_BYTES })
+          if (!image) return
+
+          editor
+            .chain()
+            .focus()
+            .setImage({ src: image.dataUrl, alt: image.file.name })
+            .run()
+        } catch (error: unknown) {
+          toast.add({
+            title: 'Could not insert image',
+            description: readErrorMessage(error),
+            color: 'error'
+          })
+        }
+      })()
+
+      return editor.chain()
+    },
+    isActive: (editor: TiptapEditor) => editor.isActive('image'),
+    isDisabled: (editor: TiptapEditor) => !editor.can().setImage({ src: 'https://fo.studio/images/logo.png' })
   }
 }
 
@@ -985,10 +1015,10 @@ async function saveBroadcastTemplateOnly() {
                   v-model="broadcastTemplateDraft.bodyTemplate"
                   content-type="html"
                   :handlers="emailEditorHandlers"
-                  :image="{ allowBase64: false }"
+                  :image="{ allowBase64: true }"
                   :mention="{ HTMLAttributes: { class: 'mention' } }"
                   :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
-                  class="email-editor-shell w-full rounded-md border border-warning/30 bg-default overflow-hidden"
+                  class="email-editor-shell w-full rounded-md border border-warning/30 bg-default overflow-visible"
                   placeholder="Write HTML body content for this member broadcast."
                 >
                   <UEditorToolbar
@@ -1001,7 +1031,6 @@ async function saveBroadcastTemplateOnly() {
                     :items="emailEditorBubbleToolbarItems"
                     layout="bubble"
                   />
-                  <UEditorDragHandle :editor="editor" />
                   <UEditorSuggestionMenu
                     :editor="editor"
                     :items="broadcastEditorSuggestionItems"
@@ -1014,6 +1043,18 @@ async function saveBroadcastTemplateOnly() {
                     :editor="editor"
                     :items="emailEmojiItems"
                   />
+                  <UEditorDragHandle
+                    v-slot="{ ui }"
+                    :editor="editor"
+                  >
+                    <UButton
+                      icon="i-lucide-grip-vertical"
+                      color="neutral"
+                      variant="ghost"
+                      size="sm"
+                      :class="ui.handle()"
+                    />
+                  </UEditorDragHandle>
                 </UEditor>
               </UFormField>
             </div>
@@ -1190,10 +1231,10 @@ async function saveBroadcastTemplateOnly() {
                   v-model="templateDraft.bodyTemplate"
                   content-type="html"
                   :handlers="emailEditorHandlers"
-                  :image="{ allowBase64: false }"
+                  :image="{ allowBase64: true }"
                   :mention="{ HTMLAttributes: { class: 'mention' } }"
                   :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
-                  class="email-editor-shell w-full rounded-md border border-warning/30 bg-default overflow-hidden"
+                  class="email-editor-shell w-full rounded-md border border-warning/30 bg-default overflow-visible"
                   placeholder="Write HTML body content. Example: <p>Your {{ tierName }} membership is active.</p>"
                 >
                   <UEditorToolbar
@@ -1206,7 +1247,6 @@ async function saveBroadcastTemplateOnly() {
                     :items="emailEditorBubbleToolbarItems"
                     layout="bubble"
                   />
-                  <UEditorDragHandle :editor="editor" />
                   <UEditorSuggestionMenu
                     :editor="editor"
                     :items="selectedEditorSuggestionItems"
@@ -1219,6 +1259,18 @@ async function saveBroadcastTemplateOnly() {
                     :editor="editor"
                     :items="emailEmojiItems"
                   />
+                  <UEditorDragHandle
+                    v-slot="{ ui }"
+                    :editor="editor"
+                  >
+                    <UButton
+                      icon="i-lucide-grip-vertical"
+                      color="neutral"
+                      variant="ghost"
+                      size="sm"
+                      :class="ui.handle()"
+                    />
+                  </UEditorDragHandle>
                 </UEditor>
                 <p class="mt-2 text-xs text-dimmed">
                   Enter creates a new paragraph. Use Shift+Enter for a single line break.
