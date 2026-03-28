@@ -21,16 +21,6 @@ const normalizeStudioRootDir = (value?: string) => {
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   modules,
-  studio: {
-    repository: {
-      provider: process.env.STUDIO_REPOSITORY_PROVIDER || 'github',
-      owner: process.env.STUDIO_REPOSITORY_OWNER || 'victorpagan',
-      repo: process.env.STUDIO_REPOSITORY_REPO || 'fostudio',
-      branch: process.env.STUDIO_REPOSITORY_BRANCH || 'main',
-      rootDir: normalizeStudioRootDir(process.env.STUDIO_REPOSITORY_ROOT_DIR),
-      private: studioRepoPrivate
-    }
-  },
 
   components: [
     { path: '~/components', pathPrefix: false }
@@ -41,16 +31,6 @@ export default defineNuxtConfig({
   },
 
   css: ['~/assets/css/main.css'],
-
-  vite: {
-    build: {
-      target: 'es2022',
-      sourcemap: false
-    },
-    optimizeDeps: {
-      include: []
-    }
-  },
 
   runtimeConfig: {
     contactWebhookUrl: process.env.NUXT_CONTACT_WEBHOOK_URL || '',
@@ -88,15 +68,13 @@ export default defineNuxtConfig({
     }
   },
 
-  studio: {
-    route: process.env.NUXT_STUDIO_ROUTE || '/_studio',
-    repository: {
-      provider: (process.env.STUDIO_REPOSITORY_PROVIDER as 'github' | 'gitlab') || 'github',
-      owner: process.env.STUDIO_REPOSITORY_OWNER || '',
-      repo: process.env.STUDIO_REPOSITORY_REPO || '',
-      branch: process.env.STUDIO_REPOSITORY_BRANCH || 'main',
-      rootDir: process.env.STUDIO_REPOSITORY_ROOT_DIR || '',
-      private: process.env.STUDIO_REPOSITORY_PRIVATE !== 'false'
+  vite: {
+    build: {
+      target: 'es2022',
+      sourcemap: false
+    },
+    optimizeDeps: {
+      include: []
     }
   },
 
@@ -106,6 +84,17 @@ export default defineNuxtConfig({
         commaDangle: 'never',
         braceStyle: '1tbs'
       }
+    }
+  },
+  studio: {
+    route: process.env.NUXT_STUDIO_ROUTE || '/_studio',
+    repository: {
+      provider: process.env.STUDIO_REPOSITORY_PROVIDER || 'github',
+      owner: process.env.STUDIO_REPOSITORY_OWNER || 'victorpagan',
+      repo: process.env.STUDIO_REPOSITORY_REPO || 'fostudio',
+      branch: process.env.STUDIO_REPOSITORY_BRANCH || 'main',
+      rootDir: normalizeStudioRootDir(process.env.STUDIO_REPOSITORY_ROOT_DIR),
+      private: studioRepoPrivate
     }
   },
 
