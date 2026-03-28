@@ -589,6 +589,26 @@ function formatVariableToken(variableName: string) {
   return `{{ ${variableName} }}`
 }
 
+function hasEditorContent(value: string | null | undefined) {
+  const source = String(value ?? '')
+  if (!source.trim()) return false
+  if (/<img\b/i.test(source)) return true
+
+  const plainText = source
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return plainText.length > 0
+}
+
+function editorPlaceholder(value: string | null | undefined, fallback: string) {
+  return hasEditorContent(value) ? undefined : fallback
+}
+
 function hasTemplateId(template: AdminMailTemplate) {
   return template.sendgridTemplateId.trim().length > 0
 }
@@ -682,7 +702,7 @@ async function saveTemplateFromModal() {
   const draft = templateDraft.value
   if (index === null || !draft) return
   templates.value[index] = { ...draft }
-  await saveSettings({ closeModalOnSuccess: true })
+  await saveSettings({ closeModalOnSuccess: false })
 }
 
 async function sendTemplateTest() {
@@ -1140,7 +1160,7 @@ async function saveBroadcastTemplateOnly() {
                   :mention="{ HTMLAttributes: { class: 'mention' } }"
                   :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
                   class="email-editor-shell w-full rounded-md border border-warning/30 bg-default overflow-visible"
-                  placeholder="Write HTML body content for this member broadcast."
+                  :placeholder="editorPlaceholder(broadcastTemplateDraft.bodyTemplate, 'Write HTML body content for this member broadcast.')"
                 >
                   <UEditorToolbar
                     :editor="editor"
@@ -1358,7 +1378,7 @@ async function saveBroadcastTemplateOnly() {
                   :mention="{ HTMLAttributes: { class: 'mention' } }"
                   :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
                   class="email-editor-shell w-full rounded-md border border-warning/30 bg-default overflow-visible"
-                  placeholder="Write HTML body content. Example: <p>Your {{ tierName }} membership is active.</p>"
+                  :placeholder="editorPlaceholder(templateDraft.bodyTemplate, 'Write HTML body content. Example: <p>Your {{ tierName }} membership is active.</p>')"
                 >
                   <UEditorToolbar
                     :editor="editor"
@@ -1465,7 +1485,7 @@ async function saveBroadcastTemplateOnly() {
   min-height: 24rem;
   max-height: 36rem;
   overflow-y: auto;
-  padding: 0.95rem 1rem 0.95rem 1.6rem;
+  padding: 0.95rem 1rem 0.95rem 2rem;
   line-height: 1.55;
 }
 

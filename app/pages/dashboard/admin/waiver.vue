@@ -460,6 +460,26 @@ const canEditSelected = computed(() => Boolean(selectedTemplate.value && !select
 const firstDraftTemplate = computed(() => templates.value.find(template => !template.is_active) ?? null)
 const canPublishAnyDraft = computed(() => Boolean(firstDraftTemplate.value))
 
+function hasEditorContent(value: string | null | undefined) {
+  const source = String(value ?? '')
+  if (!source.trim()) return false
+  if (/<img\b/i.test(source)) return true
+
+  const plainText = source
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return plainText.length > 0
+}
+
+function editorPlaceholder(value: string | null | undefined, fallback: string) {
+  return hasEditorContent(value) ? undefined : fallback
+}
+
 function toMetadataJson(metadata: Record<string, unknown> | null | undefined) {
   return JSON.stringify(metadata ?? {}, null, 2)
 }
@@ -780,7 +800,7 @@ function hasPreviewBody(value: unknown) {
                 :mention="{ HTMLAttributes: { class: 'mention' } }"
                 :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
                 class="waiver-editor-shell w-full max-w-none rounded-md border border-default bg-default overflow-visible"
-                placeholder="Write waiver content..."
+                :placeholder="editorPlaceholder(form.body, 'Write waiver content...')"
               >
                 <UEditorToolbar
                   :editor="editor"
@@ -958,7 +978,7 @@ function hasPreviewBody(value: unknown) {
   min-height: 20rem;
   max-height: 34rem;
   overflow-y: auto;
-  padding: 0.85rem 0.95rem 0.85rem 1.6rem;
+  padding: 0.85rem 0.95rem 0.85rem 2rem;
 }
 
 .waiver-editor-shell :deep(img) {
