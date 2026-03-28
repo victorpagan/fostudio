@@ -256,12 +256,12 @@ async function saveAndSyncSquare() {
       method: 'POST',
       body: { id: optionId }
     })
-    toast.add({ title: 'Saved and synced to Square' })
+    toast.add({ title: 'Saved' })
     await refresh()
     loadOption(optionId)
   } catch (error: unknown) {
     toast.add({
-      title: 'Could not save and sync',
+      title: 'Could not save',
       description: readErrorMessage(error),
       color: 'error'
     })
@@ -519,7 +519,7 @@ async function saveCreditPolicy() {
 
             <div class="mt-4 flex flex-wrap gap-2">
               <UButton :loading="savingAndSyncing" @click="saveAndSyncSquare">
-                Save + Sync Square
+                Save
               </UButton>
               <UButton color="error" variant="soft" :loading="deleting" @click="deleteOption">
                 Delete option

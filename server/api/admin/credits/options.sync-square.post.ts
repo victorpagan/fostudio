@@ -61,7 +61,6 @@ async function upsertWithLatestVersion(
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
-  const db = supabase as any
   const parsed = bodySchema.safeParse(await readBody(event))
   if (!parsed.success) {
     const firstIssue = parsed.error.issues[0]
@@ -72,7 +71,7 @@ export default defineEventHandler(async (event) => {
   }
   const body = parsed.data
 
-  const { data: option, error: optionErr } = await db
+  const { data: option, error: optionErr } = await supabase
     .from('credit_pricing_options')
     .select(`
       id,
@@ -160,16 +159,32 @@ export default defineEventHandler(async (event) => {
         }
       })
 
+      const latestItemRes = await square.catalog.object.get({
+        objectId: squareItemId,
+        includeRelatedObjects: false
+      } as never)
+      const latestItem = (latestItemRes as { object?: Record<string, unknown> }).object
+      if (!latestItem) throw new Error('Could not load latest Square credit item before update.')
+
+      const itemData = (latestItem.itemData ?? {}) as Record<string, unknown>
+      const existingVariations = Array.isArray(itemData.variations) ? itemData.variations : []
+      if (existingVariations.length === 0) {
+        throw new Error('Square credit item is missing variations; re-create this credit option in Square and retry.')
+      }
+
       await upsertWithLatestVersion(square, {
+        ...latestItem,
         id: squareItemId,
         type: 'ITEM',
         presentAtAllLocations: true,
         itemData: {
+          ...itemData,
           name: option.label,
           descriptionHtml: option.description ?? undefined,
           isTaxable: false,
           taxIds: [],
-          productType: 'DIGITAL'
+          productType: 'DIGITAL',
+          variations: existingVariations
         }
       })
     }
@@ -178,7 +193,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 502, statusMessage: message })
   }
 
-  const { error: updateErr } = await db
+  const { error: updateErr } = await supabase
     .from('credit_pricing_options')
     .update({
       square_item_id: squareItemId,
