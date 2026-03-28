@@ -33,6 +33,7 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
 
   runtimeConfig: {
+    editorImageBucket: process.env.NUXT_EDITOR_IMAGE_BUCKET || process.env.EDITOR_IMAGE_BUCKET || 'mail-assets',
     contactWebhookUrl: process.env.NUXT_CONTACT_WEBHOOK_URL || '',
     resendApiKey: process.env.NUXT_RESEND_API_KEY || '',
     contactToEmail: process.env.NUXT_CONTACT_TO_EMAIL || 'studio@lafilmlab.com',

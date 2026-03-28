@@ -5,25 +5,6 @@ export type PickEditorImageOptions = {
 
 export type PickEditorImageResult = {
   file: File
-  dataUrl: string
-}
-
-function readAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result
-      if (typeof result !== 'string' || !result) {
-        reject(new Error('Could not read image file'))
-        return
-      }
-      resolve(result)
-    }
-    reader.onerror = () => {
-      reject(reader.error ?? new Error('Could not read image file'))
-    }
-    reader.readAsDataURL(file)
-  })
 }
 
 export async function pickImageFromDevice(options: PickEditorImageOptions = {}): Promise<PickEditorImageResult | null> {
@@ -54,6 +35,25 @@ export async function pickImageFromDevice(options: PickEditorImageOptions = {}):
     throw new Error(`Image is too large (${Math.ceil(file.size / (1024 * 1024))}MB). Max ${Math.ceil(maxBytes / (1024 * 1024))}MB.`)
   }
 
-  const dataUrl = await readAsDataUrl(file)
-  return { file, dataUrl }
+  return { file }
+}
+
+export type UploadEditorImageResult = {
+  url: string
+  path: string
+  bucket: string
+}
+
+export async function uploadEditorImage(file: File): Promise<UploadEditorImageResult> {
+  if (!import.meta.client) {
+    throw new Error('Image upload is only available in the browser.')
+  }
+
+  const formData = new FormData()
+  formData.append('image', file, file.name)
+
+  return await $fetch<UploadEditorImageResult>('/api/admin/editor/upload-image', {
+    method: 'POST',
+    body: formData
+  })
 }

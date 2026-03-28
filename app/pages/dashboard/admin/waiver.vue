@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Editor as TiptapEditor } from '@tiptap/vue-3'
 import { toRenderableHtml } from '~~/app/utils/richText'
-import { pickImageFromDevice } from '~~/app/utils/editorImageUpload'
+import { pickImageFromDevice, uploadEditorImage } from '~~/app/utils/editorImageUpload'
 
 definePageMeta({ middleware: ['admin'] })
 
@@ -119,7 +119,7 @@ const waiverEditorToolbarItems = [[{
 }, {
   kind: 'image',
   icon: 'i-lucide-image',
-  tooltip: { text: 'Insert image URL' }
+  tooltip: { text: 'Upload image' }
 }, {
   kind: 'mention',
   icon: 'i-lucide-at-sign',
@@ -195,7 +195,7 @@ const waiverEditorBubbleToolbarItems = [[{
 }, {
   kind: 'image',
   icon: 'i-lucide-image',
-  tooltip: { text: 'Insert image URL' }
+  tooltip: { text: 'Upload image' }
 }, {
   kind: 'clearFormatting',
   icon: 'i-lucide-eraser',
@@ -241,8 +241,8 @@ const waiverSuggestionItems = [[
     kind: 'horizontalRule'
   },
   {
-    label: 'Image (URL)',
-    description: 'Insert image from URL',
+    label: 'Image Upload',
+    description: 'Upload and insert image',
     icon: 'i-lucide-image',
     kind: 'image'
   }
@@ -279,6 +279,13 @@ const waiverEmojiItems = [
 ]
 
 const WAIVER_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+const waiverEditorDragHandleOptions = {
+  placement: 'left-start',
+  offset: {
+    mainAxis: -6,
+    alignmentAxis: 0
+  }
+} as const
 
 const waiverEditorHandlers = {
   image: {
@@ -288,11 +295,12 @@ const waiverEditorHandlers = {
         try {
           const image = await pickImageFromDevice({ maxBytes: WAIVER_IMAGE_MAX_BYTES })
           if (!image) return
+          const uploaded = await uploadEditorImage(image.file)
 
           editor
             .chain()
             .focus()
-            .setImage({ src: image.dataUrl, alt: image.file.name })
+            .setImage({ src: uploaded.url, alt: image.file.name, title: image.file.name })
             .run()
         } catch (error: unknown) {
           toast.add({
@@ -655,7 +663,7 @@ function hasPreviewBody(value: unknown) {
                 v-model="form.body"
                 content-type="html"
                 :handlers="waiverEditorHandlers"
-                :image="{ allowBase64: true }"
+                :image="{ allowBase64: false }"
                 :mention="{ HTMLAttributes: { class: 'mention' } }"
                 :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
                 class="waiver-editor-shell w-full max-w-none rounded-md border border-default bg-default overflow-visible"
@@ -686,6 +694,8 @@ function hasPreviewBody(value: unknown) {
                 <UEditorDragHandle
                   v-slot="{ ui }"
                   :editor="editor"
+                  :options="waiverEditorDragHandleOptions"
+                  :ui="{ handle: 'translate-x-3 rounded border border-default bg-default/90' }"
                 >
                   <UButton
                     icon="i-lucide-grip-vertical"
@@ -830,6 +840,6 @@ function hasPreviewBody(value: unknown) {
   min-height: 20rem;
   max-height: 34rem;
   overflow-y: auto;
-  padding: 0.85rem;
+  padding: 0.85rem 0.95rem 0.85rem 1.6rem;
 }
 </style>

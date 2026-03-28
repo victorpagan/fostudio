@@ -9,7 +9,7 @@ const templateSchema = z.object({
   description: z.string().trim().max(300).optional().default(''),
   subjectTemplate: z.string().max(300).optional().default(''),
   preheaderTemplate: z.string().max(300).optional().default(''),
-  bodyTemplate: z.string().max(50_000).optional().default('')
+  bodyTemplate: z.string().max(200_000).optional().default('')
 })
 
 const bodySchema = z.object({
