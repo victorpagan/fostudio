@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto'
+import sharp from 'sharp'
 import { requireServerAdmin } from '~~/server/utils/auth'
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+const MAX_EMAIL_IMAGE_DIMENSION_PX = 1600
 const ALLOWED_IMAGE_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -24,6 +26,68 @@ function extensionForMime(mimeType: string): string {
       return 'avif'
     default:
       return 'bin'
+  }
+}
+
+type OptimizedImageResult = {
+  buffer: Buffer
+  mimeType: string
+  extension: string
+}
+
+async function optimizeForEmailImage(input: Buffer, mimeType: string): Promise<OptimizedImageResult> {
+  // Keep GIFs untouched so animation is preserved.
+  if (mimeType === 'image/gif') {
+    return {
+      buffer: input,
+      mimeType: 'image/gif',
+      extension: 'gif'
+    }
+  }
+
+  try {
+    const pipeline = sharp(input, { failOn: 'none', animated: false }).rotate()
+    const metadata = await pipeline.metadata()
+
+    const resized = pipeline.resize({
+      width: MAX_EMAIL_IMAGE_DIMENSION_PX,
+      height: MAX_EMAIL_IMAGE_DIMENSION_PX,
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+
+    const usePng = Boolean(metadata.hasAlpha) || mimeType === 'image/png'
+    if (usePng) {
+      const output = await resized.png({
+        compressionLevel: 9,
+        quality: 80,
+        effort: 8,
+        palette: true
+      }).toBuffer()
+
+      return {
+        buffer: output,
+        mimeType: 'image/png',
+        extension: 'png'
+      }
+    }
+
+    const output = await resized.jpeg({
+      quality: 82,
+      progressive: true,
+      mozjpeg: true
+    }).toBuffer()
+
+    return {
+      buffer: output,
+      mimeType: 'image/jpeg',
+      extension: 'jpg'
+    }
+  } catch (error: unknown) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Invalid or unsupported image data: ${error instanceof Error ? error.message : 'Unknown image error'}`
+    })
   }
 }
 
@@ -106,11 +170,20 @@ export default defineEventHandler(async (event) => {
   const yyyy = now.getUTCFullYear()
   const mm = String(now.getUTCMonth() + 1).padStart(2, '0')
   const dd = String(now.getUTCDate()).padStart(2, '0')
-  const extension = extensionForMime(mimeType)
+  const optimized = await optimizeForEmailImage(imagePart.data, mimeType)
+
+  if (optimized.buffer.length > MAX_IMAGE_BYTES) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Optimized image is still too large (${Math.ceil(optimized.buffer.length / (1024 * 1024))}MB). Max 10MB.`
+    })
+  }
+
+  const extension = optimized.extension || extensionForMime(mimeType)
   const objectPath = `editor/${yyyy}/${mm}/${dd}/${user.sub}/${randomUUID()}.${extension}`
 
-  const { error: uploadError } = await supabase.storage.from(bucket).upload(objectPath, imagePart.data, {
-    contentType: mimeType,
+  const { error: uploadError } = await supabase.storage.from(bucket).upload(objectPath, optimized.buffer, {
+    contentType: optimized.mimeType,
     cacheControl: '31536000',
     upsert: false
   })

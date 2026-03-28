@@ -21,10 +21,62 @@ const bodySchema = z.object({
   templates: z.array(templateSchema).max(300).default([])
 })
 
+function parseInlineStyle(style: string) {
+  const declarations = new Map<string, string>()
+  for (const part of style.split(';')) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+
+    const separatorIndex = trimmed.indexOf(':')
+    if (separatorIndex <= 0) continue
+
+    const key = trimmed.slice(0, separatorIndex).trim().toLowerCase()
+    const value = trimmed.slice(separatorIndex + 1).trim()
+    if (!key || !value) continue
+    declarations.set(key, value)
+  }
+
+  return declarations
+}
+
+function stringifyInlineStyle(declarations: Map<string, string>) {
+  return [...declarations.entries()]
+    .map(([key, value]) => `${key}: ${value}`)
+    .join('; ')
+}
+
+function applyResponsiveImageStyles(html: string) {
+  return html.replace(/<img\b([^>]*?)>/gi, (_fullMatch, attrs: string) => {
+    const styleMatch = attrs.match(/\sstyle\s*=\s*(['"])([\s\S]*?)\1/i)
+    const styleDeclarations = parseInlineStyle(styleMatch?.[2] ?? '')
+
+    if (!styleDeclarations.has('max-width')) styleDeclarations.set('max-width', '100%')
+    if (!styleDeclarations.has('height')) styleDeclarations.set('height', 'auto')
+    if (!styleDeclarations.has('display')) styleDeclarations.set('display', 'block')
+
+    const nextStyle = stringifyInlineStyle(styleDeclarations)
+    let nextAttrs = attrs
+
+    if (styleMatch) {
+      nextAttrs = attrs.replace(styleMatch[0], ` style="${nextStyle}"`)
+    } else {
+      nextAttrs = `${attrs} style="${nextStyle}"`
+    }
+
+    if (!/\sloading\s*=/i.test(nextAttrs)) {
+      nextAttrs = `${nextAttrs} loading="lazy"`
+    }
+
+    return `<img${nextAttrs}>`
+  })
+}
+
 function normalizeBodyTemplate(value: string): string | null {
   if (!value.trim()) return null
 
-  const plainText = value
+  const responsiveHtml = applyResponsiveImageStyles(value)
+
+  const plainText = responsiveHtml
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
@@ -33,7 +85,7 @@ function normalizeBodyTemplate(value: string): string | null {
     .trim()
 
   if (!plainText) return null
-  return value
+  return responsiveHtml
 }
 
 function findUnsupportedTemplateSyntax(value: string): string | null {

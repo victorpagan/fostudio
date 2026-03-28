@@ -121,6 +121,27 @@ const waiverEditorToolbarItems = [[{
   icon: 'i-lucide-image',
   tooltip: { text: 'Upload image' }
 }, {
+  icon: 'i-lucide-scaling',
+  tooltip: { text: 'Image size' },
+  content: { align: 'start' },
+  items: [{
+    kind: 'imageSizeSmall',
+    icon: 'i-lucide-image',
+    label: 'Image width 320px'
+  }, {
+    kind: 'imageSizeMedium',
+    icon: 'i-lucide-image',
+    label: 'Image width 480px'
+  }, {
+    kind: 'imageSizeLarge',
+    icon: 'i-lucide-image',
+    label: 'Image width 640px'
+  }, {
+    kind: 'imageSizeFull',
+    icon: 'i-lucide-expand',
+    label: 'Image full width'
+  }]
+}, {
   kind: 'mention',
   icon: 'i-lucide-at-sign',
   tooltip: { text: 'Mention menu' }
@@ -196,6 +217,27 @@ const waiverEditorBubbleToolbarItems = [[{
   kind: 'image',
   icon: 'i-lucide-image',
   tooltip: { text: 'Upload image' }
+}, {
+  icon: 'i-lucide-scaling',
+  tooltip: { text: 'Image size' },
+  content: { align: 'start' },
+  items: [{
+    kind: 'imageSizeSmall',
+    icon: 'i-lucide-image',
+    label: 'Image width 320px'
+  }, {
+    kind: 'imageSizeMedium',
+    icon: 'i-lucide-image',
+    label: 'Image width 480px'
+  }, {
+    kind: 'imageSizeLarge',
+    icon: 'i-lucide-image',
+    label: 'Image width 640px'
+  }, {
+    kind: 'imageSizeFull',
+    icon: 'i-lucide-expand',
+    label: 'Image full width'
+  }]
 }, {
   kind: 'clearFormatting',
   icon: 'i-lucide-eraser',
@@ -279,6 +321,7 @@ const waiverEmojiItems = [
 ]
 
 const WAIVER_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+const DEFAULT_IMAGE_MAX_WIDTH = '640px'
 const waiverEditorDragHandleOptions = {
   placement: 'left-start',
   offset: {
@@ -286,6 +329,47 @@ const waiverEditorDragHandleOptions = {
     alignmentAxis: 0
   }
 } as const
+
+function parseInlineStyle(style: string | undefined) {
+  const declarations = new Map<string, string>()
+  for (const part of String(style ?? '').split(';')) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+    const separatorIndex = trimmed.indexOf(':')
+    if (separatorIndex <= 0) continue
+    const key = trimmed.slice(0, separatorIndex).trim().toLowerCase()
+    const value = trimmed.slice(separatorIndex + 1).trim()
+    if (!key || !value) continue
+    declarations.set(key, value)
+  }
+  return declarations
+}
+
+function stringifyInlineStyle(declarations: Map<string, string>) {
+  return [...declarations.entries()]
+    .map(([key, value]) => `${key}: ${value}`)
+    .join('; ')
+}
+
+function buildEditorImageStyle(existingStyle: string | undefined, maxWidth: string) {
+  const declarations = parseInlineStyle(existingStyle)
+  declarations.delete('width')
+  declarations.set('max-width', maxWidth)
+  declarations.set('height', 'auto')
+  if (!declarations.has('display')) declarations.set('display', 'block')
+  return stringifyInlineStyle(declarations)
+}
+
+function updateSelectedImageStyle(editor: TiptapEditor, maxWidth: string) {
+  if (!editor.isActive('image')) return editor.chain()
+  const attrs = editor.getAttributes('image') as { style?: string }
+  return editor
+    .chain()
+    .focus()
+    .updateAttributes('image', {
+      style: buildEditorImageStyle(attrs.style, maxWidth)
+    })
+}
 
 const waiverEditorHandlers = {
   image: {
@@ -300,7 +384,12 @@ const waiverEditorHandlers = {
           editor
             .chain()
             .focus()
-            .setImage({ src: uploaded.url, alt: image.file.name, title: image.file.name })
+            .setImage({
+              src: uploaded.url,
+              alt: image.file.name,
+              title: image.file.name,
+              style: buildEditorImageStyle('', DEFAULT_IMAGE_MAX_WIDTH)
+            })
             .run()
         } catch (error: unknown) {
           toast.add({
@@ -315,6 +404,30 @@ const waiverEditorHandlers = {
     },
     isActive: (editor: TiptapEditor) => editor.isActive('image'),
     isDisabled: (editor: TiptapEditor) => !editor.can().setImage({ src: 'https://fo.studio/images/logo.png' })
+  },
+  imageSizeSmall: {
+    canExecute: (editor: TiptapEditor) => editor.isActive('image'),
+    execute: (editor: TiptapEditor) => updateSelectedImageStyle(editor, '320px'),
+    isActive: (editor: TiptapEditor) => editor.isActive('image'),
+    isDisabled: (editor: TiptapEditor) => !editor.isActive('image')
+  },
+  imageSizeMedium: {
+    canExecute: (editor: TiptapEditor) => editor.isActive('image'),
+    execute: (editor: TiptapEditor) => updateSelectedImageStyle(editor, '480px'),
+    isActive: (editor: TiptapEditor) => editor.isActive('image'),
+    isDisabled: (editor: TiptapEditor) => !editor.isActive('image')
+  },
+  imageSizeLarge: {
+    canExecute: (editor: TiptapEditor) => editor.isActive('image'),
+    execute: (editor: TiptapEditor) => updateSelectedImageStyle(editor, '640px'),
+    isActive: (editor: TiptapEditor) => editor.isActive('image'),
+    isDisabled: (editor: TiptapEditor) => !editor.isActive('image')
+  },
+  imageSizeFull: {
+    canExecute: (editor: TiptapEditor) => editor.isActive('image'),
+    execute: (editor: TiptapEditor) => updateSelectedImageStyle(editor, '100%'),
+    isActive: (editor: TiptapEditor) => editor.isActive('image'),
+    isDisabled: (editor: TiptapEditor) => !editor.isActive('image')
   }
 }
 
@@ -763,6 +876,11 @@ function hasPreviewBody(value: unknown) {
   margin: 0.2rem 0;
 }
 
+.waiver-rich-content :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
 .waiver-rich-content :deep(h1),
 .waiver-rich-content :deep(h2),
 .waiver-rich-content :deep(h3),
@@ -841,5 +959,10 @@ function hasPreviewBody(value: unknown) {
   max-height: 34rem;
   overflow-y: auto;
   padding: 0.85rem 0.95rem 0.85rem 1.6rem;
+}
+
+.waiver-editor-shell :deep(img) {
+  max-width: 100%;
+  height: auto;
 }
 </style>
