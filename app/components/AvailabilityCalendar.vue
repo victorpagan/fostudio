@@ -302,6 +302,22 @@ function toHourValue(dateTime: DateTime) {
   return dateTime.hour + (dateTime.minute / 60) + (dateTime.second / 3600)
 }
 
+const calendarSnapDuration = computed(() => {
+  if (!canSelect.value) return '01:00:00'
+  if (isMemberFeed.value) return '00:30:00'
+  return '01:00:00'
+})
+
+const calendarSlotDuration = computed(() => {
+  if (isMemberFeed.value) return '00:30:00'
+  return '01:00:00'
+})
+
+const calendarSlotLabelInterval = computed(() => {
+  if (isMemberFeed.value) return '01:00:00'
+  return '02:00:00'
+})
+
 const peakEvents = computed<CalendarEvent[]>(() => {
   if (!peakWindow.value) return []
   const days = (peakWindow.value.days ?? [])
@@ -402,8 +418,9 @@ const calendarOptions = computed(() => ({
   height: 'auto',
   slotMinTime: calendarSlotMinTime.value,
   slotMaxTime: calendarSlotMaxTime.value,
-  slotDuration: '01:00:00',
-  slotLabelInterval: '02:00:00',
+  snapDuration: calendarSnapDuration.value,
+  slotDuration: calendarSlotDuration.value,
+  slotLabelInterval: calendarSlotLabelInterval.value,
   eventTimeFormat: {
     hour: 'numeric',
     minute: '2-digit',

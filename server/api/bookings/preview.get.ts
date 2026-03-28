@@ -22,6 +22,12 @@ const qSchema = z.object({
   mode: z.enum(['member', 'guest']).optional()
 })
 
+function isThirtyMinuteAligned(dateTime: DateTime) {
+  if (!dateTime.isValid) return false
+  if (dateTime.second !== 0 || dateTime.millisecond !== 0) return false
+  return dateTime.minute % 30 === 0
+}
+
 function computeCredits(startIso: string, endIso: string, peakMultiplier: number, peakWindow: Awaited<ReturnType<typeof loadPeakWindowConfig>>) {
   const start = DateTime.fromISO(startIso, { zone: STUDIO_TZ })
   const end = DateTime.fromISO(endIso, { zone: STUDIO_TZ })
@@ -163,6 +169,18 @@ export default defineEventHandler(async (event) => {
 
     peakMultiplier = Number(cfg.guest_peak_multiplier ?? 2.0)
     ratePerCreditCents = Number(cfg.guest_booking_rate_per_credit_cents ?? 3500)
+  }
+
+  if (mode === 'member') {
+    if (!isThirtyMinuteAligned(start) || !isThirtyMinuteAligned(end)) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Member bookings must start and end on 30-minute increments.'
+      })
+    }
+    if (durationHours < 0.5) {
+      throw createError({ statusCode: 400, statusMessage: 'Minimum booking is 30 minutes.' })
+    }
   }
 
   const creditsNeeded = computeCredits(q.start, q.end, peakMultiplier!, peakWindow)

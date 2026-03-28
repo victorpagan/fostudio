@@ -33,6 +33,12 @@ type TierRules = {
   active_hold_cap: number
 }
 
+function isThirtyMinuteAligned(dateTime: DateTime) {
+  if (!dateTime.isValid) return false
+  if (dateTime.second !== 0 || dateTime.millisecond !== 0) return false
+  return dateTime.minute % 30 === 0
+}
+
 function isSchemaMissingColumnError(message: string) {
   return /column .* does not exist/i.test(message) || /relation .* does not exist/i.test(message)
 }
@@ -160,6 +166,18 @@ export default defineEventHandler(async (event) => {
   const end = DateTime.fromISO(body.end_time, { zone: STUDIO_TZ })
   if (!start.isValid || !end.isValid) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
   if (!(start < end)) throw createError({ statusCode: 400, statusMessage: 'Invalid time range' })
+  if (!isAdmin) {
+    const durationMinutes = end.diff(start, 'minutes').minutes
+    if (!isThirtyMinuteAligned(start) || !isThirtyMinuteAligned(end)) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Member bookings must start and end on 30-minute increments.'
+      })
+    }
+    if (durationMinutes < 30) {
+      throw createError({ statusCode: 400, statusMessage: 'Minimum booking is 30 minutes.' })
+    }
+  }
 
   const now = DateTime.now().setZone(STUDIO_TZ)
   if (start < now) {

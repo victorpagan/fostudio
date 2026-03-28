@@ -25,6 +25,13 @@ const bodySchema = z.object({
 
 const DEFAULT_MEMBER_RESCHEDULE_NOTICE_HOURS = 24
 const DEFAULT_HOLD_CREDIT_COST = 2
+
+function isThirtyMinuteAligned(dateTime: DateTime) {
+  if (!dateTime.isValid) return false
+  if (dateTime.second !== 0 || dateTime.millisecond !== 0) return false
+  return dateTime.minute % 30 === 0
+}
+
 function computeCredits(startIso: string, endIso: string, peakMultiplier: number, peakWindow: Awaited<ReturnType<typeof loadPeakWindowConfig>>) {
   const start = DateTime.fromISO(startIso, { zone: STUDIO_TZ })
   const end = DateTime.fromISO(endIso, { zone: STUDIO_TZ })
@@ -69,6 +76,18 @@ export default defineEventHandler(async (event) => {
   }
   if (nextEnd <= nextStart) {
     throw createError({ statusCode: 400, statusMessage: 'End time must be after start time' })
+  }
+  if (!isAdmin) {
+    const durationMinutes = nextEnd.diff(nextStart, 'minutes').minutes
+    if (!isThirtyMinuteAligned(nextStart) || !isThirtyMinuteAligned(nextEnd)) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Member bookings must start and end on 30-minute increments.'
+      })
+    }
+    if (durationMinutes < 30) {
+      throw createError({ statusCode: 400, statusMessage: 'Minimum booking is 30 minutes.' })
+    }
   }
 
   const { data: booking, error: bookingErr } = await supabase

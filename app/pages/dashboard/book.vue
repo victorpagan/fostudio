@@ -542,7 +542,7 @@ function formatPeakCredits(value: number) {
         <UDashboardToolbar>
           <template #left>
             <p class="text-sm text-dimmed">
-              Click and drag on the calendar to select a time slot. Your tier's booking window and peak-hour credit rates apply. Reschedules require {{ memberRescheduleNoticeHours }}+ hours notice.
+              Click and drag on the calendar to select a time slot (30-minute increments). Your tier's booking window and peak-hour credit rates apply. Reschedules require {{ memberRescheduleNoticeHours }}+ hours notice.
             </p>
           </template>
         </UDashboardToolbar>
