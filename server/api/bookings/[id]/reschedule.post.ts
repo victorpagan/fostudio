@@ -20,7 +20,8 @@ const bodySchema = z.object({
   end_time: z.string().datetime(),
   notes: z.string().max(500).optional().nullable(),
   request_hold: z.boolean().optional().default(false),
-  hold_payment_method: z.enum(['auto', 'token', 'credits']).optional().default('auto')
+  hold_payment_method: z.enum(['auto', 'token', 'credits']).optional().default('auto'),
+  operation: z.enum(['reschedule', 'extend']).optional().default('reschedule')
 })
 
 const DEFAULT_MEMBER_RESCHEDULE_NOTICE_HOURS = 24
@@ -123,19 +124,50 @@ export default defineEventHandler(async (event) => {
 
   const memberNoticeHours = Number(policyRow?.value ?? DEFAULT_MEMBER_RESCHEDULE_NOTICE_HOURS)
   const currentStart = DateTime.fromISO(booking.start_time)
+  const currentEnd = DateTime.fromISO(booking.end_time)
   if (!currentStart.isValid) {
     throw createError({ statusCode: 409, statusMessage: 'This booking cannot be rescheduled right now. Invalid start time.' })
   }
-  const hoursUntilCurrentStart = currentStart.diff(DateTime.now(), 'hours').hours
+  if (!currentEnd.isValid) {
+    throw createError({ statusCode: 409, statusMessage: 'This booking cannot be updated right now. Invalid end time.' })
+  }
 
-  if (hoursUntilCurrentStart <= 0) {
+  const nextStartMillis = nextStart.toUTC().toMillis()
+  const currentStartMillis = currentStart.toUTC().toMillis()
+  const isExtensionOperation = body.operation === 'extend'
+
+  if (isExtensionOperation && nextStartMillis !== currentStartMillis) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Extension must keep the original booking start time.'
+    })
+  }
+
+  if (isExtensionOperation && nextEnd <= currentEnd) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Extended end time must be after the current booking end time.'
+    })
+  }
+
+  const now = DateTime.now()
+  const hoursUntilCurrentStart = currentStart.diff(now, 'hours').hours
+
+  if (!isExtensionOperation && hoursUntilCurrentStart <= 0) {
     throw createError({
       statusCode: 409,
       statusMessage: 'This booking has already started or passed and can no longer be rescheduled.'
     })
   }
 
-  if (!isAdmin && hoursUntilCurrentStart < memberNoticeHours) {
+  if (isExtensionOperation && currentEnd <= now) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'This booking has already ended and can no longer be extended.'
+    })
+  }
+
+  if (!isAdmin && !isExtensionOperation && hoursUntilCurrentStart < memberNoticeHours) {
     throw createError({
       statusCode: 409,
       statusMessage: `Rescheduling is locked within ${memberNoticeHours} hours of the booking start time.`
@@ -158,6 +190,7 @@ export default defineEventHandler(async (event) => {
   if (linkedHoldsErr) throw createError({ statusCode: 500, statusMessage: linkedHoldsErr.message })
   const hasLinkedHold = (linkedHolds?.length ?? 0) > 0
   const requestNewHold = Boolean(body.request_hold)
+  const isRetainingExistingHold = hasLinkedHold && requestNewHold
   const shouldHaveHoldAfterReschedule = requestNewHold
 
   const { data: membership, error: membershipErr } = await supabase
@@ -234,89 +267,91 @@ export default defineEventHandler(async (event) => {
     const configMap = new Map((configRows ?? []).map(row => [String(row.key), row.value]))
     const holdCreditCost = Math.max(0, Number(configMap.get('hold_credit_cost') ?? DEFAULT_HOLD_CREDIT_COST))
 
-    if (!membership || !hasActiveMembership) {
-      throw createError({ statusCode: 403, statusMessage: 'Overnight holds require an active membership' })
-    }
-    if (activeHoldCap <= 0) {
-      throw createError({
-        statusCode: 409,
-        statusMessage: 'Your current membership does not allow active equipment holds.'
-      })
-    }
+    if (!isRetainingExistingHold) {
+      if (!membership || !hasActiveMembership) {
+        throw createError({ statusCode: 403, statusMessage: 'Overnight holds require an active membership' })
+      }
+      if (activeHoldCap <= 0) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'Your current membership does not allow active equipment holds.'
+        })
+      }
 
-    const nowIso = new Date().toISOString()
-    const { count: activeHoldCount, error: activeHoldCountErr } = await supabase
-      .from('booking_holds')
-      .select('id, bookings!inner(user_id,status)', { count: 'exact', head: true })
-      .eq('bookings.user_id', bookingUserId)
-      .in('bookings.status', ['confirmed', 'requested', 'pending_payment'])
-      .neq('booking_id', bookingId)
-      .gt('hold_end', nowIso)
-    if (activeHoldCountErr) throw createError({ statusCode: 500, statusMessage: activeHoldCountErr.message })
-    if (Math.max(0, activeHoldCount ?? 0) >= activeHoldCap) {
-      throw createError({
-        statusCode: 409,
-        statusMessage: `Active hold cap reached (${activeHoldCap}). Wait for an existing hold to finish before adding another.`
-      })
-    }
+      const nowIso = new Date().toISOString()
+      const { count: activeHoldCount, error: activeHoldCountErr } = await supabase
+        .from('booking_holds')
+        .select('id, bookings!inner(user_id,status)', { count: 'exact', head: true })
+        .eq('bookings.user_id', bookingUserId)
+        .in('bookings.status', ['confirmed', 'requested', 'pending_payment'])
+        .neq('booking_id', bookingId)
+        .gt('hold_end', nowIso)
+      if (activeHoldCountErr) throw createError({ statusCode: 500, statusMessage: activeHoldCountErr.message })
+      if (Math.max(0, activeHoldCount ?? 0) >= activeHoldCap) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: `Active hold cap reached (${activeHoldCap}). Wait for an existing hold to finish before adding another.`
+        })
+      }
 
-    const periodStartIso = typeof membership.current_period_start === 'string' ? DateTime.fromISO(membership.current_period_start).toUTC().toISO() : null
-    const periodEndIso = typeof membership.current_period_end === 'string' ? DateTime.fromISO(membership.current_period_end).toUTC().toISO() : null
-    if (!periodStartIso || !periodEndIso) {
-      throw createError({ statusCode: 500, statusMessage: 'Could not resolve hold cycle window' })
-    }
+      const periodStartIso = typeof membership.current_period_start === 'string' ? DateTime.fromISO(membership.current_period_start).toUTC().toISO() : null
+      const periodEndIso = typeof membership.current_period_end === 'string' ? DateTime.fromISO(membership.current_period_end).toUTC().toISO() : null
+      if (!periodStartIso || !periodEndIso) {
+        throw createError({ statusCode: 500, statusMessage: 'Could not resolve hold cycle window' })
+      }
 
-    const { count: usedHoldsCount, error: usedHoldsErr } = await supabase
-      .from('booking_holds')
-      .select('id, bookings!inner(user_id,status)', { count: 'exact', head: true })
-      .eq('bookings.user_id', bookingUserId)
-      .not('bookings.status', 'eq', 'canceled')
-      .neq('booking_id', bookingId)
-      .gte('hold_start', periodStartIso)
-      .lt('hold_start', periodEndIso)
-    if (usedHoldsErr) throw createError({ statusCode: 500, statusMessage: usedHoldsErr.message })
+      const { count: usedHoldsCount, error: usedHoldsErr } = await supabase
+        .from('booking_holds')
+        .select('id, bookings!inner(user_id,status)', { count: 'exact', head: true })
+        .eq('bookings.user_id', bookingUserId)
+        .not('bookings.status', 'eq', 'canceled')
+        .neq('booking_id', bookingId)
+        .gte('hold_start', periodStartIso)
+        .lt('hold_start', periodEndIso)
+      if (usedHoldsErr) throw createError({ statusCode: 500, statusMessage: usedHoldsErr.message })
 
-    const usedHoldsThisCycle = Math.max(0, usedHoldsCount ?? 0)
-    const includedHoldsRemaining = Math.max(0, holdsIncluded - usedHoldsThisCycle)
-    if (includedHoldsRemaining <= 0) {
-      const { data: holdBalanceRow, error: holdBalanceErr } = await supabase
-        .from('hold_balance')
-        .select('balance')
-        .eq('user_id', bookingUserId)
-        .maybeSingle()
-      if (holdBalanceErr) throw createError({ statusCode: 500, statusMessage: holdBalanceErr.message })
+      const usedHoldsThisCycle = Math.max(0, usedHoldsCount ?? 0)
+      const includedHoldsRemaining = Math.max(0, holdsIncluded - usedHoldsThisCycle)
+      if (includedHoldsRemaining <= 0) {
+        const { data: holdBalanceRow, error: holdBalanceErr } = await supabase
+          .from('hold_balance')
+          .select('balance')
+          .eq('user_id', bookingUserId)
+          .maybeSingle()
+        if (holdBalanceErr) throw createError({ statusCode: 500, statusMessage: holdBalanceErr.message })
 
-      const paidHoldBalance = Math.max(0, Math.floor(Number(holdBalanceRow?.balance ?? 0)))
-      if (body.hold_payment_method === 'token') {
-        if (paidHoldBalance < 1) {
+        const paidHoldBalance = Math.max(0, Math.floor(Number(holdBalanceRow?.balance ?? 0)))
+        if (body.hold_payment_method === 'token') {
+          if (paidHoldBalance < 1) {
+            throw createError({
+              statusCode: 402,
+              statusMessage: 'No hold credits available. Buy additional holds to request an overnight hold.'
+            })
+          }
+          consumePaidHold = true
+        } else if (body.hold_payment_method === 'credits') {
+          if (holdCreditCost <= 0) {
+            throw createError({
+              statusCode: 400,
+              statusMessage: 'Credit fallback for holds is currently unavailable.'
+            })
+          }
+          holdCreditCharge = holdCreditCost
+        } else if (paidHoldBalance >= 1) {
+          consumePaidHold = true
+        } else if (holdCreditCost > 0) {
+          holdCreditCharge = holdCreditCost
+        } else {
           throw createError({
             statusCode: 402,
             statusMessage: 'No hold credits available. Buy additional holds to request an overnight hold.'
           })
         }
-        consumePaidHold = true
-      } else if (body.hold_payment_method === 'credits') {
-        if (holdCreditCost <= 0) {
-          throw createError({
-            statusCode: 400,
-            statusMessage: 'Credit fallback for holds is currently unavailable.'
-          })
-        }
-        holdCreditCharge = holdCreditCost
-      } else if (paidHoldBalance >= 1) {
-        consumePaidHold = true
-      } else if (holdCreditCost > 0) {
-        holdCreditCharge = holdCreditCost
-      } else {
-        throw createError({
-          statusCode: 402,
-          statusMessage: 'No hold credits available. Buy additional holds to request an overnight hold.'
-        })
       }
-    }
 
-    if (holdCreditCharge > 0) {
-      // validated below in a combined insufficient-credit check
+      if (holdCreditCharge > 0) {
+        // validated below in a combined insufficient-credit check
+      }
     }
   }
 
@@ -537,9 +572,9 @@ export default defineEventHandler(async (event) => {
 
   await enqueueBookingAccessSync(event, {
     bookingId,
-    reason: 'member_booking_reschedule'
+    reason: isExtensionOperation ? 'member_booking_extend' : 'member_booking_reschedule'
   }).catch((error) => {
-    console.warn('[access/sync] failed to queue booking reschedule sync', {
+    console.warn('[access/sync] failed to queue booking update sync', {
       bookingId,
       error: (error as Error)?.message ?? String(error)
     })

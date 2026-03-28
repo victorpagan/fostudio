@@ -323,6 +323,14 @@ const ownBookingCanCancel = computed(() => {
   return !ownBookingWithinNoticeWindow.value
 })
 
+const ownBookingCanExtend = computed(() => {
+  if (!clickedBooking.value?.end) return false
+  const status = String(clickedBooking.value.status ?? '').toLowerCase()
+  if (!['confirmed', 'requested', 'pending_payment'].includes(status)) return false
+  const endMs = new Date(clickedBooking.value.end).getTime()
+  return Number.isFinite(endMs) && endMs > Date.now()
+})
+
 const ownBookingCanEditNote = computed(() => !ownBookingHasPassed.value)
 const ownBookingNoteDirty = computed(() =>
   (clickedBookingNoteDraft.value ?? '').trim() !== (clickedBooking.value?.notes ?? '').trim()
@@ -407,6 +415,15 @@ async function manageClickedBooking() {
     return
   }
   await router.push(`/dashboard/bookings?reschedule=${encodeURIComponent(clickedBooking.value.bookingId)}`)
+}
+
+async function extendClickedBooking() {
+  if (!clickedBooking.value?.bookingId) return
+  if (!ownBookingCanExtend.value) {
+    toast.add({ title: 'Cannot extend booking', description: 'This booking can no longer be extended.', color: 'warning' })
+    return
+  }
+  await router.push(`/dashboard/bookings?extend=${encodeURIComponent(clickedBooking.value.bookingId)}`)
 }
 
 async function confirmBooking() {
@@ -827,6 +844,14 @@ function formatPeakCredits(value: number) {
                 @click="manageClickedBooking"
               >
                 Modify / reschedule
+              </UButton>
+              <UButton
+                color="primary"
+                variant="soft"
+                :disabled="ownBookingActionLoading || !ownBookingCanExtend"
+                @click="extendClickedBooking"
+              >
+                Extend
               </UButton>
               <UButton
                 color="error"

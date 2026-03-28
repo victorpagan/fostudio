@@ -101,8 +101,10 @@ type CalendarLoadResponse = {
 const STUDIO_TZ = 'America/Los_Angeles'
 const PAST_BOOKINGS_PAGE_SIZE = 10
 type BookingTab = 'active' | 'holds' | 'past'
+type RescheduleMode = 'reschedule' | 'extend'
 
 const nowIso = useState('dashboard:bookings:now-iso', () => new Date().toISOString())
+nowIso.value = new Date().toISOString()
 
 // Check membership status first (admins always pass)
 const { data: membershipData } = await useAsyncData('bookings:membership', async () => {
@@ -126,7 +128,7 @@ const { data: upcoming, refresh: refreshUpcoming } = await useAsyncData('booking
     .from('bookings')
     .select('id, start_time, end_time, status, notes, credits_burned, created_at, booking_holds(id,hold_start,hold_end,hold_type)')
     .eq('user_id', user.value.sub)
-    .gte('start_time', nowIso.value)
+    .gt('end_time', nowIso.value)
     .in('status', ['confirmed', 'requested'])
     .order('start_time', { ascending: true })
     .limit(20)
@@ -140,7 +142,7 @@ const { data: past, refresh: refreshPast } = await useAsyncData('bookings:past',
     .from('bookings')
     .select('id, start_time, end_time, status, notes, credits_burned, created_at, booking_holds(id,hold_start,hold_end,hold_type)')
     .eq('user_id', user.value.sub)
-    .lt('start_time', nowIso.value)
+    .lte('end_time', nowIso.value)
     .order('start_time', { ascending: false })
     .limit(200)
   if (error) throw error
@@ -200,6 +202,7 @@ function getDiscountLabel(label?: string | null) {
 }
 
 async function refreshAll() {
+  nowIso.value = new Date().toISOString()
   await Promise.all([refreshUpcoming(), refreshPast()])
 }
 
@@ -209,6 +212,9 @@ const cancelConfirmOpen = ref(false)
 const cancelTarget = ref<Booking | null>(null)
 const reschedulingId = ref<string | null>(null)
 const rescheduleOpen = ref(false)
+const rescheduleMode = ref<RescheduleMode>('reschedule')
+const rescheduleLockedStartTime = ref('')
+const rescheduleBaseEndTime = ref('')
 const rescheduleDurationMinutes = ref(0)
 const rescheduleAutoSyncEnd = ref(true)
 const rescheduleHintsLoading = ref(false)
@@ -339,15 +345,15 @@ async function confirmCancel() {
 function toLocalInputValue(value: string | null | undefined) {
   if (!value) return ''
   const parsedIso = DateTime.fromISO(value, { setZone: true })
-  if (parsedIso.isValid) return parsedIso.setZone(STUDIO_TZ).toFormat("yyyy-LL-dd'T'HH:mm")
+  if (parsedIso.isValid) return parsedIso.setZone(STUDIO_TZ).toFormat('yyyy-LL-dd\'T\'HH:mm')
   const parsedSql = DateTime.fromSQL(value, { zone: 'utc' })
-  if (parsedSql.isValid) return parsedSql.setZone(STUDIO_TZ).toFormat("yyyy-LL-dd'T'HH:mm")
+  if (parsedSql.isValid) return parsedSql.setZone(STUDIO_TZ).toFormat('yyyy-LL-dd\'T\'HH:mm')
   return ''
 }
 
 function localInputToDateTime(value: string | null | undefined) {
   if (!value) return null
-  const parsed = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm", { zone: STUDIO_TZ })
+  const parsed = DateTime.fromFormat(value, 'yyyy-LL-dd\'T\'HH:mm', { zone: STUDIO_TZ })
   if (parsed.isValid) return parsed
   const fallback = DateTime.fromISO(value, { zone: STUDIO_TZ })
   return fallback.isValid ? fallback : null
@@ -355,7 +361,7 @@ function localInputToDateTime(value: string | null | undefined) {
 
 function fromLocalInputValue(value: string) {
   if (!value.trim()) return null
-  const dt = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm", { zone: STUDIO_TZ })
+  const dt = DateTime.fromFormat(value, 'yyyy-LL-dd\'T\'HH:mm', { zone: STUDIO_TZ })
   if (!dt.isValid) return null
   return dt.toUTC().toISO()
 }
@@ -405,8 +411,16 @@ function hoursUntilStart(booking: Booking) {
   return (new Date(booking.start_time).getTime() - new Date(nowIso.value).getTime()) / 3600000
 }
 
+function hoursUntilEnd(booking: Booking) {
+  return (new Date(booking.end_time).getTime() - new Date(nowIso.value).getTime()) / 3600000
+}
+
 function hasPassed(booking: Booking) {
   return hoursUntilStart(booking) <= 0
+}
+
+function hasEnded(booking: Booking) {
+  return hoursUntilEnd(booking) <= 0
 }
 
 function canCancel(booking: Booking) {
@@ -441,9 +455,23 @@ function canReschedule(booking: Booking) {
   return hoursUntilStart(booking) >= memberRescheduleNoticeHours.value
 }
 
+function canExtend(booking: Booking) {
+  if (!['confirmed', 'requested', 'pending_payment'].includes(String(booking.status ?? '').toLowerCase())) return false
+  return !hasEnded(booking)
+}
+
 function rescheduleLockReason(booking: Booking) {
   if (hasPassed(booking)) return 'Reschedule unavailable: booking has already started/passed.'
   return `Reschedule locked within ${memberRescheduleNoticeHours.value}h of start.`
+}
+
+function extendLockReason(booking: Booking) {
+  const status = String(booking.status ?? '').toLowerCase()
+  if (!['confirmed', 'requested', 'pending_payment'].includes(status)) {
+    return `Extension unavailable for booking status "${booking.status}".`
+  }
+  if (hasEnded(booking)) return 'Extension unavailable: booking has already ended.'
+  return 'Extension unavailable.'
 }
 
 function cancelLockReason(booking: Booking) {
@@ -451,12 +479,17 @@ function cancelLockReason(booking: Booking) {
   return 'Cancel unavailable within 24h of booking start.'
 }
 
-function openReschedule(booking: Booking) {
+function openReschedule(booking: Booking, mode: RescheduleMode = 'reschedule') {
+  rescheduleMode.value = mode
   rescheduleForm.bookingId = booking.id
-  rescheduleForm.startTime = toLocalInputValue(booking.start_time)
-  rescheduleForm.endTime = toLocalInputValue(booking.end_time)
+  const startTime = toLocalInputValue(booking.start_time)
+  const endTime = toLocalInputValue(booking.end_time)
+  rescheduleLockedStartTime.value = startTime
+  rescheduleBaseEndTime.value = endTime
+  rescheduleForm.startTime = startTime
+  rescheduleForm.endTime = endTime
   rescheduleForm.notes = booking.notes ?? ''
-  rescheduleForm.requestHold = false
+  rescheduleForm.requestHold = hasHold(booking)
   rescheduleForm.holdPaymentMethod = 'auto'
   const startMs = new Date(booking.start_time).getTime()
   const endMs = new Date(booking.end_time).getTime()
@@ -464,7 +497,15 @@ function openReschedule(booking: Booking) {
   rescheduleDurationMinutes.value = duration > 0 ? duration : 60
   const startDt = DateTime.fromISO(booking.start_time, { setZone: true }).setZone(STUDIO_TZ)
   reschedulePreferredStartMinute.value = startDt.isValid ? (startDt.hour * 60 + startDt.minute) : null
-  rescheduleAutoSyncEnd.value = true
+  rescheduleAutoSyncEnd.value = mode === 'reschedule'
+  if (mode === 'extend') {
+    const proposedEnd = DateTime.fromISO(booking.end_time, { setZone: true })
+      .setZone(STUDIO_TZ)
+      .plus({ minutes: 30 })
+    if (proposedEnd.isValid) {
+      rescheduleForm.endTime = proposedEnd.toFormat('yyyy-LL-dd\'T\'HH:mm')
+    }
+  }
   rescheduleDayCycleIndex.value = {}
   const cursor = localInputToDateTime(rescheduleForm.startTime)?.setZone(STUDIO_TZ) ?? DateTime.now().setZone(STUDIO_TZ)
   rescheduleMonthCursor.value = cursor.startOf('month')
@@ -472,8 +513,16 @@ function openReschedule(booking: Booking) {
   rescheduleOpen.value = true
 }
 
+function openExtension(booking: Booking) {
+  if (!canExtend(booking)) return
+  openReschedule(booking, 'extend')
+}
+
 function resetRescheduleState() {
   rescheduleOpen.value = false
+  rescheduleMode.value = 'reschedule'
+  rescheduleLockedStartTime.value = ''
+  rescheduleBaseEndTime.value = ''
   rescheduleForm.bookingId = ''
   rescheduleForm.startTime = ''
   rescheduleForm.endTime = ''
@@ -503,28 +552,34 @@ function forceCloseReschedule() {
 }
 
 async function clearRescheduleQuery() {
-  if (!route.query.reschedule) return
+  if (!route.query.reschedule && !route.query.extend) return
   const nextQuery = { ...route.query }
   delete nextQuery.reschedule
+  delete nextQuery.extend
   await router.replace({ query: nextQuery })
 }
 
 async function openRescheduleFromQuery() {
-  const raw = route.query.reschedule
-  const bookingId = typeof raw === 'string' ? raw : Array.isArray(raw) ? raw[0] : null
+  const extendRaw = route.query.extend
+  const extendBookingId = typeof extendRaw === 'string' ? extendRaw : Array.isArray(extendRaw) ? extendRaw[0] : null
+  const rescheduleRaw = route.query.reschedule
+  const rescheduleBookingId = typeof rescheduleRaw === 'string' ? rescheduleRaw : Array.isArray(rescheduleRaw) ? rescheduleRaw[0] : null
+  const mode: RescheduleMode = extendBookingId ? 'extend' : 'reschedule'
+  const bookingId = extendBookingId ?? rescheduleBookingId
   if (!bookingId) return
   const target = (upcoming.value ?? []).find(booking => booking.id === bookingId)
   if (!target) return
-  if (!canReschedule(target)) {
+  const isAllowed = mode === 'extend' ? canExtend(target) : canReschedule(target)
+  if (!isAllowed) {
     toast.add({
-      title: 'Cannot reschedule this booking',
-      description: rescheduleLockReason(target),
+      title: mode === 'extend' ? 'Cannot extend this booking' : 'Cannot reschedule this booking',
+      description: mode === 'extend' ? extendLockReason(target) : rescheduleLockReason(target),
       color: 'warning'
     })
     await clearRescheduleQuery()
     return
   }
-  openReschedule(target)
+  openReschedule(target, mode)
   await clearRescheduleQuery()
 }
 
@@ -532,12 +587,22 @@ async function saveReschedule() {
   if (!rescheduleForm.bookingId) return
   reschedulingId.value = rescheduleForm.bookingId
   try {
-    const start = fromLocalInputValue(rescheduleForm.startTime)
+    const mode = rescheduleMode.value
+    const lockedStart = mode === 'extend' ? fromLocalInputValue(rescheduleLockedStartTime.value) : null
+    const start = mode === 'extend'
+      ? lockedStart
+      : fromLocalInputValue(rescheduleForm.startTime)
     const end = fromLocalInputValue(rescheduleForm.endTime)
     if (!start || !end) throw new Error('Start and end time are required')
-    if (new Date(start).getTime() < Date.now()) throw new Error('Cannot reschedule into the past')
+    if (mode !== 'extend' && new Date(start).getTime() < Date.now()) throw new Error('Cannot reschedule into the past')
     const startDt = localInputToDateTime(rescheduleForm.startTime)
     const endDt = localInputToDateTime(rescheduleForm.endTime)
+    if (mode === 'extend') {
+      const currentEnd = localInputToDateTime(rescheduleBaseEndTime.value)
+      if (!currentEnd || !endDt || endDt <= currentEnd) {
+        throw new Error('Extension end time must be after your current booking end time.')
+      }
+    }
     if (startDt && endDt && shouldAccountForHold.value) {
       const duration = endDt.diff(startDt, 'hours').hours
       if (duration < minHoldBookingHours.value) {
@@ -556,7 +621,8 @@ async function saveReschedule() {
         end_time: end,
         notes: rescheduleForm.notes || null,
         request_hold: rescheduleForm.requestHold,
-        hold_payment_method: rescheduleForm.holdPaymentMethod
+        hold_payment_method: rescheduleForm.holdPaymentMethod,
+        operation: mode
       }
     })
     const delta = Number(result?.creditDelta ?? 0)
@@ -565,7 +631,8 @@ async function saveReschedule() {
       : delta < 0
         ? `Refunded ${Math.abs(delta)} credit${Math.abs(delta) === 1 ? '' : 's'} from the shorter session.`
         : undefined
-    toast.add({ title: 'Booking rescheduled', description: changeDescription, color: 'success' })
+    const actionTitle = mode === 'extend' ? 'Booking extended' : 'Booking rescheduled'
+    toast.add({ title: actionTitle, description: changeDescription, color: 'success' })
     forceCloseReschedule()
     await clearRescheduleQuery()
     const refreshResults = await Promise.allSettled([
@@ -575,7 +642,7 @@ async function saveReschedule() {
     ])
     if (refreshResults.some(result => result.status === 'rejected')) {
       toast.add({
-        title: 'Booking was rescheduled',
+        title: mode === 'extend' ? 'Booking was extended' : 'Booking was rescheduled',
         description: 'Could not fully refresh the page data. Please refresh once.',
         color: 'warning'
       })
@@ -585,14 +652,14 @@ async function saveReschedule() {
     if (getApiErrorCode(error) === 'WAIVER_REQUIRED') {
       toast.add({
         title: 'Waiver signature required',
-        description: 'Please sign the current waiver before rescheduling.',
+        description: 'Please sign the current waiver before updating this booking.',
         color: 'warning'
       })
       await router.push(`/dashboard/waiver?returnTo=${encodeURIComponent(route.fullPath)}`)
       return
     }
     toast.add({
-      title: 'Could not reschedule',
+      title: rescheduleMode.value === 'extend' ? 'Could not extend booking' : 'Could not reschedule',
       description: maybe.data?.statusMessage ?? maybe.message ?? 'Error',
       color: 'error'
     })
@@ -682,7 +749,7 @@ function onRescheduleStartChange(value: unknown) {
   const nextStart = localInputToDateTime(next)?.setZone(STUDIO_TZ)
   if (rescheduleAutoSyncEnd.value && nextStart) {
     const alignedEnd = nextStart.plus({ minutes: rescheduleDurationMinutes.value > 0 ? rescheduleDurationMinutes.value : 60 })
-    rescheduleForm.endTime = alignedEnd.toFormat("yyyy-LL-dd'T'HH:mm")
+    rescheduleForm.endTime = alignedEnd.toFormat('yyyy-LL-dd\'T\'HH:mm')
   }
 
   if (nextStart) {
@@ -801,13 +868,13 @@ function possibleStartMinutesForDay(key: string) {
 
   const unique = Array.from(new Set(starts)).sort((a, b) => a - b)
   if (!shouldAccountForHold.value) return unique
-  return unique.filter((minute) => canFitHoldWindowForStart(key, minute, duration))
+  return unique.filter(minute => canFitHoldWindowForStart(key, minute, duration))
 }
 
 function toLocalInputForDayMinute(key: string, minute: number) {
   const day = dayKeyToDateTime(key)
   if (!day) return ''
-  return day.plus({ minutes: minute }).toFormat("yyyy-LL-dd'T'HH:mm")
+  return day.plus({ minutes: minute }).toFormat('yyyy-LL-dd\'T\'HH:mm')
 }
 
 function rangesOverlap(startA: number, endA: number, startB: number, endB: number) {
@@ -884,7 +951,7 @@ async function loadRescheduleMonthHints(anchorValue: string) {
       if (!rawEvent.start || !rawEvent.end) continue
 
       let start = DateTime.fromISO(rawEvent.start, { setZone: true }).setZone(STUDIO_TZ)
-      let end = DateTime.fromISO(rawEvent.end, { setZone: true }).setZone(STUDIO_TZ)
+      const end = DateTime.fromISO(rawEvent.end, { setZone: true }).setZone(STUDIO_TZ)
       if (!start.isValid || !end.isValid || end <= start) continue
       if (type === 'hold' && Number.isFinite(targetHoldStartMs) && Number.isFinite(targetHoldEndMs)) {
         const eventStartMs = start.toUTC().toMillis()
@@ -960,7 +1027,7 @@ const selectedDayStartOptions = computed(() => {
     .map((minute) => {
       const value = toLocalInputForDayMinute(key, minute)
       if (!value) return null
-      const labelDate = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm")
+      const labelDate = DateTime.fromFormat(value, 'yyyy-LL-dd\'T\'HH:mm')
       return {
         value,
         label: labelDate.isValid ? labelDate.toFormat('EEE, LLL d · h:mm a') : value
@@ -1000,12 +1067,20 @@ const selectedDayEndOptions = computed(() => {
   const overlapsOccupied = intervals.some(interval => startMinute >= interval.startMinute && startMinute < interval.endMinute)
   if (overlapsOccupied) return [] as Array<{ label: string, value: string }>
 
+  const baseEndMinute = (() => {
+    if (rescheduleMode.value !== 'extend') return null
+    const baseEnd = localInputToDateTime(rescheduleBaseEndTime.value)?.setZone(STUDIO_TZ)
+    if (!baseEnd || !baseEnd.isValid || toDayKey(baseEnd) !== key) return null
+    return baseEnd.hour * 60 + baseEnd.minute
+  })()
+
   return Array.from(new Set(values))
     .sort((a, b) => a - b)
+    .filter(endMinute => baseEndMinute === null || endMinute > baseEndMinute)
     .map((endMinute) => {
       const value = toLocalInputForDayMinute(key, endMinute)
       if (!value) return null
-      const labelDate = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm", { zone: STUDIO_TZ })
+      const labelDate = DateTime.fromFormat(value, 'yyyy-LL-dd\'T\'HH:mm', { zone: STUDIO_TZ })
       return {
         value,
         label: labelDate.isValid ? labelDate.toFormat('EEE, LLL d · h:mm a') : value
@@ -1091,7 +1166,7 @@ function applyRescheduleDay(key: string) {
   const next = dayBase.plus({ minutes: minute })
   if (!next.isValid) return
   rescheduleAutoSyncEnd.value = true
-  onRescheduleStartChange(next.toFormat("yyyy-LL-dd'T'HH:mm"))
+  onRescheduleStartChange(next.toFormat('yyyy-LL-dd\'T\'HH:mm'))
 }
 
 const rescheduleSummaryLabel = computed(() => {
@@ -1099,7 +1174,25 @@ const rescheduleSummaryLabel = computed(() => {
   const hours = Math.round((minutes / 60) * 100) / 100
   const hoursLabel = Number.isInteger(hours) ? `${hours.toFixed(0)}hr` : `${hours}hr`
   const holdLabel = shouldAccountForHold.value ? ' + hold' : ''
+  if (rescheduleMode.value === 'extend') {
+    const baseEnd = localInputToDateTime(rescheduleBaseEndTime.value)
+    const targetEnd = localInputToDateTime(rescheduleForm.endTime)
+    const extraMinutes = (baseEnd && targetEnd && targetEnd > baseEnd)
+      ? Math.round(targetEnd.diff(baseEnd, 'minutes').minutes)
+      : 0
+    const extraHours = Math.round((Math.max(0, extraMinutes) / 60) * 100) / 100
+    const extraLabel = extraHours > 0
+      ? (Number.isInteger(extraHours) ? `${extraHours.toFixed(0)}hr` : `${extraHours}hr`)
+      : '0hr'
+    return `Extend by ${extraLabel}${holdLabel}`
+  }
   return `${hoursLabel} booking${holdLabel}`
+})
+
+const rescheduleLockedStartLabel = computed(() => {
+  const start = localInputToDateTime(rescheduleLockedStartTime.value)?.setZone(STUDIO_TZ)
+  if (!start || !start.isValid) return rescheduleLockedStartTime.value || '—'
+  return start.toFormat('EEE, LLL d · h:mm a')
 })
 
 const rescheduleMonthLabel = computed(() => {
@@ -1178,7 +1271,7 @@ onMounted(() => {
 })
 
 watch(
-  () => [route.query.reschedule, upcoming.value?.length ?? 0],
+  () => [route.query.reschedule, route.query.extend, upcoming.value?.length ?? 0],
   () => { void openRescheduleFromQuery() }
 )
 </script>
@@ -1449,6 +1542,21 @@ watch(
                     </div>
                     <div class="shrink-0 flex items-center gap-2">
                       <UTooltip
+                        :text="canExtend(booking)
+                          ? 'Extend end time if the next slot is open.'
+                          : extendLockReason(booking)"
+                      >
+                        <UButton
+                          size="sm"
+                          color="primary"
+                          variant="soft"
+                          :disabled="!canExtend(booking)"
+                          @click="openExtension(booking)"
+                        >
+                          Extend
+                        </UButton>
+                      </UTooltip>
+                      <UTooltip
                         :text="canReschedule(booking)
                           ? `Reschedule booking (${memberRescheduleNoticeHours}+h notice)`
                           : rescheduleLockReason(booking)"
@@ -1644,12 +1752,12 @@ watch(
       <template #content>
         <UCard
           class="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-h-[calc(100dvh-4rem)]"
-          :ui="{body:'overflow-y-scroll'}"
+          :ui="{ body: 'overflow-y-scroll' }"
         >
           <template #header>
             <div class="flex items-center justify-between gap-3">
               <h3 class="text-base font-semibold">
-                Reschedule booking
+                {{ rescheduleMode === 'extend' ? 'Extend booking' : 'Reschedule booking' }}
               </h3>
               <UButton
                 icon="i-lucide-x"
@@ -1666,7 +1774,10 @@ watch(
             <div class="text-sm text-dimmed">
               {{ rescheduleSummaryLabel }}
             </div>
-            <UFormField label="Start">
+            <UFormField
+              v-if="rescheduleMode === 'reschedule'"
+              label="Start"
+            >
               <select
                 class="w-full rounded-md border border-default bg-default px-3 py-2 text-sm"
                 :value="rescheduleForm.startTime"
@@ -1688,7 +1799,17 @@ watch(
                 </option>
               </select>
             </UFormField>
-            <UFormField label="End">
+            <UFormField
+              v-else
+              label="Start (locked)"
+            >
+              <UInput
+                :model-value="rescheduleLockedStartLabel"
+                readonly
+                disabled
+              />
+            </UFormField>
+            <UFormField :label="rescheduleMode === 'extend' ? 'New end time' : 'End'">
               <select
                 class="w-full rounded-md border border-default bg-default px-3 py-2 text-sm"
                 :value="rescheduleForm.endTime"
@@ -1711,9 +1832,17 @@ watch(
               </select>
             </UFormField>
             <p class="text-xs text-dimmed">
-              End time follows the original booking length by default when you move start time. Edit end time directly to override.
+              <template v-if="rescheduleMode === 'extend'">
+                Pick a later end time. Extension keeps your existing start time and only succeeds if the next slot is available.
+              </template>
+              <template v-else>
+                End time follows the original booking length by default when you move start time. Edit end time directly to override.
+              </template>
             </p>
-            <div class="rounded-lg border border-default p-3 space-y-3">
+            <div
+              v-if="rescheduleMode === 'reschedule'"
+              class="rounded-lg border border-default p-3 space-y-3"
+            >
               <div class="flex items-center justify-between gap-3">
                 <div class="space-y-1">
                   <p class="text-sm font-medium">
@@ -1778,40 +1907,40 @@ watch(
                   class="grid grid-cols-7 gap-1.5 transition-opacity"
                   :class="rescheduleHintsLoading ? 'opacity-70' : 'opacity-100'"
                 >
-                <button
-                  v-for="(cell, idx) in rescheduleMonthCells"
-                  :key="cell?.key ?? `blank-${idx}`"
-                  type="button"
-                  class="relative h-9 rounded-md border text-xs"
-                  :class="cell
-                    ? (cell.selected
-                      ? (cell.disabled ? 'border-black bg-black text-white/50' : 'border-primary bg-primary/10')
-                      : (cell.disabled ? 'border-black bg-black text-white/40' : 'border-default hover:bg-elevated'))
-                    : 'border-transparent opacity-0 pointer-events-none'"
-                  :disabled="!cell || cell.disabled"
-                  @click="cell && applyRescheduleDay(cell.key)"
-                >
-                  <span
-                    v-if="cell"
-                    class="inline-flex w-full items-center justify-center gap-1.5"
+                  <button
+                    v-for="(cell, idx) in rescheduleMonthCells"
+                    :key="cell?.key ?? `blank-${idx}`"
+                    type="button"
+                    class="relative h-9 rounded-md border text-xs"
+                    :class="cell
+                      ? (cell.selected
+                        ? (cell.disabled ? 'border-black bg-black text-white/50' : 'border-primary bg-primary/10')
+                        : (cell.disabled ? 'border-black bg-black text-white/40' : 'border-default hover:bg-elevated'))
+                      : 'border-transparent opacity-0 pointer-events-none'"
+                    :disabled="!cell || cell.disabled"
+                    @click="cell && applyRescheduleDay(cell.key)"
                   >
-                    <span>{{ cell.day }}</span>
                     <span
-                      class="size-1.5 rounded-full"
-                      :class="cell.status === 'heavy'
-                        ? 'bg-red-500'
-                        : cell.status === 'medium'
-                          ? 'bg-amber-500'
-                          : 'border border-default'"
-                    />
-                  </span>
-                  <span
-                    v-if="cell?.disabled"
-                    class="pointer-events-none absolute inset-0"
-                  >
-                    <span class="absolute left-1 right-1 top-1/2 -translate-y-1/2 border-t border-dimmed rotate-[-20deg]" />
-                  </span>
-                </button>
+                      v-if="cell"
+                      class="inline-flex w-full items-center justify-center gap-1.5"
+                    >
+                      <span>{{ cell.day }}</span>
+                      <span
+                        class="size-1.5 rounded-full"
+                        :class="cell.status === 'heavy'
+                          ? 'bg-red-500'
+                          : cell.status === 'medium'
+                            ? 'bg-amber-500'
+                            : 'border border-default'"
+                      />
+                    </span>
+                    <span
+                      v-if="cell?.disabled"
+                      class="pointer-events-none absolute inset-0"
+                    >
+                      <span class="absolute left-1 right-1 top-1/2 -translate-y-1/2 border-t border-dimmed rotate-[-20deg]" />
+                    </span>
+                  </button>
                 </div>
                 <div
                   v-if="rescheduleHintsLoading"
@@ -1892,7 +2021,12 @@ watch(
               </div>
             </UFormField>
             <p class="text-xs text-dimmed">
-              Reschedules are available until {{ memberRescheduleNoticeHours }} hours before the session start.
+              <template v-if="rescheduleMode === 'extend'">
+                Extensions can be requested until the booking ends and require enough credits for the added time.
+              </template>
+              <template v-else>
+                Reschedules are available until {{ memberRescheduleNoticeHours }} hours before the session start.
+              </template>
             </p>
           </div>
 
@@ -1910,7 +2044,7 @@ watch(
                 :loading="Boolean(reschedulingId)"
                 @click="saveReschedule"
               >
-                Save changes
+                {{ rescheduleMode === 'extend' ? 'Confirm extension' : 'Save changes' }}
               </UButton>
             </div>
           </template>
