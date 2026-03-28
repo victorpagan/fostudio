@@ -42,6 +42,11 @@ export function buildAdminMailPayload(params: BuildAdminMailPayloadParams) {
   const humanPeriodStart = formatHumanDate(currentPeriodStart)
   const humanPeriodEnd = formatHumanDate(currentPeriodEnd)
   const tierName = 'Nano'
+  const bookUrl = `${params.origin}/dashboard/book`
+  const membershipUrl = `${params.origin}/dashboard/membership`
+  const waiverUrl = `${params.origin}/dashboard/waiver`
+  const calendarUrl = `${params.origin}/calendar`
+  const manageUrl = `${params.origin}/dashboard/bookings`
 
   const base = {
     to: params.recipient,
@@ -108,6 +113,9 @@ export function buildAdminMailPayload(params: BuildAdminMailPayloadParams) {
     cadenceLabel: 'Daily',
     checkoutUrl: `${params.origin}/checkout?tier=nano&cadence=daily`,
     activationUrl: `${params.origin}/checkout/success?checkout=test-token`,
+    bookUrl,
+    membershipUrl,
+    waiverUrl,
     checkoutToken: 'test-token',
     planVariationId: 'test-plan-variation',
     paymentLinkId: 'test-payment-link',
@@ -138,8 +146,8 @@ export function buildAdminMailPayload(params: BuildAdminMailPayloadParams) {
     bookingStart,
     bookingEnd,
     accessCode: '654321',
-    calendarUrl: `${params.origin}/calendar`,
-    manageUrl: `${params.origin}/dashboard/bookings`,
+    calendarUrl,
+    manageUrl,
     studioAddress: '3131 N. San Fernando Rd., Los Angeles, CA 90065',
     orderNumber: 'TEST-0001',
     orderDate: new Date().toLocaleString('en-US'),

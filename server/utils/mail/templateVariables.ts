@@ -72,6 +72,11 @@ const REGISTERED_MAIL_EVENTS: RegisteredMailEvent[] = [
     description: 'Guest booking confirmation with access details.'
   },
   {
+    eventType: 'mailing.memberBroadcast',
+    category: 'non_critical',
+    description: 'Manual member broadcast list email sent by admin.'
+  },
+  {
     eventType: 'order.confirmation',
     category: 'critical',
     description: 'Order confirmation sent after checkout.'
@@ -207,6 +212,21 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'bookingStart',
     'bookingEnd',
     'accessCode',
+    'calendarUrl',
+    'manageUrl',
+    'studioAddress'
+  ],
+  'mailing.memberBroadcast': [
+    'customerName',
+    'customerEmail',
+    'membershipPlanName',
+    'cadenceLabel',
+    'startPeriodHuman',
+    'endPeriodHuman',
+    'doorCode',
+    'bookUrl',
+    'membershipUrl',
+    'waiverUrl',
     'calendarUrl',
     'manageUrl',
     'studioAddress'
@@ -383,6 +403,26 @@ const EVENT_DEFAULT_COPY: Record<string, MailTemplateDefaultCopy> = {
 <p style="margin:0 0 8px;"><a href="{{ calendarUrl }}">Add to calendar</a></p>
 <p style="margin:0 0 8px;"><a href="{{ manageUrl }}">View booking details</a></p>
 <p style="margin:0;"><strong>Studio address:</strong> {{ studioAddress }}</p>
+</div>`
+  },
+  'mailing.memberBroadcast': {
+    subjectTemplate: 'Studio update for {{ customerName }}',
+    preheaderTemplate: 'Important FO Studio updates and next steps.',
+    bodyTemplate: `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;max-width:640px;margin:0 auto;">
+<h1 style="font-size:24px;margin:0 0 12px;">FO Studio update</h1>
+<p style="margin:0 0 14px;">Hi {{ customerName }}, here is the latest from the studio.</p>
+<div style="background:#f6f6f6;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin:0 0 16px;">
+<p style="margin:0 0 8px;"><strong>Membership:</strong> {{ membershipPlanName }}</p>
+<p style="margin:0 0 8px;"><strong>Current period:</strong> {{ startPeriodHuman }} to {{ endPeriodHuman }}</p>
+<p style="margin:0;"><strong>Door code on file:</strong> {{ doorCode }}</p>
+</div>
+<h2 style="font-size:18px;margin:0 0 10px;">Quick links</h2>
+<ul style="margin:0 0 16px 20px;padding:0;">
+<li style="margin:0 0 8px;"><a href="{{ bookUrl }}">Book studio time</a></li>
+<li style="margin:0 0 8px;"><a href="{{ membershipUrl }}">Manage membership</a></li>
+<li style="margin:0;"><a href="{{ waiverUrl }}">Review waiver</a></li>
+</ul>
+<p style="margin:0;">Questions? Reply to this email or contact <a href="mailto:hello@lafilmlab.com">hello@lafilmlab.com</a>.</p>
 </div>`
   },
   'order.confirmation': {

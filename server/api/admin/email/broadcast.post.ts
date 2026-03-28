@@ -11,9 +11,10 @@ import {
 
 const MAX_RECIPIENTS_PER_SEND = 600
 const SEND_CONCURRENCY = 6
+const BROADCAST_EVENT_TYPE = 'mailing.memberBroadcast'
 
 const bodySchema = z.object({
-  eventType: z.string().trim().min(3).max(160).regex(/^[A-Za-z0-9._-]+$/),
+  eventType: z.string().trim().min(3).max(160).regex(/^[A-Za-z0-9._-]+$/).optional().default(BROADCAST_EVENT_TYPE),
   includeMembershipRecipients: z.coerce.boolean().default(true),
   additionalRecipients: z.array(z.string().trim().email().max(320)).max(1000).default([])
 })
@@ -102,6 +103,12 @@ async function runWithConcurrency<T>(
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
   const body = bodySchema.parse(await readBody(event))
+  if (body.eventType !== BROADCAST_EVENT_TYPE) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `eventType must be ${BROADCAST_EVENT_TYPE}`
+    })
+  }
 
   const { data: templateRowRaw, error: templateError } = await supabase
     .from('mail_template_registry')
@@ -244,6 +251,18 @@ export default defineEventHandler(async (event) => {
 
     if (!context.userId) {
       delete payload.userId
+      payload.customerEmail = context.recipient
+      payload.guestEmail = context.recipient
+      payload.customerName = null
+      payload.guestName = null
+      payload.doorCode = null
+      payload.tierId = null
+      payload.tierName = null
+      payload.membershipPlanName = null
+      payload.currentPeriodStart = null
+      payload.currentPeriodEnd = null
+      payload.startPeriodHuman = null
+      payload.endPeriodHuman = null
     } else {
       payload.userId = context.userId
       payload.customerEmail = context.recipient
