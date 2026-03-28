@@ -124,7 +124,7 @@ async function logout() {
             <template v-if="!isAuthed">
               <NuxtLink
                 to="/login"
-                class="site-auth-link"
+                class="site-auth-link hidden sm:inline-flex"
               >
                 Login
               </NuxtLink>
@@ -153,10 +153,10 @@ async function logout() {
             </template>
 
             <UButton
-              icon="i-heroicons-bars-3"
+              :icon="isOpen ? 'i-heroicons-x-mark' : 'i-heroicons-bars-3'"
               color="neutral"
               variant="ghost"
-              aria-label="Menu"
+              :aria-label="isOpen ? 'Close menu' : 'Open menu'"
               :aria-expanded="isOpen"
               class="lg:hidden"
               @click.stop.prevent="isOpen = !isOpen"
