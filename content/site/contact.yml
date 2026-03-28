@@ -1,27 +1,3 @@
-seo:
-  title: "Contact FO Studio | Los Angeles Photo Studio"
-  description: "Contact FO Studio for membership help, booking questions, studio fit checks, and production planning support."
-  keywords:
-    - "contact photo studio los angeles"
-    - "studio membership questions"
-    - "studio booking help"
-    - "fo studio contact"
-    - "production planning support"
-  canonicalPath: "/contact"
-  robots: "index,follow,max-image-preview:large"
-  og:
-    title: "Contact FO Studio | Los Angeles Photo Studio"
-    description: "Reach out for membership and booking support."
-    image: "/images/sky.png"
-    type: "website"
-  twitter:
-    card: "summary_large_image"
-    title: "Contact FO Studio | Los Angeles Photo Studio"
-    description: "Reach out for membership and booking support."
-    image: "/images/sky.png"
-  schema:
-    pageType: "ContactPage"
-title: Contact
 detailsPanel:
   title: Studio details
   intro: Studio location and contact details for planning your session.
@@ -42,8 +18,29 @@ mapPanel:
   title: Find the studio
   description: Use the map for quick routing, parking planning, and client arrival coordination.
 reasonsPanel:
-  title: Best reasons to reach out
-  items:
-    - You are comparing memberships and want a quick recommendation.
-    - You have a client date in mind and want to confirm the booking path.
-    - You need to clarify equipment, access, or whether the room fits your production.
+  title: ""
+  items: []
+seo:
+  title: Contact FO Studio | Los Angeles Photo Studio
+  description: Contact FO Studio for membership help, booking questions, studio fit checks, and production planning support.
+  keywords:
+    - contact photo studio los angeles
+    - studio membership questions
+    - studio booking help
+    - fo studio contact
+    - production planning support
+  canonicalPath: /contact
+  robots: index,follow,max-image-preview:large
+  og:
+    title: Contact FO Studio | Los Angeles Photo Studio
+    description: Reach out for membership and booking support.
+    image: /images/sky.png
+    type: website
+  twitter:
+    card: summary_large_image
+    title: Contact FO Studio | Los Angeles Photo Studio
+    description: Reach out for membership and booking support.
+    image: /images/sky.png
+  schema:
+    pageType: ContactPage
+title: Contact

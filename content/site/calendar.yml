@@ -1,33 +1,9 @@
-seo:
-  title: "Studio Availability Calendar | FO Studio Los Angeles"
-  description: "Check FO Studio availability, active booking blocks, and next steps to reserve the studio as a member or guest."
-  keywords:
-    - "studio availability calendar"
-    - "book photo studio los angeles"
-    - "studio booking schedule"
-    - "guest studio booking"
-    - "membership calendar access"
-  canonicalPath: "/calendar"
-  robots: "index,follow,max-image-preview:large"
-  og:
-    title: "Studio Availability Calendar | FO Studio Los Angeles"
-    description: "View availability and book the right way for your workflow."
-    image: "/images/sky.png"
-    type: "website"
-  twitter:
-    card: "summary_large_image"
-    title: "Studio Availability Calendar | FO Studio Los Angeles"
-    description: "View availability and book the right way for your workflow."
-    image: "/images/sky.png"
-  schema:
-    pageType: "WebPage"
-title: Calendar
 hero:
   kicker: Calendar
   title: Studio availability
   description: Read the calendar, then choose the booking path that fits your workflow.
 nextMovePanel:
-  title: Best next move
+  title: ""
   points: []
   primaryCta:
     label: Explore memberships
@@ -36,8 +12,32 @@ nextMovePanel:
     label: Book as a guest
     to: /book
 readingPanel:
-  title: Reading the calendar
+  title: ""
   points:
     - Warm blocks mark hold windows where a set stays built overnight.
     - Neutral blocks show confirmed bookings that are no longer available.
     - Use week view for planning. Switch to day view when you need a tight read on turnaround time.
+seo:
+  title: Studio Availability Calendar | FO Studio Los Angeles
+  description: Check FO Studio availability, active booking blocks, and next steps to reserve the studio as a member or guest.
+  keywords:
+    - studio availability calendar
+    - book photo studio los angeles
+    - studio booking schedule
+    - guest studio booking
+    - membership calendar access
+  canonicalPath: /calendar
+  robots: index,follow,max-image-preview:large
+  og:
+    title: Studio Availability Calendar | FO Studio Los Angeles
+    description: View availability and book the right way for your workflow.
+    image: /images/sky.png
+    type: website
+  twitter:
+    card: summary_large_image
+    title: Studio Availability Calendar | FO Studio Los Angeles
+    description: View availability and book the right way for your workflow.
+    image: /images/sky.png
+  schema:
+    pageType: WebPage
+title: Calendar
