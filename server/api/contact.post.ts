@@ -134,12 +134,9 @@ export default defineEventHandler(async (event) => {
     ? prefRow.recipients.map(value => normalizeMailRecipient(value)).filter(Boolean) as string[]
     : []
   const fallbackRecipient = normalizeMailRecipient(config.contactToEmail as string | undefined)
-  const recipients = [...new Set([
-    ...prefRecipients,
-    ...(fallbackRecipient ? [fallbackRecipient] : [])
-  ])]
+  const selectedRecipient = fallbackRecipient ?? prefRecipients[0] ?? null
 
-  if (recipients.length === 0) {
+  if (!selectedRecipient) {
     throw createError({
       statusCode: 503,
       statusMessage: 'Contact form recipients are not configured yet.'
@@ -179,31 +176,28 @@ export default defineEventHandler(async (event) => {
 
   let delivered = 0
   try {
-    for (const recipient of recipients) {
-      const primaryPayload = {
-        ...payloadBase,
-        to: recipient
+    const primaryPayload = {
+      ...payloadBase,
+      to: selectedRecipient
+    }
+
+    try {
+      const sendResult = await sendViaFomailer(event, {
+        type: CONTACT_EVENT_TYPE,
+        payload: primaryPayload
+      })
+
+      if (!sendResult.ok) {
+        throw createError({
+          statusCode: 502,
+          statusMessage: `Contact delivery failed before upstream request: ${sendResult.reason}`
+        })
       }
 
-      try {
-        const sendResult = await sendViaFomailer(event, {
-          type: CONTACT_EVENT_TYPE,
-          payload: primaryPayload
-        })
-
-        if (!sendResult.ok) {
-          throw createError({
-            statusCode: 502,
-            statusMessage: `Contact delivery failed before upstream request: ${sendResult.reason}`
-          })
-        }
-
-        delivered += 1
-        continue
-      } catch (primaryError) {
-        if (!shouldFallbackToBroadcast(primaryError)) {
-          throw primaryError
-        }
+      delivered += 1
+    } catch (primaryError) {
+      if (!shouldFallbackToBroadcast(primaryError)) {
+        throw primaryError
       }
 
       const fallbackResult = await sendViaFomailer(event, {
