@@ -23,9 +23,11 @@ type CampaignRow = {
   status: 'draft' | 'sent' | 'archived'
   event_type: string
   sendgrid_template_id: string
+  render_mode: 'editor_html' | 'sendgrid_native'
   subject_template: string
   preheader_template: string
   body_template: string
+  dynamic_data_json: Record<string, unknown> | null
   include_membership_recipients: boolean
   additional_recipients: string[] | null
 }
@@ -110,6 +112,26 @@ function renderTemplate(template: string, context: Record<string, unknown>) {
   })
 }
 
+function renderDynamicValue(value: unknown, context: Record<string, unknown>): unknown {
+  if (typeof value === 'string') {
+    return renderTemplate(value, context)
+  }
+  if (Array.isArray(value)) {
+    return value.map(item => renderDynamicValue(item, context))
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, renderDynamicValue(item, context)])
+    )
+  }
+  return value
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value as Record<string, unknown>
+}
+
 async function runWithConcurrency<T>(
   values: T[],
   limit: number,
@@ -151,7 +173,7 @@ export default defineEventHandler(async (event) => {
 
   const campaignLookup = await db
     .from('mail_campaigns')
-    .select('id,name,status,event_type,sendgrid_template_id,subject_template,preheader_template,body_template,include_membership_recipients,additional_recipients')
+    .select('id,name,status,event_type,sendgrid_template_id,render_mode,subject_template,preheader_template,body_template,dynamic_data_json,include_membership_recipients,additional_recipients')
     .eq('id', body.campaignId)
     .maybeSingle()
 
@@ -333,6 +355,9 @@ export default defineEventHandler(async (event) => {
         payload.doorCode = context.doorCode
       }
     }
+
+    const renderedDynamicData = renderDynamicValue(asRecord(campaign.dynamic_data_json), payload)
+    Object.assign(payload, asRecord(renderedDynamicData))
 
     const renderedSubject = renderTemplate(String(campaign.subject_template ?? ''), payload).trim()
     const renderedPreheader = renderTemplate(String(campaign.preheader_template ?? ''), payload).trim()

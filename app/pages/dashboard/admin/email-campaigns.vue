@@ -11,9 +11,11 @@ type CampaignTemplate = {
   description: string
   eventType: string
   sendgridTemplateId: string
+  renderMode: 'editor_html' | 'sendgrid_native'
   subjectTemplate: string
   preheaderTemplate: string
   bodyTemplate: string
+  dynamicDataTemplate: Record<string, unknown>
   active: boolean
   updatedAt: string
   createdAt: string
@@ -26,9 +28,11 @@ type CampaignRecord = {
   templateId: string | null
   eventType: string
   sendgridTemplateId: string
+  renderMode: 'editor_html' | 'sendgrid_native'
   subjectTemplate: string
   preheaderTemplate: string
   bodyTemplate: string
+  dynamicData: Record<string, unknown>
   includeMembershipRecipients: boolean
   additionalRecipients: string[]
   lastSendSummary: Record<string, unknown> | null
@@ -51,9 +55,11 @@ type CampaignDraft = {
   templateId: string | null
   eventType: string
   sendgridTemplateId: string
+  renderMode: 'editor_html' | 'sendgrid_native'
   subjectTemplate: string
   preheaderTemplate: string
   bodyTemplate: string
+  dynamicDataJsonText: string
   includeMembershipRecipients: boolean
   additionalRecipientsText: string
 }
@@ -87,9 +93,11 @@ const draft = reactive<CampaignDraft>({
   templateId: null,
   eventType: 'mailing.memberBroadcast',
   sendgridTemplateId: '',
+  renderMode: 'editor_html',
   subjectTemplate: '',
   preheaderTemplate: '',
   bodyTemplate: '',
+  dynamicDataJsonText: '{}',
   includeMembershipRecipients: true,
   additionalRecipientsText: ''
 })
@@ -214,9 +222,9 @@ function updateSelectedImageStyle(editor: TiptapEditor, maxWidth: string) {
 }
 
 function formatIsoDate(value: string | null | undefined) {
-  if (!value) return '—'
+  if (!value) return '-'
   const at = new Date(value)
-  if (Number.isNaN(at.getTime())) return '—'
+  if (Number.isNaN(at.getTime())) return '-'
   return at.toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -230,6 +238,94 @@ function formatVariableToken(variableName: string) {
   return `{{ ${variableName} }}`
 }
 
+function stringifyDynamicData(value: Record<string, unknown> | null | undefined) {
+  return JSON.stringify(value ?? {}, null, 2)
+}
+
+function parseDynamicDataJson(text: string) {
+  try {
+    const parsed = JSON.parse(text || '{}')
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Campaign dynamic data must be a JSON object.')
+    }
+    return parsed as Record<string, unknown>
+  } catch (error: unknown) {
+    throw new Error(error instanceof Error ? error.message : 'Campaign dynamic data is invalid JSON.')
+  }
+}
+
+function setDynamicDataJson(value: Record<string, unknown>) {
+  draft.dynamicDataJsonText = stringifyDynamicData(value)
+}
+
+function loadWebsiteLaunchPreset() {
+  setDynamicDataJson({
+    hero_enabled: true,
+    hero_eyebrow: 'FO Studio',
+    hero_title: 'New Website Launch',
+    hero_copy: 'We\'ve launched a new home for everything studio-related - bookings, memberships, calendar access, and account management.',
+    hero_cta_url: 'https://fo.studio',
+    hero_cta_label: 'Go to FO Studio',
+    intro_enabled: true,
+    intro_title: 'Hi - Victor here',
+    intro_copy: 'It\'s been an amazing 2 years since FO Studio opened, and we\'re proud to have served you during that time. We\'ve built this new platform to make booking and membership management much easier moving forward.',
+    features_enabled: true,
+    features_title: 'What\'s new',
+    feature_1_enabled: true,
+    feature_1_title: 'Book in 30-minute increments',
+    feature_1_copy: 'More flexibility for short tests, quick sessions, and tighter scheduling.',
+    feature_2_enabled: true,
+    feature_2_title: 'Request overnight holds',
+    feature_2_copy: 'Leave equipment or setups in place overnight when your plan allows it.',
+    feature_3_enabled: true,
+    feature_3_title: 'Manage everything in one place',
+    feature_3_copy: 'View the calendar, book, reschedule, extend bookings, and export to your own calendar.',
+    transition_enabled: true,
+    transition_title: 'Important membership transition',
+    transition_bullet_1: 'Please cancel your current membership before April 30 and move to the new platform.',
+    transition_bullet_2: 'If you cancel sooner, we can add your remaining hours into the new system.',
+    transition_bullet_3: 'Membership spots are limited - once filled, new signups move to a waitlist.',
+    transition_primary_url: 'https://fo.studio/memberships',
+    transition_primary_label: 'View Memberships',
+    transition_secondary_url: 'https://fo.studio/faq',
+    transition_secondary_label: 'Read FAQ',
+    credits_enabled: true,
+    credits_title: 'How the new credit system works',
+    credits_bullet_1: 'Each plan includes a monthly credit allowance.',
+    credits_bullet_2: 'Credits can roll over up to a cap.',
+    credits_bullet_3: 'You can buy more credits if you run out.',
+    credits_bullet_4: 'Peak times use more credits than off-peak.',
+    credits_bullet_5: 'Pro and Studio+ plans get better peak-time efficiency.',
+    impact_enabled: true,
+    impact_title: 'What this means for current and past members',
+    impact_bullet_1: 'More usable time on the same plan, especially during off-peak hours.',
+    impact_bullet_2: 'New quarterly and annual options with added benefits.',
+    impact_bullet_3: 'Plan changes can happen after each billing cycle.',
+    impact_bullet_4: 'Updated waiver and policy flow.',
+    impact_bullet_5: 'A small price increase to support studio maintenance and improvements.',
+    offer_enabled: true,
+    offer_title: 'Launch Offer',
+    offer_copy_html: 'Use the code below for <strong>5% off</strong> your new membership through <strong>April 30</strong>.',
+    offer_code: 'NEWSITE',
+    offer_cta_url: 'https://fo.studio/memberships',
+    offer_cta_label: 'Start Membership',
+    closing_enabled: true,
+    closing_title: 'Thanks for being part of FO Studio',
+    closing_copy: 'We\'re working to make FO Studio the best turnkey studio in Los Angeles, and this new site is a big step in that direction.',
+    footer_name: 'FO Studio',
+    footer_address_1: '3131 N. San Fernando Rd.',
+    footer_address_2: 'Los Angeles, CA 90065',
+    footer_link_home_url: 'https://fo.studio',
+    footer_link_home_label: 'fo.studio',
+    footer_link_memberships_url: 'https://fo.studio/memberships',
+    footer_link_memberships_label: 'Memberships',
+    footer_link_faq_url: 'https://fo.studio/faq',
+    footer_link_faq_label: 'FAQ',
+    footer_link_contact_url: 'https://fo.studio/contact',
+    footer_link_contact_label: 'Contact'
+  })
+}
+
 function hydrateDraftFromCampaign(campaign: CampaignRecord | null) {
   if (!campaign) {
     draft.id = null
@@ -238,9 +334,11 @@ function hydrateDraftFromCampaign(campaign: CampaignRecord | null) {
     draft.templateId = templates.value[0]?.id ?? null
     draft.eventType = templates.value[0]?.eventType ?? 'mailing.memberBroadcast'
     draft.sendgridTemplateId = templates.value[0]?.sendgridTemplateId ?? ''
+    draft.renderMode = templates.value[0]?.renderMode ?? 'editor_html'
     draft.subjectTemplate = templates.value[0]?.subjectTemplate ?? ''
     draft.preheaderTemplate = templates.value[0]?.preheaderTemplate ?? ''
     draft.bodyTemplate = templates.value[0]?.bodyTemplate ?? ''
+    draft.dynamicDataJsonText = stringifyDynamicData(templates.value[0]?.dynamicDataTemplate ?? {})
     draft.includeMembershipRecipients = true
     draft.additionalRecipientsText = ''
     return
@@ -252,9 +350,11 @@ function hydrateDraftFromCampaign(campaign: CampaignRecord | null) {
   draft.templateId = campaign.templateId
   draft.eventType = campaign.eventType
   draft.sendgridTemplateId = campaign.sendgridTemplateId
+  draft.renderMode = campaign.renderMode
   draft.subjectTemplate = campaign.subjectTemplate
   draft.preheaderTemplate = campaign.preheaderTemplate
   draft.bodyTemplate = campaign.bodyTemplate
+  draft.dynamicDataJsonText = stringifyDynamicData(campaign.dynamicData)
   draft.includeMembershipRecipients = campaign.includeMembershipRecipients
   draft.additionalRecipientsText = campaign.additionalRecipients.join('\n')
 }
@@ -265,9 +365,11 @@ function applySelectedTemplateToDraft() {
 
   draft.eventType = template.eventType
   draft.sendgridTemplateId = template.sendgridTemplateId ?? ''
+  draft.renderMode = template.renderMode ?? 'editor_html'
   draft.subjectTemplate = template.subjectTemplate ?? ''
   draft.preheaderTemplate = template.preheaderTemplate ?? ''
   draft.bodyTemplate = template.bodyTemplate ?? ''
+  draft.dynamicDataJsonText = stringifyDynamicData(template.dynamicDataTemplate ?? {})
 }
 
 function onTemplateChange() {
@@ -305,6 +407,18 @@ async function reloadCampaigns(options: { preserveSelection?: boolean } = {}) {
 }
 
 async function saveCampaign() {
+  let dynamicData: Record<string, unknown>
+  try {
+    dynamicData = parseDynamicDataJson(draft.dynamicDataJsonText)
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Dynamic data is invalid',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+    return false
+  }
+
   saving.value = true
   try {
     const result = await $fetch<{ campaign: CampaignRecord }>('/api/admin/email/campaigns.upsert', {
@@ -316,9 +430,11 @@ async function saveCampaign() {
         templateId: draft.templateId,
         eventType: draft.eventType,
         sendgridTemplateId: draft.sendgridTemplateId,
+        renderMode: draft.renderMode,
         subjectTemplate: draft.subjectTemplate,
         preheaderTemplate: draft.preheaderTemplate,
         bodyTemplate: draft.bodyTemplate,
+        dynamicData,
         includeMembershipRecipients: draft.includeMembershipRecipients,
         additionalRecipients: parseRecipientsInput(draft.additionalRecipientsText)
       }
@@ -919,6 +1035,23 @@ watch(() => draft.templateId, () => {
                 </UFormField>
               </div>
 
+              <UFormField
+                label="Render mode"
+                description="Editor HTML mode renders bodyHTML server-side. SendGrid native mode uses dynamic data JSON for section toggles and content."
+              >
+                <select
+                  v-model="draft.renderMode"
+                  class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
+                >
+                  <option value="editor_html">
+                    Editor HTML (bodyHTML)
+                  </option>
+                  <option value="sendgrid_native">
+                    SendGrid native (dynamic data JSON)
+                  </option>
+                </select>
+              </UFormField>
+
               <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
                 <div>
                   <div class="text-sm font-medium">
@@ -960,7 +1093,10 @@ watch(() => draft.templateId, () => {
                 </UFormField>
               </div>
 
-              <UFormField label="Body template (HTML)">
+              <UFormField
+                v-if="draft.renderMode === 'editor_html'"
+                label="Body template (HTML)"
+              >
                 <template #description>
                   Use <code v-pre>{{ variableName }}</code> tokens only.
                 </template>
@@ -1005,9 +1141,40 @@ watch(() => draft.templateId, () => {
                 </UEditor>
               </UFormField>
 
+              <UFormField
+                v-else
+                label="SendGrid dynamic data (JSON)"
+              >
+                <template #description>
+                  Section toggles and content for your SendGrid template. String values can use <code v-pre>{{ variableName }}</code> tokens.
+                </template>
+                <div class="space-y-2">
+                  <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-default p-2">
+                    <div class="text-xs text-dimmed">
+                      Use your modular SendGrid layout keys like <code>hero_enabled</code>, <code>feature_1_title</code>, <code>offer_code</code>.
+                    </div>
+                    <UButton
+                      size="xs"
+                      color="neutral"
+                      variant="soft"
+                      icon="i-lucide-wand-sparkles"
+                      @click="loadWebsiteLaunchPreset"
+                    >
+                      Load website launch preset
+                    </UButton>
+                  </div>
+                  <UTextarea
+                    v-model="draft.dynamicDataJsonText"
+                    :rows="20"
+                    class="w-full font-mono text-xs"
+                    placeholder="{&#10;  &quot;hero_enabled&quot;: true&#10;}"
+                  />
+                </div>
+              </UFormField>
+
               <div class="text-xs text-dimmed rounded-md border border-primary/20 bg-primary/5 p-2.5">
                 <div class="font-medium text-highlighted mb-1.5">
-                  Available variables
+                  Available recipient/context variables
                 </div>
                 <div class="leading-relaxed break-words">
                   <span

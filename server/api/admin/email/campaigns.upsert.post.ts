@@ -1,6 +1,17 @@
 import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
 
+const jsonValueSchema: z.ZodType<unknown> = z.lazy(() => z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(jsonValueSchema),
+  z.record(z.string(), jsonValueSchema)
+]))
+
+const jsonObjectSchema = z.record(z.string(), jsonValueSchema)
+
 const campaignSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().trim().min(2).max(120),
@@ -8,9 +19,11 @@ const campaignSchema = z.object({
   templateId: z.string().uuid().nullable().optional(),
   eventType: z.string().trim().min(3).max(160).regex(/^[A-Za-z0-9._-]+$/).default('mailing.memberBroadcast'),
   sendgridTemplateId: z.string().trim().max(255).default(''),
+  renderMode: z.enum(['editor_html', 'sendgrid_native']).default('editor_html'),
   subjectTemplate: z.string().max(300).default(''),
   preheaderTemplate: z.string().max(300).default(''),
   bodyTemplate: z.string().max(200_000).default(''),
+  dynamicData: jsonObjectSchema.default({}),
   includeMembershipRecipients: z.coerce.boolean().default(true),
   additionalRecipients: z.array(z.string().trim().email().max(320)).max(1000).default([])
 })
@@ -67,6 +80,24 @@ function normalizeBodyTemplate(value: string): string {
   return applyResponsiveImageStyles(value)
 }
 
+function normalizeDynamicValue(value: unknown): unknown {
+  if (value == null) return null
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value
+  }
+  if (Array.isArray(value)) {
+    return value.map(item => normalizeDynamicValue(item))
+  }
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => key.trim().length > 0)
+        .map(([key, item]) => [key, normalizeDynamicValue(item)])
+    )
+  }
+  return String(value)
+}
+
 function findUnsupportedTemplateSyntax(value: string): string | null {
   if (!value.trim()) return null
 
@@ -116,9 +147,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: `Campaign preheader template: ${unsupportedPreheader}` })
   }
 
-  const unsupportedBody = findUnsupportedTemplateSyntax(body.bodyTemplate)
-  if (unsupportedBody) {
-    throw createError({ statusCode: 400, statusMessage: `Campaign body template: ${unsupportedBody}` })
+  if (body.renderMode === 'editor_html') {
+    const unsupportedBody = findUnsupportedTemplateSyntax(body.bodyTemplate)
+    if (unsupportedBody) {
+      throw createError({ statusCode: 400, statusMessage: `Campaign body template: ${unsupportedBody}` })
+    }
   }
 
   const recipients = [...new Set(
@@ -147,9 +180,11 @@ export default defineEventHandler(async (event) => {
     template_id: body.templateId ?? null,
     event_type: body.eventType,
     sendgrid_template_id: body.sendgridTemplateId,
+    render_mode: body.renderMode,
     subject_template: body.subjectTemplate,
     preheader_template: body.preheaderTemplate,
     body_template: normalizeBodyTemplate(body.bodyTemplate),
+    dynamic_data_json: normalizeDynamicValue(body.dynamicData),
     include_membership_recipients: body.includeMembershipRecipients,
     additional_recipients: recipients
   } satisfies Record<string, unknown>
@@ -159,7 +194,7 @@ export default defineEventHandler(async (event) => {
       .from('mail_campaigns')
       .update(payload)
       .eq('id', body.id)
-      .select('id,name,status,template_id,event_type,sendgrid_template_id,subject_template,preheader_template,body_template,include_membership_recipients,additional_recipients,last_send_summary,last_sent_at,created_by,created_at,updated_at')
+      .select('id,name,status,template_id,event_type,sendgrid_template_id,render_mode,subject_template,preheader_template,body_template,dynamic_data_json,include_membership_recipients,additional_recipients,last_send_summary,last_sent_at,created_by,created_at,updated_at')
       .maybeSingle()
 
     if (updateResult.error) {
@@ -179,7 +214,7 @@ export default defineEventHandler(async (event) => {
       ...payload,
       created_by: user.sub ?? null
     }])
-    .select('id,name,status,template_id,event_type,sendgrid_template_id,subject_template,preheader_template,body_template,include_membership_recipients,additional_recipients,last_send_summary,last_sent_at,created_by,created_at,updated_at')
+    .select('id,name,status,template_id,event_type,sendgrid_template_id,render_mode,subject_template,preheader_template,body_template,dynamic_data_json,include_membership_recipients,additional_recipients,last_send_summary,last_sent_at,created_by,created_at,updated_at')
     .maybeSingle()
 
   if (insertResult.error) {

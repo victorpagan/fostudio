@@ -11,6 +11,8 @@ type CampaignTemplateRow = {
   subject_template: string
   preheader_template: string
   body_template: string
+  render_mode: 'editor_html' | 'sendgrid_native'
+  dynamic_data_template: Record<string, unknown> | null
   active: boolean
   updated_at: string
   created_at: string
@@ -26,6 +28,8 @@ type CampaignRow = {
   subject_template: string
   preheader_template: string
   body_template: string
+  render_mode: 'editor_html' | 'sendgrid_native'
+  dynamic_data_json: Record<string, unknown> | null
   include_membership_recipients: boolean
   additional_recipients: string[] | null
   last_send_summary: Record<string, unknown> | null
@@ -48,11 +52,11 @@ export default defineEventHandler(async (event) => {
   const [templateResult, campaignResult] = await Promise.all([
     db
       .from('mail_campaign_templates')
-      .select('id,slug,name,description,event_type,sendgrid_template_id,subject_template,preheader_template,body_template,active,updated_at,created_at')
+      .select('id,slug,name,description,event_type,sendgrid_template_id,subject_template,preheader_template,body_template,render_mode,dynamic_data_template,active,updated_at,created_at')
       .order('name', { ascending: true }),
     db
       .from('mail_campaigns')
-      .select('id,name,status,template_id,event_type,sendgrid_template_id,subject_template,preheader_template,body_template,include_membership_recipients,additional_recipients,last_send_summary,last_sent_at,created_by,created_at,updated_at')
+      .select('id,name,status,template_id,event_type,sendgrid_template_id,subject_template,preheader_template,body_template,render_mode,dynamic_data_json,include_membership_recipients,additional_recipients,last_send_summary,last_sent_at,created_by,created_at,updated_at')
       .order('updated_at', { ascending: false })
   ])
 
@@ -74,6 +78,10 @@ export default defineEventHandler(async (event) => {
     subjectTemplate: template.subject_template ?? '',
     preheaderTemplate: template.preheader_template ?? '',
     bodyTemplate: template.body_template ?? '',
+    renderMode: template.render_mode ?? 'editor_html',
+    dynamicDataTemplate: (template.dynamic_data_template && typeof template.dynamic_data_template === 'object' && !Array.isArray(template.dynamic_data_template))
+      ? template.dynamic_data_template
+      : {},
     active: Boolean(template.active),
     updatedAt: template.updated_at,
     createdAt: template.created_at
@@ -89,6 +97,10 @@ export default defineEventHandler(async (event) => {
     subjectTemplate: campaign.subject_template ?? '',
     preheaderTemplate: campaign.preheader_template ?? '',
     bodyTemplate: campaign.body_template ?? '',
+    renderMode: campaign.render_mode ?? 'editor_html',
+    dynamicData: (campaign.dynamic_data_json && typeof campaign.dynamic_data_json === 'object' && !Array.isArray(campaign.dynamic_data_json))
+      ? campaign.dynamic_data_json
+      : {},
     includeMembershipRecipients: Boolean(campaign.include_membership_recipients),
     additionalRecipients: Array.isArray(campaign.additional_recipients)
       ? campaign.additional_recipients.filter(value => typeof value === 'string' && value.trim().length > 0)
