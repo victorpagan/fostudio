@@ -1758,6 +1758,7 @@ h6 {
 }
 
 .memberships-info-cell {
+  grid-area: info;
   border-left: 1px solid var(--gruv-line);
   padding: clamp(1rem, 2.8vw, 2rem);
   background: color-mix(in srgb, var(--gruv-bg-0) 90%, var(--gruv-bg-1) 10%);
@@ -2752,6 +2753,23 @@ h6 {
 
   .memberships-plans-section {
     --memberships-plans-gap: 1.2rem;
+  }
+
+  .memberships-plans-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "meta"
+      "copy"
+      "plans";
+  }
+
+  .memberships-plans-grid .editorial-meta {
+    border-right: 0;
+    border-bottom: 1px solid var(--memberships-plans-line);
+  }
+
+  .memberships-plans-grid .editorial-copy {
+    border-left: 0;
   }
 
   .memberships-plan-list {

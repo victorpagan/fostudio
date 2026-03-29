@@ -621,9 +621,10 @@ function formatPeakCredits(value: number) {
     <UModal
       v-model:open="open"
       :dismissible="!confirming"
+      :ui="{ content: 'max-h-[calc(100dvh-1rem)] overflow-hidden sm:max-h-[calc(100dvh-3rem)]' }"
     >
       <template #content>
-        <UCard>
+        <UCard class="flex max-h-[calc(100dvh-1rem)] flex-col sm:max-h-[calc(100dvh-3rem)]">
           <template #header>
             <div class="flex items-center justify-between">
               <h3 class="font-semibold text-base">
@@ -640,7 +641,7 @@ function formatPeakCredits(value: number) {
             </div>
           </template>
 
-          <div class="space-y-4">
+          <div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
             <!-- Time summary -->
             <div
               v-if="selected"
@@ -799,9 +800,10 @@ function formatPeakCredits(value: number) {
     <UModal
       v-model:open="ownBookingActionOpen"
       :dismissible="!ownBookingActionLoading"
+      :ui="{ content: 'max-h-[calc(100dvh-1rem)] overflow-hidden sm:max-h-[calc(100dvh-3rem)]' }"
     >
       <template #content>
-        <UCard v-if="clickedBooking">
+        <UCard v-if="clickedBooking" class="flex max-h-[calc(100dvh-1rem)] flex-col sm:max-h-[calc(100dvh-3rem)]">
           <template #header>
             <div class="flex items-center justify-between gap-3">
               <h3 class="font-semibold text-base">
@@ -818,7 +820,7 @@ function formatPeakCredits(value: number) {
             </div>
           </template>
 
-          <div class="space-y-2 text-sm">
+          <div class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 text-sm">
             <UAlert
               v-if="ownBookingLockReason"
               color="warning"

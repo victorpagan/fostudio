@@ -233,6 +233,7 @@ function formatPeakCredits(value: number) {
     <UModal
       v-model:open="guestModalOpen"
       :dismissible="!guestSubmitting"
+      :ui="{ content: 'max-h-[calc(100dvh-1rem)] overflow-hidden sm:max-h-[calc(100dvh-3rem)]' }"
     >
       <template #content>
         <UCard class="studio-panel flex max-h-[calc(100dvh-1.5rem)] flex-col sm:max-h-[calc(100dvh-3rem)]">
