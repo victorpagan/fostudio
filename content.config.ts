@@ -20,7 +20,8 @@ const createLandingSchema = () => z.object({
     primaryCta: createSimpleCtaSchema(),
     secondaryCta: createSimpleCtaSchema(),
     waitlistCtaLabel: z.string().nonempty(),
-    chips: z.array(z.string().nonempty())
+    chips: z.array(z.string().nonempty()),
+    campaignHint: z.string().nonempty().optional()
   }),
   infoCard: z.object({
     title: z.string().nonempty(),
@@ -56,16 +57,6 @@ const createLandingSchema = () => z.object({
       })
     )
   }),
-  campaign: z.object({
-    label: z.string().nonempty(),
-    title: z.string().nonempty(),
-    body: z.string().nonempty(),
-    code: z.string().nonempty(),
-    heroHint: z.string().nonempty().optional(),
-    details: z.array(z.string().nonempty()),
-    primaryCta: createSimpleCtaSchema(),
-    secondaryCta: createSimpleCtaSchema()
-  }).optional()
 })
 
 const createFaqSchema = () => z.object({

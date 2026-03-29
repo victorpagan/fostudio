@@ -46,6 +46,7 @@ type SiteLandingContent = {
     secondaryCta: LandingCta
     waitlistCtaLabel: string
     chips: string[]
+    campaignHint: string
   }
   infoCard: {
     title: string
@@ -72,16 +73,6 @@ type SiteLandingContent = {
     subtitle: string
     items: LandingTierPreview[]
   }
-  campaign: {
-    label: string
-    title: string
-    body: string
-    code: string
-    heroHint: string
-    details: string[]
-    primaryCta: LandingCta
-    secondaryCta: LandingCta
-  }
 }
 
 const fallbackLanding: SiteLandingContent = {
@@ -92,7 +83,8 @@ const fallbackLanding: SiteLandingContent = {
     primaryCta: { label: 'See Availability', to: '/calendar' },
     secondaryCta: { label: 'Explore Memberships', to: '/memberships' },
     waitlistCtaLabel: 'Join the waitlist',
-    chips: ['24/7 member access', 'Gear + consumables included', 'No startup fees']
+    chips: ['24/7 member access', 'Gear + consumables included', 'No startup fees'],
+    campaignHint: 'Campaign: use NEWSITE for 5% off new memberships.'
   },
   infoCard: {
     title: 'FO Studio at a glance',
@@ -155,20 +147,6 @@ const fallbackLanding: SiteLandingContent = {
         buttonLabel: 'Explore Studio+ plan'
       }
     ]
-  },
-  campaign: {
-    label: 'CAMPAIGN / NEWSITE',
-    title: 'New site launch offer',
-    body: 'We launched the new FO Studio platform for booking, memberships, and account management. Use the launch code during signup to get discounted onboarding.',
-    code: 'NEWSITE',
-    heroHint: 'Campaign: use NEWSITE for 5% off new memberships.',
-    details: [
-      '5% off new memberships through April 30',
-      'Works on Creator, Pro, and Studio+ membership starts',
-      'Migrating from a previous membership? We can carry remaining time'
-    ],
-    primaryCta: { label: 'Start membership', to: '/memberships' },
-    secondaryCta: { label: 'Read FAQ', to: '/faq' }
   }
 }
 
@@ -238,7 +216,6 @@ const landingContent = computed<SiteLandingContent>(() => {
   const sourceGallery = (source.gallery ?? {}) as Partial<SiteLandingContent['gallery']>
   const sourceSpotlight = (source.spotlight ?? {}) as Partial<SiteLandingContent['spotlight']>
   const sourceTiers = (source.tiersPreview ?? {}) as Partial<SiteLandingContent['tiersPreview']>
-  const sourceCampaign = (source.campaign ?? {}) as Partial<SiteLandingContent['campaign']>
 
   return {
     hero: {
@@ -250,7 +227,10 @@ const landingContent = computed<SiteLandingContent>(() => {
       waitlistCtaLabel: typeof sourceHero.waitlistCtaLabel === 'string' && sourceHero.waitlistCtaLabel.trim()
         ? sourceHero.waitlistCtaLabel
         : fallback.hero.waitlistCtaLabel,
-      chips: normalizeStringArray(sourceHero.chips, fallback.hero.chips)
+      chips: normalizeStringArray(sourceHero.chips, fallback.hero.chips),
+      campaignHint: typeof sourceHero.campaignHint === 'string' && sourceHero.campaignHint.trim()
+        ? sourceHero.campaignHint
+        : fallback.hero.campaignHint
     },
     infoCard: {
       title: typeof sourceInfoCard.title === 'string' && sourceInfoCard.title.trim() ? sourceInfoCard.title : fallback.infoCard.title,
@@ -289,18 +269,6 @@ const landingContent = computed<SiteLandingContent>(() => {
       title: typeof sourceTiers.title === 'string' && sourceTiers.title.trim() ? sourceTiers.title : fallback.tiersPreview.title,
       subtitle: typeof sourceTiers.subtitle === 'string' && sourceTiers.subtitle.trim() ? sourceTiers.subtitle : fallback.tiersPreview.subtitle,
       items: normalizeTierItems(sourceTiers.items, fallback.tiersPreview.items)
-    },
-    campaign: {
-      label: typeof sourceCampaign.label === 'string' && sourceCampaign.label.trim() ? sourceCampaign.label : fallback.campaign.label,
-      title: typeof sourceCampaign.title === 'string' && sourceCampaign.title.trim() ? sourceCampaign.title : fallback.campaign.title,
-      body: typeof sourceCampaign.body === 'string' && sourceCampaign.body.trim() ? sourceCampaign.body : fallback.campaign.body,
-      code: typeof sourceCampaign.code === 'string' && sourceCampaign.code.trim() ? sourceCampaign.code : fallback.campaign.code,
-      heroHint: typeof sourceCampaign.heroHint === 'string' && sourceCampaign.heroHint.trim()
-        ? sourceCampaign.heroHint
-        : fallback.campaign.heroHint,
-      details: normalizeStringArray(sourceCampaign.details, fallback.campaign.details),
-      primaryCta: normalizeCta(sourceCampaign.primaryCta, fallback.campaign.primaryCta),
-      secondaryCta: normalizeCta(sourceCampaign.secondaryCta, fallback.campaign.secondaryCta)
     }
   }
 })
@@ -403,7 +371,7 @@ function tierAccentClass(tierId: string, index: number) {
           <span class="landing-hero-cta-arrow">↗</span>
         </NuxtLink>
         <p class="landing-hero-campaign-hint">
-          {{ landingContent.campaign.heroHint }}
+          {{ landingContent.hero.campaignHint }}
         </p>
       </div>
 
