@@ -194,28 +194,20 @@ function tierLead(tier: Tier) {
   return tier.description ?? 'Flexible access built for real production schedules.'
 }
 
-function tierHighlights(tier: Tier) {
-  const content = tierContent(tier.id)
-  const baseHighlights = content?.highlights?.length
-    ? content.highlights
-    : ['Membership-first scheduling', 'Included studio equipment and consumables']
+function isPeakRateBullet(value: string) {
+  const normalized = value.toLowerCase()
+  return normalized.includes('peak')
+}
 
-  const options = sortedOptions(tier)
-  const monthly = monthlyOption(tier)?.credits_per_month ?? null
-  const quarterly = options.find(option => option.cadence === 'quarterly')?.credits_per_month ?? null
-  const annual = options.find(option => option.cadence === 'annual')?.credits_per_month ?? null
-  const hasCreditBoost = monthly !== null
-    && ((quarterly !== null && quarterly > monthly) || (annual !== null && annual > monthly))
+const peakRateBullets = computed(() => {
+  const source = membershipsContent.value.creditsExplainer.bullets ?? []
+  const filtered = source.filter(isPeakRateBullet)
+  if (filtered.length) return filtered
+  return ['Peak-time sessions consume credits at a higher tier multiplier while off-peak hours stay at the base rate.']
+})
 
-  const creditCadenceLine = hasCreditBoost
-    ? 'Quarterly and annual options include more credits per month for this tier.'
-    : 'Quarterly and annual options are optimized for higher monthly shooting volume.'
-
-  return [
-    ...baseHighlights,
-    creditCadenceLine,
-    `Peak-time bookings use credits at ${formatPeakCredits(tier.peak_multiplier)}x the base rate.`
-  ]
+function tierPeakRateLine(tier: Tier) {
+  return `Peak-time bookings use credits at ${formatPeakCredits(tier.peak_multiplier)}x the base rate.`
 }
 
 function tierDetail(tier: Tier) {
@@ -367,7 +359,7 @@ async function submitWaitlist() {
             </h2>
             <div class="memberships-info-list">
               <div
-                v-for="bullet in membershipsContent.creditsExplainer.bullets"
+                v-for="bullet in peakRateBullets"
                 :key="bullet"
                 class="memberships-credits-item"
               >
@@ -438,13 +430,9 @@ async function submitWaitlist() {
               </p>
 
               <div class="space-y-2 text-sm leading-7 text-[color:var(--gruv-ink-1)]">
-                <div
-                  v-for="highlight in tierHighlights(tier)"
-                  :key="highlight"
-                  class="flex gap-3"
-                >
+                <div class="flex gap-3">
                   <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--gruv-olive)]" />
-                  <span>{{ highlight }}</span>
+                  <span>{{ tierPeakRateLine(tier) }}</span>
                 </div>
               </div>
 

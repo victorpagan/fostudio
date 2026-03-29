@@ -25,10 +25,7 @@ creditsExplainer:
   title: How credits work
   description: ""
   bullets:
-    - Each plan mints monthly credits
-    - Unused credits roll over up to plan cap
-    - Quarterly and Annual plans provide even more credits per month
-    - If you run out of credits, you can buy a top off
+    - Peak-time sessions consume credits at a higher tier multiplier while off-peak hours stay at the base rate.
 hero:
   kicker: Credits / Memberships
   title: ""
