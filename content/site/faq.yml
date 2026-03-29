@@ -1,31 +1,3 @@
-seo:
-  title: "FO Studio FAQ | Memberships, Credits, Booking & Holds"
-  description: "Answers to common FO Studio questions on memberships, credits, booking windows, overnight holds, and guest sessions."
-  keywords:
-    - "photo studio faq"
-    - "membership credits faq"
-    - "studio booking rules"
-    - "overnight equipment holds"
-    - "los angeles studio questions"
-  canonicalPath: "/faq"
-  robots: "index,follow,max-image-preview:large"
-  og:
-    title: "FO Studio FAQ | Memberships, Credits, Booking & Holds"
-    description: "Clear answers before your next shoot."
-    image: "/images/sky.webp"
-    type: "website"
-  twitter:
-    card: "summary_large_image"
-    title: "FO Studio FAQ | Memberships, Credits, Booking & Holds"
-    description: "Clear answers before your next shoot."
-    image: "/images/sky.webp"
-  schema:
-    pageType: "FAQPage"
-title: Faq
-hero:
-  kicker: FAQ
-  title: Clear answers before you commit to the next shoot.
-  description: "These are the questions working creatives usually ask first: how booking works, how credits behave, and what changes once the studio becomes part of your regular workflow."
 items:
   - q: Do I need a membership to book the studio?
     a: No. You can book as a guest for a one-off session. Membership becomes the better fit when you need repeat access, a longer booking window, and a steadier cost structure.
@@ -60,3 +32,27 @@ sidePanel:
   secondaryCta:
     label: Ask a direct question
     to: /contact
+seo:
+  title: FO Studio FAQ | Memberships, Credits, Booking & Holds
+  description: Answers to common FO Studio questions on memberships, credits, booking windows, overnight holds, and guest sessions.
+  keywords:
+    - photo studio faq
+    - membership credits faq
+    - studio booking rules
+    - overnight equipment holds
+    - los angeles studio questions
+  canonicalPath: /faq
+  robots: index,follow,max-image-preview:large
+  og:
+    title: FO Studio FAQ | Memberships, Credits, Booking & Holds
+    description: Clear answers before your next shoot.
+    image: /images/sky.webp
+    type: website
+  twitter:
+    card: summary_large_image
+    title: FO Studio FAQ | Memberships, Credits, Booking & Holds
+    description: Clear answers before your next shoot.
+    image: /images/sky.webp
+  schema:
+    pageType: FAQPage
+title: Faq

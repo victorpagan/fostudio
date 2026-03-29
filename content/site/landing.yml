@@ -14,35 +14,26 @@ gallery:
       alt: Lighting setup in the studio
       loading: lazy
 hero:
-  kicker: Membership studio access
-  headline: Pick the studio membership that fits the way you actually work.
-  subheadline: This is a 24/7 turnkey studio built for photographers and small-to-mid crews. Book the plan that matches your volume, then use the space like it was made for production days, not paperwork.
-  primaryCta:
-    label: See Availability
-    to: /calendar
-  secondaryCta:
-    label: Explore Memberships
-    to: /memberships
   waitlistCtaLabel: Join the waitlist
   chips:
-    - 24/7 member access
+    - 24/7 photo studio access
     - Gear + consumables included
     - No startup fees
 infoCard:
-  title: A focused production studio built for repeat, real-world shoots.
-  body: We keep the workflow simple, the access flexible, and the monthly cost predictable so small-to-mid crews can keep shooting without operational drag. Run production through a high-quality dashboard with live calendar visibility, rescheduling, extensions, and holds. Reserve in 30-minute increments and keep setup continuity without adding line-item friction to every session.
+  title: A focused production studio built for you.
+  body: We keep the workflow simple, the access flexible, and the monthly cost predictable so you and your crew can keep shooting without operational drag. Run production through a high-quality dashboard with live calendar visibility, rescheduling, booking extensions, and overnight holds.
   affordabilityNote: Built to stay affordable for recurring production, with ground-floor loading and easier parking than the typical downtown studio run.
   features:
     - 25x30 ft cyclorama with 20+ ft ceilings for commercial and editorial setups
-    - 30-minute booking increments for tests, pickups, and tighter production days
-    - High-quality booking dashboard with live calendar, extensions, and holds
-    - Ground-floor access with practical loading, ample parking, and included core gear plus baseline consumables
+    - As short as 30 minute bookings for tests, pickups, and pre setups
+    - High quality booking dashboard with live calendar, booking extensions, and overnight setup holds
+    - Built by working professional photographers so you always know we value our space
 spotlight:
-  label: PRODUCTION-FIRST VALUE
-  title: A turnkey studio that keeps your shoots moving and your overhead in check.
-  body: Run production through a high-quality dashboard with live calendar visibility, rescheduling, extensions, and holds. Reserve in 30-minute increments and keep setup continuity without adding line-item friction to every session.
-  statValue: 30 min
-  statLabel: Booking increments available for members.
+  label: PRODUCTION FIRST VALUE
+  title: The turnkey studio that keeps you on track.
+  body: Our members dashboard with live calendar and booking suite makes things simple. Reserve as short as a 30 minute session or as long as an entire day.
+  statValue: Booking
+  statLabel: Made Easy
   cta:
     label: See Availability
     to: /calendar
@@ -52,32 +43,16 @@ tiersPreview:
   items:
     - id: creator
       title: Creator
-      body: A practical fit for lighter monthly volume, test sessions, and smaller recurring shoots.
+      body: A practical fit for lighter monthly volume, test sessions, and smaller recurring shoots. Made for the amateur or even the pro who wants a space to be creative.
       buttonLabel: Explore Creator plan
     - id: pro
       title: Pro
-      body: For repeat client production that needs stronger booking window and steadier weekly cadence.
+      body: For repeat client production that needs stronger booking windows and has a steadier weekly volume.
       buttonLabel: Explore Pro plan
     - id: studio_plus
       title: Studio+
-      body: Priority-focused access for heavier production months and larger crew coordination.
+      body: Priority focused access for heavier production months and multi-day coordination. For those who need the most time and flexibility throughout the week.
       buttonLabel: Explore Studio+ plan
-campaign:
-  label: CAMPAIGN / NEWSITE
-  title: New site launch offer
-  body: We launched the new FO Studio platform for booking, memberships, and account management. Use the launch code during signup to get discounted onboarding.
-  code: NEWSITE
-  heroHint: Campaign: use NEWSITE for 5% off new memberships.
-  details:
-    - 5% off new memberships through April 30
-    - Works on Creator, Pro, and Studio+ membership starts
-    - Migrating from a previous membership? We can carry remaining time
-  primaryCta:
-    label: Start membership
-    to: /memberships
-  secondaryCta:
-    label: Read FAQ
-    to: /faq
 seo:
   title: FO Studio | 24/7 Photo Studio Membership in Los Angeles
   description: 24/7 turnkey photo studio in Los Angeles for photographers and small-to-mid crews. Included gear, consumables, and membership-first booking.
