@@ -5,8 +5,8 @@ nextMovePanel:
     label: Explore memberships
     to: /memberships
   secondaryCta:
-    label: Book as a guest
-    to: /book
+    label: View Policies
+    to: /policy
 readingPanel:
   title: ""
   points:
