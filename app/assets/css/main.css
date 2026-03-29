@@ -1597,37 +1597,6 @@ h6 {
     linear-gradient(to bottom, rgba(255, 255, 255, 0.16) 1px, transparent 1px) 0 0 / 100% calc(100% / 3);
 }
 
-.landing-lead-overlay-sidebar {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: clamp(5.8rem, 18%, 8.5rem);
-  padding: clamp(0.9rem, 2.5vw, 1.35rem) clamp(0.7rem, 1.8vw, 1rem);
-  display: grid;
-  align-content: space-between;
-  gap: 0.7rem;
-  border-right: 1px solid rgba(255, 255, 255, 0.26);
-  background: color-mix(in srgb, var(--gruv-bg-0) 90%, transparent);
-}
-
-.landing-lead-overlay-chapter,
-.landing-lead-overlay-section {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 0.74rem;
-  line-height: 1.45;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--gruv-ink-1) 76%, var(--gruv-ink-2) 24%);
-}
-
-.landing-lead-overlay-logo {
-  width: clamp(1.3rem, 2.8vw, 1.8rem);
-  opacity: 0.7;
-  filter: invert(0.03) contrast(1.2);
-}
-
 .landing-lead-overlay-brand {
   position: absolute;
   top: clamp(0.85rem, 2.2vw, 1.2rem);
@@ -1644,7 +1613,7 @@ h6 {
   position: absolute;
   right: clamp(0.8rem, 2.2vw, 1.3rem);
   bottom: clamp(0.9rem, 2.6vw, 1.5rem);
-  max-width: min(30ch, calc(100% - clamp(7.2rem, 22%, 9.4rem)));
+  max-width: min(38ch, calc(100% - 2rem));
   display: grid;
   gap: 0.4rem;
   justify-items: end;
@@ -2691,17 +2660,6 @@ h6 {
     min-height: min(58vw, 24rem);
   }
 
-  .landing-lead-overlay-sidebar {
-    width: clamp(4.6rem, 20%, 6.2rem);
-    padding: 0.8rem 0.62rem;
-  }
-
-  .landing-lead-overlay-chapter,
-  .landing-lead-overlay-section {
-    font-size: 0.62rem;
-    letter-spacing: 0.14em;
-  }
-
   .landing-lead-overlay-brand {
     top: 0.74rem;
     font-size: 0.64rem;
@@ -2711,7 +2669,7 @@ h6 {
   .landing-lead-overlay-copy {
     right: 0.72rem;
     bottom: 0.75rem;
-    max-width: min(26ch, calc(100% - 5.8rem));
+    max-width: min(28ch, calc(100% - 1.5rem));
     gap: 0.3rem;
   }
 
@@ -2724,7 +2682,7 @@ h6 {
   }
 
   .landing-lead-overlay-copy {
-    max-width: min(23ch, calc(100% - 5.6rem));
+    max-width: min(23ch, calc(100% - 1.4rem));
   }
 
   .landing-lead-overlay-subtitle {
@@ -2969,21 +2927,6 @@ h6 {
     min-height: 14rem;
   }
 
-  .landing-lead-overlay-sidebar {
-    width: 4.5rem;
-    padding: 0.68rem 0.52rem;
-  }
-
-  .landing-lead-overlay-logo {
-    width: 1.1rem;
-  }
-
-  .landing-lead-overlay-chapter,
-  .landing-lead-overlay-section {
-    font-size: 0.58rem;
-    letter-spacing: 0.12em;
-  }
-
   .landing-lead-overlay-brand {
     font-size: 0.6rem;
     top: 0.58rem;
@@ -2992,7 +2935,7 @@ h6 {
   .landing-lead-overlay-copy {
     right: 0.58rem;
     bottom: 0.58rem;
-    max-width: calc(100% - 5.25rem);
+    max-width: calc(100% - 1.15rem);
   }
 
   .landing-lead-overlay-title {

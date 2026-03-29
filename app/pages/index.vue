@@ -477,19 +477,6 @@ function tierAccentClass(tierId: string, index: number) {
               >
               <div class="landing-lead-overlay">
                 <div class="landing-lead-overlay-grid" />
-                <div class="landing-lead-overlay-sidebar">
-                  <p class="landing-lead-overlay-chapter">
-                    {{ landingContent.gallery.leadOverlay?.chapter }}
-                  </p>
-                  <p class="landing-lead-overlay-section">
-                    {{ landingContent.gallery.leadOverlay?.section }}
-                  </p>
-                  <img
-                    src="/images/logo-white.png"
-                    alt=""
-                    class="landing-lead-overlay-logo"
-                  >
-                </div>
                 <div class="landing-lead-overlay-brand">
                   {{ landingContent.gallery.leadOverlay?.brand }}
                 </div>
