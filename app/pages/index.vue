@@ -87,7 +87,7 @@ const fallbackLanding: SiteLandingContent = {
   },
   infoCard: {
     title: 'FO Studio at a glance',
-    body: 'Built for production days, not logistics overhead.',
+    body: 'Built for production days, not logistics overhead. Run production through a high-quality dashboard with live calendar visibility, rescheduling, extensions, and holds. Reserve in 30-minute increments and keep setup continuity without adding line-item friction to every session.',
     affordabilityNote: 'Built to stay affordable for recurring production, with ground-floor loading and easier parking than the typical downtown studio run.',
     features: [
       '25x30 ft cyclorama with 20+ ft ceilings',
