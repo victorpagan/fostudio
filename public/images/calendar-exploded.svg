@@ -1,0 +1,205 @@
+<svg width="1920" height="1200" viewBox="0 0 1920 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="140" y1="80" x2="1840" y2="1130" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FCFAED"/>
+      <stop offset="0.55" stop-color="#F4EFE1"/>
+      <stop offset="1" stop-color="#ECE5D5"/>
+    </linearGradient>
+    <linearGradient id="panelLight" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#F8F2E7"/>
+      <stop offset="1" stop-color="#EEE7DA"/>
+    </linearGradient>
+    <linearGradient id="panelDark" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#2C2C2E"/>
+      <stop offset="1" stop-color="#1D1D1F"/>
+    </linearGradient>
+    <linearGradient id="accentRed" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#AA5048"/>
+      <stop offset="1" stop-color="#7A362E"/>
+    </linearGradient>
+    <linearGradient id="accentGreen" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#678965"/>
+      <stop offset="1" stop-color="#466445"/>
+    </linearGradient>
+    <linearGradient id="accentAmber" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#E1A15E"/>
+      <stop offset="1" stop-color="#C6843B"/>
+    </linearGradient>
+    <pattern id="gridLines" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M28 0H0V28" fill="none" stroke="#1A1A1A" stroke-opacity="0.04"/>
+    </pattern>
+    <pattern id="peakStripes" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(28)">
+      <rect width="14" height="14" fill="rgba(225,161,94,0.17)"/>
+      <rect width="5" height="14" fill="rgba(225,161,94,0.38)"/>
+    </pattern>
+    <filter id="shadowA" x="-30%" y="-30%" width="160%" height="190%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="22" stdDeviation="20" flood-color="#1A1A1A" flood-opacity="0.2"/>
+    </filter>
+    <filter id="shadowB" x="-30%" y="-30%" width="160%" height="190%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="14" flood-color="#1A1A1A" flood-opacity="0.18"/>
+    </filter>
+    <style>
+      .display {
+        font-family: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+        letter-spacing: 0.02em;
+      }
+      .ui {
+        font-family: "Manrope", "Inter", "Segoe UI", sans-serif;
+      }
+      .mono {
+        font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+      }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1200" fill="url(#bg)"/>
+  <rect width="1920" height="1200" fill="url(#gridLines)" opacity="0.75"/>
+
+  <text x="120" y="116" class="display" font-size="28" fill="#1A1A1A" fill-opacity="0.8">FO Studio</text>
+  <text x="120" y="156" class="ui" font-size="18" fill="#1A1A1A" fill-opacity="0.48">Calendar System • Exploded View (Concept Render)</text>
+
+  <g transform="translate(178,238) skewX(-7)" filter="url(#shadowB)" opacity="0.62">
+    <rect width="1260" height="744" rx="20" fill="url(#panelDark)"/>
+    <text x="38" y="58" class="ui" font-size="24" fill="#FCFAED">Scheduling Engine Layer</text>
+    <text x="38" y="92" class="ui" font-size="15" fill="#FCFAED" fill-opacity="0.7">Rules: booking windows, holds, peak rates, extension eligibility</text>
+
+    <rect x="38" y="126" width="1184" height="570" rx="14" fill="#FCFAED" fill-opacity="0.06" stroke="#FCFAED" stroke-opacity="0.14"/>
+    <rect x="68" y="174" width="1124" height="36" rx="8" fill="#FCFAED" fill-opacity="0.1"/>
+    <text x="86" y="198" class="ui" font-size="14" fill="#FCFAED" fill-opacity="0.85">availability.evaluate() -> open_slots, peak_windows, conflicts</text>
+    <rect x="68" y="228" width="1124" height="430" rx="10" fill="#FCFAED" fill-opacity="0.04"/>
+    <rect x="68" y="228" width="1124" height="120" fill="url(#peakStripes)" opacity="0.8"/>
+
+    <rect x="94" y="252" width="248" height="82" rx="10" fill="#678965" fill-opacity="0.4" stroke="#9AC49B" stroke-opacity="0.35"/>
+    <text x="112" y="284" class="ui" font-size="15" fill="#F6FFF6">eligible: member extension</text>
+    <text x="112" y="309" class="mono" font-size="13" fill="#F6FFF6" fill-opacity="0.9">booking_id=BK_3482</text>
+
+    <rect x="374" y="252" width="286" height="82" rx="10" fill="#AA5048" fill-opacity="0.38" stroke="#E78D84" stroke-opacity="0.3"/>
+    <text x="392" y="284" class="ui" font-size="15" fill="#FFF2F1">blocked: conflicting hold</text>
+    <text x="392" y="309" class="mono" font-size="13" fill="#FFF2F1" fill-opacity="0.9">hold_owner=user_91 (self)</text>
+
+    <rect x="694" y="252" width="336" height="82" rx="10" fill="#E1A15E" fill-opacity="0.37" stroke="#FFCC98" stroke-opacity="0.34"/>
+    <text x="712" y="284" class="ui" font-size="15" fill="#FFF8F0">peak multiplier applied</text>
+    <text x="712" y="309" class="mono" font-size="13" fill="#FFF8F0" fill-opacity="0.92">tier=pro • rate=1.5x</text>
+  </g>
+
+  <g transform="translate(228,188) skewX(-5)" filter="url(#shadowA)" opacity="0.8">
+    <rect width="1300" height="780" rx="22" fill="url(#panelLight)" stroke="#1A1A1A" stroke-opacity="0.16"/>
+    <text x="42" y="60" class="display" font-size="28" fill="#1A1A1A">Booking + Hold State Layer</text>
+    <text x="42" y="94" class="ui" font-size="15" fill="#1A1A1A" fill-opacity="0.5">Derived timeline for member/admin UI, badges, and extension actions</text>
+
+    <rect x="42" y="132" width="1216" height="600" rx="14" fill="#FCFAED" stroke="#1A1A1A" stroke-opacity="0.1"/>
+    <line x1="42" y1="208" x2="1258" y2="208" stroke="#1A1A1A" stroke-opacity="0.09"/>
+    <line x1="42" y1="274" x2="1258" y2="274" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="42" y1="340" x2="1258" y2="340" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="42" y1="406" x2="1258" y2="406" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="42" y1="472" x2="1258" y2="472" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="42" y1="538" x2="1258" y2="538" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="42" y1="604" x2="1258" y2="604" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="42" y1="670" x2="1258" y2="670" stroke="#1A1A1A" stroke-opacity="0.07"/>
+
+    <rect x="132" y="208" width="1076" height="132" fill="url(#peakStripes)" opacity="0.8"/>
+    <text x="1128" y="238" class="ui" font-size="12" fill="#7E4C20" font-weight="700">Peak window overlay</text>
+
+    <rect x="182" y="390" width="262" height="78" rx="12" fill="url(#accentGreen)"/>
+    <text x="202" y="423" class="ui" font-size="17" fill="#F7FFF7">Creator session</text>
+    <text x="202" y="448" class="mono" font-size="13" fill="#F7FFF7" fill-opacity="0.92">Mon • 11:00–13:30 • 2.5 credits</text>
+
+    <rect x="474" y="434" width="292" height="82" rx="12" fill="url(#accentRed)"/>
+    <text x="496" y="468" class="ui" font-size="17" fill="#FFF4F3">Brand product shoot</text>
+    <text x="496" y="493" class="mono" font-size="13" fill="#FFF4F3" fill-opacity="0.92">Tue • 14:00–18:00 • peak partial</text>
+
+    <rect x="804" y="252" width="316" height="86" rx="12" fill="url(#accentAmber)"/>
+    <text x="826" y="286" class="ui" font-size="17" fill="#FFF9F0">Equipment hold</text>
+    <text x="826" y="311" class="mono" font-size="13" fill="#FFF9F0" fill-opacity="0.93">Wed • 19:00–07:00 • owner=member</text>
+  </g>
+
+  <g transform="translate(284,126)" filter="url(#shadowA)">
+    <rect width="1320" height="820" rx="24" fill="#FCFAED" stroke="#1A1A1A" stroke-opacity="0.18"/>
+
+    <rect x="0" y="0" width="1320" height="94" rx="24" fill="#1A1A1A"/>
+    <rect x="0" y="70" width="1320" height="24" fill="#1A1A1A"/>
+    <text x="36" y="58" class="display" font-size="30" fill="#FCFAED">FO Studio Calendar</text>
+    <text x="430" y="58" class="ui" font-size="16" fill="#FCFAED" fill-opacity="0.72">Week View • 24h timeline • Member controls</text>
+    <rect x="1062" y="28" width="106" height="40" rx="10" fill="#FCFAED" fill-opacity="0.1" stroke="#FCFAED" stroke-opacity="0.25"/>
+    <text x="1094" y="53" class="ui" font-size="14" fill="#FCFAED">Today</text>
+    <rect x="1182" y="28" width="106" height="40" rx="10" fill="#FCFAED" fill-opacity="0.1" stroke="#FCFAED" stroke-opacity="0.25"/>
+    <text x="1212" y="53" class="ui" font-size="14" fill="#FCFAED">Filters</text>
+
+    <rect x="28" y="120" width="1264" height="670" rx="14" fill="#F8F4EA" stroke="#1A1A1A" stroke-opacity="0.11"/>
+    <rect x="118" y="156" width="1132" height="596" rx="10" fill="#FFFDF7" stroke="#1A1A1A" stroke-opacity="0.08"/>
+
+    <rect x="118" y="156" width="1132" height="160" fill="url(#peakStripes)" opacity="0.86"/>
+    <text x="1190" y="184" class="ui" font-size="12" font-weight="700" fill="#885121">Peak hours (18:00–22:00)</text>
+
+    <line x1="118" y1="204" x2="1250" y2="204" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="118" y1="252" x2="1250" y2="252" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="118" y1="300" x2="1250" y2="300" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="118" y1="348" x2="1250" y2="348" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="118" y1="396" x2="1250" y2="396" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="118" y1="444" x2="1250" y2="444" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="118" y1="492" x2="1250" y2="492" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="118" y1="540" x2="1250" y2="540" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="118" y1="588" x2="1250" y2="588" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="118" y1="636" x2="1250" y2="636" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="118" y1="684" x2="1250" y2="684" stroke="#1A1A1A" stroke-opacity="0.07"/>
+    <line x1="118" y1="732" x2="1250" y2="732" stroke="#1A1A1A" stroke-opacity="0.07"/>
+
+    <line x1="280" y1="156" x2="280" y2="752" stroke="#1A1A1A" stroke-opacity="0.08"/>
+    <line x1="442" y1="156" x2="442" y2="752" stroke="#1A1A1A" stroke-opacity="0.08"/>
+    <line x1="604" y1="156" x2="604" y2="752" stroke="#1A1A1A" stroke-opacity="0.08"/>
+    <line x1="766" y1="156" x2="766" y2="752" stroke="#1A1A1A" stroke-opacity="0.08"/>
+    <line x1="928" y1="156" x2="928" y2="752" stroke="#1A1A1A" stroke-opacity="0.08"/>
+    <line x1="1090" y1="156" x2="1090" y2="752" stroke="#1A1A1A" stroke-opacity="0.08"/>
+
+    <text x="160" y="142" class="ui" font-size="13" fill="#1A1A1A" fill-opacity="0.72">Mon</text>
+    <text x="322" y="142" class="ui" font-size="13" fill="#1A1A1A" fill-opacity="0.72">Tue</text>
+    <text x="484" y="142" class="ui" font-size="13" fill="#1A1A1A" fill-opacity="0.72">Wed</text>
+    <text x="646" y="142" class="ui" font-size="13" fill="#1A1A1A" fill-opacity="0.72">Thu</text>
+    <text x="808" y="142" class="ui" font-size="13" fill="#1A1A1A" fill-opacity="0.72">Fri</text>
+    <text x="970" y="142" class="ui" font-size="13" fill="#1A1A1A" fill-opacity="0.72">Sat</text>
+    <text x="1132" y="142" class="ui" font-size="13" fill="#1A1A1A" fill-opacity="0.72">Sun</text>
+
+    <text x="42" y="173" class="mono" font-size="12" fill="#1A1A1A" fill-opacity="0.58">18:00</text>
+    <text x="42" y="221" class="mono" font-size="12" fill="#1A1A1A" fill-opacity="0.58">20:00</text>
+    <text x="42" y="269" class="mono" font-size="12" fill="#1A1A1A" fill-opacity="0.58">22:00</text>
+    <text x="42" y="317" class="mono" font-size="12" fill="#1A1A1A" fill-opacity="0.58">00:00</text>
+    <text x="42" y="365" class="mono" font-size="12" fill="#1A1A1A" fill-opacity="0.58">02:00</text>
+    <text x="42" y="413" class="mono" font-size="12" fill="#1A1A1A" fill-opacity="0.58">04:00</text>
+    <text x="42" y="461" class="mono" font-size="12" fill="#1A1A1A" fill-opacity="0.58">06:00</text>
+    <text x="42" y="509" class="mono" font-size="12" fill="#1A1A1A" fill-opacity="0.58">08:00</text>
+    <text x="42" y="557" class="mono" font-size="12" fill="#1A1A1A" fill-opacity="0.58">10:00</text>
+    <text x="42" y="605" class="mono" font-size="12" fill="#1A1A1A" fill-opacity="0.58">12:00</text>
+    <text x="42" y="653" class="mono" font-size="12" fill="#1A1A1A" fill-opacity="0.58">14:00</text>
+    <text x="42" y="701" class="mono" font-size="12" fill="#1A1A1A" fill-opacity="0.58">16:00</text>
+
+    <rect x="140" y="538" width="132" height="118" rx="10" fill="url(#accentGreen)"/>
+    <text x="152" y="565" class="ui" font-size="14" fill="#F3FFF3" font-weight="700">Member booking</text>
+    <text x="152" y="587" class="ui" font-size="12" fill="#F3FFF3">Creator test shoot</text>
+    <text x="152" y="607" class="mono" font-size="11" fill="#F3FFF3">11:00–13:30</text>
+    <text x="152" y="627" class="mono" font-size="11" fill="#F3FFF3">2.5 credits</text>
+
+    <rect x="310" y="604" width="132" height="138" rx="10" fill="url(#accentRed)"/>
+    <text x="322" y="632" class="ui" font-size="14" fill="#FFF1F0" font-weight="700">Peak booking</text>
+    <text x="322" y="654" class="ui" font-size="12" fill="#FFF1F0">Brand product set</text>
+    <text x="322" y="674" class="mono" font-size="11" fill="#FFF1F0">14:00–18:00</text>
+    <text x="322" y="694" class="mono" font-size="11" fill="#FFF1F0">6.0 credits</text>
+
+    <rect x="472" y="250" width="132" height="108" rx="10" fill="url(#accentAmber)"/>
+    <text x="484" y="278" class="ui" font-size="14" fill="#FFF8EF" font-weight="700">Equipment hold</text>
+    <text x="484" y="300" class="ui" font-size="12" fill="#FFF8EF">Lighting buildout</text>
+    <text x="484" y="320" class="mono" font-size="11" fill="#FFF8EF">19:00–07:00</text>
+    <text x="484" y="340" class="mono" font-size="11" fill="#FFF8EF">owner: current user</text>
+
+    <rect x="1128" y="560" width="140" height="174" rx="12" fill="#FFFFFF" stroke="#1A1A1A" stroke-opacity="0.14"/>
+    <text x="1142" y="588" class="ui" font-size="13" fill="#1A1A1A" fill-opacity="0.72">Manage booking</text>
+    <text x="1142" y="618" class="ui" font-size="12" fill="#1A1A1A">Status: Active</text>
+    <text x="1142" y="642" class="ui" font-size="12" fill="#1A1A1A">Ends: 6:00 PM</text>
+    <rect x="1142" y="660" width="110" height="30" rx="8" fill="#1A1A1A"/>
+    <text x="1160" y="680" class="ui" font-size="12" fill="#FCFAED">Extend +30m</text>
+    <text x="1142" y="714" class="ui" font-size="11" fill="#1A1A1A" fill-opacity="0.55">Eligible: no conflict</text>
+  </g>
+
+  <text x="120" y="1122" class="ui" font-size="16" fill="#1A1A1A" fill-opacity="0.56">
+    Concept art for FO Studio marketing • sample data reflects actual feature set: 24h calendar, peak windows, extensions, and holds.
+  </text>
+</svg>
