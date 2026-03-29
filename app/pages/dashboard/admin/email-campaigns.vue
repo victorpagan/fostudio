@@ -180,6 +180,10 @@ const campaignRows = computed(() => campaigns.value.map(campaign => ({
   ...campaign,
   templateName: templates.value.find(template => template.id === campaign.templateId)?.name ?? 'Custom / none'
 })))
+const selectedCampaignRow = computed(() => {
+  if (!selectedCampaignId.value) return null
+  return campaignRows.value.find(campaign => campaign.id === selectedCampaignId.value) ?? null
+})
 
 const editorVariableTokens = computed(() => {
   const common = availableVariablesByEvent.value['*'] ?? []
@@ -1033,96 +1037,7 @@ watch(() => draft.templateId, () => {
           description="Campaigns are separate from the mail template registry. Build drafts, pick a campaign template, and send when ready."
         />
 
-        <div class="grid gap-4 lg:grid-cols-[1.05fr_1.4fr]">
-          <UCard>
-            <div class="flex items-center justify-between gap-2">
-              <div class="text-sm font-medium">
-                Campaigns
-              </div>
-              <UButton
-                size="xs"
-                icon="i-lucide-plus"
-                color="neutral"
-                variant="soft"
-                @click="createCampaignDraft"
-              >
-                New Draft
-              </UButton>
-            </div>
-
-            <div class="mt-3 overflow-x-auto">
-              <table class="w-full text-left text-sm">
-                <thead>
-                  <tr class="border-b border-default text-xs uppercase tracking-wide text-dimmed">
-                    <th class="px-2 py-2">
-                      Name
-                    </th>
-                    <th class="px-2 py-2">
-                      Status
-                    </th>
-                    <th class="px-2 py-2">
-                      Template
-                    </th>
-                    <th class="px-2 py-2 text-right">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="campaign in campaignRows"
-                    :key="campaign.id"
-                    class="border-b border-default/60 last:border-b-0"
-                  >
-                    <td class="px-2 py-2.5 align-top">
-                      <div class="font-medium text-highlighted">
-                        {{ campaign.name }}
-                      </div>
-                      <div class="text-xs text-dimmed">
-                        Updated {{ formatIsoDate(campaign.updatedAt) }}
-                      </div>
-                      <div class="text-xs text-dimmed">
-                        Sent {{ formatIsoDate(campaign.lastSentAt) }}
-                      </div>
-                    </td>
-                    <td class="px-2 py-2.5 align-top">
-                      <UBadge
-                        :color="campaign.status === 'draft' ? 'warning' : campaign.status === 'sent' ? 'success' : 'neutral'"
-                        variant="soft"
-                        size="sm"
-                      >
-                        {{ campaign.status }}
-                      </UBadge>
-                    </td>
-                    <td class="px-2 py-2.5 align-top text-xs text-dimmed">
-                      {{ campaign.templateName }}
-                    </td>
-                    <td class="px-2 py-2.5 align-top">
-                      <div class="flex justify-end gap-1">
-                        <UButton
-                          size="xs"
-                          color="neutral"
-                          variant="soft"
-                          icon="i-lucide-pencil"
-                          @click="selectCampaign(campaign.id)"
-                        />
-                      </div>
-                    </td>
-                  </tr>
-
-                  <tr v-if="campaignRows.length === 0">
-                    <td
-                      colspan="4"
-                      class="px-2 py-3 text-sm text-dimmed"
-                    >
-                      No campaigns yet. Create your first draft.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </UCard>
-
+        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
           <UCard>
             <div class="flex items-center justify-between gap-2">
               <div>
@@ -1133,163 +1048,192 @@ watch(() => draft.templateId, () => {
                   Draft copy, audience, and template mapping before send.
                 </div>
               </div>
-              <UBadge
-                :color="draft.status === 'draft' ? 'warning' : draft.status === 'sent' ? 'success' : 'neutral'"
-                variant="soft"
-              >
-                {{ draft.status }}
-              </UBadge>
+              <div class="flex items-center gap-2">
+                <UBadge
+                  :color="draft.status === 'draft' ? 'warning' : draft.status === 'sent' ? 'success' : 'neutral'"
+                  variant="soft"
+                >
+                  {{ draft.status }}
+                </UBadge>
+                <UBadge
+                  v-if="selectedCampaignRow"
+                  color="neutral"
+                  variant="subtle"
+                >
+                  {{ selectedCampaignRow.name }}
+                </UBadge>
+              </div>
             </div>
 
             <div class="mt-4 space-y-4">
-              <div class="grid gap-3 md:grid-cols-2">
-                <UFormField label="Campaign name">
-                  <UInput
-                    v-model="draft.name"
-                    class="w-full"
-                    placeholder="April studio update"
-                  />
-                </UFormField>
+              <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
+                <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+                  Campaign setup
+                </div>
+                <div class="grid gap-3 md:grid-cols-2">
+                  <UFormField label="Campaign name">
+                    <UInput
+                      v-model="draft.name"
+                      class="w-full"
+                      placeholder="April studio update"
+                    />
+                  </UFormField>
 
-                <UFormField label="Status">
-                  <select
-                    v-model="draft.status"
-                    class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
-                  >
-                    <option value="draft">
-                      draft
-                    </option>
-                    <option value="sent">
-                      sent
-                    </option>
-                    <option value="archived">
-                      archived
-                    </option>
-                  </select>
-                </UFormField>
-              </div>
-
-              <div class="grid gap-3 md:grid-cols-2">
-                <UFormField
-                  label="Campaign template"
-                  description="Select a reusable template preset."
-                >
-                  <select
-                    v-model="templateSelectValue"
-                    class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
-                    @change="onTemplateChange"
-                  >
-                    <option value="">
-                      Custom (none)
-                    </option>
-                    <option
-                      v-for="template in templates"
-                      :key="template.id"
-                      :value="template.id"
+                  <UFormField label="Status">
+                    <select
+                      v-model="draft.status"
+                      class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
                     >
-                      {{ template.name }}{{ template.active ? '' : ' (inactive)' }}
+                      <option value="draft">
+                        draft
+                      </option>
+                      <option value="sent">
+                        sent
+                      </option>
+                      <option value="archived">
+                        archived
+                      </option>
+                    </select>
+                  </UFormField>
+                </div>
+
+                <div class="grid gap-3 md:grid-cols-2">
+                  <UFormField
+                    label="Campaign template"
+                    description="Select a reusable template preset."
+                  >
+                    <select
+                      v-model="templateSelectValue"
+                      class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
+                      @change="onTemplateChange"
+                    >
+                      <option value="">
+                        Custom (none)
+                      </option>
+                      <option
+                        v-for="template in templates"
+                        :key="template.id"
+                        :value="template.id"
+                      >
+                        {{ template.name }}{{ template.active ? '' : ' (inactive)' }}
+                      </option>
+                    </select>
+                  </UFormField>
+
+                  <div class="flex items-end">
+                    <UButton
+                      color="neutral"
+                      variant="soft"
+                      icon="i-lucide-copy-plus"
+                      @click="applySelectedTemplateToDraft"
+                    >
+                      Apply template content
+                    </UButton>
+                  </div>
+                </div>
+              </section>
+
+              <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
+                <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+                  Delivery and rendering
+                </div>
+                <div class="grid gap-3 md:grid-cols-2">
+                  <UFormField label="Mail event type">
+                    <UInput
+                      v-model="draft.eventType"
+                      class="w-full"
+                      placeholder="mailing.memberBroadcast"
+                    />
+                  </UFormField>
+
+                  <UFormField label="SendGrid template id">
+                    <UInput
+                      v-model="draft.sendgridTemplateId"
+                      class="w-full"
+                      placeholder="d-xxxxxxxxxxxxxxxxxxxx"
+                    />
+                  </UFormField>
+                </div>
+
+                <UFormField
+                  label="Render mode"
+                  description="Editor HTML mode renders bodyHTML server-side. SendGrid native mode uses dynamic data JSON for section toggles and content."
+                >
+                  <select
+                    v-model="draft.renderMode"
+                    class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
+                  >
+                    <option value="editor_html">
+                      Editor HTML (bodyHTML)
+                    </option>
+                    <option value="sendgrid_native">
+                      SendGrid native (dynamic data JSON)
                     </option>
                   </select>
                 </UFormField>
+              </section>
 
-                <div class="flex items-end">
-                  <UButton
-                    color="neutral"
-                    variant="soft"
-                    icon="i-lucide-copy-plus"
-                    @click="applySelectedTemplateToDraft"
-                  >
-                    Apply template content
-                  </UButton>
+              <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
+                <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+                  Audience
                 </div>
-              </div>
+                <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2 bg-default">
+                  <div>
+                    <div class="text-sm font-medium">
+                      Include membership recipients
+                    </div>
+                    <div class="text-xs text-dimmed">
+                      Pull unique member emails from memberships/customers.
+                    </div>
+                  </div>
+                  <USwitch v-model="draft.includeMembershipRecipients" />
+                </div>
 
-              <div class="grid gap-3 md:grid-cols-2">
-                <UFormField label="Mail event type">
-                  <UInput
-                    v-model="draft.eventType"
-                    class="w-full"
-                    placeholder="mailing.memberBroadcast"
-                  />
-                </UFormField>
-
-                <UFormField label="SendGrid template id">
-                  <UInput
-                    v-model="draft.sendgridTemplateId"
-                    class="w-full"
-                    placeholder="d-xxxxxxxxxxxxxxxxxxxx"
-                  />
-                </UFormField>
-              </div>
-
-              <UFormField
-                label="Render mode"
-                description="Editor HTML mode renders bodyHTML server-side. SendGrid native mode uses dynamic data JSON for section toggles and content."
-              >
-                <select
-                  v-model="draft.renderMode"
-                  class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
+                <UFormField
+                  label="Additional recipients"
+                  description="One email per line or comma-separated."
                 >
-                  <option value="editor_html">
-                    Editor HTML (bodyHTML)
-                  </option>
-                  <option value="sendgrid_native">
-                    SendGrid native (dynamic data JSON)
-                  </option>
-                </select>
-              </UFormField>
+                  <UTextarea
+                    v-model="draft.additionalRecipientsText"
+                    :rows="4"
+                    class="w-full"
+                    placeholder="agency@example.com&#10;collab@example.com"
+                  />
+                </UFormField>
 
-              <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
-                <div>
-                  <div class="text-sm font-medium">
-                    Include membership recipients
-                  </div>
-                  <div class="text-xs text-dimmed">
-                    Pull unique member emails from memberships/customers.
-                  </div>
+                <UFormField
+                  label="Test recipient"
+                  description="Optional. Leave blank to send to your admin account email."
+                >
+                  <UInput
+                    v-model="testRecipient"
+                    class="w-full"
+                    placeholder="you@example.com"
+                  />
+                </UFormField>
+              </section>
+
+              <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
+                <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+                  Message copy
                 </div>
-                <USwitch v-model="draft.includeMembershipRecipients" />
-              </div>
-
-              <UFormField
-                label="Additional recipients"
-                description="One email per line or comma-separated."
-              >
-                <UTextarea
-                  v-model="draft.additionalRecipientsText"
-                  :rows="4"
-                  class="w-full"
-                  placeholder="agency@example.com&#10;collab@example.com"
-                />
-              </UFormField>
-
-              <UFormField
-                label="Test recipient"
-                description="Optional. Leave blank to send to your admin account email."
-              >
-                <UInput
-                  v-model="testRecipient"
-                  class="w-full"
-                  placeholder="you@example.com"
-                />
-              </UFormField>
-
-              <div class="grid gap-3 md:grid-cols-2">
-                <UFormField label="Subject template">
-                  <UInput
-                    v-model="draft.subjectTemplate"
-                    class="w-full"
-                    placeholder="FO Studio update for {{ customerName }}"
-                  />
-                </UFormField>
-                <UFormField label="Preheader template">
-                  <UInput
-                    v-model="draft.preheaderTemplate"
-                    class="w-full"
-                    placeholder="Short preview text for inbox list view."
-                  />
-                </UFormField>
-              </div>
+                <div class="grid gap-3 md:grid-cols-2">
+                  <UFormField label="Subject template">
+                    <UInput
+                      v-model="draft.subjectTemplate"
+                      class="w-full"
+                      placeholder="FO Studio update for {{ customerName }}"
+                    />
+                  </UFormField>
+                  <UFormField label="Preheader template">
+                    <UInput
+                      v-model="draft.preheaderTemplate"
+                      class="w-full"
+                      placeholder="Short preview text for inbox list view."
+                    />
+                  </UFormField>
+                </div>
+              </section>
 
               <UFormField
                 v-if="draft.renderMode === 'editor_html'"
@@ -1486,6 +1430,92 @@ watch(() => draft.templateId, () => {
               </div>
             </template>
           </UCard>
+
+          <aside class="space-y-4 xl:sticky xl:top-4 self-start">
+            <UCard>
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <div class="text-sm font-medium">
+                    Campaigns
+                  </div>
+                  <div class="text-xs text-dimmed mt-0.5">
+                    {{ campaignRows.length }} total campaign{{ campaignRows.length === 1 ? '' : 's' }}
+                  </div>
+                </div>
+                <UButton
+                  size="xs"
+                  icon="i-lucide-plus"
+                  color="neutral"
+                  variant="soft"
+                  @click="createCampaignDraft"
+                >
+                  New Draft
+                </UButton>
+              </div>
+
+              <div
+                v-if="selectedCampaignRow"
+                class="mt-3 rounded-md border border-default/80 bg-default/50 p-2.5"
+              >
+                <div class="text-xs font-medium text-highlighted">
+                  Selected
+                </div>
+                <div class="mt-1 text-sm font-medium">
+                  {{ selectedCampaignRow.name }}
+                </div>
+                <div class="mt-1 text-xs text-dimmed">
+                  Updated {{ formatIsoDate(selectedCampaignRow.updatedAt) }}
+                </div>
+                <div class="text-xs text-dimmed">
+                  Sent {{ formatIsoDate(selectedCampaignRow.lastSentAt) }}
+                </div>
+              </div>
+            </UCard>
+
+            <UCard>
+              <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+                Campaign list
+              </div>
+              <div class="mt-3 max-h-[44rem] overflow-y-auto space-y-2 pr-1">
+                <button
+                  v-for="campaign in campaignRows"
+                  :key="campaign.id"
+                  type="button"
+                  class="w-full rounded-md border p-2.5 text-left transition-colors"
+                  :class="campaign.id === selectedCampaignId
+                    ? 'border-primary/60 bg-primary/10'
+                    : 'border-default/80 bg-default/40 hover:bg-default/70'"
+                  @click="selectCampaign(campaign.id)"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-sm font-medium text-highlighted leading-tight">
+                      {{ campaign.name }}
+                    </div>
+                    <UBadge
+                      :color="campaign.status === 'draft' ? 'warning' : campaign.status === 'sent' ? 'success' : 'neutral'"
+                      variant="soft"
+                      size="sm"
+                    >
+                      {{ campaign.status }}
+                    </UBadge>
+                  </div>
+                  <div class="mt-1 text-[11px] text-dimmed leading-tight">
+                    Template: {{ campaign.templateName }}
+                  </div>
+                  <div class="text-[11px] text-dimmed leading-tight">
+                    Updated {{ formatIsoDate(campaign.updatedAt) }}
+                  </div>
+                </button>
+
+                <div
+                  v-if="campaignRows.length === 0"
+                  class="rounded-md border border-dashed border-default px-3 py-4 text-sm text-dimmed text-center"
+                >
+                  No campaigns yet. Create your first draft.
+                </div>
+              </div>
+            </UCard>
+          </aside>
         </div>
       </div>
     </template>
