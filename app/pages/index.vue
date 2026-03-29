@@ -123,8 +123,95 @@ const { data: siteLanding } = await useAsyncData('site:landing', async () => {
   return await queryCollection('siteLanding').first()
 })
 
+function normalizeCta(input: unknown, fallback: LandingCta): LandingCta {
+  if (!input || typeof input !== 'object') return fallback
+  const value = input as Partial<LandingCta>
+  const label = typeof value.label === 'string' && value.label.trim()
+    ? value.label
+    : fallback.label
+  const to = typeof value.to === 'string' && value.to.trim()
+    ? value.to
+    : fallback.to
+  return { label, to }
+}
+
+function normalizeStringArray(input: unknown, fallback: string[]) {
+  if (!Array.isArray(input)) return fallback
+  const values = input
+    .filter(value => typeof value === 'string')
+    .map(value => value.trim())
+    .filter(Boolean)
+  return values.length ? values : fallback
+}
+
+function normalizeTierItems(input: unknown, fallback: LandingTierPreview[]) {
+  if (!Array.isArray(input)) return fallback
+
+  const values = input
+    .filter(item => item && typeof item === 'object')
+    .map((item, index) => {
+      const source = item as Partial<LandingTierPreview>
+      const fallbackItem = fallback[index] ?? fallback[0]!
+      const id = typeof source.id === 'string' && source.id.trim() ? source.id : fallbackItem.id
+      const title = typeof source.title === 'string' && source.title.trim() ? source.title : fallbackItem.title
+      const body = typeof source.body === 'string' && source.body.trim() ? source.body : fallbackItem.body
+      const buttonLabel = typeof source.buttonLabel === 'string' && source.buttonLabel.trim()
+        ? source.buttonLabel
+        : fallbackItem.buttonLabel
+      return { id, title, body, buttonLabel }
+    })
+
+  return values.length ? values : fallback
+}
+
 const landingContent = computed<SiteLandingContent>(() => {
-  return (siteLanding.value as SiteLandingContent | null) ?? fallbackLanding
+  const source = (siteLanding.value as Partial<SiteLandingContent> | null) ?? {}
+  const fallback = fallbackLanding
+
+  const sourceHero = source.hero ?? {}
+  const sourceInfoCard = source.infoCard ?? {}
+  const sourceGallery = source.gallery ?? {}
+  const sourceTiers = source.tiersPreview ?? {}
+  const sourceCampaign = source.campaign ?? {}
+
+  return {
+    hero: {
+      kicker: typeof sourceHero.kicker === 'string' && sourceHero.kicker.trim() ? sourceHero.kicker : fallback.hero.kicker,
+      headline: typeof sourceHero.headline === 'string' && sourceHero.headline.trim() ? sourceHero.headline : fallback.hero.headline,
+      subheadline: typeof sourceHero.subheadline === 'string' && sourceHero.subheadline.trim() ? sourceHero.subheadline : fallback.hero.subheadline,
+      primaryCta: normalizeCta(sourceHero.primaryCta, fallback.hero.primaryCta),
+      secondaryCta: normalizeCta(sourceHero.secondaryCta, fallback.hero.secondaryCta),
+      waitlistCtaLabel: typeof sourceHero.waitlistCtaLabel === 'string' && sourceHero.waitlistCtaLabel.trim()
+        ? sourceHero.waitlistCtaLabel
+        : fallback.hero.waitlistCtaLabel,
+      chips: normalizeStringArray(sourceHero.chips, fallback.hero.chips)
+    },
+    infoCard: {
+      title: typeof sourceInfoCard.title === 'string' && sourceInfoCard.title.trim() ? sourceInfoCard.title : fallback.infoCard.title,
+      body: typeof sourceInfoCard.body === 'string' && sourceInfoCard.body.trim() ? sourceInfoCard.body : fallback.infoCard.body,
+      features: normalizeStringArray(sourceInfoCard.features, fallback.infoCard.features)
+    },
+    gallery: {
+      title: typeof sourceGallery.title === 'string' && sourceGallery.title.trim() ? sourceGallery.title : fallback.gallery.title,
+      images: Array.isArray(sourceGallery.images) && sourceGallery.images.length
+        ? sourceGallery.images as LandingImage[]
+        : fallback.gallery.images
+    },
+    tiersPreview: {
+      title: typeof sourceTiers.title === 'string' && sourceTiers.title.trim() ? sourceTiers.title : fallback.tiersPreview.title,
+      subtitle: typeof sourceTiers.subtitle === 'string' && sourceTiers.subtitle.trim() ? sourceTiers.subtitle : fallback.tiersPreview.subtitle,
+      items: normalizeTierItems(sourceTiers.items, fallback.tiersPreview.items)
+    },
+    campaign: {
+      label: typeof sourceCampaign.label === 'string' && sourceCampaign.label.trim() ? sourceCampaign.label : fallback.campaign.label,
+      title: typeof sourceCampaign.title === 'string' && sourceCampaign.title.trim() ? sourceCampaign.title : fallback.campaign.title,
+      body: typeof sourceCampaign.body === 'string' && sourceCampaign.body.trim() ? sourceCampaign.body : fallback.campaign.body,
+      code: typeof sourceCampaign.code === 'string' && sourceCampaign.code.trim() ? sourceCampaign.code : fallback.campaign.code,
+      details: normalizeStringArray(sourceCampaign.details, fallback.campaign.details),
+      primaryCta: normalizeCta(sourceCampaign.primaryCta, fallback.campaign.primaryCta),
+      secondaryCta: normalizeCta(sourceCampaign.secondaryCta, fallback.campaign.secondaryCta)
+    }
+  }
 })
 
 const showIntroStudioSection = false

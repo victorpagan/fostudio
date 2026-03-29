@@ -1,7 +1,17 @@
 <script setup lang="ts">
 const colorMode = useColorMode()
+const route = useRoute()
 
 const color = computed(() => colorMode.value === 'dark' ? '#131413' : '#FCFAED')
+const sitePageTransition = { name: 'site-page', mode: 'out-in' as const }
+
+const pageTransition = computed(() => {
+  if (route.path.startsWith('/dashboard')) {
+    return false
+  }
+
+  return sitePageTransition
+})
 
 useHead({
   titleTemplate: title => title ? `${title} | FO Studio` : 'FO Studio',
@@ -28,7 +38,10 @@ useSeoMeta({
     <NuxtLoadingIndicator />
 
     <NuxtLayout>
-      <NuxtPage />
+      <NuxtPage
+        :transition="pageTransition"
+        :page-key="to => to.fullPath"
+      />
     </NuxtLayout>
   </UApp>
 </template>

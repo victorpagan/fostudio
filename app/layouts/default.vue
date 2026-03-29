@@ -146,18 +146,9 @@ onBeforeUnmount(() => {
     <AppHeader />
 
     <UMain :class="mainClass">
-      <Transition
-        name="site-page"
-        mode="out-in"
-        appear
-      >
-        <div
-          :key="route.fullPath"
-          class="site-page-frame"
-        >
-          <slot />
-        </div>
-      </Transition>
+      <div class="site-page-frame">
+        <slot />
+      </div>
     </UMain>
 
     <AppFooter />
