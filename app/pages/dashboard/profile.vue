@@ -6,6 +6,7 @@ definePageMeta({ middleware: ['auth'] })
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const toast = useToast()
+const colorMode = useColorMode()
 
 type CustomerRow = {
   id: string
@@ -243,6 +244,12 @@ const emailPreferencesDirty = computed(() => {
     emailPreferences.criticalEnabled !== Boolean(defaults.criticalEnabled)
     || emailPreferences.nonCriticalEnabled !== Boolean(defaults.nonCriticalEnabled)
   )
+})
+const prefersDarkMode = computed({
+  get: () => colorMode.value === 'dark',
+  set: (value: boolean) => {
+    colorMode.preference = value ? 'dark' : 'light'
+  }
 })
 
 function formatExactDate(value: string | null | undefined) {
@@ -489,6 +496,19 @@ async function saveEmailPreferences() {
             <UButton size="sm" to="/dashboard/waiver">
               View waiver
             </UButton>
+          </div>
+        </UCard>
+
+        <UCard>
+          <div class="space-y-4">
+            <div class="text-sm font-medium">Appearance</div>
+            <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
+              <div>
+                <div class="text-sm font-medium">Dark mode</div>
+                <div class="text-xs text-dimmed">Choose the dashboard color theme.</div>
+              </div>
+              <USwitch v-model="prefersDarkMode" />
+            </div>
           </div>
         </UCard>
 

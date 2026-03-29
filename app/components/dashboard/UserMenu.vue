@@ -34,6 +34,10 @@ async function logout() {
   await router.push('/login')
 }
 
+function toggleColorMode() {
+  colorMode.preference = colorMode.value === 'dark' ? 'light' : 'dark'
+}
+
 const items = computed<DropdownMenuItem[][]>(() => ([
   [{
     type: 'label',
@@ -48,6 +52,13 @@ const items = computed<DropdownMenuItem[][]>(() => ([
     label: 'Membership & Credits',
     icon: 'i-lucide-badge-check',
     to: '/dashboard/membership'
+  }, {
+    label: colorMode.value === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
+    icon: colorMode.value === 'dark' ? 'i-lucide-sun' : 'i-lucide-moon',
+    onSelect: (e: Event) => {
+      e.preventDefault()
+      toggleColorMode()
+    }
   }],
   [{
     label: 'Log out',
@@ -61,37 +72,25 @@ const items = computed<DropdownMenuItem[][]>(() => ([
 </script>
 
 <template>
-  <div
-    class="flex w-full items-center"
-    :class="collapsed ? 'justify-center gap-2' : 'gap-3'"
-  >
-    <div :class="collapsed ? '' : 'min-w-0 flex-1'">
-      <UDropdownMenu
-        :items="items"
-        :content="{ align: 'center', collisionPadding: 12 }"
-        :ui="{ content: collapsed ? 'w-56' : 'w-(--reka-dropdown-menu-trigger-width)' }"
-      >
-        <UButton
-          v-bind="{
-            label: collapsed ? undefined : displayName,
-            trailingIcon: collapsed ? undefined : 'i-lucide-chevrons-up-down'
-          }"
-          :avatar="avatar"
-          color="neutral"
-          variant="ghost"
-          block
-          :square="collapsed"
-          :class="collapsed ? 'data-[state=open]:bg-elevated' : 'w-full data-[state=open]:bg-elevated'"
-          :ui="{ trailingIcon: 'text-dimmed' }"
-        />
-      </UDropdownMenu>
-    </div>
-
-    <UColorModeButton
-      color="neutral"
-      variant="ghost"
-      class="shrink-0"
-      :aria-label="colorMode.value === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
-    />
+  <div :class="collapsed ? 'flex w-full justify-center' : 'w-full min-w-0'">
+    <UDropdownMenu
+      :items="items"
+      :content="{ align: 'center', collisionPadding: 12 }"
+      :ui="{ content: collapsed ? 'w-56' : 'w-(--reka-dropdown-menu-trigger-width)' }"
+    >
+      <UButton
+        v-bind="{
+          label: collapsed ? undefined : displayName,
+          trailingIcon: collapsed ? undefined : 'i-lucide-chevrons-up-down'
+        }"
+        :avatar="avatar"
+        color="neutral"
+        variant="ghost"
+        block
+        :square="collapsed"
+        :class="collapsed ? 'data-[state=open]:bg-elevated' : 'w-full data-[state=open]:bg-elevated'"
+        :ui="{ trailingIcon: 'text-dimmed' }"
+      />
+    </UDropdownMenu>
   </div>
 </template>
