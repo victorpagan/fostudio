@@ -22,6 +22,7 @@ type MailAdminCopyPreferencesRow = {
 }
 
 const CONTACT_EVENT_TYPE = 'contact.formSubmitted'
+const CONTACT_FALLBACK_EVENT_TYPE = 'mailing.memberBroadcast'
 
 function escapeHtml(value: string) {
   return value
@@ -30,6 +31,41 @@ function escapeHtml(value: string) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll(/'/g, '&#39;')
+}
+
+function readUpstreamErrorDetails(error: unknown) {
+  if (!error || typeof error !== 'object') return null
+  const value = error as {
+    statusCode?: number
+    statusMessage?: string
+    data?: unknown
+    response?: { status?: number, _data?: unknown }
+    message?: string
+  }
+
+  const status = value.statusCode ?? value.response?.status ?? null
+  const payload = value.data ?? value.response?._data ?? null
+  const payloadText = payload == null
+    ? null
+    : (typeof payload === 'string' ? payload : JSON.stringify(payload))
+
+  return {
+    status,
+    message: value.statusMessage ?? value.message ?? null,
+    payloadText
+  }
+}
+
+function shouldFallbackToBroadcast(error: unknown) {
+  const details = readUpstreamErrorDetails(error)
+  const corpus = [
+    details?.message ?? '',
+    details?.payloadText ?? ''
+  ]
+    .join(' ')
+    .toLowerCase()
+
+  return corpus.includes('unknown mail type') && corpus.includes(CONTACT_EVENT_TYPE.toLowerCase())
 }
 
 export default defineEventHandler(async (event) => {
@@ -111,6 +147,8 @@ export default defineEventHandler(async (event) => {
   }
 
   const submittedAt = new Date().toISOString()
+  const contactMessageEscaped = escapeHtml(body.message)
+  const contactMessageHtml = contactMessageEscaped.replace(/\r?\n/g, '<br />')
   const payloadBase = {
     eventType: CONTACT_EVENT_TYPE,
     templateId,
@@ -121,34 +159,94 @@ export default defineEventHandler(async (event) => {
     contactEmail: escapeHtml(body.email.trim().toLowerCase()),
     contactPhone: escapeHtml(body.phone || 'Not provided'),
     contactSubject: escapeHtml(body.subject),
-    contactMessage: escapeHtml(body.message)
+    contactMessage: contactMessageEscaped
   }
+
+  const fallbackBodyHtml = [
+    '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;max-width:640px;margin:0 auto;">',
+    '<h1 style="font-size:24px;margin:0 0 12px;">New contact request</h1>',
+    '<p style="margin:0 0 14px;">A new website contact form submission was received.</p>',
+    '<div style="background:#f6f6f6;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin:0 0 16px;">',
+    `<p style="margin:0 0 8px;"><strong>Name:</strong> ${payloadBase.contactName}</p>`,
+    `<p style="margin:0 0 8px;"><strong>Email:</strong> ${payloadBase.contactEmail}</p>`,
+    `<p style="margin:0 0 8px;"><strong>Phone:</strong> ${payloadBase.contactPhone}</p>`,
+    `<p style="margin:0;"><strong>Subject:</strong> ${payloadBase.contactSubject}</p>`,
+    '</div>',
+    '<p style="margin:0 0 8px;"><strong>Message</strong></p>',
+    `<div style="white-space:normal;padding:12px 14px;border:1px solid #e5e5e5;border-radius:8px;background:#fff;">${contactMessageHtml}</div>`,
+    '</div>'
+  ].join('')
 
   let delivered = 0
   try {
     for (const recipient of recipients) {
-      const sendResult = await sendViaFomailer(event, {
-        type: CONTACT_EVENT_TYPE,
+      const primaryPayload = {
+        ...payloadBase,
+        to: recipient
+      }
+
+      try {
+        const sendResult = await sendViaFomailer(event, {
+          type: CONTACT_EVENT_TYPE,
+          payload: primaryPayload
+        })
+
+        if (!sendResult.ok) {
+          throw createError({
+            statusCode: 502,
+            statusMessage: `Contact delivery failed before upstream request: ${sendResult.reason}`
+          })
+        }
+
+        delivered += 1
+        continue
+      } catch (primaryError) {
+        if (!shouldFallbackToBroadcast(primaryError)) {
+          throw primaryError
+        }
+      }
+
+      const fallbackResult = await sendViaFomailer(event, {
+        type: CONTACT_FALLBACK_EVENT_TYPE,
         payload: {
-          ...payloadBase,
-          to: recipient
+          ...primaryPayload,
+          skipRegistryCopyOverrides: true,
+          subject: `Contact form: ${body.subject.trim()}`,
+          preheader: `New contact request from ${body.name.trim()}.`,
+          body: fallbackBodyHtml,
+          bodyHtml: fallbackBodyHtml,
+          bodyHTML: fallbackBodyHtml
         }
       })
 
-      if (!sendResult.ok) {
+      if (!fallbackResult.ok) {
         throw createError({
           statusCode: 502,
-          statusMessage: `Contact delivery failed before upstream request: ${sendResult.reason}`
+          statusMessage: `Contact fallback delivery failed before upstream request: ${fallbackResult.reason}`
         })
       }
 
       delivered += 1
     }
-  } catch (error) {
-    console.error('Contact form delivery failed', error)
+  } catch (error: unknown) {
+    const details = readUpstreamErrorDetails(error)
+    console.error('Contact form delivery failed', {
+      status: details?.status ?? null,
+      message: details?.message ?? (error instanceof Error ? error.message : String(error)),
+      payload: details?.payloadText ?? null
+    })
+
+    const parts = [
+      'Contact delivery failed',
+      details?.status ? `(status ${details.status})` : '',
+      details?.message ?? null
+    ].filter(Boolean)
+
     throw createError({
       statusCode: 502,
-      statusMessage: 'Contact delivery failed. Please try again in a moment.'
+      statusMessage: parts.length > 1
+        ? `${parts.join(': ')}. Please try again in a moment.`
+        : 'Contact delivery failed. Please try again in a moment.'
     })
   }
 
