@@ -201,7 +201,10 @@ async function submitForm() {
 <template>
   <UContainer class="py-10 sm:py-14">
     <div class="space-y-8">
-      <section class="contact-hero-frame">
+      <section
+        class="contact-hero-frame"
+        data-reveal
+      >
         <div class="contact-hero-grid">
           <div class="contact-hero-main">
             <p class="editorial-label">
@@ -225,7 +228,11 @@ async function submitForm() {
         </div>
       </section>
 
-      <div class="contact-main-grid">
+      <div
+        class="contact-main-grid"
+        data-reveal
+        data-reveal-delay="85ms"
+      >
         <div class="contact-main-left">
           <div class="contact-panel contact-panel--details">
             <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">

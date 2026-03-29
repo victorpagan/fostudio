@@ -253,51 +253,10 @@ function tierAccentClass(tierId: string, index: number) {
         </div>
       </section>
 
-      <section class="editorial-section landing-tiers-section">
-        <div class="editorial-frame">
-          <div class="editorial-grid editorial-grid-plans">
-            <div class="editorial-cell editorial-meta">
-              <p class="editorial-label">
-                MEMBERSHIP / TIERS
-              </p>
-            </div>
-
-            <div class="editorial-cell editorial-copy editorial-copy-texture">
-              <h2 class="editorial-title">
-                {{ landingContent.tiersPreview.title }}
-              </h2>
-              <p class="editorial-body">
-                {{ landingContent.tiersPreview.subtitle }}
-              </p>
-            </div>
-
-            <div class="editorial-cell editorial-plan-list">
-              <div
-                v-for="(tier, index) in landingContent.tiersPreview.items"
-                :key="tier.id"
-                class="editorial-plan-card"
-                :class="tierAccentClass(tier.id, index)"
-              >
-                <div class="editorial-plan-title">
-                  {{ tier.title }}
-                </div>
-                <p class="editorial-plan-body">
-                  {{ tier.body }}
-                </p>
-                <UButton
-                  color="neutral"
-                  variant="soft"
-                  :to="tierDetailsHref(tier.id)"
-                >
-                  {{ tier.buttonLabel }}
-                </UButton>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="editorial-section landing-campaign-section">
+      <section
+        class="editorial-section landing-campaign-section"
+        data-reveal
+      >
         <div class="editorial-frame">
           <div class="editorial-grid editorial-grid-plans">
             <div class="editorial-cell editorial-meta">
@@ -344,6 +303,54 @@ function tierAccentClass(tierId: string, index: number) {
                     {{ landingContent.campaign.secondaryCta.label }}
                   </UButton>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="editorial-section landing-tiers-section"
+        data-reveal
+        data-reveal-delay="90ms"
+      >
+        <div class="editorial-frame">
+          <div class="editorial-grid editorial-grid-plans">
+            <div class="editorial-cell editorial-meta">
+              <p class="editorial-label">
+                MEMBERSHIP / TIERS
+              </p>
+            </div>
+
+            <div class="editorial-cell editorial-copy editorial-copy-texture">
+              <h2 class="editorial-title">
+                {{ landingContent.tiersPreview.title }}
+              </h2>
+              <p class="editorial-body">
+                {{ landingContent.tiersPreview.subtitle }}
+              </p>
+            </div>
+
+            <div class="editorial-cell editorial-plan-list">
+              <div
+                v-for="(tier, index) in landingContent.tiersPreview.items"
+                :key="tier.id"
+                class="editorial-plan-card"
+                :class="tierAccentClass(tier.id, index)"
+              >
+                <div class="editorial-plan-title">
+                  {{ tier.title }}
+                </div>
+                <p class="editorial-plan-body">
+                  {{ tier.body }}
+                </p>
+                <UButton
+                  color="neutral"
+                  variant="soft"
+                  :to="tierDetailsHref(tier.id)"
+                >
+                  {{ tier.buttonLabel }}
+                </UButton>
               </div>
             </div>
           </div>

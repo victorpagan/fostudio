@@ -315,11 +315,16 @@ async function submitWaitlist() {
 
 <template>
   <UContainer class="memberships-page py-10 sm:py-14">
-    <section class="editorial-section">
+    <section
+      class="editorial-section"
+      data-reveal
+    >
       <div class="editorial-frame">
         <div class="editorial-grid memberships-hero-grid">
           <div class="editorial-cell editorial-meta">
-            <p class="editorial-label">{{ membershipsContent.hero.kicker }}</p>
+            <p class="editorial-label">
+              {{ membershipsContent.hero.kicker }}
+            </p>
           </div>
 
           <div class="editorial-cell editorial-copy editorial-copy-texture">
@@ -375,11 +380,17 @@ async function submitWaitlist() {
       </div>
     </section>
 
-    <section class="editorial-section memberships-plans-section">
+    <section
+      class="editorial-section memberships-plans-section"
+      data-reveal
+      data-reveal-delay="110ms"
+    >
       <div class="editorial-frame">
         <div class="editorial-grid memberships-plans-grid">
           <div class="editorial-cell editorial-meta">
-            <p class="editorial-label">PLANS / MEMBERSHIPS</p>
+            <p class="editorial-label">
+              PLANS / MEMBERSHIPS
+            </p>
           </div>
           <div class="editorial-cell editorial-copy editorial-copy-texture">
             <h2 class="editorial-title">

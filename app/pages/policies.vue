@@ -110,7 +110,10 @@ const currentPolicy = computed(() => policyContent[activeTab.value])
         </button>
       </div>
 
-      <section class="policies-panel-grid p-5 sm:p-6">
+      <section
+        class="policies-panel-grid p-5 sm:p-6"
+        data-reveal
+      >
         <div class="max-w-4xl">
           <p class="policies-kicker">
             Policy / {{ currentPolicy.title }}

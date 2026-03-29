@@ -62,7 +62,10 @@ const content = computed<SiteEquipmentContent>(() => {
 <template>
   <UContainer class="equipment-page py-10 sm:py-14">
     <div class="equipment-layout">
-      <section class="equipment-hero-frame">
+      <section
+        class="equipment-hero-frame"
+        data-reveal
+      >
         <div class="equipment-hero-main">
           <p class="editorial-label">
             Equipment
@@ -70,7 +73,11 @@ const content = computed<SiteEquipmentContent>(() => {
         </div>
       </section>
 
-      <div class="equipment-cards-frame">
+      <div
+        class="equipment-cards-frame"
+        data-reveal
+        data-reveal-delay="90ms"
+      >
         <div class="equipment-card-grid lg:grid-cols-3">
           <UCard class="equipment-card">
             <template #header>

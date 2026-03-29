@@ -110,7 +110,10 @@ const openItem = ref<number | null>(0)
 <template>
   <UContainer class="faq-page py-10 sm:py-14">
     <div class="faq-layout">
-      <section class="faq-hero-frame">
+      <section
+        class="faq-hero-frame"
+        data-reveal
+      >
         <div class="faq-hero-grid">
           <div class="faq-hero-main">
             <p class="editorial-label">
@@ -141,7 +144,11 @@ const openItem = ref<number | null>(0)
         </div>
       </section>
 
-      <section class="faq-list-frame">
+      <section
+        class="faq-list-frame"
+        data-reveal
+        data-reveal-delay="85ms"
+      >
         <div
           v-for="(faq, index) in faqs"
           :key="faq.question"

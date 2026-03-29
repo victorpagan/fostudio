@@ -47,11 +47,16 @@ const content = computed<SiteCalendarContent>(() => {
 
 <template>
   <div class="calendar-page py-10 sm:py-14">
-    <section class="editorial-section calendar-guide-section">
+    <section
+      class="editorial-section calendar-guide-section"
+      data-reveal
+    >
       <div class="editorial-frame">
         <div class="calendar-guide-grid">
           <div class="calendar-guide-card">
-            <p class="editorial-label">Reading the calendar</p>
+            <p class="editorial-label">
+              Reading the calendar
+            </p>
             <h2 class="calendar-guide-title">
               {{ content.readingPanel.title }}
             </h2>
@@ -66,7 +71,9 @@ const content = computed<SiteCalendarContent>(() => {
           </div>
 
           <div class="calendar-guide-card calendar-guide-next">
-            <p class="editorial-label">Next best move</p>
+            <p class="editorial-label">
+              Next best move
+            </p>
             <h2 class="calendar-guide-title">
               {{ content.nextMovePanel.title }}
             </h2>
@@ -87,7 +94,11 @@ const content = computed<SiteCalendarContent>(() => {
       </div>
     </section>
 
-    <section class="calendar-standalone-section">
+    <section
+      class="calendar-standalone-section"
+      data-reveal
+      data-reveal-delay="90ms"
+    >
       <div class="calendar-standalone-shell">
         <AvailabilityCalendar
           endpoint="/api/calendar/public"
