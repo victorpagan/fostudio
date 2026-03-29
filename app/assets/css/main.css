@@ -1551,6 +1551,18 @@ h6 {
 .landing-differentiator-media {
   position: relative;
   min-height: clamp(23rem, 44vw, 39rem);
+  overflow: hidden;
+  isolation: isolate;
+  background: #161a22;
+}
+
+.landing-differentiator-media::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(140deg, rgba(10, 12, 16, 0.56) 0%, rgba(10, 12, 16, 0.26) 48%, rgba(10, 12, 16, 0.4) 100%);
 }
 
 .landing-differentiator-media-image {
@@ -1558,6 +1570,7 @@ h6 {
   height: 100%;
   object-fit: cover;
   display: block;
+  filter: brightness(0.72) contrast(1.02) saturate(0.92);
 }
 
 .landing-differentiator-media-video {
@@ -1565,6 +1578,95 @@ h6 {
   height: 100%;
   object-fit: cover;
   display: block;
+  filter: brightness(0.72) contrast(1.04) saturate(0.9);
+}
+
+.landing-lead-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.landing-lead-overlay-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.34;
+  background:
+    linear-gradient(to right, rgba(255, 255, 255, 0.2) 1px, transparent 1px) 0 0 / calc(100% / 3) 100%,
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.16) 1px, transparent 1px) 0 0 / 100% calc(100% / 3);
+}
+
+.landing-lead-overlay-sidebar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: clamp(5.8rem, 18%, 8.5rem);
+  padding: clamp(0.9rem, 2.5vw, 1.35rem) clamp(0.7rem, 1.8vw, 1rem);
+  display: grid;
+  align-content: space-between;
+  gap: 0.7rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.26);
+  background: color-mix(in srgb, var(--gruv-bg-0) 90%, transparent);
+}
+
+.landing-lead-overlay-chapter,
+.landing-lead-overlay-section {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  line-height: 1.45;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--gruv-ink-1) 76%, var(--gruv-ink-2) 24%);
+}
+
+.landing-lead-overlay-logo {
+  width: clamp(1.3rem, 2.8vw, 1.8rem);
+  opacity: 0.7;
+  filter: invert(0.03) contrast(1.2);
+}
+
+.landing-lead-overlay-brand {
+  position: absolute;
+  top: clamp(0.85rem, 2.2vw, 1.2rem);
+  left: 53%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(245, 245, 245, 0.9);
+}
+
+.landing-lead-overlay-copy {
+  position: absolute;
+  right: clamp(0.8rem, 2.2vw, 1.3rem);
+  bottom: clamp(0.9rem, 2.6vw, 1.5rem);
+  max-width: min(30ch, calc(100% - clamp(7.2rem, 22%, 9.4rem)));
+  display: grid;
+  gap: 0.4rem;
+  justify-items: end;
+  text-align: right;
+}
+
+.landing-lead-overlay-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.08rem, 2.1vw, 1.42rem);
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+  color: rgba(248, 248, 248, 0.95);
+}
+
+.landing-lead-overlay-subtitle {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.55;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(237, 237, 237, 0.86);
 }
 
 .landing-spotlight-section {
@@ -2589,6 +2691,46 @@ h6 {
     min-height: min(58vw, 24rem);
   }
 
+  .landing-lead-overlay-sidebar {
+    width: clamp(4.6rem, 20%, 6.2rem);
+    padding: 0.8rem 0.62rem;
+  }
+
+  .landing-lead-overlay-chapter,
+  .landing-lead-overlay-section {
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+  }
+
+  .landing-lead-overlay-brand {
+    top: 0.74rem;
+    font-size: 0.64rem;
+    letter-spacing: 0.17em;
+  }
+
+  .landing-lead-overlay-copy {
+    right: 0.72rem;
+    bottom: 0.75rem;
+    max-width: min(26ch, calc(100% - 5.8rem));
+    gap: 0.3rem;
+  }
+
+  .landing-lead-overlay-title {
+    font-size: clamp(0.9rem, 2.4vw, 1.12rem);
+  }
+
+  .landing-lead-overlay-subtitle {
+    font-size: 0.63rem;
+  }
+
+  .landing-lead-overlay-copy {
+    max-width: min(23ch, calc(100% - 5.6rem));
+  }
+
+  .landing-lead-overlay-subtitle {
+    display: none;
+  }
+
   .landing-spotlight-shell {
     min-height: min(72vw, 31rem);
   }
@@ -2825,6 +2967,36 @@ h6 {
 
   .landing-differentiator-media {
     min-height: 14rem;
+  }
+
+  .landing-lead-overlay-sidebar {
+    width: 4.5rem;
+    padding: 0.68rem 0.52rem;
+  }
+
+  .landing-lead-overlay-logo {
+    width: 1.1rem;
+  }
+
+  .landing-lead-overlay-chapter,
+  .landing-lead-overlay-section {
+    font-size: 0.58rem;
+    letter-spacing: 0.12em;
+  }
+
+  .landing-lead-overlay-brand {
+    font-size: 0.6rem;
+    top: 0.58rem;
+  }
+
+  .landing-lead-overlay-copy {
+    right: 0.58rem;
+    bottom: 0.58rem;
+    max-width: calc(100% - 5.25rem);
+  }
+
+  .landing-lead-overlay-title {
+    font-size: 0.84rem;
   }
 
   .landing-spotlight-shell {

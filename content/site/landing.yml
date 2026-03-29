@@ -1,8 +1,30 @@
+campaign:
+  label: Campaign / NEWSITE
+  title: New site launch offer
+  body: Use launch code NEWSITE during signup to get 5% off eligible new memberships.
+  code: NEWSITE
+  heroHint: Campaign: use NEWSITE for 5% off new memberships.
+  details:
+    - 5% off new memberships through April 30
+    - Works on Creator, Pro, and Studio+ membership starts
+    - Migrating from a previous membership? We can carry remaining time
+  primaryCta:
+    label: Start membership
+    to: /memberships
+  secondaryCta:
+    label: Read FAQ
+    to: /faq
 gallery:
   title: Inside the studio
   leadVideo:
     src: /videos/studio-example.mp4
     poster: /images/studio-hero-3.png
+  leadOverlay:
+    chapter: CHAPTER
+    section: / PRACTICE
+    brand: FO STUDIO
+    title: Production-first booking flow
+    subtitle: Live calendar visibility, extensions, and holds without workflow friction.
   images:
     - src: /images/studio-hero-1.jpg
       alt: Studio wide shot with cyc wall
@@ -53,22 +75,6 @@ tiersPreview:
       title: Studio+
       body: Priority focused access for heavier production months and multi-day coordination. For those who need the most time and flexibility throughout the week.
       buttonLabel: Explore Studio+ plan
-campaign:
-  label: Campaign / NEWSITE
-  title: New site launch offer
-  body: Use launch code NEWSITE during signup to get 5% off eligible new memberships.
-  code: NEWSITE
-  heroHint: Campaign: use NEWSITE for 5% off new memberships.
-  details:
-    - 5% off new memberships through April 30
-    - Works on Creator, Pro, and Studio+ membership starts
-    - Migrating from a previous membership? We can carry remaining time
-  primaryCta:
-    label: Start membership
-    to: /memberships
-  secondaryCta:
-    label: Read FAQ
-    to: /faq
 seo:
   title: FO Studio | 24/7 Photo Studio Membership in Los Angeles
   description: 24/7 turnkey photo studio in Los Angeles for photographers and small-to-mid crews. Included gear, consumables, and membership-first booking.

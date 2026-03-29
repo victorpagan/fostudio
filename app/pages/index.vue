@@ -15,6 +15,14 @@ type LandingVideo = {
   poster?: string
 }
 
+type LandingLeadOverlay = {
+  chapter: string
+  section: string
+  brand: string
+  title: string
+  subtitle: string
+}
+
 type LandingTierPreview = {
   id: string
   title: string
@@ -48,6 +56,7 @@ type SiteLandingContent = {
   gallery: {
     title: string
     leadVideo?: LandingVideo
+    leadOverlay?: LandingLeadOverlay
     images: LandingImage[]
   }
   spotlight: {
@@ -101,6 +110,13 @@ const fallbackLanding: SiteLandingContent = {
     leadVideo: {
       src: '/videos/studio-example.mp4',
       poster: '/images/studio-hero-3.png'
+    },
+    leadOverlay: {
+      chapter: 'CHAPTER',
+      section: '/ PRACTICE',
+      brand: 'FO STUDIO',
+      title: 'Production-first booking flow',
+      subtitle: 'Live calendar visibility, extensions, and holds without workflow friction.'
     },
     images: [
       { src: '/images/studio-hero-1.jpg', alt: 'Studio wide shot with cyc wall', loading: 'eager' },
@@ -181,6 +197,18 @@ function normalizeStringArray(input: unknown, fallback: string[]) {
   return values.length ? values : fallback
 }
 
+function normalizeLeadOverlay(input: unknown, fallback: LandingLeadOverlay): LandingLeadOverlay {
+  if (!input || typeof input !== 'object') return fallback
+  const value = input as Partial<LandingLeadOverlay>
+  return {
+    chapter: typeof value.chapter === 'string' && value.chapter.trim() ? value.chapter : fallback.chapter,
+    section: typeof value.section === 'string' && value.section.trim() ? value.section : fallback.section,
+    brand: typeof value.brand === 'string' && value.brand.trim() ? value.brand : fallback.brand,
+    title: typeof value.title === 'string' && value.title.trim() ? value.title : fallback.title,
+    subtitle: typeof value.subtitle === 'string' && value.subtitle.trim() ? value.subtitle : fallback.subtitle
+  }
+}
+
 function normalizeTierItems(input: unknown, fallback: LandingTierPreview[]) {
   if (!Array.isArray(input)) return fallback
 
@@ -244,6 +272,7 @@ const landingContent = computed<SiteLandingContent>(() => {
               : fallback.gallery.leadVideo?.poster
           }
         : fallback.gallery.leadVideo,
+      leadOverlay: normalizeLeadOverlay(sourceGallery.leadOverlay, fallback.gallery.leadOverlay!),
       images: Array.isArray(sourceGallery.images) && sourceGallery.images.length
         ? sourceGallery.images as LandingImage[]
         : fallback.gallery.images
@@ -446,6 +475,33 @@ function tierAccentClass(tierId: string, index: number) {
                 :loading="galleryLeadImage.loading || 'lazy'"
                 class="landing-differentiator-media-image"
               >
+              <div class="landing-lead-overlay">
+                <div class="landing-lead-overlay-grid" />
+                <div class="landing-lead-overlay-sidebar">
+                  <p class="landing-lead-overlay-chapter">
+                    {{ landingContent.gallery.leadOverlay?.chapter }}
+                  </p>
+                  <p class="landing-lead-overlay-section">
+                    {{ landingContent.gallery.leadOverlay?.section }}
+                  </p>
+                  <img
+                    src="/images/logo-white.png"
+                    alt=""
+                    class="landing-lead-overlay-logo"
+                  >
+                </div>
+                <div class="landing-lead-overlay-brand">
+                  {{ landingContent.gallery.leadOverlay?.brand }}
+                </div>
+                <div class="landing-lead-overlay-copy">
+                  <p class="landing-lead-overlay-title">
+                    {{ landingContent.gallery.leadOverlay?.title }}
+                  </p>
+                  <p class="landing-lead-overlay-subtitle">
+                    {{ landingContent.gallery.leadOverlay?.subtitle }}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
