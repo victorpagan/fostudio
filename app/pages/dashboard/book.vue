@@ -354,8 +354,8 @@ async function refreshSidebarMembershipCredits() {
   ])
 }
 
-function closeOwnBookingActions() {
-  if (ownBookingActionLoading.value) return
+function closeOwnBookingActions(options?: { force?: boolean }) {
+  if (ownBookingActionLoading.value && !options?.force) return
   ownBookingActionOpen.value = false
   clickedBookingNoteDraft.value = ''
   clickedBooking.value = null
@@ -405,7 +405,7 @@ async function cancelClickedBooking() {
   try {
     await $fetch(`/api/bookings/${clickedBooking.value.bookingId}`, { method: 'DELETE' })
     toast.add({ title: 'Booking canceled', color: 'success' })
-    closeOwnBookingActions()
+    closeOwnBookingActions({ force: true })
     calendarKey.value++
     await Promise.allSettled([
       refreshCreditBalance(),
