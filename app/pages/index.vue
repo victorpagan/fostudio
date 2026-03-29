@@ -41,6 +41,15 @@ type SiteLandingContent = {
     subtitle: string
     items: LandingTierPreview[]
   }
+  campaign: {
+    label: string
+    title: string
+    body: string
+    code: string
+    details: string[]
+    primaryCta: LandingCta
+    secondaryCta: LandingCta
+  }
 }
 
 const fallbackLanding: SiteLandingContent = {
@@ -94,6 +103,19 @@ const fallbackLanding: SiteLandingContent = {
         buttonLabel: 'Explore Studio+ plan'
       }
     ]
+  },
+  campaign: {
+    label: 'CAMPAIGN / NEWSITE',
+    title: 'New site launch offer',
+    body: 'We launched the new FO Studio platform for booking, memberships, and account management. Use the launch code during signup to get discounted onboarding.',
+    code: 'NEWSITE',
+    details: [
+      '5% off new memberships through April 30',
+      'Works on Creator, Pro, and Studio+ membership starts',
+      'Migrating from a previous membership? We can carry remaining time'
+    ],
+    primaryCta: { label: 'Start membership', to: '/memberships' },
+    secondaryCta: { label: 'Read FAQ', to: '/faq' }
   }
 }
 
@@ -191,7 +213,9 @@ function tierAccentClass(tierId: string, index: number) {
         <div class="editorial-frame">
           <div class="editorial-grid editorial-grid-intro">
             <div class="editorial-cell editorial-meta">
-              <p class="editorial-label">INTRO / STUDIO</p>
+              <p class="editorial-label">
+                INTRO / STUDIO
+              </p>
             </div>
 
             <div class="editorial-cell editorial-copy editorial-copy-texture">
@@ -221,7 +245,9 @@ function tierAccentClass(tierId: string, index: number) {
                 :loading="gallerySecondaryImage.loading || 'lazy'"
                 class="editorial-image"
               >
-              <div class="editorial-side-mark">/</div>
+              <div class="editorial-side-mark">
+                /
+              </div>
             </div>
           </div>
         </div>
@@ -231,7 +257,9 @@ function tierAccentClass(tierId: string, index: number) {
         <div class="editorial-frame">
           <div class="editorial-grid editorial-grid-plans">
             <div class="editorial-cell editorial-meta">
-              <p class="editorial-label">MEMBERSHIP / TIERS</p>
+              <p class="editorial-label">
+                MEMBERSHIP / TIERS
+              </p>
             </div>
 
             <div class="editorial-cell editorial-copy editorial-copy-texture">
@@ -263,6 +291,59 @@ function tierAccentClass(tierId: string, index: number) {
                 >
                   {{ tier.buttonLabel }}
                 </UButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="editorial-section landing-campaign-section">
+        <div class="editorial-frame">
+          <div class="editorial-grid editorial-grid-plans">
+            <div class="editorial-cell editorial-meta">
+              <p class="editorial-label">
+                {{ landingContent.campaign.label }}
+              </p>
+            </div>
+
+            <div class="editorial-cell editorial-copy editorial-copy-texture">
+              <h2 class="editorial-title">
+                {{ landingContent.campaign.title }}
+              </h2>
+              <p class="editorial-body">
+                {{ landingContent.campaign.body }}
+              </p>
+            </div>
+
+            <div class="editorial-cell editorial-plan-list">
+              <div class="editorial-plan-card editorial-plan-card--accent-b">
+                <div class="editorial-plan-title">
+                  Use code {{ landingContent.campaign.code }}
+                </div>
+                <ul class="landing-campaign-list">
+                  <li
+                    v-for="detail in landingContent.campaign.details"
+                    :key="detail"
+                  >
+                    {{ detail }}
+                  </li>
+                </ul>
+                <div class="landing-campaign-actions">
+                  <UButton
+                    color="neutral"
+                    variant="solid"
+                    :to="landingContent.campaign.primaryCta.to"
+                  >
+                    {{ landingContent.campaign.primaryCta.label }}
+                  </UButton>
+                  <UButton
+                    color="neutral"
+                    variant="soft"
+                    :to="landingContent.campaign.secondaryCta.to"
+                  >
+                    {{ landingContent.campaign.secondaryCta.label }}
+                  </UButton>
+                </div>
               </div>
             </div>
           </div>

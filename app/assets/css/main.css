@@ -1369,6 +1369,31 @@ h6 {
   background: rgba(23, 32, 44, 0.56);
 }
 
+.landing-campaign-section .editorial-plan-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.landing-campaign-section .editorial-plan-card {
+  border-right: 0;
+}
+
+.landing-campaign-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--gruv-ink-2);
+}
+
+.landing-campaign-actions {
+  margin-top: 0.3rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
 .memberships-hero-grid {
   grid-template-columns: minmax(11.5rem, 0.78fr) minmax(0, 1.22fr) minmax(0, 1fr);
   grid-template-areas: "meta copy info";

@@ -72,3 +72,18 @@ tiersPreview:
       title: Studio+
       body: Priority-focused access for heavier production months and larger crew coordination.
       buttonLabel: Explore Studio+ plan
+campaign:
+  label: CAMPAIGN / NEWSITE
+  title: New site launch offer
+  body: We launched the new FO Studio platform for booking, memberships, and account management. Use the launch code during signup to get discounted onboarding.
+  code: NEWSITE
+  details:
+    - 5% off new memberships through April 30
+    - Works on Creator, Pro, and Studio+ membership starts
+    - Migrating from a previous membership? We can carry remaining time
+  primaryCta:
+    label: Start membership
+    to: /memberships
+  secondaryCta:
+    label: Read FAQ
+    to: /faq
