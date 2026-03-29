@@ -17,6 +17,13 @@ type LandingTierPreview = {
   buttonLabel: string
 }
 
+type LandingDifferentiatorCard = {
+  title: string
+  body: string
+  ctaLabel: string
+  ctaTo: string
+}
+
 type SiteLandingContent = {
   hero: {
     kicker: string
@@ -214,11 +221,30 @@ const landingContent = computed<SiteLandingContent>(() => {
   }
 })
 
-const showIntroStudioSection = false
 const galleryImages = computed(() => landingContent.value.gallery.images ?? [])
 const galleryLeadImage = computed(() => galleryImages.value[0] ?? null)
-const gallerySecondaryImage = computed(() => galleryImages.value[1] ?? galleryImages.value[0] ?? null)
+const gallerySpotlightImage = computed(() => galleryImages.value[2] ?? galleryImages.value[0] ?? null)
 const planAccentClasses = ['editorial-plan-card--accent-a', 'editorial-plan-card--accent-b', 'editorial-plan-card--accent-c'] as const
+const differentiatorCtaMap = [
+  { ctaLabel: 'View equipment', ctaTo: '/equipment' },
+  { ctaLabel: 'See calendar', ctaTo: '/calendar' },
+  { ctaLabel: 'Compare tiers', ctaTo: '/memberships' },
+  { ctaLabel: 'Ask a question', ctaTo: '/contact' }
+] as const
+
+const differentiatorCards = computed<LandingDifferentiatorCard[]>(() => {
+  return landingContent.value.infoCard.features
+    .slice(0, 4)
+    .map((feature, index) => {
+      const action = differentiatorCtaMap[index] ?? differentiatorCtaMap[differentiatorCtaMap.length - 1]
+      return {
+        title: `0${index + 1}`,
+        body: feature,
+        ctaLabel: action.ctaLabel,
+        ctaTo: action.ctaTo
+      }
+    })
+})
 
 function tierDetailsHref(tierId: string) {
   return `/memberships#plan-${encodeURIComponent(tierId)}`
@@ -285,6 +311,9 @@ function tierAccentClass(tierId: string, index: number) {
         >
           {{ landingContent.hero.secondaryCta.label }}
         </NuxtLink>
+        <p class="landing-hero-campaign-hint">
+          Campaign: use <strong>{{ landingContent.campaign.code }}</strong> for 5% off new memberships.
+        </p>
       </div>
 
       <div class="landing-hero-note">
@@ -294,46 +323,146 @@ function tierAccentClass(tierId: string, index: number) {
 
     <div class="mx-auto mt-12 w-full max-w-[1520px] space-y-12 px-3 sm:mt-16 sm:space-y-16 sm:px-5 lg:px-8">
       <section
-        v-if="showIntroStudioSection"
-        class="editorial-section"
+        class="editorial-section landing-differentiator-section"
+        data-reveal
       >
         <div class="editorial-frame">
-          <div class="editorial-grid editorial-grid-intro">
-            <div class="editorial-cell editorial-meta">
-              <p class="editorial-label">
-                INTRO / STUDIO
-              </p>
+          <div class="landing-differentiator-grid">
+            <div class="landing-differentiator-left">
+              <div class="landing-differentiator-copy editorial-copy-texture">
+                <p class="editorial-label">
+                  WHAT SETS FO STUDIO APART
+                </p>
+                <h2 class="editorial-title">
+                  {{ landingContent.infoCard.title }}
+                </h2>
+                <p class="editorial-body">
+                  {{ landingContent.infoCard.body }}
+                </p>
+                <p class="landing-differentiator-affordability">
+                  Built to stay affordable for recurring production, not priced like a one-off rental trap.
+                </p>
+              </div>
+              <div class="landing-differentiator-cards">
+                <article
+                  v-for="card in differentiatorCards"
+                  :key="card.title + card.body"
+                  class="landing-differentiator-card"
+                >
+                  <p class="landing-differentiator-card-index">
+                    {{ card.title }}
+                  </p>
+                  <p class="landing-differentiator-card-body">
+                    {{ card.body }}
+                  </p>
+                  <NuxtLink
+                    :to="card.ctaTo"
+                    class="landing-differentiator-card-link"
+                  >
+                    {{ card.ctaLabel }}
+                  </NuxtLink>
+                </article>
+              </div>
             </div>
 
-            <div class="editorial-cell editorial-copy editorial-copy-texture">
-              <h2 class="editorial-title">
-                {{ landingContent.infoCard.title }}
-              </h2>
-              <p class="editorial-body">
-                {{ landingContent.infoCard.body }}
-              </p>
-            </div>
-
-            <div class="editorial-cell editorial-image-large">
+            <div class="landing-differentiator-media">
               <img
                 v-if="galleryLeadImage"
                 :src="galleryLeadImage.src"
                 :alt="galleryLeadImage.alt || 'Studio image'"
                 :loading="galleryLeadImage.loading || 'lazy'"
-                class="editorial-image"
+                class="landing-differentiator-media-image"
               >
             </div>
+          </div>
+        </div>
+      </section>
+    </div>
 
-            <div class="editorial-cell editorial-image-side">
-              <img
-                v-if="gallerySecondaryImage"
-                :src="gallerySecondaryImage.src"
-                :alt="gallerySecondaryImage.alt || 'Studio image'"
-                :loading="gallerySecondaryImage.loading || 'lazy'"
-                class="editorial-image"
+    <section
+      class="landing-spotlight-section"
+      data-reveal
+      data-reveal-delay="90ms"
+    >
+      <div class="landing-spotlight-shell">
+        <img
+          v-if="gallerySpotlightImage"
+          :src="gallerySpotlightImage.src"
+          :alt="gallerySpotlightImage.alt || 'Studio spotlight image'"
+          :loading="gallerySpotlightImage.loading || 'lazy'"
+          class="landing-spotlight-image"
+        >
+        <div class="landing-spotlight-overlay">
+          <p class="editorial-label">
+            PRODUCTION-FIRST VALUE
+          </p>
+          <h2 class="landing-spotlight-title">
+            A turnkey studio that keeps your shoots moving and your overhead in check.
+          </h2>
+          <p class="landing-spotlight-body">
+            Reserve in 30-minute increments, keep your setup continuity through approved holds, and get included equipment and consumables without adding line-item friction to every session.
+          </p>
+          <UButton
+            color="neutral"
+            variant="solid"
+            to="/calendar"
+          >
+            See Availability
+          </UButton>
+        </div>
+        <div class="landing-spotlight-stat">
+          <p class="landing-spotlight-stat-value">
+            30 min
+          </p>
+          <p class="landing-spotlight-stat-label">
+            Booking increments available for members.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <div class="mx-auto mt-12 w-full max-w-[1520px] space-y-12 px-3 sm:mt-16 sm:space-y-16 sm:px-5 lg:px-8">
+      <section
+        class="editorial-section landing-tiers-section"
+        data-reveal
+      >
+        <div class="editorial-frame">
+          <div class="editorial-grid editorial-grid-plans">
+            <div class="editorial-cell editorial-meta">
+              <p class="editorial-label">
+                MEMBERSHIP / TIERS
+              </p>
+            </div>
+
+            <div class="editorial-cell editorial-copy editorial-copy-texture">
+              <h2 class="editorial-title">
+                {{ landingContent.tiersPreview.title }}
+              </h2>
+              <p class="editorial-body">
+                {{ landingContent.tiersPreview.subtitle }}
+              </p>
+            </div>
+
+            <div class="editorial-cell editorial-plan-list">
+              <div
+                v-for="(tier, index) in landingContent.tiersPreview.items"
+                :key="tier.id"
+                class="editorial-plan-card"
+                :class="tierAccentClass(tier.id, index)"
               >
-              <div class="editorial-side-mark">
-                /
+                <div class="editorial-plan-title">
+                  {{ tier.title }}
+                </div>
+                <p class="editorial-plan-body">
+                  {{ tier.body }}
+                </p>
+                <UButton
+                  color="neutral"
+                  variant="soft"
+                  :to="tierDetailsHref(tier.id)"
+                >
+                  {{ tier.buttonLabel }}
+                </UButton>
               </div>
             </div>
           </div>
@@ -343,6 +472,7 @@ function tierAccentClass(tierId: string, index: number) {
       <section
         class="editorial-section landing-campaign-section"
         data-reveal
+        data-reveal-delay="100ms"
       >
         <div class="editorial-frame">
           <div class="editorial-grid editorial-grid-plans">
@@ -390,54 +520,6 @@ function tierAccentClass(tierId: string, index: number) {
                     {{ landingContent.campaign.secondaryCta.label }}
                   </UButton>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section
-        class="editorial-section landing-tiers-section"
-        data-reveal
-        data-reveal-delay="90ms"
-      >
-        <div class="editorial-frame">
-          <div class="editorial-grid editorial-grid-plans">
-            <div class="editorial-cell editorial-meta">
-              <p class="editorial-label">
-                MEMBERSHIP / TIERS
-              </p>
-            </div>
-
-            <div class="editorial-cell editorial-copy editorial-copy-texture">
-              <h2 class="editorial-title">
-                {{ landingContent.tiersPreview.title }}
-              </h2>
-              <p class="editorial-body">
-                {{ landingContent.tiersPreview.subtitle }}
-              </p>
-            </div>
-
-            <div class="editorial-cell editorial-plan-list">
-              <div
-                v-for="(tier, index) in landingContent.tiersPreview.items"
-                :key="tier.id"
-                class="editorial-plan-card"
-                :class="tierAccentClass(tier.id, index)"
-              >
-                <div class="editorial-plan-title">
-                  {{ tier.title }}
-                </div>
-                <p class="editorial-plan-body">
-                  {{ tier.body }}
-                </p>
-                <UButton
-                  color="neutral"
-                  variant="soft"
-                  :to="tierDetailsHref(tier.id)"
-                >
-                  {{ tier.buttonLabel }}
-                </UButton>
               </div>
             </div>
           </div>

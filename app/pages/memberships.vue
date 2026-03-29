@@ -400,43 +400,45 @@ async function submitWaitlist() {
               class="plan-card membership-plan-card scroll-mt-24"
               :class="tierCardAccentClass(tier)"
             >
-              <div class="flex items-start justify-between gap-4">
-                <div>
-                  <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
-                    {{ tier.display_name }}
+              <div class="membership-plan-upper">
+                <div class="flex items-start justify-between gap-4 membership-plan-heading">
+                  <div class="membership-plan-title-wrap">
+                    <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
+                      {{ tier.display_name }}
+                    </div>
+                    <UBadge
+                      v-if="tier.is_full"
+                      color="error"
+                      variant="soft"
+                      size="xs"
+                      class="mt-2"
+                    >
+                      Waitlist open
+                    </UBadge>
                   </div>
                   <UBadge
-                    v-if="tier.is_full"
-                    color="error"
-                    variant="soft"
                     size="xs"
-                    class="mt-2"
+                    variant="solid"
+                    class="membership-slots-badge"
+                    :class="tierSpotsLeftClass(tier)"
                   >
-                    Waitlist open
+                    {{ tierSpotsLeftLabel(tier) }}
                   </UBadge>
                 </div>
-                <UBadge
-                  size="xs"
-                  variant="solid"
-                  class="membership-slots-badge"
-                  :class="tierSpotsLeftClass(tier)"
-                >
-                  {{ tierSpotsLeftLabel(tier) }}
-                </UBadge>
-              </div>
 
-              <p class="plan-lead">
-                {{ tierLead(tier) }}
-              </p>
+                <p class="plan-lead membership-plan-lead">
+                  {{ tierLead(tier) }}
+                </p>
 
-              <div class="space-y-2 text-sm leading-7 text-[color:var(--gruv-ink-1)]">
-                <div class="flex gap-3">
-                  <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--gruv-olive)]" />
-                  <span>{{ tierPeakRateLine(tier) }}</span>
+                <div class="space-y-2 text-sm leading-7 text-[color:var(--gruv-ink-1)] membership-plan-peak">
+                  <div class="flex gap-3">
+                    <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--gruv-olive)]" />
+                    <span>{{ tierPeakRateLine(tier) }}</span>
+                  </div>
                 </div>
               </div>
 
-              <div class="mt-auto space-y-4">
+              <div class="mt-auto space-y-4 membership-plan-lower">
                 <div class="grid grid-cols-3 gap-2">
                   <div class="plan-stat text-center">
                     <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
