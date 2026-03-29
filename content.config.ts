@@ -25,12 +25,25 @@ const createLandingSchema = () => z.object({
   infoCard: z.object({
     title: z.string().nonempty(),
     body: z.string().nonempty(),
+    affordabilityNote: z.string().nonempty().optional(),
     features: z.array(z.string().nonempty())
   }),
   gallery: z.object({
     title: z.string().nonempty(),
+    leadVideo: z.object({
+      src: z.string().nonempty().editor({ input: 'media' }),
+      poster: z.string().nonempty().editor({ input: 'media' }).optional()
+    }).optional(),
     images: z.array(createImageSchema()).min(1)
   }),
+  spotlight: z.object({
+    label: z.string().nonempty(),
+    title: z.string().nonempty(),
+    body: z.string().nonempty(),
+    statValue: z.string().nonempty(),
+    statLabel: z.string().nonempty(),
+    cta: createSimpleCtaSchema()
+  }).optional(),
   tiersPreview: z.object({
     title: z.string().nonempty(),
     subtitle: z.string().nonempty(),
@@ -42,7 +55,17 @@ const createLandingSchema = () => z.object({
         buttonLabel: z.string().nonempty()
       })
     )
-  })
+  }),
+  campaign: z.object({
+    label: z.string().nonempty(),
+    title: z.string().nonempty(),
+    body: z.string().nonempty(),
+    code: z.string().nonempty(),
+    heroHint: z.string().nonempty().optional(),
+    details: z.array(z.string().nonempty()),
+    primaryCta: createSimpleCtaSchema(),
+    secondaryCta: createSimpleCtaSchema()
+  }).optional()
 })
 
 const createFaqSchema = () => z.object({

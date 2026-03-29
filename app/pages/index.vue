@@ -10,6 +10,11 @@ type LandingImage = {
   loading?: 'lazy' | 'eager'
 }
 
+type LandingVideo = {
+  src: string
+  poster?: string
+}
+
 type LandingTierPreview = {
   id: string
   title: string
@@ -37,11 +42,21 @@ type SiteLandingContent = {
   infoCard: {
     title: string
     body: string
+    affordabilityNote: string
     features: string[]
   }
   gallery: {
     title: string
+    leadVideo?: LandingVideo
     images: LandingImage[]
+  }
+  spotlight: {
+    label: string
+    title: string
+    body: string
+    statValue: string
+    statLabel: string
+    cta: LandingCta
   }
   tiersPreview: {
     title: string
@@ -53,6 +68,7 @@ type SiteLandingContent = {
     title: string
     body: string
     code: string
+    heroHint: string
     details: string[]
     primaryCta: LandingCta
     secondaryCta: LandingCta
@@ -72,6 +88,7 @@ const fallbackLanding: SiteLandingContent = {
   infoCard: {
     title: 'FO Studio at a glance',
     body: 'Built for production days, not logistics overhead.',
+    affordabilityNote: 'Built to stay affordable for recurring production, with ground-floor loading and easier parking than the typical downtown studio run.',
     features: [
       '25x30 ft cyclorama with 20+ ft ceilings',
       'High-quality booking dashboard with live calendar, extensions, and holds',
@@ -81,11 +98,23 @@ const fallbackLanding: SiteLandingContent = {
   },
   gallery: {
     title: 'Inside the studio',
+    leadVideo: {
+      src: '/videos/studio-example.mp4',
+      poster: '/images/studio-hero-3.png'
+    },
     images: [
       { src: '/images/studio-hero-1.jpg', alt: 'Studio wide shot with cyc wall', loading: 'eager' },
       { src: '/images/studio-hero-2.jpg', alt: 'Backdrop and prep area', loading: 'lazy' },
-      { src: '/images/studio-hero-3.jpg', alt: 'Lighting setup in the studio', loading: 'lazy' }
+      { src: '/images/studio-hero-3.png', alt: 'Lighting setup in the studio', loading: 'lazy' }
     ]
+  },
+  spotlight: {
+    label: 'PRODUCTION-FIRST VALUE',
+    title: 'A turnkey studio that keeps your shoots moving and your overhead in check.',
+    body: 'Run production through a high-quality dashboard with live calendar visibility, rescheduling, extensions, and holds. Reserve in 30-minute increments and keep setup continuity without adding line-item friction to every session.',
+    statValue: '30 min',
+    statLabel: 'Booking increments available for members.',
+    cta: { label: 'See Availability', to: '/calendar' }
   },
   tiersPreview: {
     title: 'Membership tier preview',
@@ -116,6 +145,7 @@ const fallbackLanding: SiteLandingContent = {
     title: 'New site launch offer',
     body: 'We launched the new FO Studio platform for booking, memberships, and account management. Use the launch code during signup to get discounted onboarding.',
     code: 'NEWSITE',
+    heroHint: 'Campaign: use NEWSITE for 5% off new memberships.',
     details: [
       '5% off new memberships through April 30',
       'Works on Creator, Pro, and Studio+ membership starts',
@@ -175,11 +205,12 @@ const landingContent = computed<SiteLandingContent>(() => {
   const source = (siteLanding.value as Partial<SiteLandingContent> | null) ?? {}
   const fallback = fallbackLanding
 
-  const sourceHero = source.hero ?? {}
-  const sourceInfoCard = source.infoCard ?? {}
-  const sourceGallery = source.gallery ?? {}
-  const sourceTiers = source.tiersPreview ?? {}
-  const sourceCampaign = source.campaign ?? {}
+  const sourceHero = (source.hero ?? {}) as Partial<SiteLandingContent['hero']>
+  const sourceInfoCard = (source.infoCard ?? {}) as Partial<SiteLandingContent['infoCard']>
+  const sourceGallery = (source.gallery ?? {}) as Partial<SiteLandingContent['gallery']>
+  const sourceSpotlight = (source.spotlight ?? {}) as Partial<SiteLandingContent['spotlight']>
+  const sourceTiers = (source.tiersPreview ?? {}) as Partial<SiteLandingContent['tiersPreview']>
+  const sourceCampaign = (source.campaign ?? {}) as Partial<SiteLandingContent['campaign']>
 
   return {
     hero: {
@@ -196,13 +227,34 @@ const landingContent = computed<SiteLandingContent>(() => {
     infoCard: {
       title: typeof sourceInfoCard.title === 'string' && sourceInfoCard.title.trim() ? sourceInfoCard.title : fallback.infoCard.title,
       body: typeof sourceInfoCard.body === 'string' && sourceInfoCard.body.trim() ? sourceInfoCard.body : fallback.infoCard.body,
+      affordabilityNote: typeof sourceInfoCard.affordabilityNote === 'string' && sourceInfoCard.affordabilityNote.trim()
+        ? sourceInfoCard.affordabilityNote
+        : fallback.infoCard.affordabilityNote,
       features: normalizeStringArray(sourceInfoCard.features, fallback.infoCard.features)
     },
     gallery: {
       title: typeof sourceGallery.title === 'string' && sourceGallery.title.trim() ? sourceGallery.title : fallback.gallery.title,
+      leadVideo: sourceGallery.leadVideo && typeof sourceGallery.leadVideo === 'object'
+        ? {
+            src: typeof sourceGallery.leadVideo.src === 'string' && sourceGallery.leadVideo.src.trim()
+              ? sourceGallery.leadVideo.src
+              : fallback.gallery.leadVideo?.src ?? '',
+            poster: typeof sourceGallery.leadVideo.poster === 'string' && sourceGallery.leadVideo.poster.trim()
+              ? sourceGallery.leadVideo.poster
+              : fallback.gallery.leadVideo?.poster
+          }
+        : fallback.gallery.leadVideo,
       images: Array.isArray(sourceGallery.images) && sourceGallery.images.length
         ? sourceGallery.images as LandingImage[]
         : fallback.gallery.images
+    },
+    spotlight: {
+      label: typeof sourceSpotlight.label === 'string' && sourceSpotlight.label.trim() ? sourceSpotlight.label : fallback.spotlight.label,
+      title: typeof sourceSpotlight.title === 'string' && sourceSpotlight.title.trim() ? sourceSpotlight.title : fallback.spotlight.title,
+      body: typeof sourceSpotlight.body === 'string' && sourceSpotlight.body.trim() ? sourceSpotlight.body : fallback.spotlight.body,
+      statValue: typeof sourceSpotlight.statValue === 'string' && sourceSpotlight.statValue.trim() ? sourceSpotlight.statValue : fallback.spotlight.statValue,
+      statLabel: typeof sourceSpotlight.statLabel === 'string' && sourceSpotlight.statLabel.trim() ? sourceSpotlight.statLabel : fallback.spotlight.statLabel,
+      cta: normalizeCta(sourceSpotlight.cta, fallback.spotlight.cta)
     },
     tiersPreview: {
       title: typeof sourceTiers.title === 'string' && sourceTiers.title.trim() ? sourceTiers.title : fallback.tiersPreview.title,
@@ -214,6 +266,9 @@ const landingContent = computed<SiteLandingContent>(() => {
       title: typeof sourceCampaign.title === 'string' && sourceCampaign.title.trim() ? sourceCampaign.title : fallback.campaign.title,
       body: typeof sourceCampaign.body === 'string' && sourceCampaign.body.trim() ? sourceCampaign.body : fallback.campaign.body,
       code: typeof sourceCampaign.code === 'string' && sourceCampaign.code.trim() ? sourceCampaign.code : fallback.campaign.code,
+      heroHint: typeof sourceCampaign.heroHint === 'string' && sourceCampaign.heroHint.trim()
+        ? sourceCampaign.heroHint
+        : fallback.campaign.heroHint,
       details: normalizeStringArray(sourceCampaign.details, fallback.campaign.details),
       primaryCta: normalizeCta(sourceCampaign.primaryCta, fallback.campaign.primaryCta),
       secondaryCta: normalizeCta(sourceCampaign.secondaryCta, fallback.campaign.secondaryCta)
@@ -222,6 +277,11 @@ const landingContent = computed<SiteLandingContent>(() => {
 })
 
 const galleryImages = computed(() => landingContent.value.gallery.images ?? [])
+const galleryLeadVideo = computed(() => {
+  const video = landingContent.value.gallery.leadVideo
+  if (!video?.src) return null
+  return video
+})
 const galleryLeadImage = computed(() => galleryImages.value[0] ?? null)
 const gallerySpotlightImage = computed(() => galleryImages.value[2] ?? galleryImages.value[0] ?? null)
 const planAccentClasses = ['editorial-plan-card--accent-a', 'editorial-plan-card--accent-b', 'editorial-plan-card--accent-c'] as const
@@ -236,7 +296,8 @@ const differentiatorCards = computed<LandingDifferentiatorCard[]>(() => {
   return landingContent.value.infoCard.features
     .slice(0, 4)
     .map((feature, index) => {
-      const action = differentiatorCtaMap[index] ?? differentiatorCtaMap[differentiatorCtaMap.length - 1]
+      const safeIndex = Math.min(index, differentiatorCtaMap.length - 1)
+      const action = differentiatorCtaMap[safeIndex]!
       return {
         title: `0${index + 1}`,
         body: feature,
@@ -310,9 +371,10 @@ function tierAccentClass(tierId: string, index: number) {
           class="landing-hero-cta"
         >
           {{ landingContent.hero.secondaryCta.label }}
+          <span class="landing-hero-cta-arrow">↗</span>
         </NuxtLink>
         <p class="landing-hero-campaign-hint">
-          Campaign: use <strong>{{ landingContent.campaign.code }}</strong> for 5% off new memberships.
+          {{ landingContent.campaign.heroHint }}
         </p>
       </div>
 
@@ -340,7 +402,7 @@ function tierAccentClass(tierId: string, index: number) {
                   {{ landingContent.infoCard.body }}
                 </p>
                 <p class="landing-differentiator-affordability">
-                  Built to stay affordable for recurring production, with ground-floor loading and easier parking than the typical downtown studio run.
+                  {{ landingContent.infoCard.affordabilityNote }}
                 </p>
               </div>
               <div class="landing-differentiator-cards">
@@ -366,8 +428,19 @@ function tierAccentClass(tierId: string, index: number) {
             </div>
 
             <div class="landing-differentiator-media">
+              <video
+                v-if="galleryLeadVideo"
+                :src="galleryLeadVideo.src"
+                :poster="galleryLeadVideo.poster"
+                class="landing-differentiator-media-video"
+                autoplay
+                muted
+                loop
+                playsinline
+                preload="metadata"
+              />
               <img
-                v-if="galleryLeadImage"
+                v-else-if="galleryLeadImage"
                 :src="galleryLeadImage.src"
                 :alt="galleryLeadImage.alt || 'Studio image'"
                 :loading="galleryLeadImage.loading || 'lazy'"
@@ -394,28 +467,28 @@ function tierAccentClass(tierId: string, index: number) {
         >
         <div class="landing-spotlight-overlay">
           <p class="editorial-label">
-            PRODUCTION-FIRST VALUE
+            {{ landingContent.spotlight.label }}
           </p>
           <h2 class="landing-spotlight-title">
-            A turnkey studio that keeps your shoots moving and your overhead in check.
+            {{ landingContent.spotlight.title }}
           </h2>
           <p class="landing-spotlight-body">
-            Run production through a high-quality dashboard with live calendar visibility, rescheduling, extensions, and holds. Reserve in 30-minute increments and keep setup continuity without adding line-item friction to every session.
+            {{ landingContent.spotlight.body }}
           </p>
           <UButton
             color="neutral"
             variant="solid"
-            to="/calendar"
+            :to="landingContent.spotlight.cta.to"
           >
-            See Availability
+            {{ landingContent.spotlight.cta.label }}
           </UButton>
         </div>
         <div class="landing-spotlight-stat">
           <p class="landing-spotlight-stat-value">
-            30 min
+            {{ landingContent.spotlight.statValue }}
           </p>
           <p class="landing-spotlight-stat-label">
-            Booking increments available for members.
+            {{ landingContent.spotlight.statLabel }}
           </p>
         </div>
       </div>
@@ -463,63 +536,6 @@ function tierAccentClass(tierId: string, index: number) {
                 >
                   {{ tier.buttonLabel }}
                 </UButton>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section
-        class="editorial-section landing-campaign-section"
-        data-reveal
-        data-reveal-delay="100ms"
-      >
-        <div class="editorial-frame">
-          <div class="editorial-grid editorial-grid-plans">
-            <div class="editorial-cell editorial-meta">
-              <p class="editorial-label">
-                {{ landingContent.campaign.label }}
-              </p>
-            </div>
-
-            <div class="editorial-cell editorial-copy editorial-copy-texture">
-              <h2 class="editorial-title">
-                {{ landingContent.campaign.title }}
-              </h2>
-              <p class="editorial-body">
-                {{ landingContent.campaign.body }}
-              </p>
-            </div>
-
-            <div class="editorial-cell editorial-plan-list">
-              <div class="editorial-plan-card editorial-plan-card--accent-b">
-                <div class="editorial-plan-title">
-                  Use code {{ landingContent.campaign.code }}
-                </div>
-                <ul class="landing-campaign-list">
-                  <li
-                    v-for="detail in landingContent.campaign.details"
-                    :key="detail"
-                  >
-                    {{ detail }}
-                  </li>
-                </ul>
-                <div class="landing-campaign-actions">
-                  <UButton
-                    color="neutral"
-                    variant="solid"
-                    :to="landingContent.campaign.primaryCta.to"
-                  >
-                    {{ landingContent.campaign.primaryCta.label }}
-                  </UButton>
-                  <UButton
-                    color="neutral"
-                    variant="soft"
-                    :to="landingContent.campaign.secondaryCta.to"
-                  >
-                    {{ landingContent.campaign.secondaryCta.label }}
-                  </UButton>
-                </div>
               </div>
             </div>
           </div>

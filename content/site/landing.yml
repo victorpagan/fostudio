@@ -1,28 +1,8 @@
-seo:
-  title: "FO Studio | 24/7 Photo Studio Membership in Los Angeles"
-  description: "24/7 turnkey photo studio in Los Angeles for photographers and small-to-mid crews. Included gear, consumables, and membership-first booking."
-  keywords:
-    - "los angeles photo studio"
-    - "24/7 studio rental"
-    - "studio membership"
-    - "cyclorama studio"
-    - "photo studio with lighting"
-  canonicalPath: "/"
-  robots: "index,follow,max-image-preview:large"
-  og:
-    title: "FO Studio | 24/7 Photo Studio Membership in Los Angeles"
-    description: "Turnkey studio access with included gear and member-first booking."
-    image: "/images/sky.webp"
-    type: "website"
-  twitter:
-    card: "summary_large_image"
-    title: "FO Studio | 24/7 Photo Studio Membership in Los Angeles"
-    description: "Turnkey studio access with included gear and member-first booking."
-    image: "/images/sky.webp"
-  schema:
-    pageType: "WebSite"
 gallery:
   title: Inside the studio
+  leadVideo:
+    src: /videos/studio-example.mp4
+    poster: /images/studio-hero-3.png
   images:
     - src: /images/studio-hero-1.jpg
       alt: Studio wide shot with cyc wall
@@ -30,7 +10,7 @@ gallery:
     - src: /images/studio-hero-2.jpg
       alt: Backdrop and prep area
       loading: lazy
-    - src: /images/studio-hero-3.jpg
+    - src: /images/studio-hero-3.png
       alt: Lighting setup in the studio
       loading: lazy
 hero:
@@ -51,11 +31,21 @@ hero:
 infoCard:
   title: A focused production studio built for repeat, real-world shoots.
   body: We keep the workflow simple, the access flexible, and the monthly cost predictable so small-to-mid crews can keep shooting without operational drag.
+  affordabilityNote: Built to stay affordable for recurring production, with ground-floor loading and easier parking than the typical downtown studio run.
   features:
     - 25x30 ft cyclorama with 20+ ft ceilings for commercial and editorial setups
     - 30-minute booking increments for tests, pickups, and tighter production days
     - High-quality booking dashboard with live calendar, extensions, and holds
     - Ground-floor access with practical loading, ample parking, and included core gear plus baseline consumables
+spotlight:
+  label: PRODUCTION-FIRST VALUE
+  title: A turnkey studio that keeps your shoots moving and your overhead in check.
+  body: Run production through a high-quality dashboard with live calendar visibility, rescheduling, extensions, and holds. Reserve in 30-minute increments and keep setup continuity without adding line-item friction to every session.
+  statValue: 30 min
+  statLabel: Booking increments available for members.
+  cta:
+    label: See Availability
+    to: /calendar
 tiersPreview:
   title: Membership tier preview
   subtitle: Start with the plan that matches your current volume. You can always move up as your schedule grows.
@@ -77,6 +67,7 @@ campaign:
   title: New site launch offer
   body: We launched the new FO Studio platform for booking, memberships, and account management. Use the launch code during signup to get discounted onboarding.
   code: NEWSITE
+  heroHint: Campaign: use NEWSITE for 5% off new memberships.
   details:
     - 5% off new memberships through April 30
     - Works on Creator, Pro, and Studio+ membership starts
@@ -87,3 +78,26 @@ campaign:
   secondaryCta:
     label: Read FAQ
     to: /faq
+seo:
+  title: FO Studio | 24/7 Photo Studio Membership in Los Angeles
+  description: 24/7 turnkey photo studio in Los Angeles for photographers and small-to-mid crews. Included gear, consumables, and membership-first booking.
+  keywords:
+    - los angeles photo studio
+    - 24/7 studio rental
+    - studio membership
+    - cyclorama studio
+    - photo studio with lighting
+  canonicalPath: /
+  robots: index,follow,max-image-preview:large
+  og:
+    title: FO Studio | 24/7 Photo Studio Membership in Los Angeles
+    description: Turnkey studio access with included gear and member-first booking.
+    image: /images/sky.webp
+    type: website
+  twitter:
+    card: summary_large_image
+    title: FO Studio | 24/7 Photo Studio Membership in Los Angeles
+    description: Turnkey studio access with included gear and member-first booking.
+    image: /images/sky.webp
+  schema:
+    pageType: WebSite
