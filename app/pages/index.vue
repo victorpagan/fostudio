@@ -74,7 +74,7 @@ const fallbackLanding: SiteLandingContent = {
     body: 'Built for production days, not logistics overhead.',
     features: [
       '25x30 ft cyclorama with 20+ ft ceilings',
-      'Member-first calendar access and booking controls',
+      'High-quality booking dashboard with live calendar, extensions, and holds',
       'Included equipment, backdrop paper, and baseline consumables',
       'Secure access flow with 24/7 member entry'
     ]
@@ -400,7 +400,7 @@ function tierAccentClass(tierId: string, index: number) {
             A turnkey studio that keeps your shoots moving and your overhead in check.
           </h2>
           <p class="landing-spotlight-body">
-            Reserve in 30-minute increments, keep your setup continuity through approved holds, and get included equipment and consumables without adding line-item friction to every session.
+            Run production through a high-quality dashboard with live calendar visibility, rescheduling, extensions, and holds. Reserve in 30-minute increments and keep setup continuity without adding line-item friction to every session.
           </p>
           <UButton
             color="neutral"
