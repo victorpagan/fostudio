@@ -4,11 +4,11 @@ gallery:
     src: /videos/studio-example.mp4
     poster: /images/studio-hero-3.png
   leadOverlay:
-    chapter: CHAPTER
-    section: / PRACTICE
+    chapter: ""
+    section: ""
     brand: FO STUDIO
-    title: Production-first booking flow
-    subtitle: Live calendar visibility, extensions, and holds without workflow friction.
+    title: From Test To Campaign
+    subtitle: This 800 sqft studio can handle everything you need
   images:
     - src: /images/studio-hero-1.jpg
       alt: Studio wide shot with cyc wall
@@ -36,7 +36,7 @@ hero:
     - Gear + consumables included
     - No startup fees
 infoCard:
-  title: A focused production studio built for you.
+  title: A photo studio built for you.
   body: We keep the workflow simple, the access flexible, and the monthly cost predictable so you and your crew can keep shooting without operational drag. Run production through a high-quality dashboard with live calendar visibility, rescheduling, booking extensions, and overnight holds.
   affordabilityNote: Built to stay affordable for recurring production, with ground-floor loading and easier parking than the typical downtown studio run.
   features:
