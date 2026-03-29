@@ -1067,12 +1067,13 @@ h6 {
 
 .landing-hero-cta-arrow {
   position: absolute;
-  top: 0.22rem;
-  right: 0.23rem;
-  font-size: 0.78rem;
-  font-weight: 700;
+  top: -0.2rem;
+  right: -0.32rem;
+  font-size: 0.92rem;
+  font-weight: 800;
   line-height: 1;
   color: var(--gruv-accent);
+  text-shadow: 0 0 0.01px currentColor;
   pointer-events: none;
   z-index: 5;
 }
