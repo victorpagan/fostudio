@@ -1,5 +1,15 @@
 detailsPanel:
   title: Studio details
+  items:
+    - label: Email
+      value: studio@lafilmlab.com
+      detail: The fastest way to reach the LA Film Lab studio team.
+    - label: Phone
+      value: (323) 999-4300
+      detail: Useful for shoot-day coordination and quick schedule questions.
+    - label: Location
+      value: FO Studio, 3131 N. San Fernando Rd., Los Angeles, CA 90065
+      detail: Share a clear public summary now, or keep the exact address private until booking.
 formPanel:
   title: Send a message
   description: Share what you are planning, what you need help with, and how best to reach you back.
@@ -7,11 +17,14 @@ formPanel:
   submittedBody: Your note is in the queue. We will reply to the email you provided as soon as we can.
   submitLabel: Send message
 mapPanel:
-  title: null
-  description: null
+  title: Find the studio
+  description: Use the map for routing, parking planning, and shoot-day coordination.
 reasonsPanel:
-  title: ""
-  items: []
+  title: Best reasons to reach out
+  items:
+    - You are comparing memberships and want a quick recommendation.
+    - You have a client date in mind and want to confirm the booking path.
+    - You need to clarify equipment, access, or whether the room fits your production.
 seo:
   title: Contact FO Studio | Los Angeles Photo Studio
   description: Contact FO Studio for membership help, booking questions, studio fit checks, and production planning support.

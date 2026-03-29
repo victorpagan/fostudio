@@ -8,6 +8,12 @@ definePageMeta({
 type ContactField = 'name' | 'email' | 'phone' | 'subject' | 'message' | 'company'
 type FieldErrors = Record<ContactField, string>
 
+type ContactDetailItem = {
+  label: string
+  value: string
+  detail: string
+}
+
 type SiteContactContent = {
   hero: {
     kicker: string
@@ -20,7 +26,8 @@ type SiteContactContent = {
   }
   detailsPanel: {
     title: string
-    intro: string
+    intro?: string
+    items?: ContactDetailItem[]
   }
   mapPanel: {
     title: string
@@ -64,7 +71,24 @@ const fallbackContent: SiteContactContent = {
   },
   detailsPanel: {
     title: 'Studio details',
-    intro: ''
+    intro: '',
+    items: [
+      {
+        label: 'Email',
+        value: 'studio@lafilmlab.com',
+        detail: 'The fastest way to reach the LA Film Lab studio team.'
+      },
+      {
+        label: 'Phone',
+        value: '(323) 999-4300',
+        detail: 'Useful for shoot-day coordination and quick schedule questions.'
+      },
+      {
+        label: 'Location',
+        value: 'FO Studio, 3131 N. San Fernando Rd., Los Angeles, CA 90065',
+        detail: 'Share a clear public summary now, or keep the exact address private until booking.'
+      }
+    ]
   },
   mapPanel: {
     title: 'Find the studio',
@@ -115,23 +139,48 @@ const fieldErrors = reactive<FieldErrors>({
 const isLoading = ref(false)
 const submitted = ref(false)
 
-const contactDetails = computed(() => [
-  {
-    label: 'Email',
-    value: config.public.contactEmail,
-    detail: 'The fastest way to reach the LA Film Lab studio team.'
-  },
-  {
-    label: 'Phone',
-    value: config.public.contactPhone || 'Add a phone line when you are ready.',
-    detail: 'Useful for shoot-day coordination and quick schedule questions.'
-  },
-  {
-    label: 'Location',
-    value: config.public.contactLocation,
-    detail: 'Share a clear public summary now, or keep the exact address private until booking.'
+const contactDetails = computed(() => {
+  const contentItems = Array.isArray(pageContent.value.detailsPanel?.items)
+    ? pageContent.value.detailsPanel.items
+    : []
+
+  if (contentItems.length > 0) {
+    return contentItems.map((item) => {
+      const label = String(item.label ?? '').trim()
+      const fallbackValue = label.toLowerCase() === 'email'
+        ? String(config.public.contactEmail ?? '')
+        : label.toLowerCase() === 'phone'
+          ? String(config.public.contactPhone ?? '')
+          : label.toLowerCase() === 'location'
+            ? String(config.public.contactLocation ?? '')
+            : ''
+
+      return {
+        label: label || 'Contact',
+        value: String(item.value ?? '').trim() || fallbackValue || 'Not provided',
+        detail: String(item.detail ?? '').trim()
+      }
+    })
   }
-])
+
+  return [
+    {
+      label: 'Email',
+      value: String(config.public.contactEmail ?? '').trim() || 'Not provided',
+      detail: 'The fastest way to reach the LA Film Lab studio team.'
+    },
+    {
+      label: 'Phone',
+      value: String(config.public.contactPhone ?? '').trim() || 'Not provided',
+      detail: 'Useful for shoot-day coordination and quick schedule questions.'
+    },
+    {
+      label: 'Location',
+      value: String(config.public.contactLocation ?? '').trim() || 'Not provided',
+      detail: 'Share a clear public summary now, or keep the exact address private until booking.'
+    }
+  ]
+})
 
 function clearFieldErrors() {
   fieldErrors.name = ''
