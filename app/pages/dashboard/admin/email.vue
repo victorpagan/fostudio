@@ -28,6 +28,33 @@ type AdminEmailSettingsResponse = {
 }
 
 const BROADCAST_EVENT_TYPE = 'mailing.memberBroadcast'
+const FULL_HTML_DOCUMENT_PATTERN = /<html[\s>]|<body[\s>]|<!doctype/i
+
+const REGISTRY_BASE_PREVIEW_TEMPLATE = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { margin:0; padding:24px 0; background:#f5f5f5; font-family:Arial,Helvetica,sans-serif; color:#111; }
+    .main { width:100%; max-width:640px; margin:0 auto; background:#fff; border:1px solid #ececec; border-radius:14px; overflow:hidden; }
+    .header { background:#111; color:#fff; padding:22px 24px; }
+    .header h1 { margin:0; font-size:20px; line-height:1.3; }
+    .header p { margin:8px 0 0; font-size:13px; color:#d7d7d7; }
+    .body { padding:22px 24px; line-height:1.6; font-size:14px; color:#222; }
+    img { max-width:100%; height:auto; display:block; }
+  </style>
+</head>
+<body>
+  <div class="main">
+    <div class="header">
+      <h1>{{subject}}</h1>
+      <p>{{preheader}}</p>
+    </div>
+    <div class="body">{{{bodyHTML}}}</div>
+  </div>
+</body>
+</html>`
 
 const toast = useToast()
 const saving = ref(false)
@@ -567,6 +594,123 @@ function formatVariableToken(variableName: string) {
   return `{{ ${variableName} }}`
 }
 
+function resolvePathValue(source: unknown, path: string): unknown {
+  if (!path) return undefined
+  const segments = path.split('.').filter(Boolean)
+  let cursor: unknown = source
+  for (const segment of segments) {
+    if (!cursor || typeof cursor !== 'object' || !(segment in cursor)) {
+      return undefined
+    }
+    cursor = (cursor as Record<string, unknown>)[segment]
+  }
+  return cursor
+}
+
+function assignPathValue(target: Record<string, unknown>, path: string, value: unknown) {
+  const segments = path.split('.').filter(Boolean)
+  if (!segments.length) return
+
+  let cursor: Record<string, unknown> = target
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const segment = segments[index]!
+    const current = cursor[segment]
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+      cursor[segment] = {}
+    }
+    cursor = cursor[segment] as Record<string, unknown>
+  }
+
+  cursor[segments.at(-1)!] = value
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('\'', '&#39;')
+}
+
+function renderTokenTemplate(template: string, context: Record<string, unknown>) {
+  return template.replace(/{{\s*([A-Za-z0-9_.-]+)\s*}}/g, (_match, tokenPath: string) => {
+    const value = resolvePathValue(context, tokenPath)
+    if (value == null) return ''
+    if (typeof value === 'string') return value
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value)
+    return ''
+  })
+}
+
+function isTruthyTemplateValue(value: unknown) {
+  if (value == null) return false
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  if (typeof value === 'string') return value.trim().length > 0
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0
+  return true
+}
+
+function renderHandlebarsLikeTemplate(template: string, context: Record<string, unknown>): string {
+  let output = template
+  const ifPattern = /{{#if\s+([A-Za-z0-9_.-]+)}}([\s\S]*?){{\/if}}/g
+
+  for (let i = 0; i < 20; i += 1) {
+    let replaced = false
+    output = output.replace(ifPattern, (_match, tokenPath: string, inner: string) => {
+      replaced = true
+      const value = resolvePathValue(context, tokenPath)
+      return isTruthyTemplateValue(value) ? inner : ''
+    })
+    if (!replaced) break
+  }
+
+  output = output.replace(/{{{\s*([A-Za-z0-9_.-]+)\s*}}}/g, (_match, tokenPath: string) => {
+    const value = resolvePathValue(context, tokenPath)
+    if (value == null) return ''
+    if (typeof value === 'string') return value
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value)
+    return ''
+  })
+
+  output = output.replace(/{{\s*([A-Za-z0-9_.-]+)\s*}}/g, (_match, tokenPath: string) => {
+    const value = resolvePathValue(context, tokenPath)
+    if (value == null) return ''
+    if (typeof value === 'string') return escapeHtml(value)
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+      return escapeHtml(String(value))
+    }
+    return ''
+  })
+
+  return output
+}
+
+function sampleValueForToken(tokenPath: string) {
+  const leaf = tokenPath.split('.').at(-1)?.toLowerCase() ?? tokenPath.toLowerCase()
+
+  if (leaf.includes('email')) return 'member@example.com'
+  if (leaf.includes('name')) return 'FO Studio Member'
+  if (leaf.includes('code')) return '2468'
+  if (leaf.includes('phone')) return '(323) 555-0186'
+  if (leaf.includes('url') || leaf.includes('link')) return 'https://fo.studio'
+  if (leaf.includes('city')) return 'Los Angeles'
+  if (leaf.includes('state')) return 'CA'
+  if (leaf.includes('zip')) return '90065'
+  if (leaf.includes('start') || leaf.includes('end') || leaf.includes('date') || leaf.includes('time')) {
+    return 'Apr 2, 2026 6:00 PM'
+  }
+  if (leaf.includes('tier') || leaf.includes('plan')) return 'Pro'
+  if (leaf.includes('cadence')) return 'Monthly'
+  if (leaf.includes('credit') || leaf.includes('count')) return 12
+  if (leaf.includes('amount') || leaf.includes('price') || leaf.includes('cost') || leaf.includes('dollar')) return '$45.00'
+  if (leaf.includes('active') || leaf.startsWith('is_') || leaf.startsWith('has_')) return true
+
+  return `Sample ${leaf.replaceAll('_', ' ')}`
+}
+
 function hasEditorContent(value: string | null | undefined) {
   const source = String(value ?? '')
   if (!source.trim()) return false
@@ -590,6 +734,59 @@ function editorPlaceholder(value: string | null | undefined, fallback: string) {
 function hasTemplateId(template: AdminMailTemplate) {
   return template.sendgridTemplateId.trim().length > 0
 }
+
+const previewViewport = ref<'desktop' | 'mobile'>('desktop')
+
+const registryPreviewContext = computed(() => {
+  const draft = templateDraft.value
+  const context: Record<string, unknown> = {}
+
+  for (const token of selectedTemplateVariables.value) {
+    assignPathValue(context, token, sampleValueForToken(token))
+  }
+
+  const subjectSource = String(draft?.subjectTemplate ?? '').trim()
+  const preheaderSource = String(draft?.preheaderTemplate ?? '').trim()
+  const bodySource = String(draft?.bodyTemplate ?? '').trim()
+
+  const subject = subjectSource
+    ? renderTokenTemplate(subjectSource, context).trim()
+    : 'FO Studio account update'
+
+  const preheader = preheaderSource
+    ? renderTokenTemplate(preheaderSource, { ...context, subject }).trim()
+    : 'Preview generated from current registry draft.'
+
+  const bodyHTML = bodySource
+    ? renderHandlebarsLikeTemplate(bodySource, { ...context, subject, preheader }).trim()
+    : '<p>Template body preview will appear here.</p>'
+
+  return {
+    ...context,
+    subject,
+    preheader,
+    bodyHTML
+  }
+})
+
+const registryPreviewShell = computed<'base' | 'document'>(() => {
+  const draft = templateDraft.value
+  const body = String(draft?.bodyTemplate ?? '')
+  if (FULL_HTML_DOCUMENT_PATTERN.test(body)) return 'document'
+
+  // Registry rows map to specific SendGrid template IDs. For standard base templates,
+  // we wrap bodyHTML into the expected subject/preheader/body shell.
+  if (draft?.sendgridTemplateId?.trim()) return 'base'
+  return 'base'
+})
+
+const registryPreviewHtml = computed(() => {
+  const context = registryPreviewContext.value
+  if (registryPreviewShell.value === 'document') {
+    return renderHandlebarsLikeTemplate(String(templateDraft.value?.bodyTemplate ?? ''), context)
+  }
+  return renderHandlebarsLikeTemplate(REGISTRY_BASE_PREVIEW_TEMPLATE, context)
+})
 
 function selectTemplate(index: number) {
   const selected = templates.value[index]
@@ -740,112 +937,39 @@ watch(templates, (nextTemplates) => {
 
       <template #body>
         <div class="p-4 space-y-4">
-          <UAlert
-            color="info"
-            variant="soft"
-            icon="i-lucide-mail"
-            title="Centralized mail controls"
-            description="Configure admin copies and SendGrid template mapping by event type. Supports {{ variableName }} interpolation for subject, preheader, and body (single-pass, unresolved variables render blank). Handlebars control blocks like {{#if}} are not supported."
-          />
+          <div class="rounded-lg border border-info/30 bg-info/10 p-3">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="space-y-1">
+                <div class="text-sm font-medium text-highlighted">
+                  Centralized mail controls
+                </div>
+                <div class="text-xs text-dimmed">
+                  Configure admin copies and SendGrid template mapping by event type. Supports
+                  <code>{{ formatVariableToken('variableName') }}</code> interpolation for subject, preheader, and body.
+                </div>
+                <div class="flex flex-wrap items-center gap-2 text-xs text-dimmed">
+                  <span>Member broadcast now uses dedicated campaigns.</span>
+                  <code class="rounded bg-elevated px-2 py-0.5">{{ BROADCAST_EVENT_TYPE }}</code>
+                  <UBadge
+                    :color="broadcastTemplate && hasTemplateId(broadcastTemplate) ? 'success' : 'warning'"
+                    variant="soft"
+                    size="sm"
+                  >
+                    {{ broadcastTemplate && hasTemplateId(broadcastTemplate) ? 'template id set' : 'template id needed' }}
+                  </UBadge>
+                </div>
+              </div>
+              <UButton
+                icon="i-lucide-megaphone"
+                to="/dashboard/admin/email-campaigns"
+              >
+                Open email campaigns
+              </UButton>
+            </div>
+          </div>
 
           <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
             <div class="space-y-4">
-              <UCard>
-                <div class="space-y-4">
-                  <div class="flex items-center justify-between gap-3">
-                    <div class="text-sm font-medium">
-                      Member broadcast
-                    </div>
-                    <UBadge
-                      color="neutral"
-                      variant="soft"
-                      size="sm"
-                    >
-                      Admin only
-                    </UBadge>
-                  </div>
-
-                  <div class="text-xs text-dimmed">
-                    Campaign drafting and sends now live on a dedicated page, separate from registry maintenance.
-                  </div>
-
-                  <div class="flex flex-wrap items-center gap-2">
-                    <code class="rounded bg-elevated px-2 py-0.5 text-xs">
-                      {{ BROADCAST_EVENT_TYPE }}
-                    </code>
-                    <UBadge
-                      :color="broadcastTemplate && hasTemplateId(broadcastTemplate) ? 'success' : 'warning'"
-                      variant="soft"
-                      size="sm"
-                    >
-                      {{ broadcastTemplate && hasTemplateId(broadcastTemplate) ? 'template id set' : 'template id needed' }}
-                    </UBadge>
-                  </div>
-
-                  <div class="flex justify-end">
-                    <UButton
-                      icon="i-lucide-megaphone"
-                      to="/dashboard/admin/email-campaigns"
-                    >
-                      Open email campaigns
-                    </UButton>
-                  </div>
-                </div>
-              </UCard>
-
-              <UCard>
-                <div class="space-y-4">
-                  <div class="text-sm font-medium">
-                    Admin copy preferences
-                  </div>
-
-                  <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
-                    <div>
-                      <div class="text-sm font-medium">
-                        Critical email copies
-                      </div>
-                      <div class="text-xs text-dimmed">
-                        Forward a copy of critical notifications to admin inboxes.
-                      </div>
-                    </div>
-                    <USwitch v-model="adminCopies.criticalEnabled" />
-                  </div>
-
-                  <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
-                    <div>
-                      <div class="text-sm font-medium">
-                        Non-critical email copies
-                      </div>
-                      <div class="text-xs text-dimmed">
-                        Keep disabled by default to reduce noise.
-                      </div>
-                    </div>
-                    <USwitch v-model="adminCopies.nonCriticalEnabled" />
-                  </div>
-
-                  <UFormField
-                    label="Admin copy recipients"
-                    description="One email per line or comma-separated."
-                  >
-                    <UTextarea
-                      v-model="recipientsInput"
-                      :rows="4"
-                      class="w-full"
-                      placeholder="ops@fostudio.com&#10;support@fostudio.com"
-                    />
-                  </UFormField>
-
-                  <div class="flex justify-end">
-                    <UButton
-                      :loading="saving"
-                      @click="saveSettings()"
-                    >
-                      Save admin copy settings
-                    </UButton>
-                  </div>
-                </div>
-              </UCard>
-
               <UCard v-if="templateDraft">
                 <div class="space-y-4">
                   <div class="flex items-start justify-between gap-3">
@@ -991,6 +1115,54 @@ watch(templates, (nextTemplates) => {
                     </UEditor>
                   </UFormField>
 
+                  <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+                        High-fidelity preview
+                      </div>
+                      <div class="flex items-center gap-1">
+                        <UButton
+                          size="xs"
+                          color="neutral"
+                          :variant="previewViewport === 'desktop' ? 'soft' : 'ghost'"
+                          icon="i-lucide-monitor"
+                          @click="previewViewport = 'desktop'"
+                        >
+                          Desktop
+                        </UButton>
+                        <UButton
+                          size="xs"
+                          color="neutral"
+                          :variant="previewViewport === 'mobile' ? 'soft' : 'ghost'"
+                          icon="i-lucide-smartphone"
+                          @click="previewViewport = 'mobile'"
+                        >
+                          Mobile
+                        </UButton>
+                      </div>
+                    </div>
+
+                    <div class="rounded-md border border-default bg-default p-2">
+                      <div
+                        class="mx-auto transition-all duration-150"
+                        :class="previewViewport === 'mobile' ? 'max-w-[390px]' : 'max-w-full'"
+                      >
+                        <iframe
+                          :srcdoc="registryPreviewHtml"
+                          class="w-full min-h-[760px] rounded-md border border-default/70 bg-white"
+                          sandbox="allow-same-origin"
+                          title="Registry template preview"
+                        />
+                      </div>
+                    </div>
+
+                    <p class="text-xs text-dimmed">
+                      Preview shell inferred from template ID
+                      <code>{{ templateDraft.sendgridTemplateId || '(not set)' }}</code>:
+                      {{ registryPreviewShell === 'document' ? 'full HTML document' : 'base subject/preheader/bodyHTML shell' }}.
+                    </p>
+                  </section>
+
                   <div class="text-xs text-dimmed rounded-md border border-primary/25 bg-primary/8 p-2.5">
                     <div class="font-medium text-highlighted mb-1.5">
                       Available variables
@@ -1038,6 +1210,59 @@ watch(templates, (nextTemplates) => {
             </div>
 
             <aside class="space-y-4 xl:sticky xl:top-4 self-start">
+              <UCard>
+                <div class="space-y-4">
+                  <div class="text-sm font-medium">
+                    Admin copy preferences
+                  </div>
+
+                  <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
+                    <div>
+                      <div class="text-sm font-medium">
+                        Critical email copies
+                      </div>
+                      <div class="text-xs text-dimmed">
+                        Forward a copy of critical notifications to admin inboxes.
+                      </div>
+                    </div>
+                    <USwitch v-model="adminCopies.criticalEnabled" />
+                  </div>
+
+                  <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
+                    <div>
+                      <div class="text-sm font-medium">
+                        Non-critical email copies
+                      </div>
+                      <div class="text-xs text-dimmed">
+                        Keep disabled by default to reduce noise.
+                      </div>
+                    </div>
+                    <USwitch v-model="adminCopies.nonCriticalEnabled" />
+                  </div>
+
+                  <UFormField
+                    label="Admin copy recipients"
+                    description="One email per line or comma-separated."
+                  >
+                    <UTextarea
+                      v-model="recipientsInput"
+                      :rows="4"
+                      class="w-full"
+                      placeholder="ops@fostudio.com&#10;support@fostudio.com"
+                    />
+                  </UFormField>
+
+                  <div class="flex justify-end">
+                    <UButton
+                      :loading="saving"
+                      @click="saveSettings()"
+                    >
+                      Save admin copy settings
+                    </UButton>
+                  </div>
+                </div>
+              </UCard>
+
               <UCard>
                 <div class="flex items-center justify-between gap-3">
                   <div class="text-sm font-medium">
