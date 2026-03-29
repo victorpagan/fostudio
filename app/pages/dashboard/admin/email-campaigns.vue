@@ -83,6 +83,40 @@ type CampaignSendResponse = {
   }
 }
 
+type CampaignImageSlot = {
+  id: 'features' | 'transition' | 'impact' | 'offer'
+  label: string
+  urlKey: string
+  altKey: string
+}
+
+const CAMPAIGN_IMAGE_SLOTS: CampaignImageSlot[] = [
+  {
+    id: 'features',
+    label: 'Features section',
+    urlKey: 'features_image_url',
+    altKey: 'features_image_alt'
+  },
+  {
+    id: 'transition',
+    label: 'Transition section',
+    urlKey: 'transition_image_url',
+    altKey: 'transition_image_alt'
+  },
+  {
+    id: 'impact',
+    label: 'Impact section',
+    urlKey: 'impact_image_url',
+    altKey: 'impact_image_alt'
+  },
+  {
+    id: 'offer',
+    label: 'Offer section',
+    urlKey: 'offer_image_url',
+    altKey: 'offer_image_alt'
+  }
+]
+
 const toast = useToast()
 const saving = ref(false)
 const sending = ref(false)
@@ -115,6 +149,12 @@ const editorDragHandleOptions = {
     alignmentAxis: 0
   }
 } as const
+const campaignImageUploadPending = reactive<Record<CampaignImageSlot['id'], boolean>>({
+  features: false,
+  transition: false,
+  impact: false,
+  offer: false
+})
 
 const { data, pending, refresh } = await useAsyncData('admin:email:campaigns', async () => {
   return await $fetch<CampaignsResponse>('/api/admin/email/campaigns')
@@ -258,6 +298,99 @@ function parseDynamicDataJson(text: string) {
   }
 }
 
+const parsedDynamicData = computed<Record<string, unknown> | null>(() => {
+  try {
+    return parseDynamicDataJson(draft.dynamicDataJsonText)
+  } catch {
+    return null
+  }
+})
+
+function parseDynamicDataOrNotify() {
+  try {
+    return parseDynamicDataJson(draft.dynamicDataJsonText)
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Dynamic data is invalid',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+    return null
+  }
+}
+
+function readDynamicDataString(key: string) {
+  const value = parsedDynamicData.value?.[key]
+  if (value == null) return ''
+  if (typeof value === 'string') return value
+  return String(value)
+}
+
+function updateDynamicDataString(key: string, value: string) {
+  const dynamicData = parseDynamicDataOrNotify()
+  if (!dynamicData) return
+
+  const normalized = String(value ?? '').trim()
+  if (normalized) {
+    setDynamicDataJson({
+      ...dynamicData,
+      [key]: normalized
+    })
+    return
+  }
+
+  const nextDynamicData = Object.fromEntries(
+    Object.entries(dynamicData).filter(([entryKey]) => entryKey !== key)
+  )
+  setDynamicDataJson(nextDynamicData)
+}
+
+async function uploadCampaignImage(slot: CampaignImageSlot) {
+  if (campaignImageUploadPending[slot.id]) return
+
+  campaignImageUploadPending[slot.id] = true
+  try {
+    const image = await pickImageFromDevice({ maxBytes: EDITOR_IMAGE_MAX_BYTES })
+    if (!image) return
+    const uploaded = await uploadEditorImage(image.file)
+
+    const dynamicData = parseDynamicDataOrNotify()
+    if (!dynamicData) return
+
+    dynamicData[slot.urlKey] = uploaded.url
+    if (!String(dynamicData[slot.altKey] ?? '').trim()) {
+      dynamicData[slot.altKey] = `${slot.label} image`
+    }
+
+    setDynamicDataJson(dynamicData)
+    toast.add({
+      title: `${slot.label} image uploaded`,
+      description: 'Image URL inserted into campaign JSON.',
+      color: 'success'
+    })
+  } catch (error: unknown) {
+    toast.add({
+      title: `Could not upload ${slot.label.toLowerCase()} image`,
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    campaignImageUploadPending[slot.id] = false
+  }
+}
+
+function clearCampaignImage(slot: CampaignImageSlot) {
+  const dynamicData = parseDynamicDataOrNotify()
+  if (!dynamicData) return
+
+  const nextDynamicData = Object.fromEntries(
+    Object.entries(dynamicData).filter(([entryKey]) => {
+      return entryKey !== slot.urlKey && entryKey !== slot.altKey
+    })
+  )
+  setDynamicDataJson(nextDynamicData)
+}
+
 function setDynamicDataJson(value: Record<string, unknown>) {
   draft.dynamicDataJsonText = stringifyDynamicData(value)
 }
@@ -284,6 +417,8 @@ function loadWebsiteLaunchPreset() {
     feature_3_enabled: true,
     feature_3_title: 'Manage everything in one place',
     feature_3_copy: 'View the calendar, book, reschedule, extend bookings, and export to your own calendar.',
+    features_image_url: '',
+    features_image_alt: 'What is new at FO Studio',
     transition_enabled: true,
     transition_title: 'Important membership transition',
     transition_bullet_1: 'Please cancel your current membership before April 30 and move to the new platform.',
@@ -293,6 +428,8 @@ function loadWebsiteLaunchPreset() {
     transition_primary_label: 'View Memberships',
     transition_secondary_url: 'https://fo.studio/faq',
     transition_secondary_label: 'Read FAQ',
+    transition_image_url: '',
+    transition_image_alt: 'Membership transition details',
     credits_enabled: true,
     credits_title: 'How the new credit system works',
     credits_bullet_1: 'Each plan includes a monthly credit allowance.',
@@ -307,12 +444,16 @@ function loadWebsiteLaunchPreset() {
     impact_bullet_3: 'Plan changes can happen after each billing cycle.',
     impact_bullet_4: 'Updated waiver and policy flow.',
     impact_bullet_5: 'A small price increase to support studio maintenance and improvements.',
+    impact_image_url: '',
+    impact_image_alt: 'What this means for members',
     offer_enabled: true,
     offer_title: 'Launch Offer',
     offer_copy_html: 'Use the code below for <strong>5% off</strong> your new membership through <strong>April 30</strong>.',
     offer_code: 'NEWSITE',
     offer_cta_url: 'https://fo.studio/memberships',
     offer_cta_label: 'Start Membership',
+    offer_image_url: '',
+    offer_image_alt: 'Launch offer code card',
     closing_enabled: true,
     closing_title: 'Thanks for being part of FO Studio',
     closing_copy: 'We\'re working to make FO Studio the best turnkey studio in Los Angeles, and this new site is a big step in that direction.',
@@ -1219,6 +1360,66 @@ watch(() => draft.templateId, () => {
                     >
                       Load website launch preset
                     </UButton>
+                  </div>
+                  <div class="rounded-md border border-default p-2.5 space-y-2">
+                    <div class="text-xs font-medium text-highlighted">
+                      Campaign images (writes directly into JSON)
+                    </div>
+                    <div class="grid gap-2 md:grid-cols-2">
+                      <div
+                        v-for="slot in CAMPAIGN_IMAGE_SLOTS"
+                        :key="`campaign-image-${slot.id}`"
+                        class="rounded-md border border-default/80 p-2 space-y-2"
+                      >
+                        <div class="flex items-center justify-between gap-2">
+                          <div class="text-xs font-medium text-highlighted">
+                            {{ slot.label }}
+                          </div>
+                          <div class="flex items-center gap-1">
+                            <UButton
+                              size="xs"
+                              color="neutral"
+                              variant="soft"
+                              icon="i-lucide-image-up"
+                              :loading="campaignImageUploadPending[slot.id]"
+                              @click="() => { void uploadCampaignImage(slot) }"
+                            >
+                              Upload
+                            </UButton>
+                            <UButton
+                              size="xs"
+                              color="neutral"
+                              variant="ghost"
+                              icon="i-lucide-x"
+                              @click="clearCampaignImage(slot)"
+                            >
+                              Clear
+                            </UButton>
+                          </div>
+                        </div>
+                        <div class="text-[11px] text-dimmed">
+                          Keys: <code>{{ slot.urlKey }}</code>, <code>{{ slot.altKey }}</code>
+                        </div>
+                        <UInput
+                          :model-value="readDynamicDataString(slot.urlKey)"
+                          class="w-full"
+                          placeholder="https://.../image.jpg"
+                          @update:model-value="(value) => updateDynamicDataString(slot.urlKey, String(value ?? ''))"
+                        />
+                        <UInput
+                          :model-value="readDynamicDataString(slot.altKey)"
+                          class="w-full"
+                          placeholder="Alt text"
+                          @update:model-value="(value) => updateDynamicDataString(slot.altKey, String(value ?? ''))"
+                        />
+                        <img
+                          v-if="readDynamicDataString(slot.urlKey)"
+                          :src="readDynamicDataString(slot.urlKey)"
+                          :alt="readDynamicDataString(slot.altKey) || `${slot.label} preview`"
+                          class="w-full max-h-28 object-cover rounded border border-default/70"
+                        >
+                      </div>
+                    </div>
                   </div>
                   <UTextarea
                     v-model="draft.dynamicDataJsonText"
