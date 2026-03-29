@@ -35,8 +35,6 @@ useSeoMeta({
 
 <template>
   <UApp>
-    <NuxtLoadingIndicator />
-
     <NuxtLayout>
       <NuxtPage
         :transition="pageTransition"
