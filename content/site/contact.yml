@@ -1,22 +1,14 @@
 detailsPanel:
   title: Studio details
-  intro: Studio location and contact details for planning your session.
-followupPanel:
-  title: What happens after you send
-  body: Messages go to the studio inbox through the server-side contact endpoint. The reply will come back to the email you enter below, so use the address you actually want us to answer.
 formPanel:
   title: Send a message
   description: Share what you are planning, what you need help with, and how best to reach you back.
   submittedTitle: Message sent
   submittedBody: Your note is in the queue. We will reply to the email you provided as soon as we can.
   submitLabel: Send message
-hero:
-  kicker: Contact
-  title: Reach out before the next shoot comes together.
-  description: Use this page for membership questions, booking help, studio fit checks, or anything else that helps you decide whether FO Studio matches the way you work.
 mapPanel:
-  title: Find the studio
-  description: Use the map for quick routing, parking planning, and client arrival coordination.
+  title: null
+  description: null
 reasonsPanel:
   title: ""
   items: []
@@ -34,7 +26,7 @@ seo:
   og:
     title: Contact FO Studio | Los Angeles Photo Studio
     description: Reach out for membership and booking support.
-    image: /images/sky.webp
+    image: null
     type: website
   twitter:
     card: summary_large_image
