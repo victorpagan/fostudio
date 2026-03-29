@@ -41,13 +41,13 @@ seo:
   og:
     title: Included Studio Equipment & Lighting | FO Studio Los Angeles
     description: Lighting, grip, and production essentials included.
-    image: /images/sky.webp
+    image: /images/main-banner.webp
     type: website
   twitter:
     card: summary_large_image
     title: Included Studio Equipment & Lighting | FO Studio Los Angeles
     description: Lighting, grip, and production essentials included.
-    image: /images/sky.webp
+    image: /images/main-banner.webp
   schema:
     pageType: ItemPage
 title: Equipment

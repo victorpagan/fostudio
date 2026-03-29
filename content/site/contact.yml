@@ -39,13 +39,13 @@ seo:
   og:
     title: Contact FO Studio | Los Angeles Photo Studio
     description: Reach out for membership and booking support.
-    image: null
+    image: /images/main-banner.webp
     type: website
   twitter:
     card: summary_large_image
     title: Contact FO Studio | Los Angeles Photo Studio
     description: Reach out for membership and booking support.
-    image: /images/sky.webp
+    image: /images/main-banner.webp
   schema:
     pageType: ContactPage
 title: Contact

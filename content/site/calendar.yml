@@ -27,13 +27,13 @@ seo:
   og:
     title: Studio Availability Calendar | FO Studio Los Angeles
     description: View availability and book the right way for your workflow.
-    image: /images/sky.webp
+    image: /images/main-banner.webp
     type: website
   twitter:
     card: summary_large_image
     title: Studio Availability Calendar | FO Studio Los Angeles
     description: View availability and book the right way for your workflow.
-    image: /images/sky.webp
+    image: /images/main-banner.webp
   schema:
     pageType: WebPage
 title: Calendar

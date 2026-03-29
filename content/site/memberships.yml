@@ -41,13 +41,13 @@ seo:
   og:
     title: Photo Studio Membership Plans in Los Angeles | FO Studio
     description: Compare tiers, credits, and booking windows.
-    image: /images/sky.webp
+    image: /images/main-banner.webp
     type: website
   twitter:
     card: summary_large_image
     title: Photo Studio Membership Plans in Los Angeles | FO Studio
     description: Compare tiers, credits, and booking windows.
-    image: /images/sky.webp
+    image: /images/main-banner.webp
   schema:
     pageType: CollectionPage
 title: Memberships

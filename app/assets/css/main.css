@@ -1043,10 +1043,10 @@ h6 {
   justify-content: center;
   position: relative;
   border-radius: 0.8rem;
-  clip-path: polygon(0 0, calc(100% - 0.9rem) 0, calc(100% - 0.9rem) 0.9rem, 100% 0.9rem, 100% 100%, 0 100%);
+  clip-path: polygon(0 0, calc(100% - 1.02rem) 0, calc(100% - 1.02rem) 1.02rem, 100% 1.02rem, 100% 100%, 0 100%);
   border: 0;
   background: #1a1a1a;
-  padding: 0.68rem 1.3rem 0.68rem 1.15rem;
+  padding: 0.68rem 1.52rem 0.68rem 1.15rem;
   font-size: 0.83rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -1062,11 +1062,12 @@ h6 {
 
 .landing-hero-cta-arrow {
   position: absolute;
-  top: -0.58rem;
-  right: -0.72rem;
-  font-size: 0.72rem;
+  top: 0.19rem;
+  right: 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 700;
   line-height: 1;
-  color: white;
+  color: var(--gruv-accent);
   pointer-events: none;
   z-index: 4;
 }
@@ -2796,8 +2797,9 @@ h6 {
   }
 
   .landing-hero-cta-arrow {
-    top: -0.48rem;
-    right: -0.56rem;
+    top: 0.17rem;
+    right: 0.18rem;
+    font-size: 0.72rem;
   }
 
   .landing-hero-campaign-hint {

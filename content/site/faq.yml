@@ -46,13 +46,13 @@ seo:
   og:
     title: FO Studio FAQ | Memberships, Credits, Booking & Holds
     description: Clear answers before your next shoot.
-    image: /images/sky.webp
+    image: /images/main-banner.webp
     type: website
   twitter:
     card: summary_large_image
     title: FO Studio FAQ | Memberships, Credits, Booking & Holds
     description: Clear answers before your next shoot.
-    image: /images/sky.webp
+    image: /images/main-banner.webp
   schema:
     pageType: FAQPage
 title: Faq

@@ -194,15 +194,12 @@ function tierLead(tier: Tier) {
   return tier.description ?? 'Flexible access built for real production schedules.'
 }
 
-function isPeakRateBullet(value: string) {
-  const normalized = value.toLowerCase()
-  return normalized.includes('peak')
-}
-
-const peakRateBullets = computed(() => {
+const creditsBullets = computed(() => {
   const source = membershipsContent.value.creditsExplainer.bullets ?? []
-  const filtered = source.filter(isPeakRateBullet)
-  if (filtered.length) return filtered
+  const normalized = source
+    .map(value => String(value).trim())
+    .filter(Boolean)
+  if (normalized.length) return normalized
   return ['Peak-time sessions consume credits at a higher tier multiplier while off-peak hours stay at the base rate.']
 })
 
@@ -359,7 +356,7 @@ async function submitWaitlist() {
             </h2>
             <div class="memberships-info-list">
               <div
-                v-for="bullet in peakRateBullets"
+                v-for="bullet in creditsBullets"
                 :key="bullet"
                 class="memberships-credits-item"
               >
