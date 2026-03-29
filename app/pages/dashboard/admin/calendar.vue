@@ -6,6 +6,7 @@ type CalendarSettings = {
   peakStartHour: number
   peakEndHour: number
   guestPeakMultiplier: number
+  guestBookingRatePerCreditCents: number
   guestBookingWindowDays: number
   guestBookingStartHour: number
   guestBookingEndHour: number
@@ -35,6 +36,7 @@ const calendarSettings = reactive<CalendarSettings>({
   peakStartHour: 11,
   peakEndHour: 16,
   guestPeakMultiplier: 2,
+  guestBookingRatePerCreditCents: 3500,
   guestBookingWindowDays: 7,
   guestBookingStartHour: 11,
   guestBookingEndHour: 19,
@@ -68,12 +70,26 @@ const selectedPeakDays = computed<PeakDayOption[]>({
   }
 })
 
+const guestBookingRatePerCreditDollars = computed<number>({
+  get() {
+    const cents = Number(calendarSettings.guestBookingRatePerCreditCents ?? 0)
+    if (!Number.isFinite(cents)) return 0
+    return cents / 100
+  },
+  set(value) {
+    const normalized = Number(value)
+    if (!Number.isFinite(normalized)) return
+    calendarSettings.guestBookingRatePerCreditCents = Math.max(100, Math.round(normalized * 100))
+  }
+})
+
 const { pending, refresh } = await useAsyncData('admin:calendar:settings', async () => {
   const res = await $fetch<{ settings: CalendarSettings }>('/api/admin/calendar/settings')
   calendarSettings.peakDays = Array.isArray(res.settings.peakDays) ? res.settings.peakDays : [1, 2, 3, 4]
   calendarSettings.peakStartHour = Number(res.settings.peakStartHour ?? 11)
   calendarSettings.peakEndHour = Number(res.settings.peakEndHour ?? 16)
   calendarSettings.guestPeakMultiplier = Number(res.settings.guestPeakMultiplier ?? 2)
+  calendarSettings.guestBookingRatePerCreditCents = Number(res.settings.guestBookingRatePerCreditCents ?? 3500)
   calendarSettings.guestBookingWindowDays = Number(res.settings.guestBookingWindowDays ?? 7)
   calendarSettings.guestBookingStartHour = Number(res.settings.guestBookingStartHour ?? 11)
   calendarSettings.guestBookingEndHour = Number(res.settings.guestBookingEndHour ?? 19)
@@ -149,6 +165,7 @@ async function saveCalendarSettings() {
         peakStartHour: calendarSettings.peakStartHour,
         peakEndHour: calendarSettings.peakEndHour,
         guestPeakMultiplier: calendarSettings.guestPeakMultiplier,
+        guestBookingRatePerCreditCents: calendarSettings.guestBookingRatePerCreditCents,
         guestBookingWindowDays: calendarSettings.guestBookingWindowDays,
         guestBookingStartHour: calendarSettings.guestBookingStartHour,
         guestBookingEndHour: calendarSettings.guestBookingEndHour,
@@ -271,6 +288,9 @@ async function deleteBlock(id: string) {
             </UFormField>
             <UFormField label="Guest peak multiplier">
               <UInput v-model.number="calendarSettings.guestPeakMultiplier" type="number" step="0.25" min="1" />
+            </UFormField>
+            <UFormField label="Guest rate per credit ($)">
+              <UInput v-model.number="guestBookingRatePerCreditDollars" type="number" min="1" step="0.01" />
             </UFormField>
             <UFormField label="Guest booking window (days)">
               <UInput v-model.number="calendarSettings.guestBookingWindowDays" type="number" min="1" max="60" />

@@ -235,7 +235,7 @@ function formatPeakCredits(value: number) {
       :dismissible="!guestSubmitting"
     >
       <template #content>
-        <UCard class="studio-panel">
+        <UCard class="studio-panel flex max-h-[calc(100dvh-1.5rem)] flex-col sm:max-h-[calc(100dvh-3rem)]">
           <template #header>
             <div class="flex items-center justify-between">
               <div>
@@ -257,7 +257,7 @@ function formatPeakCredits(value: number) {
             </div>
           </template>
 
-          <div class="space-y-4">
+          <div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
             <!-- Time -->
             <div
               v-if="selectedSlot"

@@ -270,6 +270,9 @@ function eventDidMount(arg: { el: HTMLElement, event: { end?: Date | null, exten
 }
 
 const canSelect = computed(() => Boolean(instance?.vnode.props?.onSelect))
+const defaultInitialView = import.meta.client && window.matchMedia('(max-width: 767px)').matches
+  ? 'timeGridDay'
+  : 'timeGridWeek'
 const dayHeaderFormat = {
   weekday: 'short',
   month: 'short',
@@ -375,7 +378,7 @@ const calendarSlotMaxTime = computed(() => {
 
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
-  initialView: 'timeGridWeek',
+  initialView: defaultInitialView,
   timeZone: 'UTC',
   selectable: canSelect.value,
   validRange: memberValidRange.value,
