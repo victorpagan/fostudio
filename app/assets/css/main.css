@@ -1963,14 +1963,30 @@ h6 {
   font-weight: 600;
 }
 
-.availability-chip-gradient {
-  background: var(--gruv-ink-0);
-  color: var(--gruv-bg-0);
-  box-shadow: none;
+.availability-chip-own {
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 49, 92, 0.95) 0,
+      rgba(255, 49, 92, 0.95) 8px,
+      rgba(216, 31, 73, 0.96) 8px,
+      rgba(216, 31, 73, 0.96) 16px
+    );
+  color: #fbf1c7;
+  border: 1px solid color-mix(in srgb, #d81f49 72%, var(--gruv-line) 28%);
 }
 
-.availability-chip-gradient .availability-dot {
-  background: var(--gruv-bg-0) !important;
+.dark .availability-chip-own {
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(239, 107, 131, 0.92) 0,
+      rgba(239, 107, 131, 0.92) 8px,
+      rgba(201, 88, 109, 0.92) 8px,
+      rgba(201, 88, 109, 0.92) 16px
+    );
+  color: #f7f2e8;
+  border: 1px solid rgba(233, 133, 156, 0.58);
 }
 
 .availability-chip-peak {
@@ -2015,6 +2031,10 @@ h6 {
       #c17738 8px
     );
   border: 1px solid rgba(111, 62, 20, 0.46);
+}
+
+.availability-dot-own {
+  background: #fbf1c7;
 }
 
 .availability-shell .fc {
@@ -2253,16 +2273,39 @@ h6 {
 }
 
 .availability-shell .fc .fc-event.fc-event-own {
-  background: var(--gruv-ink-0);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 49, 92, 0.95) 0,
+      rgba(255, 49, 92, 0.95) 8px,
+      rgba(216, 31, 73, 0.96) 8px,
+      rgba(216, 31, 73, 0.96) 16px
+    );
   color: #fbf1c7;
-  border: 0;
+  border: 1px solid rgba(216, 31, 73, 0.9);
   box-shadow: none;
   cursor: pointer;
 }
 
 .availability-shell .fc .fc-event.fc-event-own:hover {
-  outline: 2px solid rgba(26, 26, 26, 0.46);
+  outline: 2px solid rgba(216, 31, 73, 0.55);
   outline-offset: 1px;
+}
+
+.dark .availability-shell .fc .fc-event.fc-event-own {
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(239, 107, 131, 0.92) 0,
+      rgba(239, 107, 131, 0.92) 8px,
+      rgba(201, 88, 109, 0.92) 8px,
+      rgba(201, 88, 109, 0.92) 16px
+    );
+  border: 1px solid rgba(229, 124, 147, 0.72);
+}
+
+.dark .availability-shell .fc .fc-event.fc-event-own:hover {
+  outline: 2px solid rgba(239, 133, 156, 0.58);
 }
 
 .availability-shell .fc .fc-event.fc-event-past {

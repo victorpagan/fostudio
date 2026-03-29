@@ -510,9 +510,10 @@ onUnmounted(() => {
       <div class="availability-meta">
         <div
           v-if="isMemberFeed && ownBookingCount"
-          class="availability-chip availability-chip-gradient"
+          class="availability-chip availability-chip-own"
         >
-          My Bookings ({{ ownBookingCount }})
+          <span class="availability-dot availability-dot-own" />
+          Owned bookings ({{ ownBookingCount }})
         </div>
         <div
           v-if="peakChip"
