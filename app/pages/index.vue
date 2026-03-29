@@ -76,7 +76,7 @@ const fallbackLanding: SiteLandingContent = {
       '25x30 ft cyclorama with 20+ ft ceilings',
       'High-quality booking dashboard with live calendar, extensions, and holds',
       'Included equipment, backdrop paper, and baseline consumables',
-      'Secure access flow with 24/7 member entry'
+      'Ground-floor access with straightforward loading and easier parking outside the dense downtown grid'
     ]
   },
   gallery: {
@@ -340,7 +340,7 @@ function tierAccentClass(tierId: string, index: number) {
                   {{ landingContent.infoCard.body }}
                 </p>
                 <p class="landing-differentiator-affordability">
-                  Built to stay affordable for recurring production, not priced like a one-off rental trap.
+                  Built to stay affordable for recurring production, with ground-floor loading and easier parking than the typical downtown studio run.
                 </p>
               </div>
               <div class="landing-differentiator-cards">
