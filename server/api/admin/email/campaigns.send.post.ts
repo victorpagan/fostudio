@@ -385,6 +385,8 @@ export default defineEventHandler(async (event) => {
     Object.assign(payload, asRecord(renderedDynamicData))
     // Campaign-level template id must always win over any dynamic data key collision.
     payload.templateId = templateId
+    // Campaign copy should come from the campaign itself, not event-registry overrides.
+    payload.skipRegistryCopyOverrides = true
 
     const renderedSubject = renderTemplate(String(campaign.subject_template ?? ''), payload).trim()
     const renderedPreheader = renderTemplate(String(campaign.preheader_template ?? ''), payload).trim()
