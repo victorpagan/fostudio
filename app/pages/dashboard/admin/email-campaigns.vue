@@ -66,6 +66,8 @@ type CampaignDraft = {
 
 type CampaignSendResponse = {
   ok: boolean
+  testSend?: boolean
+  testRecipient?: string | null
   campaignId: string
   campaignName: string
   eventType: string
@@ -84,8 +86,10 @@ type CampaignSendResponse = {
 const toast = useToast()
 const saving = ref(false)
 const sending = ref(false)
+const sendingTest = ref(false)
 const selectingTemplate = ref(false)
 const selectedCampaignId = ref<string | null>(null)
+const testRecipient = ref('')
 const draft = reactive<CampaignDraft>({
   id: null,
   name: '',
@@ -496,6 +500,50 @@ async function sendCampaign() {
     })
   } finally {
     sending.value = false
+  }
+}
+
+async function sendCampaignTest() {
+  if (!draft.sendgridTemplateId.trim()) {
+    toast.add({
+      title: 'Template id required',
+      description: 'Set a SendGrid template id before sending a test.',
+      color: 'warning'
+    })
+    return
+  }
+
+  if (!draft.id) {
+    const saved = await saveCampaign()
+    if (!saved || !draft.id) return
+  }
+
+  sendingTest.value = true
+  try {
+    const response = await $fetch<CampaignSendResponse>('/api/admin/email/campaigns.send', {
+      method: 'POST',
+      body: {
+        campaignId: draft.id,
+        markSent: false,
+        testSend: true,
+        testRecipient: testRecipient.value.trim() || undefined
+      }
+    })
+
+    const recipientLabel = response.testRecipient ?? (testRecipient.value.trim() || 'your admin email')
+    toast.add({
+      title: 'Test email sent',
+      description: `Test campaign sent to ${recipientLabel}.`,
+      color: 'success'
+    })
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not send test email',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    sendingTest.value = false
   }
 }
 
@@ -1076,6 +1124,17 @@ watch(() => draft.templateId, () => {
                 />
               </UFormField>
 
+              <UFormField
+                label="Test recipient"
+                description="Optional. Leave blank to send to your admin account email."
+              >
+                <UInput
+                  v-model="testRecipient"
+                  class="w-full"
+                  placeholder="you@example.com"
+                />
+              </UFormField>
+
               <div class="grid gap-3 md:grid-cols-2">
                 <UFormField label="Subject template">
                   <UInput
@@ -1206,6 +1265,16 @@ watch(() => draft.templateId, () => {
                   @click="() => { void saveCampaign() }"
                 >
                   Save draft
+                </UButton>
+                <UButton
+                  color="neutral"
+                  variant="soft"
+                  icon="i-lucide-flask-conical"
+                  :loading="sendingTest"
+                  :disabled="isArchivedDraft || !draft.sendgridTemplateId.trim()"
+                  @click="sendCampaignTest"
+                >
+                  Send test
                 </UButton>
                 <UButton
                   icon="i-lucide-send"

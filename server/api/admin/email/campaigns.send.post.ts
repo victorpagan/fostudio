@@ -14,7 +14,9 @@ const SEND_CONCURRENCY = 6
 
 const bodySchema = z.object({
   campaignId: z.string().uuid(),
-  markSent: z.coerce.boolean().default(true)
+  markSent: z.coerce.boolean().default(true),
+  testSend: z.coerce.boolean().default(false),
+  testRecipient: z.string().trim().email().max(320).optional()
 })
 
 type CampaignRow = {
@@ -151,7 +153,7 @@ async function runWithConcurrency<T>(
 }
 
 export default defineEventHandler(async (event) => {
-  const { supabase } = await requireServerAdmin(event)
+  const { supabase, user } = await requireServerAdmin(event)
   const db = supabase as unknown as {
     from: (table: string) => {
       select: (columns: string) => {
@@ -197,7 +199,28 @@ export default defineEventHandler(async (event) => {
 
   const recipientsByEmail = new Map<string, RecipientContext>()
 
-  if (campaign.include_membership_recipients) {
+  if (body.testSend) {
+    const testRecipient = normalizeMailRecipient(body.testRecipient) ?? normalizeMailRecipient(user.email)
+    if (!testRecipient) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Test recipient is required (or admin user must have an email).'
+      })
+    }
+
+    recipientsByEmail.set(testRecipient, {
+      recipient: testRecipient,
+      source: 'extra',
+      userId: null,
+      customerName: null,
+      tierName: null,
+      cadence: null,
+      status: null,
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      doorCode: null
+    })
+  } else if (campaign.include_membership_recipients) {
     const membershipsResult = await db
       .from('memberships')
       .select('user_id,tier,cadence,status,current_period_start,current_period_end,updated_at,created_at')
@@ -262,22 +285,24 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  for (const extra of campaign.additional_recipients ?? []) {
-    const recipient = normalizeMailRecipient(extra)
-    if (!recipient) continue
-    if (recipientsByEmail.has(recipient)) continue
-    recipientsByEmail.set(recipient, {
-      recipient,
-      source: 'extra',
-      userId: null,
-      customerName: null,
-      tierName: null,
-      cadence: null,
-      status: null,
-      currentPeriodStart: null,
-      currentPeriodEnd: null,
-      doorCode: null
-    })
+  if (!body.testSend) {
+    for (const extra of campaign.additional_recipients ?? []) {
+      const recipient = normalizeMailRecipient(extra)
+      if (!recipient) continue
+      if (recipientsByEmail.has(recipient)) continue
+      recipientsByEmail.set(recipient, {
+        recipient,
+        source: 'extra',
+        userId: null,
+        customerName: null,
+        tierName: null,
+        cadence: null,
+        status: null,
+        currentPeriodStart: null,
+        currentPeriodEnd: null,
+        doorCode: null
+      })
+    }
   }
 
   const recipientContexts = [...recipientsByEmail.values()]
@@ -421,7 +446,7 @@ export default defineEventHandler(async (event) => {
     failed: failedRecipients.length
   }
 
-  if (body.markSent) {
+  if (body.markSent && !body.testSend) {
     const nextStatus = sentCount > 0 ? 'sent' : campaign.status
     const updateResult = await db
       .from('mail_campaigns')
@@ -442,6 +467,8 @@ export default defineEventHandler(async (event) => {
 
   return {
     ok: true,
+    testSend: body.testSend,
+    testRecipient: body.testSend ? recipientContexts[0]?.recipient ?? null : null,
     campaignId: campaign.id,
     campaignName: campaign.name,
     eventType: campaign.event_type,
