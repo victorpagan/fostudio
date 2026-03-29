@@ -6,7 +6,7 @@ definePageMeta({
 </script>
 
 <template>
-  <div class="dashboard-route-shell">
+  <div class="contents">
     <NuxtPage />
   </div>
 </template>
