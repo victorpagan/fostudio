@@ -72,6 +72,11 @@ const REGISTERED_MAIL_EVENTS: RegisteredMailEvent[] = [
     description: 'Guest booking confirmation with access details.'
   },
   {
+    eventType: 'contact.formSubmitted',
+    category: 'critical',
+    description: 'Contact form submission delivered to studio admins.'
+  },
+  {
     eventType: 'mailing.memberBroadcast',
     category: 'non_critical',
     description: 'Manual member broadcast list email sent by admin.'
@@ -215,6 +220,16 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'calendarUrl',
     'manageUrl',
     'studioAddress'
+  ],
+  'contact.formSubmitted': [
+    'submittedAt',
+    'source',
+    'replyTo',
+    'contactName',
+    'contactEmail',
+    'contactPhone',
+    'contactSubject',
+    'contactMessage'
   ],
   'mailing.memberBroadcast': [
     'customerName',
@@ -403,6 +418,26 @@ const EVENT_DEFAULT_COPY: Record<string, MailTemplateDefaultCopy> = {
 <p style="margin:0 0 8px;"><a href="{{ calendarUrl }}">Add to calendar</a></p>
 <p style="margin:0 0 8px;"><a href="{{ manageUrl }}">View booking details</a></p>
 <p style="margin:0;"><strong>Studio address:</strong> {{ studioAddress }}</p>
+</div>`
+  },
+  'contact.formSubmitted': {
+    subjectTemplate: 'Contact form: {{ contactSubject }}',
+    preheaderTemplate: 'New contact request from {{ contactName }}.',
+    bodyTemplate: `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;max-width:640px;margin:0 auto;">
+<h1 style="font-size:24px;margin:0 0 12px;">New contact request</h1>
+<p style="margin:0 0 14px;">A new website contact form submission was received.</p>
+<div style="background:#f6f6f6;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin:0 0 16px;">
+<p style="margin:0 0 8px;"><strong>Submitted:</strong> {{ submittedAt }}</p>
+<p style="margin:0 0 8px;"><strong>Name:</strong> {{ contactName }}</p>
+<p style="margin:0 0 8px;"><strong>Email:</strong> {{ contactEmail }}</p>
+<p style="margin:0 0 8px;"><strong>Phone:</strong> {{ contactPhone }}</p>
+<p style="margin:0;"><strong>Subject:</strong> {{ contactSubject }}</p>
+</div>
+<p style="margin:0 0 8px;"><strong>Message:</strong></p>
+<div style="white-space:pre-wrap;background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:12px 14px;margin:0 0 16px;">
+{{ contactMessage }}
+</div>
+<p style="margin:0;">Reply to: <a href="mailto:{{ replyTo }}">{{ replyTo }}</a></p>
 </div>`
   },
   'mailing.memberBroadcast': {

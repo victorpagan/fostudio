@@ -1,4 +1,7 @@
 import { z } from 'zod'
+import { serverSupabaseServiceRole } from '#supabase/server'
+import { sendViaFomailer } from '~~/server/utils/mail/fomailer'
+import { normalizeMailRecipient } from '~~/server/utils/mail/adminPayload'
 
 const contactSchema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -9,7 +12,16 @@ const contactSchema = z.object({
   company: z.string().trim().max(200).optional().or(z.literal(''))
 })
 
-type ContactPayload = z.infer<typeof contactSchema>
+type MailTemplateRegistryRow = {
+  event_type: string
+  sendgrid_template_id: string
+  active: boolean
+}
+type MailAdminCopyPreferencesRow = {
+  recipients: string[] | null
+}
+
+const CONTACT_EVENT_TYPE = 'contact.formSubmitted'
 
 function escapeHtml(value: string) {
   return value
@@ -20,78 +32,9 @@ function escapeHtml(value: string) {
     .replaceAll(/'/g, '&#39;')
 }
 
-function toPlainText(body: ContactPayload) {
-  return [
-    'New FO Studio contact request',
-    '',
-    `Name: ${body.name}`,
-    `Email: ${body.email}`,
-    `Phone: ${body.phone || 'Not provided'}`,
-    `Subject: ${body.subject}`,
-    '',
-    'Message:',
-    body.message
-  ].join('\n')
-}
-
-function toHtml(body: ContactPayload) {
-  return `
-    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#282828;">
-      <h2 style="margin:0 0 16px;">New FO Studio contact request</h2>
-      <p><strong>Name:</strong> ${escapeHtml(body.name)}</p>
-      <p><strong>Email:</strong> ${escapeHtml(body.email)}</p>
-      <p><strong>Phone:</strong> ${escapeHtml(body.phone || 'Not provided')}</p>
-      <p><strong>Subject:</strong> ${escapeHtml(body.subject)}</p>
-      <p><strong>Message:</strong></p>
-      <div style="white-space:pre-wrap;border:1px solid #d5c4a1;border-radius:12px;padding:12px;background:#fbf1c7;">
-        ${escapeHtml(body.message)}
-      </div>
-    </div>
-  `
-}
-
-async function sendViaResend(config: ReturnType<typeof useRuntimeConfig>, body: ContactPayload) {
-  if (!config.resendApiKey || !config.contactToEmail) {
-    return false
-  }
-
-  await $fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.resendApiKey}`
-    },
-    body: {
-      from: config.contactFromEmail,
-      to: [config.contactToEmail],
-      reply_to: body.email,
-      subject: `FO Studio contact: ${body.subject}`,
-      text: toPlainText(body),
-      html: toHtml(body)
-    }
-  })
-
-  return true
-}
-
-async function sendViaWebhook(config: ReturnType<typeof useRuntimeConfig>, body: ContactPayload) {
-  if (!config.contactWebhookUrl) {
-    return false
-  }
-
-  await $fetch(config.contactWebhookUrl, {
-    method: 'POST',
-    body: {
-      source: 'fostudio-contact-form',
-      submittedAt: new Date().toISOString(),
-      ...body
-    }
-  })
-
-  return true
-}
-
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
+  const supabase = serverSupabaseServiceRole(event)
   const parsed = contactSchema.safeParse(await readBody(event))
 
   if (!parsed.success) {
@@ -109,12 +52,98 @@ export default defineEventHandler(async (event) => {
     return { ok: true }
   }
 
-  try {
-    const sentByResend = await sendViaResend(config, body)
-    if (sentByResend) return { ok: true, delivery: 'resend' }
+  const [{ data: templateRowRaw, error: templateError }, { data: prefRowRaw, error: prefError }] = await Promise.all([
+    supabase
+      .from('mail_template_registry')
+      .select('event_type,sendgrid_template_id,active')
+      .eq('event_type', CONTACT_EVENT_TYPE)
+      .maybeSingle(),
+    supabase
+      .from('mail_admin_copy_preferences')
+      .select('recipients')
+      .eq('scope', 'global')
+      .maybeSingle()
+  ])
 
-    const sentByWebhook = await sendViaWebhook(config, body)
-    if (sentByWebhook) return { ok: true, delivery: 'webhook' }
+  if (templateError) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: `Could not load contact mail template: ${templateError.message}`
+    })
+  }
+  if (prefError) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: `Could not load admin mail recipients: ${prefError.message}`
+    })
+  }
+
+  const templateRow = (templateRowRaw ?? null) as MailTemplateRegistryRow | null
+  const templateId = String(templateRow?.sendgrid_template_id ?? '').trim()
+  if (!templateId) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Contact form email template is not configured yet.'
+    })
+  }
+  if (templateRow?.active === false) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Contact form email delivery is temporarily disabled.'
+    })
+  }
+
+  const prefRow = (prefRowRaw ?? null) as MailAdminCopyPreferencesRow | null
+  const prefRecipients = Array.isArray(prefRow?.recipients)
+    ? prefRow.recipients.map(value => normalizeMailRecipient(value)).filter(Boolean) as string[]
+    : []
+  const fallbackRecipient = normalizeMailRecipient(config.contactToEmail as string | undefined)
+  const recipients = [...new Set([
+    ...prefRecipients,
+    ...(fallbackRecipient ? [fallbackRecipient] : [])
+  ])]
+
+  if (recipients.length === 0) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Contact form recipients are not configured yet.'
+    })
+  }
+
+  const submittedAt = new Date().toISOString()
+  const payloadBase = {
+    eventType: CONTACT_EVENT_TYPE,
+    templateId,
+    source: 'site.contact',
+    submittedAt,
+    replyTo: body.email.trim().toLowerCase(),
+    contactName: escapeHtml(body.name),
+    contactEmail: escapeHtml(body.email.trim().toLowerCase()),
+    contactPhone: escapeHtml(body.phone || 'Not provided'),
+    contactSubject: escapeHtml(body.subject),
+    contactMessage: escapeHtml(body.message)
+  }
+
+  let delivered = 0
+  try {
+    for (const recipient of recipients) {
+      const sendResult = await sendViaFomailer(event, {
+        type: CONTACT_EVENT_TYPE,
+        payload: {
+          ...payloadBase,
+          to: recipient
+        }
+      })
+
+      if (!sendResult.ok) {
+        throw createError({
+          statusCode: 502,
+          statusMessage: `Contact delivery failed before upstream request: ${sendResult.reason}`
+        })
+      }
+
+      delivered += 1
+    }
   } catch (error) {
     console.error('Contact form delivery failed', error)
     throw createError({
@@ -123,8 +152,9 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  throw createError({
-    statusCode: 503,
-    statusMessage: 'Contact form is not configured yet. Please add a delivery method first.'
-  })
+  return {
+    ok: true,
+    delivery: 'mail_registry',
+    delivered
+  }
 })
