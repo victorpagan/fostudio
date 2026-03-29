@@ -8,7 +8,7 @@ gallery:
     section: ""
     brand: FO STUDIO
     title: From Test To Campaign
-    subtitle: This 800 sqft studio can handle everything you need
+    subtitle: This studio can handle everything you need
   images:
     - src: /images/studio-hero-1.jpg
       alt: Studio wide shot with cyc wall
@@ -37,13 +37,13 @@ hero:
     - No startup fees
 infoCard:
   title: A photo studio built for you.
-  body: We keep the workflow simple, the access flexible, and the monthly cost predictable so you and your crew can keep shooting without operational drag. Run production through a high-quality dashboard with live calendar visibility, rescheduling, booking extensions, and overnight holds.
-  affordabilityNote: Built to stay affordable for recurring production, with ground-floor loading and easier parking than the typical downtown studio run.
+  body: Our focus is to provide the best, fully kitted studio for the amateur photographer all the way up to the high volume commercial teams. Large shooting space, client seating, makeup area, all inside our very own LA Film Lab.
+  affordabilityNote: Built to stay affordable for recurring production, with ground floor loading and easier free parking than the typical downtown studio session.
   features:
-    - 25x30 ft cyclorama with 20+ ft ceilings for commercial and editorial setups
+    - 25x30 ft cyclorama with 20+ ft ceilings at 800 sqft for commercial and editorial setups
     - As short as 30 minute bookings for tests, pickups, and pre setups
     - High quality booking dashboard with live calendar, booking extensions, and overnight setup holds
-    - Built by working professional photographers so you always know we value our space
+    - Built and used by working professional photographers so you always know the space is ready for what you can throw at it
 spotlight:
   label: PRODUCTION FIRST VALUE
   title: The turnkey studio that keeps you on track.

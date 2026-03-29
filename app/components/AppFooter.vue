@@ -1,7 +1,5 @@
 <script setup lang="ts">
 const year = new Date().getFullYear()
-const colorMode = useColorMode()
-const isDarkMode = computed(() => colorMode.value === 'dark')
 const footerAddressLines = [
   'FO Studio',
   '3131 N. San Fernando Rd.',
@@ -13,10 +11,6 @@ const footerLinks = [
   { label: 'Contact', to: '/contact' },
   { label: 'Member login', to: '/login' }
 ]
-
-function toggleColorMode() {
-  colorMode.preference = isDarkMode.value ? 'light' : 'dark'
-}
 </script>
 
 <template>
@@ -62,14 +56,11 @@ function toggleColorMode() {
             <span>@fostudio.la</span>
           </a>
 
-          <UButton
+          <UColorModeButton
             color="neutral"
             variant="ghost"
             size="sm"
-            :icon="isDarkMode ? 'i-lucide-moon' : 'i-lucide-sun'"
             class="site-footer-theme-toggle"
-            :aria-label="isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'"
-            @click="toggleColorMode"
           />
         </div>
       </div>

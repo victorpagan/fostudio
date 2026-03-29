@@ -1491,6 +1491,10 @@ h6 {
   max-width: 18ch;
 }
 
+.landing-accent-title {
+  color: color-mix(in srgb, var(--gruv-accent) 74%, var(--gruv-ink-0) 26%);
+}
+
 .landing-differentiator-copy .editorial-body {
   margin-top: 0.8rem;
   max-width: 58ch;
@@ -1502,6 +1506,10 @@ h6 {
   font-size: 0.88rem;
   line-height: 1.7;
   color: var(--gruv-ink-2);
+}
+
+.landing-accent-note {
+  color: color-mix(in srgb, var(--gruv-accent) 66%, var(--gruv-ink-1) 34%);
 }
 
 .landing-differentiator-cards {
@@ -1524,6 +1532,10 @@ h6 {
 
 .landing-differentiator-card:nth-last-child(-n + 2) {
   border-bottom: 0;
+}
+
+.landing-differentiator-card:nth-child(4) {
+  background: color-mix(in srgb, var(--gruv-accent) 16%, var(--gruv-bg-0) 84%);
 }
 
 .landing-differentiator-card-index {
@@ -1612,7 +1624,7 @@ h6 {
   font-size: 0.74rem;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(245, 245, 245, 0.9);
+  color: color-mix(in srgb, var(--gruv-accent) 86%, white 14%);
 }
 
 .landing-lead-overlay-copy {
@@ -1685,7 +1697,7 @@ h6 {
 }
 
 .landing-spotlight-overlay .editorial-label {
-  color: rgba(255, 255, 255, 0.84);
+  color: color-mix(in srgb, var(--gruv-accent) 82%, white 18%);
 }
 
 .landing-spotlight-title {

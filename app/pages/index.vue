@@ -88,7 +88,7 @@ const fallbackLanding: SiteLandingContent = {
   },
   infoCard: {
     title: 'FO Studio at a glance',
-    body: 'Built for production days, not logistics overhead. Run production through a high-quality dashboard with live calendar visibility, rescheduling, extensions, and holds. Reserve in 30-minute increments and keep setup continuity without adding line-item friction to every session.',
+    body: 'We keep the workflow simple, the access flexible, and the monthly cost predictable so you and your crew can keep shooting without operational drag. Run production through a high-quality dashboard with live calendar visibility, rescheduling, booking extensions, and overnight holds.',
     affordabilityNote: 'Built to stay affordable for recurring production, with ground-floor loading and easier parking than the typical downtown studio run.',
     features: [
       '25x30 ft cyclorama with 20+ ft ceilings',
@@ -151,7 +151,12 @@ const fallbackLanding: SiteLandingContent = {
 }
 
 const { data: siteLanding } = await useAsyncData('site:landing', async () => {
-  return await queryCollection('siteLanding').first()
+  try {
+    return await queryCollection('siteLanding').first()
+  } catch (error) {
+    console.warn('[site:landing] falling back to defaults because content query failed', error)
+    return null
+  }
 })
 
 function normalizeCta(input: unknown, fallback: LandingCta): LandingCta {
@@ -394,13 +399,13 @@ function tierAccentClass(tierId: string, index: number) {
                 <p class="editorial-label">
                   WHAT SETS FO STUDIO APART
                 </p>
-                <h2 class="editorial-title">
+                <h2 class="editorial-title landing-accent-title">
                   {{ landingContent.infoCard.title }}
                 </h2>
                 <p class="editorial-body">
                   {{ landingContent.infoCard.body }}
                 </p>
-                <p class="landing-differentiator-affordability">
+                <p class="landing-differentiator-affordability landing-accent-note">
                   {{ landingContent.infoCard.affordabilityNote }}
                 </p>
               </div>
