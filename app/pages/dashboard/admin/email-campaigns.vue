@@ -410,7 +410,7 @@ async function reloadCampaigns(options: { preserveSelection?: boolean } = {}) {
   }
 }
 
-async function saveCampaign() {
+async function saveCampaign(options: { silentSuccess?: boolean } = {}) {
   let dynamicData: Record<string, unknown>
   try {
     dynamicData = parseDynamicDataJson(draft.dynamicDataJsonText)
@@ -446,7 +446,9 @@ async function saveCampaign() {
 
     selectedCampaignId.value = result.campaign.id
     draft.id = result.campaign.id
-    toast.add({ title: 'Campaign saved', color: 'success' })
+    if (!options.silentSuccess) {
+      toast.add({ title: 'Campaign saved', color: 'success' })
+    }
     await reloadCampaigns({ preserveSelection: true })
     return true
   } catch (error: unknown) {
@@ -471,10 +473,8 @@ async function sendCampaign() {
     return
   }
 
-  if (!draft.id) {
-    const saved = await saveCampaign()
-    if (!saved || !draft.id) return
-  }
+  const saved = await saveCampaign({ silentSuccess: true })
+  if (!saved || !draft.id) return
 
   sending.value = true
   try {
@@ -513,10 +513,8 @@ async function sendCampaignTest() {
     return
   }
 
-  if (!draft.id) {
-    const saved = await saveCampaign()
-    if (!saved || !draft.id) return
-  }
+  const saved = await saveCampaign({ silentSuccess: true })
+  if (!saved || !draft.id) return
 
   sendingTest.value = true
   try {

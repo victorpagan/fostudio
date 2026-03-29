@@ -383,6 +383,8 @@ export default defineEventHandler(async (event) => {
 
     const renderedDynamicData = renderDynamicValue(asRecord(campaign.dynamic_data_json), payload)
     Object.assign(payload, asRecord(renderedDynamicData))
+    // Campaign-level template id must always win over any dynamic data key collision.
+    payload.templateId = templateId
 
     const renderedSubject = renderTemplate(String(campaign.subject_template ?? ''), payload).trim()
     const renderedPreheader = renderTemplate(String(campaign.preheader_template ?? ''), payload).trim()
