@@ -210,6 +210,17 @@ h6 {
   color: var(--gruv-accent);
 }
 
+.site-footer-social-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.site-footer-social-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
 .site-footer-theme-toggle {
   margin-left: 0.25rem;
   min-height: 1.75rem;

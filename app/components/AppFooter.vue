@@ -48,6 +48,20 @@ function toggleColorMode() {
             {{ l.label }}
           </NuxtLink>
 
+          <a
+            href="https://instagram.com/fostudio.la"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="site-footer-link site-footer-social-link"
+            aria-label="FO Studio on Instagram"
+          >
+            <UIcon
+              name="i-simple-icons-instagram"
+              class="site-footer-social-icon"
+            />
+            <span>@fostudio.la</span>
+          </a>
+
           <UButton
             color="neutral"
             variant="ghost"
