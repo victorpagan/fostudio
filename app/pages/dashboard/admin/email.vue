@@ -37,8 +37,7 @@ const recipientsInput = ref('')
 const testRecipient = ref('')
 const templates = ref<AdminMailTemplate[]>([])
 const availableVariablesByEvent = ref<Record<string, string[]>>({ '*': [] })
-const templateModalOpen = ref(false)
-const editingTemplateIndex = ref<number | null>(null)
+const selectedTemplateIndex = ref(0)
 const templateDraft = ref<AdminMailTemplate | null>(null)
 
 const adminCopies = reactive({
@@ -61,6 +60,18 @@ function applySettings(res: AdminEmailSettingsResponse) {
     bodyTemplate: template.bodyTemplate ?? ''
   }))
   availableVariablesByEvent.value = res.availableVariablesByEvent ?? { '*': [] }
+
+  if (templates.value.length === 0) {
+    selectedTemplateIndex.value = 0
+    templateDraft.value = null
+    return
+  }
+
+  if (selectedTemplateIndex.value >= templates.value.length) {
+    selectedTemplateIndex.value = 0
+  }
+
+  templateDraft.value = { ...templates.value[selectedTemplateIndex.value]! }
 }
 
 async function loadSettings(options: { silent?: boolean } = {}) {
@@ -580,24 +591,16 @@ function hasTemplateId(template: AdminMailTemplate) {
   return template.sendgridTemplateId.trim().length > 0
 }
 
-function openTemplateModal(index: number) {
+function selectTemplate(index: number) {
   const selected = templates.value[index]
   if (!selected) return
-  editingTemplateIndex.value = index
+  selectedTemplateIndex.value = index
   templateDraft.value = { ...selected }
   const fallbackRecipient = parseRecipients(recipientsInput.value)[0] ?? ''
   testRecipient.value = fallbackRecipient
-  templateModalOpen.value = true
 }
 
-function closeTemplateModal() {
-  templateModalOpen.value = false
-  editingTemplateIndex.value = null
-  templateDraft.value = null
-  testRecipient.value = ''
-}
-
-async function saveSettings(options: { closeModalOnSuccess?: boolean, silentSuccessToast?: boolean } = {}): Promise<boolean> {
+async function saveSettings(options: { silentSuccessToast?: boolean } = {}): Promise<boolean> {
   saving.value = true
   try {
     const payload = {
@@ -629,7 +632,6 @@ async function saveSettings(options: { closeModalOnSuccess?: boolean, silentSucc
       toast.add({ title: 'Email settings saved', color: 'success' })
     }
     await loadSettings({ silent: true })
-    if (options.closeModalOnSuccess) closeTemplateModal()
     return true
   } catch (error: unknown) {
     toast.add({
@@ -643,12 +645,12 @@ async function saveSettings(options: { closeModalOnSuccess?: boolean, silentSucc
   }
 }
 
-async function saveTemplateFromModal() {
-  const index = editingTemplateIndex.value
+async function saveSelectedTemplate() {
+  const index = selectedTemplateIndex.value
   const draft = templateDraft.value
-  if (index === null || !draft) return
+  if (!draft) return
   templates.value[index] = { ...draft }
-  await saveSettings({ closeModalOnSuccess: false })
+  await saveSettings({ silentSuccessToast: false })
 }
 
 async function sendTemplateTest() {
@@ -694,6 +696,22 @@ async function sendTemplateTest() {
     sendingTest.value = false
   }
 }
+
+watch(templates, (nextTemplates) => {
+  if (nextTemplates.length === 0) {
+    templateDraft.value = null
+    selectedTemplateIndex.value = 0
+    return
+  }
+
+  if (selectedTemplateIndex.value >= nextTemplates.length) {
+    selectedTemplateIndex.value = 0
+  }
+
+  if (!templateDraft.value) {
+    templateDraft.value = { ...nextTemplates[selectedTemplateIndex.value]! }
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -730,129 +748,323 @@ async function sendTemplateTest() {
             description="Configure admin copies and SendGrid template mapping by event type. Supports {{ variableName }} interpolation for subject, preheader, and body (single-pass, unresolved variables render blank). Handlebars control blocks like {{#if}} are not supported."
           />
 
-          <UCard>
+          <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
             <div class="space-y-4">
-              <div class="flex items-center justify-between gap-3">
-                <div class="text-sm font-medium">
-                  Member broadcast
-                </div>
-                <UBadge
-                  color="neutral"
-                  variant="soft"
-                  size="sm"
-                >
-                  Admin only
-                </UBadge>
-              </div>
-
-              <div class="text-xs text-dimmed">
-                Campaign drafting and sends now live on a dedicated page, separate from registry maintenance.
-              </div>
-
-              <div class="flex flex-wrap items-center gap-2">
-                <code class="rounded bg-elevated px-2 py-0.5 text-xs">
-                  {{ BROADCAST_EVENT_TYPE }}
-                </code>
-                <UBadge
-                  :color="broadcastTemplate && hasTemplateId(broadcastTemplate) ? 'success' : 'warning'"
-                  variant="soft"
-                  size="sm"
-                >
-                  {{ broadcastTemplate && hasTemplateId(broadcastTemplate) ? 'template id set' : 'template id needed' }}
-                </UBadge>
-              </div>
-
-              <div class="flex justify-end">
-                <UButton
-                  icon="i-lucide-megaphone"
-                  to="/dashboard/admin/email-campaigns"
-                >
-                  Open email campaigns
-                </UButton>
-              </div>
-            </div>
-          </UCard>
-
-          <UCard>
-            <div class="space-y-4">
-              <div class="text-sm font-medium">
-                Admin copy preferences
-              </div>
-
-              <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
-                <div>
-                  <div class="text-sm font-medium">
-                    Critical email copies
+              <UCard>
+                <div class="space-y-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="text-sm font-medium">
+                      Member broadcast
+                    </div>
+                    <UBadge
+                      color="neutral"
+                      variant="soft"
+                      size="sm"
+                    >
+                      Admin only
+                    </UBadge>
                   </div>
+
                   <div class="text-xs text-dimmed">
-                    Forward a copy of critical notifications to admin inboxes.
+                    Campaign drafting and sends now live on a dedicated page, separate from registry maintenance.
+                  </div>
+
+                  <div class="flex flex-wrap items-center gap-2">
+                    <code class="rounded bg-elevated px-2 py-0.5 text-xs">
+                      {{ BROADCAST_EVENT_TYPE }}
+                    </code>
+                    <UBadge
+                      :color="broadcastTemplate && hasTemplateId(broadcastTemplate) ? 'success' : 'warning'"
+                      variant="soft"
+                      size="sm"
+                    >
+                      {{ broadcastTemplate && hasTemplateId(broadcastTemplate) ? 'template id set' : 'template id needed' }}
+                    </UBadge>
+                  </div>
+
+                  <div class="flex justify-end">
+                    <UButton
+                      icon="i-lucide-megaphone"
+                      to="/dashboard/admin/email-campaigns"
+                    >
+                      Open email campaigns
+                    </UButton>
                   </div>
                 </div>
-                <USwitch v-model="adminCopies.criticalEnabled" />
-              </div>
+              </UCard>
 
-              <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
-                <div>
+              <UCard>
+                <div class="space-y-4">
                   <div class="text-sm font-medium">
-                    Non-critical email copies
+                    Admin copy preferences
                   </div>
-                  <div class="text-xs text-dimmed">
-                    Keep disabled by default to reduce noise.
+
+                  <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
+                    <div>
+                      <div class="text-sm font-medium">
+                        Critical email copies
+                      </div>
+                      <div class="text-xs text-dimmed">
+                        Forward a copy of critical notifications to admin inboxes.
+                      </div>
+                    </div>
+                    <USwitch v-model="adminCopies.criticalEnabled" />
+                  </div>
+
+                  <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
+                    <div>
+                      <div class="text-sm font-medium">
+                        Non-critical email copies
+                      </div>
+                      <div class="text-xs text-dimmed">
+                        Keep disabled by default to reduce noise.
+                      </div>
+                    </div>
+                    <USwitch v-model="adminCopies.nonCriticalEnabled" />
+                  </div>
+
+                  <UFormField
+                    label="Admin copy recipients"
+                    description="One email per line or comma-separated."
+                  >
+                    <UTextarea
+                      v-model="recipientsInput"
+                      :rows="4"
+                      class="w-full"
+                      placeholder="ops@fostudio.com&#10;support@fostudio.com"
+                    />
+                  </UFormField>
+
+                  <div class="flex justify-end">
+                    <UButton
+                      :loading="saving"
+                      @click="saveSettings()"
+                    >
+                      Save admin copy settings
+                    </UButton>
                   </div>
                 </div>
-                <USwitch v-model="adminCopies.nonCriticalEnabled" />
-              </div>
+              </UCard>
 
-              <UFormField
-                label="Admin copy recipients"
-                description="One email per line or comma-separated."
-              >
-                <UTextarea
-                  v-model="recipientsInput"
-                  :rows="4"
-                  class="w-full"
-                  placeholder="ops@fostudio.com&#10;support@fostudio.com"
-                />
-              </UFormField>
+              <UCard v-if="templateDraft">
+                <div class="space-y-4">
+                  <div class="flex items-start justify-between gap-3">
+                    <div>
+                      <div class="text-sm font-medium">
+                        Compose registry event
+                      </div>
+                      <div class="text-xs text-dimmed mt-0.5">
+                        Edit SendGrid mapping and copy for the selected event type.
+                      </div>
+                    </div>
+                    <UBadge
+                      :color="templateDraft.active ? 'success' : 'neutral'"
+                      variant="soft"
+                      size="sm"
+                    >
+                      {{ templateDraft.active ? 'active' : 'inactive' }}
+                    </UBadge>
+                  </div>
 
-              <div class="flex justify-end">
-                <UButton
-                  :loading="saving"
-                  @click="saveSettings()"
-                >
-                  Save admin copy settings
-                </UButton>
-              </div>
+                  <div class="grid gap-3 md:grid-cols-2">
+                    <UFormField label="Event type">
+                      <UInput
+                        :model-value="templateDraft.eventType"
+                        class="w-full"
+                        disabled
+                        readonly
+                      />
+                    </UFormField>
+                    <UFormField label="SendGrid template id">
+                      <UInput
+                        v-model="templateDraft.sendgridTemplateId"
+                        class="w-full"
+                        placeholder="d-xxxxxxxxxxxxxxxxxxxx"
+                      />
+                    </UFormField>
+                  </div>
+
+                  <div class="grid gap-3 md:grid-cols-2">
+                    <UFormField label="Category">
+                      <select
+                        v-model="templateDraft.category"
+                        class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
+                      >
+                        <option value="critical">
+                          critical
+                        </option>
+                        <option value="non_critical">
+                          non_critical
+                        </option>
+                      </select>
+                    </UFormField>
+
+                    <UFormField label="Description">
+                      <UInput
+                        v-model="templateDraft.description"
+                        class="w-full"
+                        placeholder="Optional"
+                      />
+                    </UFormField>
+                  </div>
+
+                  <div class="grid gap-3 md:grid-cols-2">
+                    <UFormField label="Subject template">
+                      <UInput
+                        v-model="templateDraft.subjectTemplate"
+                        class="w-full"
+                        placeholder="FO Studio: {{ tierName }} membership update"
+                      />
+                    </UFormField>
+
+                    <UFormField label="Preheader template">
+                      <UInput
+                        v-model="templateDraft.preheaderTemplate"
+                        class="w-full"
+                        placeholder="{{ cadenceLabel }} plan update and next steps"
+                      />
+                    </UFormField>
+                  </div>
+
+                  <UFormField
+                    label="Test recipient"
+                    description="Optional. If blank, this sends to your admin account email."
+                  >
+                    <UInput
+                      v-model="testRecipient"
+                      class="w-full"
+                      placeholder="name@example.com"
+                    />
+                  </UFormField>
+
+                  <UFormField label="Body template (HTML)">
+                    <template #description>
+                      Use <code v-pre>{{ variableName }}</code> tokens only. No <code v-pre>{{#if}}</code> or <code v-pre>{{/if}}</code> blocks.
+                    </template>
+                    <UEditor
+                      v-slot="{ editor }"
+                      v-model="templateDraft.bodyTemplate"
+                      content-type="html"
+                      :handlers="emailEditorHandlers"
+                      :image="{ allowBase64: false }"
+                      :mention="{ HTMLAttributes: { class: 'mention' } }"
+                      :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
+                      class="email-editor-shell w-full rounded-md border border-default bg-default overflow-visible"
+                      :placeholder="editorPlaceholder(templateDraft.bodyTemplate, 'Write HTML body content. Example: <p>Your {{ tierName }} membership is active.</p>')"
+                    >
+                      <UEditorToolbar
+                        :editor="editor"
+                        :items="emailEditorToolbarItems"
+                        class="border-b border-default sticky top-0 inset-x-0 p-1.5 z-10 bg-default/95 backdrop-blur overflow-x-auto"
+                      />
+                      <UEditorToolbar
+                        :editor="editor"
+                        :items="emailEditorBubbleToolbarItems"
+                        layout="bubble"
+                      />
+                      <UEditorSuggestionMenu
+                        :editor="editor"
+                        :items="selectedEditorSuggestionItems"
+                      />
+                      <UEditorMentionMenu
+                        :editor="editor"
+                        :items="emailMentionItems"
+                      />
+                      <UEditorEmojiMenu
+                        :editor="editor"
+                        :items="emailEmojiItems"
+                      />
+                      <UEditorDragHandle
+                        v-slot="{ ui }"
+                        :editor="editor"
+                        :options="emailEditorDragHandleOptions"
+                        :ui="{ handle: 'translate-x-1 rounded border border-default bg-default/90' }"
+                      >
+                        <UButton
+                          icon="i-lucide-grip-vertical"
+                          color="neutral"
+                          variant="ghost"
+                          size="sm"
+                          :class="ui.handle()"
+                        />
+                      </UEditorDragHandle>
+                    </UEditor>
+                  </UFormField>
+
+                  <div class="text-xs text-dimmed rounded-md border border-primary/25 bg-primary/8 p-2.5">
+                    <div class="font-medium text-highlighted mb-1.5">
+                      Available variables
+                    </div>
+                    <div class="leading-relaxed break-words">
+                      <span
+                        v-for="variableName in selectedTemplateVariables"
+                        :key="`${templateDraft.eventType}-${variableName}`"
+                        class="inline-block mr-2 mb-1 rounded bg-default/90 px-1.5 py-0.5 ring-1 ring-primary/20"
+                      >
+                        <code>{{ formatVariableToken(variableName) }}</code>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <UCheckbox
+                      v-model="templateDraft.active"
+                      label="Active"
+                    />
+                  </div>
+                </div>
+
+                <template #footer>
+                  <div class="flex items-center justify-end gap-2">
+                    <UButton
+                      color="info"
+                      variant="soft"
+                      icon="i-lucide-send"
+                      :loading="sendingTest"
+                      :disabled="!hasTemplateId(templateDraft)"
+                      @click="sendTemplateTest"
+                    >
+                      Send test email
+                    </UButton>
+                    <UButton
+                      :loading="saving"
+                      @click="saveSelectedTemplate"
+                    >
+                      Save template settings
+                    </UButton>
+                  </div>
+                </template>
+              </UCard>
             </div>
-          </UCard>
 
-          <UCard>
-            <div class="space-y-4">
-              <div class="flex items-center justify-between gap-3">
-                <div class="text-sm font-medium">
-                  SendGrid template registry
+            <aside class="space-y-4 xl:sticky xl:top-4 self-start">
+              <UCard>
+                <div class="flex items-center justify-between gap-3">
+                  <div class="text-sm font-medium">
+                    Registry events
+                  </div>
+                  <UBadge
+                    color="neutral"
+                    variant="soft"
+                    size="sm"
+                  >
+                    {{ templates.length }}
+                  </UBadge>
                 </div>
-                <div class="text-xs text-dimmed">
-                  Event list is preloaded. Open a row and set the template id.
-                </div>
-              </div>
 
-              <div
-                v-if="templates.length === 0"
-                class="text-sm text-dimmed"
-              >
-                No event mappings available.
-              </div>
-
-              <div
-                v-for="(template, index) in templates"
-                :key="`${template.eventType}-${index}`"
-                class="rounded-lg border border-default p-3"
-              >
-                <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0 space-y-2">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <code class="rounded bg-elevated px-2 py-0.5 text-xs">
+                <div class="mt-3 max-h-[70vh] overflow-y-auto space-y-2 pr-1">
+                  <button
+                    v-for="(template, index) in templates"
+                    :key="`${template.eventType}-${index}`"
+                    type="button"
+                    class="w-full rounded-md border p-2.5 text-left transition-colors"
+                    :class="index === selectedTemplateIndex
+                      ? 'border-primary/60 bg-primary/10'
+                      : 'border-default/80 bg-default/40 hover:bg-default/70'"
+                    @click="selectTemplate(index)"
+                  >
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <code class="rounded bg-elevated px-1.5 py-0.5 text-[11px]">
                         {{ template.eventType }}
                       </code>
                       <UBadge
@@ -869,265 +1081,28 @@ async function sendTemplateTest() {
                       >
                         {{ template.active ? 'active' : 'inactive' }}
                       </UBadge>
-                      <UBadge
-                        :color="hasTemplateId(template) ? 'success' : 'warning'"
-                        variant="soft"
-                        size="sm"
-                      >
-                        {{ hasTemplateId(template) ? 'template id set' : 'template id needed' }}
-                      </UBadge>
                     </div>
-                    <div class="text-sm text-dimmed">
+                    <div class="mt-1 text-xs text-dimmed leading-tight">
                       {{ template.description || 'No description provided.' }}
                     </div>
-                    <div class="text-xs text-dimmed break-all">
-                      Template ID: {{ template.sendgridTemplateId || 'Not configured' }}
+                    <div class="mt-1 text-[11px] text-dimmed break-all">
+                      {{ template.sendgridTemplateId || 'Template ID not configured' }}
                     </div>
-                  </div>
-                  <UButton
-                    size="sm"
-                    color="neutral"
-                    variant="soft"
-                    icon="i-lucide-pencil"
-                    @click="openTemplateModal(index)"
+                  </button>
+
+                  <div
+                    v-if="templates.length === 0"
+                    class="rounded-md border border-dashed border-default px-3 py-4 text-sm text-dimmed text-center"
                   >
-                    Edit
-                  </UButton>
+                    No event mappings available.
+                  </div>
                 </div>
-              </div>
-            </div>
-          </UCard>
+              </UCard>
+            </aside>
+          </div>
         </div>
       </template>
     </UDashboardPanel>
-
-    <UModal
-      v-model:open="templateModalOpen"
-      title="Edit template mapping"
-      description="Configure SendGrid mapping, copy templates, and tokens."
-      :ui="{ content: 'sm:max-w-5xl' }"
-    >
-      <template #content>
-        <UCard
-          v-if="templateDraft"
-          class="w-[calc(100vw-2rem)] max-w-5xl max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-4rem)] overflow-hidden ring-1 ring-primary/25"
-          :ui="{ body: 'space-y-4 overflow-y-auto max-h-[calc(100dvh-14rem)] bg-elevated/20' }"
-        >
-          <template #header>
-            <div class="flex items-start justify-between gap-3 rounded-md border border-primary/20 bg-primary/8 px-3 py-2">
-              <div class="min-w-0">
-                <div class="text-base font-semibold text-highlighted">
-                  Edit template mapping
-                </div>
-                <p class="mt-1 text-sm text-dimmed break-all">
-                  {{ templateDraft.eventType }}
-                </p>
-              </div>
-              <UButton
-                icon="i-lucide-x"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                @click="closeTemplateModal"
-              />
-            </div>
-          </template>
-
-          <div class="space-y-3">
-            <div class="rounded-lg border border-primary/20 bg-default/80 p-3">
-              <div class="grid gap-3 md:grid-cols-2">
-                <UFormField label="Event type">
-                  <UInput
-                    :model-value="templateDraft.eventType"
-                    class="w-full"
-                    disabled
-                    readonly
-                  />
-                </UFormField>
-                <UFormField label="SendGrid template id">
-                  <UInput
-                    v-model="templateDraft.sendgridTemplateId"
-                    class="w-full"
-                    placeholder="d-xxxxxxxxxxxxxxxxxxxx"
-                  />
-                </UFormField>
-              </div>
-            </div>
-
-            <div class="rounded-lg border border-info/25 bg-info/8 p-3">
-              <div class="grid gap-3 md:grid-cols-2">
-                <UFormField label="Category">
-                  <select
-                    v-model="templateDraft.category"
-                    class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
-                  >
-                    <option value="critical">
-                      critical
-                    </option>
-                    <option value="non_critical">
-                      non_critical
-                    </option>
-                  </select>
-                </UFormField>
-
-                <UFormField label="Description">
-                  <UInput
-                    v-model="templateDraft.description"
-                    class="w-full"
-                    placeholder="Optional"
-                  />
-                </UFormField>
-              </div>
-            </div>
-
-            <div class="rounded-lg border border-success/25 bg-success/8 p-3">
-              <div class="grid gap-3 md:grid-cols-2">
-                <UFormField label="Subject template">
-                  <UInput
-                    v-model="templateDraft.subjectTemplate"
-                    class="w-full"
-                    placeholder="FO Studio: {{ tierName }} membership update"
-                  />
-                </UFormField>
-
-                <UFormField label="Preheader template">
-                  <UInput
-                    v-model="templateDraft.preheaderTemplate"
-                    class="w-full"
-                    placeholder="{{ cadenceLabel }} plan update and next steps"
-                  />
-                </UFormField>
-              </div>
-            </div>
-
-            <div class="rounded-lg border border-info/25 bg-info/8 p-3">
-              <UFormField
-                label="Test recipient"
-                description="Optional. If blank, this sends to your admin account email."
-              >
-                <UInput
-                  v-model="testRecipient"
-                  class="w-full"
-                  placeholder="name@example.com"
-                />
-              </UFormField>
-            </div>
-
-            <div class="rounded-lg border border-warning/25 bg-warning/7 p-3">
-              <UFormField label="Event type">
-                <template #label>
-                  <span class="text-warning-700 dark:text-warning-300">Body template (HTML)</span>
-                </template>
-                <template #description>
-                  Use <code v-pre>{{ variableName }}</code> tokens only. No <code v-pre>{{#if}}</code> or <code v-pre>{{/if}}</code> blocks. This value is passed to SendGrid as <code v-pre>{{ body }}</code>, <code v-pre>{{ bodyHtml }}</code>, and <code v-pre>{{ bodyHTML }}</code>.
-                </template>
-                <UEditor
-                  v-slot="{ editor }"
-                  v-model="templateDraft.bodyTemplate"
-                  content-type="html"
-                  :handlers="emailEditorHandlers"
-                  :image="{ allowBase64: false }"
-                  :mention="{ HTMLAttributes: { class: 'mention' } }"
-                  :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
-                  class="email-editor-shell w-full rounded-md border border-warning/30 bg-default overflow-visible"
-                  :placeholder="editorPlaceholder(templateDraft.bodyTemplate, 'Write HTML body content. Example: <p>Your {{ tierName }} membership is active.</p>')"
-                >
-                  <UEditorToolbar
-                    :editor="editor"
-                    :items="emailEditorToolbarItems"
-                    class="border-b border-warning/25 sticky top-0 inset-x-0 p-1.5 z-10 bg-warning/8 backdrop-blur overflow-x-auto"
-                  />
-                  <UEditorToolbar
-                    :editor="editor"
-                    :items="emailEditorBubbleToolbarItems"
-                    layout="bubble"
-                  />
-                  <UEditorSuggestionMenu
-                    :editor="editor"
-                    :items="selectedEditorSuggestionItems"
-                  />
-                  <UEditorMentionMenu
-                    :editor="editor"
-                    :items="emailMentionItems"
-                  />
-                  <UEditorEmojiMenu
-                    :editor="editor"
-                    :items="emailEmojiItems"
-                  />
-                  <UEditorDragHandle
-                    v-slot="{ ui }"
-                    :editor="editor"
-                    :options="emailEditorDragHandleOptions"
-                    :ui="{ handle: 'translate-x-1 rounded border border-default bg-default/90' }"
-                  >
-                    <UButton
-                      icon="i-lucide-grip-vertical"
-                      color="neutral"
-                      variant="ghost"
-                      size="sm"
-                      :class="ui.handle()"
-                    />
-                  </UEditorDragHandle>
-                </UEditor>
-                <p class="mt-2 text-xs text-dimmed">
-                  Enter creates a new paragraph. Use Shift+Enter for a single line break.
-                </p>
-              </UFormField>
-            </div>
-
-            <div class="text-xs text-dimmed rounded-md border border-primary/25 bg-primary/8 p-2.5">
-              <div class="font-medium text-highlighted mb-1.5">
-                Available variables
-              </div>
-              <div class="leading-relaxed break-words">
-                <span
-                  v-for="variableName in selectedTemplateVariables"
-                  :key="`${templateDraft.eventType}-${variableName}`"
-                  class="inline-block mr-2 mb-1 rounded bg-default/90 px-1.5 py-0.5 ring-1 ring-primary/20"
-                >
-                  <code>{{ formatVariableToken(variableName) }}</code>
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <UCheckbox
-                v-model="templateDraft.active"
-                label="Active"
-              />
-            </div>
-          </div>
-
-          <template #footer>
-            <div class="flex items-center justify-end gap-2">
-              <UButton
-                color="neutral"
-                variant="soft"
-                @click="closeTemplateModal"
-              >
-                Cancel
-              </UButton>
-              <UButton
-                color="info"
-                variant="soft"
-                icon="i-lucide-send"
-                :loading="sendingTest"
-                :disabled="!templateDraft || !hasTemplateId(templateDraft)"
-                @click="sendTemplateTest"
-              >
-                Send test email
-              </UButton>
-              <UButton
-                :loading="saving"
-                @click="saveTemplateFromModal"
-              >
-                Save template settings
-              </UButton>
-            </div>
-          </template>
-        </UCard>
-      </template>
-    </UModal>
   </div>
 </template>
 

@@ -117,6 +117,171 @@ const CAMPAIGN_IMAGE_SLOTS: CampaignImageSlot[] = [
   }
 ]
 
+const SENDGRID_NATIVE_PREVIEW_TEMPLATE = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { margin:0; padding:24px 0; background:#f5f5f5; font-family:Arial,Helvetica,sans-serif; color:#111; }
+    .wrap { width:100%; }
+    .main { width:100%; max-width:640px; margin:0 auto; background:#fff; border:1px solid #ececec; border-radius:16px; overflow:hidden; }
+    .hero { background:#111; color:#fff; padding:32px; }
+    .hero h1 { margin:0 0 12px; font-size:32px; line-height:1.1; }
+    .hero p { margin:0 0 18px; font-size:15px; line-height:1.6; color:#e8e8e8; }
+    .eyebrow { margin:0 0 12px; font-size:12px; letter-spacing:1.5px; text-transform:uppercase; color:#cfcfcf; }
+    .section { padding:28px 28px 24px; }
+    .section h2 { margin:0 0 10px; font-size:22px; line-height:1.2; color:#111; }
+    .section p { margin:0; font-size:14px; line-height:1.7; color:#444; }
+    .divider { height:1px; background:#ececec; }
+    .feature { background:#fafafa; border:1px solid #ececec; border-radius:12px; padding:16px; }
+    .feature + .feature { margin-top:10px; }
+    .feature strong { display:block; margin-bottom:6px; font-size:15px; color:#111; }
+    .bullets { margin:0; padding-left:18px; }
+    .bullets li { margin:0 0 8px; font-size:14px; line-height:1.6; color:#444; }
+    .cta { display:inline-block; padding:12px 18px; border-radius:999px; font-size:13px; font-weight:700; text-decoration:none; }
+    .cta-dark { background:#111; color:#fff !important; }
+    .cta-soft { background:#f2f2f2; border:1px solid #e5e5e5; color:#111 !important; }
+    .promo { background:#f7f7f7; border:1px solid #ececec; border-radius:14px; padding:22px; text-align:center; }
+    .promo-code { display:inline-block; margin-top:12px; padding:9px 14px; border-radius:999px; background:#111; color:#fff; font-weight:700; letter-spacing:1px; }
+    .callout { margin:0 28px 28px; background:#111; border-radius:14px; color:#fff; padding:22px; }
+    .callout h2 { margin:0 0 8px; color:#fff; }
+    .callout p { margin:0; color:#e8e8e8; }
+    .footer { padding:24px 28px 30px; text-align:center; color:#777; font-size:13px; line-height:1.7; }
+    .footer a { color:#111; font-weight:700; text-decoration:none; }
+    img { display:block; width:100%; height:auto; border:0; border-radius:10px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="main">
+      {{#if hero_enabled}}
+      <div class="hero">
+        <p class="eyebrow">{{hero_eyebrow}}</p>
+        <h1>{{hero_title}}</h1>
+        <p>{{hero_copy}}</p>
+        {{#if hero_cta_url}}<a class="cta cta-soft" href="{{hero_cta_url}}">{{hero_cta_label}}</a>{{/if}}
+      </div>
+      <div class="divider"></div>
+      {{/if}}
+      {{#if intro_enabled}}
+      <div class="section">
+        <h2>{{intro_title}}</h2>
+        <p>{{intro_copy}}</p>
+      </div>
+      <div class="divider"></div>
+      {{/if}}
+      {{#if features_enabled}}
+      <div class="section">
+        <h2>{{features_title}}</h2>
+        {{#if features_image_url}}<div style="margin-bottom:14px;"><img src="{{features_image_url}}" alt="{{features_image_alt}}" /></div>{{/if}}
+        {{#if feature_1_enabled}}<div class="feature"><strong>{{feature_1_title}}</strong><p>{{feature_1_copy}}</p></div>{{/if}}
+        {{#if feature_2_enabled}}<div class="feature"><strong>{{feature_2_title}}</strong><p>{{feature_2_copy}}</p></div>{{/if}}
+        {{#if feature_3_enabled}}<div class="feature"><strong>{{feature_3_title}}</strong><p>{{feature_3_copy}}</p></div>{{/if}}
+      </div>
+      <div class="divider"></div>
+      {{/if}}
+      {{#if transition_enabled}}
+      <div class="section">
+        <h2>{{transition_title}}</h2>
+        {{#if transition_image_url}}<div style="margin-bottom:14px;"><img src="{{transition_image_url}}" alt="{{transition_image_alt}}" /></div>{{/if}}
+        <ul class="bullets">
+          <li>{{transition_bullet_1}}</li>
+          <li>{{transition_bullet_2}}</li>
+          <li>{{transition_bullet_3}}</li>
+        </ul>
+        <div style="margin-top:16px;">
+          {{#if transition_primary_url}}<a class="cta cta-dark" href="{{transition_primary_url}}">{{transition_primary_label}}</a>{{/if}}
+          {{#if transition_secondary_url}}<a class="cta cta-soft" style="margin-left:8px;" href="{{transition_secondary_url}}">{{transition_secondary_label}}</a>{{/if}}
+        </div>
+      </div>
+      <div class="divider"></div>
+      {{/if}}
+      {{#if credits_enabled}}
+      <div class="section">
+        <h2>{{credits_title}}</h2>
+        <ul class="bullets">
+          <li>{{credits_bullet_1}}</li>
+          <li>{{credits_bullet_2}}</li>
+          <li>{{credits_bullet_3}}</li>
+          <li>{{credits_bullet_4}}</li>
+          <li>{{credits_bullet_5}}</li>
+        </ul>
+      </div>
+      <div class="divider"></div>
+      {{/if}}
+      {{#if impact_enabled}}
+      <div class="section">
+        <h2>{{impact_title}}</h2>
+        {{#if impact_image_url}}<div style="margin-bottom:14px;"><img src="{{impact_image_url}}" alt="{{impact_image_alt}}" /></div>{{/if}}
+        <ul class="bullets">
+          <li>{{impact_bullet_1}}</li>
+          <li>{{impact_bullet_2}}</li>
+          <li>{{impact_bullet_3}}</li>
+          <li>{{impact_bullet_4}}</li>
+          <li>{{impact_bullet_5}}</li>
+        </ul>
+      </div>
+      <div class="divider"></div>
+      {{/if}}
+      {{#if offer_enabled}}
+      <div class="section">
+        <div class="promo">
+          <h2 style="margin-top:0;">{{offer_title}}</h2>
+          <p>{{{offer_copy_html}}}</p>
+          {{#if offer_image_url}}<div style="margin-top:12px;"><img src="{{offer_image_url}}" alt="{{offer_image_alt}}" /></div>{{/if}}
+          <div class="promo-code">{{offer_code}}</div>
+          <div style="margin-top:16px;">{{#if offer_cta_url}}<a class="cta cta-dark" href="{{offer_cta_url}}">{{offer_cta_label}}</a>{{/if}}</div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      {{/if}}
+      {{#if closing_enabled}}
+      <div class="callout">
+        <h2>{{closing_title}}</h2>
+        <p>{{closing_copy}}</p>
+      </div>
+      {{/if}}
+      <div class="footer">
+        {{footer_name}}<br />
+        {{footer_address_1}}<br />
+        {{footer_address_2}}<br /><br />
+        <a href="{{footer_link_home_url}}">{{footer_link_home_label}}</a> |
+        <a href="{{footer_link_memberships_url}}">{{footer_link_memberships_label}}</a> |
+        <a href="{{footer_link_faq_url}}">{{footer_link_faq_label}}</a> |
+        <a href="{{footer_link_contact_url}}">{{footer_link_contact_label}}</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`
+
+const EDITOR_HTML_PREVIEW_TEMPLATE = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { margin:0; padding:24px 0; background:#f5f5f5; font-family:Arial,Helvetica,sans-serif; color:#111; }
+    .main { width:100%; max-width:640px; margin:0 auto; background:#fff; border:1px solid #ececec; border-radius:14px; overflow:hidden; }
+    .header { background:#111; color:#fff; padding:22px 24px; }
+    .header h1 { margin:0; font-size:20px; line-height:1.3; }
+    .header p { margin:8px 0 0; font-size:13px; color:#d7d7d7; }
+    .body { padding:22px 24px; line-height:1.6; font-size:14px; color:#222; }
+    img { max-width:100%; height:auto; display:block; }
+  </style>
+</head>
+<body>
+  <div class="main">
+    <div class="header">
+      <h1>{{subject}}</h1>
+      <p>{{preheader}}</p>
+    </div>
+    <div class="body">{{{bodyHTML}}}</div>
+  </div>
+</body>
+</html>`
+
 const toast = useToast()
 const saving = ref(false)
 const sending = ref(false)
@@ -301,6 +466,132 @@ function parseDynamicDataJson(text: string) {
     throw new Error(error instanceof Error ? error.message : 'Campaign dynamic data is invalid JSON.')
   }
 }
+
+const previewViewport = ref<'desktop' | 'mobile'>('desktop')
+
+function resolvePathValue(source: unknown, path: string): unknown {
+  if (!path) return undefined
+  const segments = path.split('.').filter(Boolean)
+  let cursor: unknown = source
+  for (const segment of segments) {
+    if (!cursor || typeof cursor !== 'object' || !(segment in cursor)) {
+      return undefined
+    }
+    cursor = (cursor as Record<string, unknown>)[segment]
+  }
+  return cursor
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('\'', '&#39;')
+}
+
+function renderTokenTemplate(template: string, context: Record<string, unknown>) {
+  return template.replace(/{{\s*([A-Za-z0-9_.-]+)\s*}}/g, (_match, token: string) => {
+    const value = resolvePathValue(context, token)
+    if (value == null) return ''
+    if (typeof value === 'string') return value
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+      return String(value)
+    }
+    return ''
+  })
+}
+
+function isTruthyTemplateValue(value: unknown) {
+  if (value == null) return false
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  if (typeof value === 'string') return value.trim().length > 0
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0
+  return true
+}
+
+function renderHandlebarsLikeTemplate(template: string, context: Record<string, unknown>): string {
+  let output = template
+  const ifPattern = /{{#if\s+([A-Za-z0-9_.-]+)}}([\s\S]*?){{\/if}}/g
+
+  // Resolve nested/flat if blocks in a bounded loop.
+  for (let i = 0; i < 20; i += 1) {
+    let replaced = false
+    output = output.replace(ifPattern, (_match, tokenPath: string, inner: string) => {
+      replaced = true
+      const value = resolvePathValue(context, tokenPath)
+      return isTruthyTemplateValue(value) ? inner : ''
+    })
+    if (!replaced) break
+  }
+
+  output = output.replace(/{{{\s*([A-Za-z0-9_.-]+)\s*}}}/g, (_match, tokenPath: string) => {
+    const value = resolvePathValue(context, tokenPath)
+    if (value == null) return ''
+    if (typeof value === 'string') return value
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+      return String(value)
+    }
+    return ''
+  })
+
+  output = output.replace(/{{\s*([A-Za-z0-9_.-]+)\s*}}/g, (_match, tokenPath: string) => {
+    const value = resolvePathValue(context, tokenPath)
+    if (value == null) return ''
+    if (typeof value === 'string') return escapeHtml(value)
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+      return escapeHtml(String(value))
+    }
+    return ''
+  })
+
+  return output
+}
+
+const previewContext = computed(() => {
+  const dynamicData = parsedDynamicData.value ?? {}
+  const baseContext = {
+    ...dynamicData,
+    eventType: draft.eventType,
+    customerName: String((dynamicData.customerName ?? 'FO Studio Member') || 'FO Studio Member'),
+    customerEmail: String((dynamicData.customerEmail ?? 'member@example.com') || 'member@example.com'),
+    membershipPlanName: String((dynamicData.membershipPlanName ?? 'Pro') || 'Pro'),
+    cadenceLabel: String((dynamicData.cadenceLabel ?? 'Monthly') || 'Monthly')
+  } satisfies Record<string, unknown>
+
+  const subjectSource = String(draft.subjectTemplate || dynamicData.subject || '').trim()
+  const preheaderSource = String(draft.preheaderTemplate || dynamicData.preheader || '').trim()
+  const bodySource = String(draft.bodyTemplate || dynamicData.bodyHTML || dynamicData.bodyHtml || dynamicData.body || '').trim()
+
+  const subject = subjectSource
+    ? renderTokenTemplate(subjectSource, baseContext).trim()
+    : 'FO Studio campaign update'
+  const preheader = preheaderSource
+    ? renderTokenTemplate(preheaderSource, { ...baseContext, subject }).trim()
+    : 'Preview generated from current draft values.'
+  const bodyHTML = bodySource
+    ? renderTokenTemplate(bodySource, { ...baseContext, subject, preheader }).trim()
+    : '<p>Draft content preview will appear here.</p>'
+
+  return {
+    ...baseContext,
+    subject,
+    preheader,
+    body: bodyHTML,
+    bodyHtml: bodyHTML,
+    bodyHTML
+  }
+})
+
+const previewHtml = computed(() => {
+  const template = draft.renderMode === 'sendgrid_native'
+    ? SENDGRID_NATIVE_PREVIEW_TEMPLATE
+    : EDITOR_HTML_PREVIEW_TEMPLATE
+  return renderHandlebarsLikeTemplate(template, previewContext.value)
+})
 
 const parsedDynamicData = computed<Record<string, unknown> | null>(() => {
   try {
@@ -1373,6 +1664,51 @@ watch(() => draft.templateId, () => {
                   />
                 </div>
               </UFormField>
+
+              <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+                    Draft preview
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <UButton
+                      size="xs"
+                      color="neutral"
+                      :variant="previewViewport === 'desktop' ? 'soft' : 'ghost'"
+                      icon="i-lucide-monitor"
+                      @click="previewViewport = 'desktop'"
+                    >
+                      Desktop
+                    </UButton>
+                    <UButton
+                      size="xs"
+                      color="neutral"
+                      :variant="previewViewport === 'mobile' ? 'soft' : 'ghost'"
+                      icon="i-lucide-smartphone"
+                      @click="previewViewport = 'mobile'"
+                    >
+                      Mobile
+                    </UButton>
+                  </div>
+                </div>
+                <div class="rounded-md border border-default bg-default p-2">
+                  <div
+                    class="mx-auto transition-all duration-150"
+                    :class="previewViewport === 'mobile' ? 'max-w-[390px]' : 'max-w-full'"
+                  >
+                    <iframe
+                      :srcdoc="previewHtml"
+                      class="w-full min-h-[760px] rounded-md border border-default/70 bg-white"
+                      sandbox="allow-same-origin"
+                      title="Campaign preview"
+                    />
+                  </div>
+                </div>
+                <p class="text-xs text-dimmed">
+                  Preview is a local renderer for template variables and <code v-pre>{{#if ...}}</code> blocks.
+                  Final client rendering can vary slightly by inbox provider.
+                </p>
+              </section>
 
               <div class="text-xs text-dimmed rounded-md border border-primary/20 bg-primary/5 p-2.5">
                 <div class="font-medium text-highlighted mb-1.5">
