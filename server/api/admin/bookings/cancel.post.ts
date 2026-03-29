@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
+import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 
 const bodySchema = z.object({
   bookingId: z.string().uuid(),
@@ -74,6 +75,13 @@ export default defineEventHandler(async (event) => {
     reason: 'admin_booking_cancel'
   }).catch((error) => {
     console.warn('[access/sync] failed to queue admin booking cancel sync', {
+      bookingId: booking.id,
+      error: (error as Error)?.message ?? String(error)
+    })
+  })
+
+  await maybeForceSyncGoogleCalendar(event, 'admin_booking_cancel').catch((error) => {
+    console.warn('[gcal-sync] failed to force sync after admin booking cancel', {
       bookingId: booking.id,
       error: (error as Error)?.message ?? String(error)
     })

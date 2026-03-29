@@ -16,6 +16,7 @@ import {
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
 import { assertCurrentWaiver } from '~~/server/utils/waiver/status'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
+import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 
 const schema = z.object({
   start_time: z.string(),
@@ -428,6 +429,13 @@ export default defineEventHandler(async (event) => {
       reason: 'member_booking_create'
     }).catch((error) => {
       console.warn('[access/sync] failed to queue booking create sync', {
+        bookingId,
+        error: (error as Error)?.message ?? String(error)
+      })
+    })
+
+    await maybeForceSyncGoogleCalendar(event, 'member_booking_create').catch((error) => {
+      console.warn('[gcal-sync] failed to force sync after member booking create', {
         bookingId,
         error: (error as Error)?.message ?? String(error)
       })

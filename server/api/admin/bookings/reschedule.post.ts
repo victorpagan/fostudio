@@ -10,6 +10,7 @@ import {
   validateOvernightHoldWindow
 } from '~~/server/utils/booking/holds'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
+import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 
 const STUDIO_TZ = 'America/Los_Angeles'
 
@@ -290,6 +291,13 @@ export default defineEventHandler(async (event) => {
     reason: 'admin_booking_reschedule'
   }).catch((error) => {
     console.warn('[access/sync] failed to queue admin booking reschedule sync', {
+      bookingId: body.bookingId,
+      error: (error as Error)?.message ?? String(error)
+    })
+  })
+
+  await maybeForceSyncGoogleCalendar(event, 'admin_booking_reschedule').catch((error) => {
+    console.warn('[gcal-sync] failed to force sync after admin booking reschedule', {
       bookingId: body.bookingId,
       error: (error as Error)?.message ?? String(error)
     })

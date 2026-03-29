@@ -2,6 +2,7 @@ import { DateTime } from 'luxon'
 import { serverSupabaseClient, serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { isAdminRole, readUserRole } from '~~/server/utils/auth'
 import type { RoleCarrier } from '~~/server/utils/auth'
+import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 
 const TZ = 'America/Los_Angeles'
 const HOLD_RETURN_WINDOW_HOURS = 24
@@ -127,6 +128,13 @@ export default defineEventHandler(async (event) => {
       }
     }
   }
+
+  await maybeForceSyncGoogleCalendar(event, isAdmin ? 'admin_booking_hold_remove' : 'member_booking_hold_remove').catch((error) => {
+    console.warn('[gcal-sync] failed to force sync after hold removal', {
+      bookingId: booking.id,
+      error: (error as Error)?.message ?? String(error)
+    })
+  })
 
   return {
     ok: true,

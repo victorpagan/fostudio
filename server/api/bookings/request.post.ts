@@ -16,6 +16,7 @@ import { STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
 import { assertCurrentWaiver } from '~~/server/utils/waiver/status'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
+import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 
 const schema = z.object({
   start_time: z.string(),
@@ -277,6 +278,13 @@ export default defineEventHandler(async (event) => {
     console.warn('[access/sync] failed to queue booking request sync', {
       bookingId: booking.id,
       error: (syncErr as Error)?.message ?? String(syncErr)
+    })
+  })
+
+  await maybeForceSyncGoogleCalendar(event, 'member_booking_request').catch((error) => {
+    console.warn('[gcal-sync] failed to force sync after member booking request', {
+      bookingId: booking.id,
+      error: (error as Error)?.message ?? String(error)
     })
   })
 

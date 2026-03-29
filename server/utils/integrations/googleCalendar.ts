@@ -96,6 +96,7 @@ const SETTINGS_KEYS = [
 ] as const
 
 let inFlightAutoSync: Promise<GoogleCalendarSyncResult> | null = null
+let inFlightForcedSync: Promise<GoogleCalendarSyncResult> | null = null
 
 function asBoolean(value: unknown, fallback: boolean) {
   if (typeof value === 'boolean') return value
@@ -542,7 +543,7 @@ export async function getGoogleCalendarSyncSettings(event: H3Event): Promise<Goo
 }
 
 async function collectLocalBusyWindows(db: SupabaseLike, windowStartIso: string, windowEndIso: string) {
-  const [bookingsRes, blocksRes] = await Promise.all([
+  const [bookingsRes, blocksRes, holdsRes] = await Promise.all([
     db
       .from('bookings')
       .select('id,start_time,end_time,status,notes')
@@ -554,11 +555,18 @@ async function collectLocalBusyWindows(db: SupabaseLike, windowStartIso: string,
       .select('id,start_time,end_time,reason')
       .eq('active', true)
       .lt('start_time', windowEndIso)
-      .gt('end_time', windowStartIso)
+      .gt('end_time', windowStartIso),
+    db
+      .from('booking_holds')
+      .select('id,booking_id,hold_start,hold_end,hold_type,bookings!inner(status)')
+      .in('bookings.status', ['confirmed', 'requested', 'pending_payment'])
+      .lt('hold_start', windowEndIso)
+      .gt('hold_end', windowStartIso)
   ])
 
   if (bookingsRes.error) throw new Error(bookingsRes.error.message)
   if (blocksRes.error) throw new Error(blocksRes.error.message)
+  if (holdsRes.error) throw new Error(holdsRes.error.message)
 
   const localEvents: Array<{
     sourceKey: string
@@ -585,6 +593,18 @@ async function collectLocalBusyWindows(db: SupabaseLike, windowStartIso: string,
       description: block.reason ? String(block.reason) : 'Studio block (managed by FO Studio)',
       startTime: String(block.start_time),
       endTime: String(block.end_time)
+    })
+  }
+
+  for (const hold of (holdsRes.data ?? [])) {
+    localEvents.push({
+      sourceKey: `hold:${hold.id}`,
+      summary: 'FO Studio Equipment Hold',
+      description: hold.hold_type
+        ? `Equipment hold (${String(hold.hold_type)}) managed by FO Studio`
+        : 'Equipment hold managed by FO Studio',
+      startTime: String(hold.hold_start),
+      endTime: String(hold.hold_end)
     })
   }
 
@@ -978,4 +998,41 @@ export async function maybeAutoSyncGoogleCalendar(event: H3Event, reason = 'cale
     })
 
   return inFlightAutoSync
+}
+
+export async function maybeForceSyncGoogleCalendar(event: H3Event, reason = 'calendar_mutation') {
+  const settings = await getGoogleCalendarSyncSettings(event)
+  if (!settings.enabled || !settings.pushEnabled) return null
+  if (inFlightForcedSync) return inFlightForcedSync
+
+  const waitForAutoSync = inFlightAutoSync
+    ? inFlightAutoSync.catch(() => null)
+    : Promise.resolve(null)
+
+  inFlightForcedSync = waitForAutoSync
+    .then(() => syncGoogleCalendarToExternalBlocks(event, {
+      force: true,
+      dryRun: false,
+      reason
+    }))
+    .catch(async (error: unknown) => {
+      try {
+        const db = serverSupabaseServiceRole(event) as any
+        const syncedAt = new Date().toISOString()
+        await writeSyncStatus(db, syncedAt, {
+          ok: false,
+          reason,
+          error: error instanceof Error ? error.message : String(error),
+          syncedAt
+        })
+      } catch (statusError) {
+        console.error('[gcal-sync] failed to write error status', statusError)
+      }
+      throw error
+    })
+    .finally(() => {
+      inFlightForcedSync = null
+    })
+
+  return inFlightForcedSync
 }

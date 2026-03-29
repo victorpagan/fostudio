@@ -17,6 +17,7 @@ import { DateTime } from 'luxon'
 import { isAdminRole, readUserRole } from '~~/server/utils/auth'
 import type { RoleCarrier } from '~~/server/utils/auth'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
+import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 
 const TZ = 'America/Los_Angeles'
 const REFUND_WINDOW_HOURS = 24
@@ -138,6 +139,13 @@ export default defineEventHandler(async (event) => {
     reason: 'booking_cancel'
   }).catch((error) => {
     console.warn('[access/sync] failed to queue booking cancel sync', {
+      bookingId,
+      error: (error as Error)?.message ?? String(error)
+    })
+  })
+
+  await maybeForceSyncGoogleCalendar(event, 'member_booking_cancel').catch((error) => {
+    console.warn('[gcal-sync] failed to force sync after member booking cancel', {
       bookingId,
       error: (error as Error)?.message ?? String(error)
     })

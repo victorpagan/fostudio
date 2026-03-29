@@ -14,6 +14,7 @@ import {
 } from '~~/server/utils/booking/holds'
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
+import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 
 const bodySchema = z.object({
   start_time: z.string().datetime(),
@@ -575,6 +576,16 @@ export default defineEventHandler(async (event) => {
     reason: isExtensionOperation ? 'member_booking_extend' : 'member_booking_reschedule'
   }).catch((error) => {
     console.warn('[access/sync] failed to queue booking update sync', {
+      bookingId,
+      error: (error as Error)?.message ?? String(error)
+    })
+  })
+
+  await maybeForceSyncGoogleCalendar(
+    event,
+    isExtensionOperation ? 'member_booking_extend' : 'member_booking_reschedule'
+  ).catch((error) => {
+    console.warn('[gcal-sync] failed to force sync after member booking update', {
       bookingId,
       error: (error as Error)?.message ?? String(error)
     })
