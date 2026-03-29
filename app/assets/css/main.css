@@ -1055,6 +1055,11 @@ h6 {
   transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
+.landing-hero-cta-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
 .landing-hero-cta:hover {
   background: #272727;
   color: white;
@@ -1069,7 +1074,7 @@ h6 {
   line-height: 1;
   color: var(--gruv-accent);
   pointer-events: none;
-  z-index: 4;
+  z-index: 5;
 }
 
 .landing-hero-campaign-hint {

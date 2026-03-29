@@ -363,13 +363,15 @@ function tierAccentClass(tierId: string, index: number) {
       </div>
 
       <div class="landing-hero-content">
-        <NuxtLink
-          :to="landingContent.hero.secondaryCta.to"
-          class="landing-hero-cta"
-        >
-          {{ landingContent.hero.secondaryCta.label }}
+        <div class="landing-hero-cta-wrap">
+          <NuxtLink
+            :to="landingContent.hero.secondaryCta.to"
+            class="landing-hero-cta"
+          >
+            {{ landingContent.hero.secondaryCta.label }}
+          </NuxtLink>
           <span class="landing-hero-cta-arrow">↗</span>
-        </NuxtLink>
+        </div>
         <p class="landing-hero-campaign-hint">
           {{ landingContent.hero.campaignHint }}
         </p>
