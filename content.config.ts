@@ -35,6 +35,13 @@ const createLandingSchema = () => z.object({
       src: z.string().nonempty().editor({ input: 'media' }),
       poster: z.string().nonempty().editor({ input: 'media' }).optional()
     }).optional(),
+    leadOverlay: z.object({
+      chapter: z.string().nonempty().optional(),
+      section: z.string().nonempty().optional(),
+      brand: z.string().nonempty(),
+      title: z.string().nonempty(),
+      subtitle: z.string().nonempty()
+    }).optional(),
     images: z.array(createImageSchema()).min(1)
   }),
   spotlight: z.object({
