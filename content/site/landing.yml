@@ -36,6 +36,15 @@ gallery:
       alt: Lighting setup in the studio
       loading: lazy
 hero:
+  kicker: Membership studio access
+  headline: Pick the studio membership that fits the way you actually work.
+  subheadline: This is a 24/7 turnkey studio built for photographers and small-to-mid crews. Book the plan that matches your volume, then use the space like it was made for production days, not paperwork.
+  primaryCta:
+    label: See Availability
+    to: /calendar
+  secondaryCta:
+    label: Explore Memberships
+    to: /memberships
   waitlistCtaLabel: Join the waitlist
   chips:
     - 24/7 photo studio access
