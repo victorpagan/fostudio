@@ -95,20 +95,20 @@ function mapSquareStatus(rawStatus: string | null): MembershipStatus {
   return 'past_due'
 }
 
-function addCadenceDate(cadence: CheckoutSessionRow['cadence'], anchorIso: string) {
-  const date = new Date(anchorIso)
-  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10)
-  if (cadence === 'daily') {
-    date.setUTCDate(date.getUTCDate() + 1)
-    return date.toISOString().slice(0, 10)
-  }
-  if (cadence === 'weekly') {
-    date.setUTCDate(date.getUTCDate() + 7)
-    return date.toISOString().slice(0, 10)
-  }
-  const months = cadence === 'annual' ? 12 : cadence === 'quarterly' ? 3 : 1
-  date.setUTCMonth(date.getUTCMonth() + months)
-  return date.toISOString().slice(0, 10)
+function todayIsoDateInPacific() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date())
+
+  const year = parts.find(part => part.type === 'year')?.value
+  const month = parts.find(part => part.type === 'month')?.value
+  const day = parts.find(part => part.type === 'day')?.value
+
+  if (!year || !month || !day) return new Date().toISOString().slice(0, 10)
+  return `${year}-${month}-${day}`
 }
 
 function readPromoId(metadata: Record<string, unknown> | null | undefined) {
@@ -540,8 +540,8 @@ export default defineEventHandler(async (event) => {
         locationId,
         customerId: squareCustomerId,
         planVariationId: session.plan_variation_id,
-        // First checkout payment is already collected; recurring billing starts next cycle.
-        startDate: addCadenceDate(session.cadence, paymentState.paymentCreatedAt ?? nowIso),
+        // Start subscription immediately on purchase date in studio timezone.
+        startDate: todayIsoDateInPacific(),
         timezone: 'America/Los_Angeles',
         source: { name: 'FO Studio membership checkout claim' }
       }

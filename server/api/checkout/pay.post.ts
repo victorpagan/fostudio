@@ -149,8 +149,20 @@ function isSquareCardOnFileId(value: string | null | undefined) {
   return value.trim().startsWith('ccof:')
 }
 
-function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10)
+function todayIsoDateInPacific() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date())
+
+  const year = parts.find(part => part.type === 'year')?.value
+  const month = parts.find(part => part.type === 'month')?.value
+  const day = parts.find(part => part.type === 'day')?.value
+
+  if (!year || !month || !day) return new Date().toISOString().slice(0, 10)
+  return `${year}-${month}-${day}`
 }
 
 function readMetadataPriceCents(metadata: Record<string, unknown> | null | undefined) {
@@ -315,7 +327,7 @@ export default defineEventHandler(async (event) => {
 
   let subscriptionId: string | null = session.square_subscription_id?.trim() || null
   if (!subscriptionId) {
-    const startDate = todayIsoDate()
+    const startDate = todayIsoDateInPacific()
     let subscriptionPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, planVariationId)
     const promoSquareDiscountId = readMetadataPromoSquareDiscountId(session.metadata)
     let promoAttachedToPhase = false
