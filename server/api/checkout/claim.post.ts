@@ -142,12 +142,20 @@ async function findLatestSubscription(
   }
 
   const sortSubscriptions = (subscriptions: Record<string, unknown>[]) => {
+    const statusRank = (status: string) => {
+      if (status === 'ACTIVE') return 4
+      if (status === 'PENDING') return 3
+      if (status === 'PAUSED') return 2
+      if (status === 'DEACTIVATED') return 1
+      return 0
+    }
+
     subscriptions.sort((left, right) => {
       const leftStatus = (readString(left, 'status') ?? '').toUpperCase()
       const rightStatus = (readString(right, 'status') ?? '').toUpperCase()
-      const leftActive = leftStatus === 'ACTIVE' ? 1 : 0
-      const rightActive = rightStatus === 'ACTIVE' ? 1 : 0
-      if (rightActive !== leftActive) return rightActive - leftActive
+      const leftRank = statusRank(leftStatus)
+      const rightRank = statusRank(rightStatus)
+      if (rightRank !== leftRank) return rightRank - leftRank
 
       const leftCreated = Date.parse(readString(left, 'createdAt', 'created_at') ?? '')
       const rightCreated = Date.parse(readString(right, 'createdAt', 'created_at') ?? '')
@@ -494,7 +502,7 @@ export default defineEventHandler(async (event) => {
   const nowIso = new Date().toISOString()
   let subscriptionProvisioningIssue: string | null = null
   let subscription = await findLatestSubscription(square, squareCustomerId, session.plan_variation_id)
-  let subscriptionId = session.square_subscription_id?.trim() || readString(subscription, 'id')
+  let subscriptionId = readString(subscription, 'id') || session.square_subscription_id?.trim() || null
   let rawSubscriptionStatus = readString(subscription, 'status')
   if (subscriptionId && !rawSubscriptionStatus) {
     rawSubscriptionStatus = 'ACTIVE'
@@ -546,6 +554,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  const squareSubscriptionStatus = (rawSubscriptionStatus ?? '').toUpperCase()
   const membershipStatus: MembershipStatus = subscriptionId
     ? mapSquareStatus(rawSubscriptionStatus)
     : 'pending_checkout'
@@ -566,7 +575,15 @@ export default defineEventHandler(async (event) => {
   const existingMembership = (existingMembershipRaw as ExistingMembershipRow | null) ?? null
   const isFirstActivation = !existingMembership?.activated_at
 
-  const resolvedMembershipStatus: MembershipStatus = membershipStatus
+  // Square marks newly-created recurring subscriptions as PENDING when startDate
+  // is the next cycle, but this checkout already collected payment for current access.
+  const resolvedMembershipStatus: MembershipStatus = (
+    subscriptionId
+    && squareSubscriptionStatus === 'PENDING'
+    && paymentState.completed
+  )
+    ? 'active'
+    : membershipStatus
   const effectiveBillingPeriod = isFirstActivation
     ? {
         currentPeriodStart: nowIso,
