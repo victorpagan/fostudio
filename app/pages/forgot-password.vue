@@ -11,6 +11,7 @@ useSeoMeta({
 
 const supabase = useSupabaseClient()
 const toast = useToast()
+const runtimeConfig = useRuntimeConfig()
 const loading = ref(false)
 const sent = ref(false)
 
@@ -31,17 +32,25 @@ const fields = [{
 async function onSubmit(payload: FormSubmitEvent<Schema>) {
   loading.value = true
   try {
+    const configuredSiteUrl = typeof runtimeConfig.public?.siteUrl === 'string'
+      ? runtimeConfig.public.siteUrl.trim()
+      : ''
+    const currentOrigin = window.location.origin
+    const fallbackBase = configuredSiteUrl || currentOrigin
+    const redirectTo = new URL('/reset-password', fallbackBase).toString()
+
     const { error } = await supabase.auth.resetPasswordForEmail(
       payload.data.email.trim(),
-      { redirectTo: `${window.location.origin}/reset-password` }
+      { redirectTo }
     )
     if (error) throw error
 
     sent.value = true
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Failed to send reset email'
     toast.add({
       title: 'Error',
-      description: e?.message ?? 'Failed to send reset email',
+      description: message,
       color: 'error'
     })
   } finally {
@@ -53,7 +62,9 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
 <template>
   <div v-if="sent" class="space-y-4 text-center py-4">
     <UIcon name="i-heroicons-envelope" class="mx-auto h-12 w-12 text-primary" />
-    <h2 class="text-lg font-semibold">Check your email</h2>
+    <h2 class="text-lg font-semibold">
+      Check your email
+    </h2>
     <p class="text-sm text-gray-600 dark:text-gray-400">
       We sent a password reset link to your email address.
       Check your inbox (and spam folder, just in case).

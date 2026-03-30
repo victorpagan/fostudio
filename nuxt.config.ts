@@ -39,6 +39,7 @@ export default defineNuxtConfig({
     contactToEmail: process.env.NUXT_CONTACT_TO_EMAIL || 'studio@lafilmlab.com',
     contactFromEmail: process.env.NUXT_CONTACT_FROM_EMAIL || 'FO Studio <no-reply@fostudio.local>',
     public: {
+      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://fo.studio',
       contactEmail: process.env.NUXT_PUBLIC_CONTACT_EMAIL || 'studio@lafilmlab.com',
       contactPhone: process.env.NUXT_PUBLIC_CONTACT_PHONE || '(323) 999-4300',
       contactLocation: process.env.NUXT_PUBLIC_CONTACT_LOCATION || 'FO Studio, 3131 N. San Fernando Rd., Los Angeles, CA 90065'
