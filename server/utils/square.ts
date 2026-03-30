@@ -1,7 +1,7 @@
 // server/utils/square/index.ts
 import { SquareClient, SquareEnvironment } from 'square'
 import { getKey } from '~~/server/utils/config/secret'
-import type { H3Event } from "h3";
+import type { H3Event } from 'h3'
 
 let squareClient: SquareClient | null = null
 
@@ -18,6 +18,8 @@ export async function useSquareClient(event: H3Event): Promise<SquareClient> {
   squareClient = new SquareClient({
     token,
     environment,
+    timeoutInSeconds: 15,
+    maxRetries: 1
   })
 
   return squareClient

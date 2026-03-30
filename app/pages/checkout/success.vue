@@ -38,6 +38,17 @@ const bootstrapAttempted = ref(false)
 let timer: ReturnType<typeof setInterval> | null = null
 let claimRetryTimer: ReturnType<typeof setTimeout> | null = null
 
+type ClaimErrorLike = {
+  statusCode?: number
+  statusMessage?: string
+  message?: string
+  data?: {
+    statusCode?: number
+    statusMessage?: string
+    message?: string
+  }
+}
+
 const statusLabel = computed(() => {
   if (status.value === 'active') return 'Active'
   if (status.value === 'pending_checkout') return 'Activating'
@@ -70,6 +81,39 @@ function scheduleClaimRetry() {
   claimRetryTimer = setTimeout(() => {
     void claimCheckout()
   }, 2500)
+}
+
+function isRetryableClaimError(error: unknown) {
+  const e = (error ?? {}) as ClaimErrorLike
+  const statusCode = e.data?.statusCode ?? e.statusCode
+  if (typeof statusCode === 'number' && [408, 425, 429, 500, 502, 503, 504].includes(statusCode)) {
+    return true
+  }
+
+  const haystack = [
+    e.data?.statusMessage,
+    e.data?.message,
+    e.statusMessage,
+    e.message
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(' ')
+    .toLowerCase()
+
+  return [
+    '<no response>',
+    'load failed',
+    'fetch failed',
+    'networkerror',
+    'network error',
+    'timeout',
+    'timed out',
+    'econnreset',
+    'econnrefused',
+    'etimedout',
+    'eai_again',
+    'enotfound'
+  ].some(marker => haystack.includes(marker))
 }
 
 async function pollLegacyMembershipStatus() {
@@ -131,7 +175,8 @@ async function claimCheckout() {
       returnTo?: string
     }>('/api/checkout/claim', {
       method: 'POST',
-      body: { token: checkoutToken.value }
+      body: { token: checkoutToken.value },
+      timeout: 20000
     })
 
     status.value = res.membershipStatus || 'pending_checkout'
@@ -157,10 +202,13 @@ async function claimCheckout() {
       await navigateTo(res.returnTo ?? returnTo.value)
     }
   } catch (error: unknown) {
-    const e = error as {
-      data?: { statusMessage?: string }
-      statusMessage?: string
-      message?: string
+    const e = error as ClaimErrorLike
+    if (isRetryableClaimError(error)) {
+      claimComplete.value = false
+      claimError.value = null
+      claimHint.value = 'Connection issue while finalizing membership. Retrying automatically.'
+      scheduleClaimRetry()
+      return
     }
     claimError.value = e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Could not finish account linking.'
   } finally {
@@ -262,7 +310,6 @@ onBeforeUnmount(() => {
               <span v-else>Sync in progress.</span>
             </span>
           </div>
-
         </div>
       </div>
     </section>

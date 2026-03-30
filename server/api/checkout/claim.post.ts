@@ -294,9 +294,19 @@ export default defineEventHandler(async (event) => {
     }
   } else {
     if (!orderId && session.payment_link_id) {
-      const linkRes = await square.checkout.paymentLinks.get({ id: session.payment_link_id } as never)
-      const paymentLink = (linkRes as { paymentLink?: Record<string, unknown> | null }).paymentLink ?? null
-      orderId = readString(paymentLink, 'orderId', 'order_id')
+      try {
+        const linkRes = await square.checkout.paymentLinks.get({ id: session.payment_link_id } as never)
+        const paymentLink = (linkRes as { paymentLink?: Record<string, unknown> | null }).paymentLink ?? null
+        orderId = readString(paymentLink, 'orderId', 'order_id')
+      } catch {
+        return {
+          ok: false,
+          pending: true,
+          membershipStatus: 'pending_checkout',
+          returnTo,
+          message: 'Payment details are still syncing. Try again in a moment.'
+        }
+      }
     }
 
     if (!orderId) {
@@ -309,11 +319,21 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    paymentState = await resolveOrderPaymentState({
-      square,
-      orderId,
-      beginTime: session.created_at ?? null
-    })
+    try {
+      paymentState = await resolveOrderPaymentState({
+        square,
+        orderId,
+        beginTime: session.created_at ?? null
+      })
+    } catch {
+      return {
+        ok: false,
+        pending: true,
+        membershipStatus: 'pending_checkout',
+        returnTo,
+        message: 'We could not confirm payment yet. Please try again in a moment.'
+      }
+    }
 
     if (!paymentState.completed) {
       return {
