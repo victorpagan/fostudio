@@ -9,9 +9,7 @@ useSeoMeta({
   description: 'Reset your FO Studio account password'
 })
 
-const supabase = useSupabaseClient()
 const toast = useToast()
-const runtimeConfig = useRuntimeConfig()
 const loading = ref(false)
 const sent = ref(false)
 
@@ -32,18 +30,11 @@ const fields = [{
 async function onSubmit(payload: FormSubmitEvent<Schema>) {
   loading.value = true
   try {
-    const configuredSiteUrl = typeof runtimeConfig.public?.siteUrl === 'string'
-      ? runtimeConfig.public.siteUrl.trim()
-      : ''
-    const currentOrigin = window.location.origin
-    const fallbackBase = configuredSiteUrl || currentOrigin
-    const redirectTo = new URL('/reset-password', fallbackBase).toString()
-
-    const { error } = await supabase.auth.resetPasswordForEmail(
-      payload.data.email.trim(),
-      { redirectTo }
-    )
-    if (error) throw error
+    await $fetch('/api/auth/password-recovery', {
+      method: 'POST',
+      body: { email: payload.data.email.trim() },
+      timeout: 20000
+    })
 
     sent.value = true
   } catch (e: unknown) {
