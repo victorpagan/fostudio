@@ -110,10 +110,13 @@ export default defineEventHandler(async (event) => {
 
   // Fallback path: generate recovery link and send through our mail pipeline.
   let actionLink = ''
+  let hashedToken = ''
   try {
     const generateLinkResponse = await $fetch<{
       action_link?: string
       actionLink?: string
+      hashed_token?: string
+      hashedToken?: string
     }>(`${supabaseUrl}/auth/v1/admin/generate_link`, {
       method: 'POST',
       headers: {
@@ -127,6 +130,7 @@ export default defineEventHandler(async (event) => {
     })
 
     actionLink = String(generateLinkResponse?.action_link ?? generateLinkResponse?.actionLink ?? '').trim()
+    hashedToken = String(generateLinkResponse?.hashed_token ?? generateLinkResponse?.hashedToken ?? '').trim()
   } catch (error) {
     if (isUserNotFoundError(error)) {
       return { ok: true, delivery: 'none' as const }
@@ -140,20 +144,27 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (!actionLink) {
+  if (!actionLink && !hashedToken) {
     throw createError({
       statusCode: 502,
       statusMessage: 'Could not generate a password recovery link.'
     })
   }
 
-  let finalRecoveryLink = actionLink
-  try {
-    const url = new URL(actionLink)
-    url.searchParams.set('redirect_to', redirectTo)
-    finalRecoveryLink = url.toString()
-  } catch {
-    finalRecoveryLink = actionLink
+  let finalRecoveryLink = ''
+  if (hashedToken) {
+    const resetUrl = new URL('/reset-password', siteBaseUrl)
+    resetUrl.searchParams.set('token_hash', hashedToken)
+    resetUrl.searchParams.set('type', 'recovery')
+    finalRecoveryLink = resetUrl.toString()
+  } else {
+    try {
+      const url = new URL(actionLink)
+      url.searchParams.set('redirect_to', redirectTo)
+      finalRecoveryLink = url.toString()
+    } catch {
+      finalRecoveryLink = actionLink
+    }
   }
 
   const safeRecoveryLink = escapeHtml(finalRecoveryLink)
