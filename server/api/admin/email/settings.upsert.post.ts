@@ -104,6 +104,7 @@ function findUnsupportedTemplateSyntax(value: string): string | null {
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
   const body = bodySchema.parse(await readBody(event))
+  const excludedEventTypes = new Set(['order.confirmation'])
 
   const recipients = [...new Set(
     body.adminCopies.recipients
@@ -124,6 +125,7 @@ export default defineEventHandler(async (event) => {
 
   for (const template of body.templates) {
     const eventType = template.eventType.trim()
+    if (excludedEventTypes.has(eventType)) continue
     const unsupportedSubject = findUnsupportedTemplateSyntax(template.subjectTemplate)
     if (unsupportedSubject) {
       throw createError({
@@ -191,6 +193,7 @@ export default defineEventHandler(async (event) => {
   const incomingEventTypes = new Set(templates.map(template => template.event_type))
   const eventTypesToDelete = (existingTemplatesRaw ?? [])
     .map((row: { event_type: string }) => row.event_type)
+    .filter((eventType: string) => !excludedEventTypes.has(eventType))
     .filter((eventType: string) => !incomingEventTypes.has(eventType))
 
   if (eventTypesToDelete.length > 0) {

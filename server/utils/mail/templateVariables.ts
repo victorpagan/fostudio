@@ -80,11 +80,6 @@ const REGISTERED_MAIL_EVENTS: RegisteredMailEvent[] = [
     eventType: 'mailing.memberBroadcast',
     category: 'non_critical',
     description: 'Manual member broadcast list email sent by admin.'
-  },
-  {
-    eventType: 'order.confirmation',
-    category: 'critical',
-    description: 'Order confirmation sent after checkout.'
   }
 ]
 
@@ -245,20 +240,6 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'calendarUrl',
     'manageUrl',
     'studioAddress'
-  ],
-  'order.confirmation': [
-    'customerName',
-    'customerEmail',
-    'orderNumber',
-    'orderDate',
-    'phoneNumber',
-    'logo',
-    'website',
-    'items',
-    'total',
-    'totalTax',
-    'totalDiscount',
-    'receipt'
   ]
 }
 
@@ -458,21 +439,6 @@ const EVENT_DEFAULT_COPY: Record<string, MailTemplateDefaultCopy> = {
 <li style="margin:0;"><a href="{{ waiverUrl }}">Review waiver</a></li>
 </ul>
 <p style="margin:0;">Questions? Reply to this email or contact <a href="mailto:hello@lafilmlab.com">hello@lafilmlab.com</a>.</p>
-</div>`
-  },
-  'order.confirmation': {
-    subjectTemplate: 'Order confirmation #{{ orderNumber }}',
-    preheaderTemplate: 'We received your order and it is being processed.',
-    bodyTemplate: `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;max-width:640px;margin:0 auto;">
-<h1 style="font-size:24px;margin:0 0 12px;">Order received</h1>
-<p style="margin:0 0 14px;">Thanks for your order. We have received it and started processing.</p>
-<div style="background:#f6f6f6;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin:0 0 16px;">
-<p style="margin:0 0 8px;"><strong>Order number:</strong> {{ orderNumber }}</p>
-<p style="margin:0 0 8px;"><strong>Order date:</strong> {{ orderDate }}</p>
-<p style="margin:0 0 8px;"><strong>Total:</strong> {{ total }}</p>
-<p style="margin:0;"><strong>Tax:</strong> {{ totalTax }}</p>
-</div>
-<p style="margin:0;">Questions? Contact <a href="mailto:hello@lafilmlab.com">hello@lafilmlab.com</a>.</p>
 </div>`
   }
 }

@@ -26,6 +26,7 @@ type MailAdminCopyPreferencesRow = {
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
+  const excludedEventTypes = new Set(['order.confirmation'])
 
   const [{ data: prefRowRaw, error: prefError }, { data: templateRowsRaw, error: templateError }] = await Promise.all([
     supabase
@@ -43,7 +44,8 @@ export default defineEventHandler(async (event) => {
   if (templateError) throw createError({ statusCode: 500, statusMessage: templateError.message })
 
   const prefRow = (prefRowRaw ?? null) as MailAdminCopyPreferencesRow | null
-  const templateRows = (templateRowsRaw ?? []) as MailTemplateRegistryRow[]
+  const templateRows = ((templateRowsRaw ?? []) as MailTemplateRegistryRow[])
+    .filter(row => !excludedEventTypes.has(row.event_type))
   const registeredEvents = getRegisteredMailEvents()
   const templateMap = new Map(
     templateRows.map(row => [row.event_type, row] as const)
@@ -67,6 +69,7 @@ export default defineEventHandler(async (event) => {
   })
 
   for (const row of templateMap.values()) {
+    if (excludedEventTypes.has(row.event_type)) continue
     mergedTemplates.push({
       eventType: row.event_type,
       sendgridTemplateId: row.sendgrid_template_id,

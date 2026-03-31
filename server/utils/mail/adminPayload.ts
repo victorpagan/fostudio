@@ -55,55 +55,6 @@ export function buildAdminMailPayload(params: BuildAdminMailPayloadParams) {
     templateId: params.templateId
   }
 
-  if (params.eventType === 'order.confirmation') {
-    return {
-      ...base,
-      customer: {
-        emailAddress: params.recipient,
-        givenName: 'FO',
-        familyName: 'Studio Test'
-      },
-      order: {
-        id: 'TEST-0001',
-        created: new Date().toISOString(),
-        email: params.recipient,
-        squareOrderJSON: {
-          lineItems: [
-            {
-              name: 'Studio booking',
-              variationName: '2 hours',
-              quantity: '1',
-              totalMoney: { amount: 12000 }
-            }
-          ],
-          totalMoney: { amount: 12000 },
-          totalTaxMoney: { amount: 0 },
-          totalDiscountMoney: { amount: 0 }
-        }
-      },
-      location: {
-        id: 'test-location',
-        timezone: 'America/Los_Angeles',
-        phoneNumber: '(555) 010-0200',
-        logoUrl: '',
-        websiteUrl: params.origin,
-        businessName: 'FO Studio'
-      },
-      orderNumber: 'TEST-0001',
-      orderDate: new Date().toLocaleString('en-US'),
-      phoneNumber: '(555) 010-0200',
-      logo: '',
-      website: params.origin,
-      items: [
-        { name: 'Studio booking', quantity: 1, total: '120.00' }
-      ],
-      total: '120.00',
-      totalTax: '0.00',
-      totalDiscount: '0.00',
-      receipt: true
-    }
-  }
-
   return {
     ...base,
     tierId: 'nano',
@@ -156,18 +107,6 @@ export function buildAdminMailPayload(params: BuildAdminMailPayloadParams) {
     contactMessage: 'Hi, I would like to learn more about memberships and availability.',
     calendarUrl,
     manageUrl,
-    studioAddress: '3131 N. San Fernando Rd., Los Angeles, CA 90065',
-    orderNumber: 'TEST-0001',
-    orderDate: new Date().toLocaleString('en-US'),
-    phoneNumber: '(555) 010-0200',
-    logo: '',
-    website: params.origin,
-    items: [
-      { name: 'Studio booking', quantity: 1, total: '120.00' }
-    ],
-    total: '120.00',
-    totalTax: '0.00',
-    totalDiscount: '0.00',
-    receipt: true
+    studioAddress: '3131 N. San Fernando Rd., Los Angeles, CA 90065'
   }
 }
