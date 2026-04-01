@@ -89,12 +89,54 @@ export async function getPrimaryCustomerRowForUser(event: H3Event, userId: strin
   return Array.isArray(rows) ? ((rows[0] as PrimaryCustomerRow | undefined) ?? null) : null
 }
 
+async function updateSquareCustomerIfNeeded(event: H3Event, squareCustomerId: string, input: {
+  firstName: string | null
+  lastName: string | null
+  phone: string | null
+}) {
+  if (!input.firstName && !input.lastName && !input.phone) return
+  try {
+    const existing = await fetchSquareCustomer(event, squareCustomerId)
+    if (!existing) return
+
+    const givenName = typeof existing.givenName === 'string' ? existing.givenName.trim() : (typeof existing.given_name === 'string' ? existing.given_name.trim() : '')
+    const familyName = typeof existing.familyName === 'string' ? existing.familyName.trim() : (typeof existing.family_name === 'string' ? existing.family_name.trim() : '')
+    const phoneNumber = typeof existing.phoneNumber === 'string' ? existing.phoneNumber.trim() : (typeof existing.phone_number === 'string' ? existing.phone_number.trim() : '')
+    const version = existing.version
+
+    const patch: Record<string, unknown> = {}
+    if (!givenName && input.firstName) patch.givenName = input.firstName
+    if (!familyName && input.lastName) patch.familyName = input.lastName
+    if (!phoneNumber && input.phone) patch.phoneNumber = input.phone
+
+    if (!Object.keys(patch).length) return
+
+    const square = await useSquareClient(event)
+    await square.customers.update({
+      customerId: squareCustomerId,
+      ...patch,
+      ...(version != null ? { version } : {})
+    } as never)
+  } catch (error) {
+    console.warn('[square/customer] failed to update customer name/phone', {
+      squareCustomerId,
+      message: error instanceof Error ? error.message : 'unknown'
+    })
+  }
+}
+
 export async function ensureSquareCustomerForUser(event: H3Event, params: {
   userId: string
   email?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  phone?: string | null
 }) {
   const supabase = serverSupabaseServiceRole(event)
   const email = normEmail(params.email)
+  const firstName = normName(params.firstName)
+  const lastName = normName(params.lastName)
+  const phone = normPhone(params.phone)
 
   // Multiple rows can exist for a single user due to legacy data/backfills.
   // Always pick one deterministic primary row so card add/list stays stable.
@@ -126,7 +168,10 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
       .from('customers')
       .insert({
         user_id: params.userId,
-        email
+        email,
+        first_name: firstName,
+        last_name: lastName,
+        phone
       })
       .select('id,user_id,email,phone,first_name,last_name,square_customer_id,square_customer_json')
       .single()
@@ -137,6 +182,20 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
     customerRow = inserted
   }
   if (!customerRow) throw new Error('Failed to resolve customer row')
+
+  // Backfill name/phone on existing customer rows that are missing them
+  if (customerRow && (firstName || lastName || phone)) {
+    const patch: Record<string, string> = {}
+    if (!customerRow.first_name && firstName) patch.first_name = firstName
+    if (!customerRow.last_name && lastName) patch.last_name = lastName
+    if (!customerRow.phone && phone) patch.phone = phone
+    if (Object.keys(patch).length) {
+      await supabase.from('customers').update(patch).eq('id', customerRow.id)
+      if (patch.first_name) customerRow.first_name = patch.first_name
+      if (patch.last_name) customerRow.last_name = patch.last_name
+      if (patch.phone) customerRow.phone = patch.phone
+    }
+  }
 
   let squareCustomerId = (customerRow.square_customer_id ?? '').trim() || null
   if (!squareCustomerId) {
@@ -173,6 +232,13 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
       square_customer_json: sanitizeForJSON(squareCustomerJson)
     })
     .eq('id', customerRow.id)
+
+  // Backfill name/phone on the Square customer if they were missing at creation time
+  await updateSquareCustomerIfNeeded(event, squareCustomerId, {
+    firstName: normName(customerRow.first_name) ?? firstName,
+    lastName: normName(customerRow.last_name) ?? lastName,
+    phone: normPhone(customerRow.phone) ?? phone
+  })
 
   return squareCustomerId
 }

@@ -85,7 +85,8 @@ async function createOrderTemplateIdForPlanVariation(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   square: any,
   planVariationId: string,
-  locationId: string
+  locationId: string,
+  cadence?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
 ) {
   const variationRes = await square.catalog.object.get({
     objectId: planVariationId,
@@ -124,6 +125,12 @@ async function createOrderTemplateIdForPlanVariation(
   const itemVariationId = readString(firstItemVariation, 'id')
   if (!itemVariationId) throw new Error(`Square item ${eligibleItemId} has no item variation id`)
 
+  // Use cadence multiplier for quantity: quarterly=3, annual=12, others=1
+  const cadenceQuantity = !cadence ? 1
+    : cadence === 'quarterly' ? 3
+    : cadence === 'annual' ? 12
+    : 1
+
   const orderRes = await square.orders.create({
     idempotencyKey: randomUUID(),
     order: {
@@ -132,7 +139,7 @@ async function createOrderTemplateIdForPlanVariation(
       lineItems: [
         {
           catalogObjectId: itemVariationId,
-          quantity: '1'
+          quantity: String(cadenceQuantity)
         }
       ]
     }
@@ -238,17 +245,35 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 503, statusMessage: 'This membership is not linked to a Square plan variation yet.' })
   }
 
+  const metaFirstName = readString(session.metadata, 'guest_first_name')
+  const metaLastName = readString(session.metadata, 'guest_last_name')
+  const metaPhone = readString(session.metadata, 'guest_phone')
+
+  // Extract name/phone from Supabase auth user_metadata if available
+  const userMeta = (user as Record<string, unknown> | null)?.user_metadata as Record<string, unknown> | null | undefined
+  const authFirstName = readString(userMeta ?? null, 'first_name', 'firstName', 'given_name')
+  const authLastName = readString(userMeta ?? null, 'last_name', 'lastName', 'family_name')
+  const authPhone = readString(userMeta ?? null, 'phone', 'phoneNumber', 'phone_number')
+
   let squareCustomerId = session.square_customer_id?.trim() || null
   if (!squareCustomerId) {
     if (user?.sub) {
       squareCustomerId = await ensureSquareCustomerForUser(event, {
         userId: user.sub,
-        email: user.email ?? session.guest_email ?? null
+        email: user.email ?? session.guest_email ?? null,
+        firstName: metaFirstName ?? authFirstName,
+        lastName: metaLastName ?? authLastName,
+        phone: metaPhone ?? authPhone
       })
     } else {
       const guestEmail = (session.guest_email ?? '').trim().toLowerCase()
       if (!guestEmail) throw createError({ statusCode: 400, statusMessage: 'Checkout session is missing guest email.' })
-      squareCustomerId = await ensureSquareCustomerForGuest(event, { email: guestEmail })
+      squareCustomerId = await ensureSquareCustomerForGuest(event, {
+        email: guestEmail,
+        firstName: metaFirstName,
+        lastName: metaLastName,
+        phone: metaPhone
+      })
     }
   }
 
@@ -381,7 +406,7 @@ export default defineEventHandler(async (event) => {
 
       if (!promoAttachedToPhase) {
         try {
-          const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId)
+          const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId, session.cadence)
 
           if (Array.isArray(subscriptionPhases) && subscriptionPhases.length > 0) {
             subscriptionPhases = subscriptionPhases.map((phase) => {
@@ -444,7 +469,7 @@ export default defineEventHandler(async (event) => {
 
     if (hasRelativePhaseWithoutOrderTemplate) {
       try {
-        const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId)
+        const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId, session.cadence)
         subscriptionPhases = (subscriptionPhases ?? []).map((phase) => {
           const p = phase as Record<string, unknown>
           const pricing = (p.pricing ?? null) as Record<string, unknown> | null
@@ -512,7 +537,7 @@ export default defineEventHandler(async (event) => {
       try {
         if (attempt > 1) {
           await sleep(600 * attempt)
-          const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId)
+          const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId, session.cadence)
           subscriptionPhases = (subscriptionPhases ?? []).map((phase) => {
             const p = phase as Record<string, unknown>
             const pricing = (p.pricing ?? null) as Record<string, unknown> | null
