@@ -847,12 +847,17 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-kpi-card,
 .admin-panel-card {
-  background: color-mix(in srgb, var(--ui-bg-elevated) 56%, transparent 44%);
+  background: color-mix(in srgb, #d8dce2 90%, #c7ccd5 10%);
   box-shadow: none;
 }
 
 .admin-panel-card--transparent {
   background: transparent;
+}
+
+.admin-ops-panel--dark .admin-kpi-card,
+.admin-ops-panel--dark .admin-panel-card {
+  background: color-mix(in srgb, #343434 86%, #2a2a2a 14%);
 }
 
 .admin-kpi-card--accent {
@@ -1002,10 +1007,15 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 }
 
 .admin-leader-value {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0.72rem;
+  padding: 0.28rem 0.6rem;
   font-size: 1.52rem;
   line-height: 1;
   letter-spacing: 0.01em;
-  color: color-mix(in srgb, var(--gruv-accent) 82%, #ffe7a0 18%);
+  color: var(--ui-text-inverted);
+  background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong));
 }
 
 .admin-leader-metrics {
@@ -1037,23 +1047,23 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   background: color-mix(in srgb, #bec5cf 72%, transparent 28%);
 }
 
-:global(.dark) .admin-leader-tile {
+.admin-ops-panel--dark .admin-leader-tile {
   background: color-mix(in srgb, #2f2f2f 88%, transparent 12%);
 }
 
-:global(.dark) .admin-leader-tile:hover {
+.admin-ops-panel--dark .admin-leader-tile:hover {
   background: color-mix(in srgb, #383838 86%, transparent 14%);
 }
 
-:global(.dark) .admin-leader-avatar {
+.admin-ops-panel--dark .admin-leader-avatar {
   background: color-mix(in srgb, #525252 82%, transparent 18%);
 }
 
-:global(.dark) .admin-leader-pill {
+.admin-ops-panel--dark .admin-leader-pill {
   background: color-mix(in srgb, #474747 80%, transparent 20%);
 }
 
-:global(.dark) .admin-leader-arrow {
+.admin-ops-panel--dark .admin-leader-arrow {
   color: color-mix(in srgb, var(--ui-text-dimmed) 78%, white 22%);
   background: color-mix(in srgb, #444444 78%, transparent 22%);
 }
