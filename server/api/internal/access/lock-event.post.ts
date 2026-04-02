@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { DateTime } from 'luxon'
 import { getHeader } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
-import { getKey } from '~~/server/utils/config/secret'
+import { getKey, getServerConfigMap } from '~~/server/utils/config/secret'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { createAccessIncident } from '~~/server/utils/access/incidents'
@@ -47,10 +47,23 @@ function resolveEventTime(occurredAt?: string) {
   return dt
 }
 
+function asBoolean(value: unknown, fallback = false) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value > 0
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false
+  }
+  return fallback
+}
+
 export default defineEventHandler(async (event) => {
   const authMode = await requireInternalAccessAuth(event)
   const body = bodySchema.parse(await readBody(event))
   const occurredAt = resolveEventTime(body.occurredAt)
+  const config = await getServerConfigMap(event, ['PERMANENT_CODES_DISARM_ABODE_OUTSIDE_LAB_HOURS'])
+  const disarmForPermanentUnlocks = asBoolean(config.PERMANENT_CODES_DISARM_ABODE_OUTSIDE_LAB_HOURS, false)
 
   if (body.eventType !== 'unlock') {
     return {
@@ -61,6 +74,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabase = serverSupabaseServiceRole(event) as any
 
   const { data: assignment, error: assignmentErr } = await supabase
@@ -88,12 +102,66 @@ export default defineEventHandler(async (event) => {
     }
 
     if (permanentCode?.id) {
-      return {
-        ok: true,
-        authMode,
-        ignored: true,
-        reason: 'permanent_slot_unlock',
-        permanentCodeId: permanentCode.id
+      if (!disarmForPermanentUnlocks) {
+        return {
+          ok: true,
+          authMode,
+          ignored: true,
+          reason: 'permanent_slot_unlock',
+          permanentCodeId: permanentCode.id
+        }
+      }
+
+      if (!isOutsideAbodeArmingGap(occurredAt)) {
+        return {
+          ok: true,
+          authMode,
+          ignored: true,
+          reason: 'permanent_slot_inside_daytime_gap',
+          permanentCodeId: permanentCode.id
+        }
+      }
+
+      try {
+        const abode = await sendAbodeAutomationEvent(event, {
+          eventType: 'unlock_disarm_home',
+          lockSlot: body.slotNumber,
+          occurredAt: occurredAt.toUTC().toISO()
+        })
+
+        return {
+          ok: true,
+          authMode,
+          reason: 'permanent_slot_disarm_attempted',
+          permanentCodeId: permanentCode.id,
+          abode
+        }
+      } catch (error) {
+        const message = (error as Error)?.message ?? String(error)
+
+        await createAccessIncident(event, {
+          incidentType: 'abode_automation_failure',
+          severity: 'error',
+          title: 'Abode disarm automation failed on permanent-code unlock',
+          message,
+          metadata: {
+            slotNumber: body.slotNumber,
+            permanentCodeId: permanentCode.id,
+            occurredAt: occurredAt.toUTC().toISO(),
+            source: body.source ?? null
+          }
+        }).catch(() => {})
+
+        return {
+          ok: true,
+          authMode,
+          reason: 'permanent_slot_disarm_failed',
+          permanentCodeId: permanentCode.id,
+          abode: {
+            ok: false,
+            error: message
+          }
+        }
       }
     }
 

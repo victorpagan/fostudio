@@ -25,6 +25,9 @@ type PermanentCodeRecord = {
 type DoorCodesPayload = {
   members: MemberRecord[]
   permanentCodes: PermanentCodeRecord[]
+  settings: {
+    permanentCodesDisarmAbodeOutsideLabHours: boolean
+  }
 }
 
 const toast = useToast()
@@ -34,6 +37,8 @@ const savingMemberDoorCode = ref(false)
 
 const savingPermanent = ref(false)
 const deletingPermanentId = ref<string | null>(null)
+const savingAccessSettings = ref(false)
+const permanentCodesDisarmAbodeOutsideLabHours = ref(false)
 const permanentForm = reactive({
   id: '' as string,
   label: '',
@@ -49,19 +54,31 @@ function readErrorMessage(error: unknown) {
 }
 
 const { data, pending, refresh } = await useAsyncData<DoorCodesPayload>('admin:door-codes', async () => {
-  const [membersRes, permanentRes] = await Promise.all([
+  const [membersRes, permanentRes, settingsRes] = await Promise.all([
     $fetch<{ members: MemberRecord[] }>('/api/admin/members'),
-    $fetch<{ codes: PermanentCodeRecord[] }>('/api/admin/access/permanent-codes')
+    $fetch<{ codes: PermanentCodeRecord[] }>('/api/admin/access/permanent-codes'),
+    $fetch<{ settings: { permanentCodesDisarmAbodeOutsideLabHours: boolean } }>('/api/admin/access/settings')
   ])
 
   return {
     members: membersRes.members ?? [],
-    permanentCodes: permanentRes.codes ?? []
+    permanentCodes: permanentRes.codes ?? [],
+    settings: {
+      permanentCodesDisarmAbodeOutsideLabHours: Boolean(
+        settingsRes.settings?.permanentCodesDisarmAbodeOutsideLabHours
+      )
+    }
   }
 })
 
 const members = computed(() => data.value?.members ?? [])
 const permanentCodes = computed(() => data.value?.permanentCodes ?? [])
+const initialPermanentCodesDisarmOutsideLabHours = computed(() =>
+  Boolean(data.value?.settings?.permanentCodesDisarmAbodeOutsideLabHours)
+)
+const accessSettingsDirty = computed(() =>
+  permanentCodesDisarmAbodeOutsideLabHours.value !== initialPermanentCodesDisarmOutsideLabHours.value
+)
 
 const selectedMember = computed(() =>
   members.value.find(row => row.membership_id === selectedMemberId.value) ?? null
@@ -99,6 +116,10 @@ watch(members, (next) => {
   }
 
   memberDoorCode.value = current.door_code ?? ''
+}, { immediate: true })
+
+watch(initialPermanentCodesDisarmOutsideLabHours, (next) => {
+  permanentCodesDisarmAbodeOutsideLabHours.value = next
 }, { immediate: true })
 
 function resetPermanentForm() {
@@ -205,6 +226,29 @@ async function deletePermanentCode(id: string) {
   }
 }
 
+async function saveAccessSettings() {
+  if (savingAccessSettings.value) return
+  savingAccessSettings.value = true
+  try {
+    await $fetch('/api/admin/access/settings.upsert', {
+      method: 'POST',
+      body: {
+        permanentCodesDisarmAbodeOutsideLabHours: permanentCodesDisarmAbodeOutsideLabHours.value
+      }
+    })
+    toast.add({ title: 'Access settings saved' })
+    await refresh()
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not save access settings',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    savingAccessSettings.value = false
+  }
+}
+
 function formatDateTime(value: string | null) {
   if (!value) return '—'
   const dt = new Date(value)
@@ -247,6 +291,30 @@ function formatDateTime(value: string | null) {
           description="Manage member codes and permanent lock codes. Permanent codes stay active outside booking windows."
         />
 
+        <UCard>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="font-medium">
+                Access automation settings
+              </div>
+              <p class="mt-1 text-xs text-dimmed">
+                When enabled, permanent-code unlocks can trigger Abode disarm only outside lab hours (11:00 AM–7:00 PM).
+              </p>
+            </div>
+            <div class="flex items-center gap-3">
+              <USwitch v-model="permanentCodesDisarmAbodeOutsideLabHours" />
+              <UButton
+                size="sm"
+                :disabled="!accessSettingsDirty"
+                :loading="savingAccessSettings"
+                @click="saveAccessSettings"
+              >
+                Save setting
+              </UButton>
+            </div>
+          </div>
+        </UCard>
+
         <div class="grid gap-4 xl:grid-cols-2">
           <UCard>
             <div class="font-medium">
@@ -256,28 +324,67 @@ function formatDateTime(value: string | null) {
               Member codes are booking-window controlled by access jobs.
             </p>
 
-            <div class="mt-3 space-y-2 max-h-80 overflow-auto pr-1">
-              <button
-                v-for="member in members"
-                :key="member.membership_id"
-                class="w-full rounded-lg border border-default p-2 text-left text-sm transition hover:bg-elevated"
-                :class="selectedMemberId === member.membership_id ? 'bg-elevated border-primary' : ''"
-                @click="selectedMemberId = member.membership_id"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <span class="font-medium truncate">{{ memberLabel(member) }}</span>
-                  <UBadge
-                    :color="memberStatusColor(member.effective_status)"
-                    size="xs"
-                    variant="soft"
+            <div class="mt-3 max-h-80 overflow-auto rounded-lg border border-default">
+              <table class="min-w-full text-sm">
+                <thead class="bg-elevated/50 text-left text-xs uppercase tracking-wide text-dimmed">
+                  <tr>
+                    <th class="px-3 py-2 font-medium">
+                      Member
+                    </th>
+                    <th class="px-3 py-2 font-medium">
+                      Status
+                    </th>
+                    <th class="px-3 py-2 font-medium">
+                      Code
+                    </th>
+                    <th class="px-3 py-2 font-medium text-right">
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="member in members"
+                    :key="member.membership_id"
+                    class="border-t border-default transition"
+                    :class="selectedMemberId === member.membership_id ? 'bg-elevated/60' : 'hover:bg-elevated/30'"
                   >
-                    {{ member.effective_status }}
-                  </UBadge>
-                </div>
-                <div class="mt-1 text-xs text-dimmed">
-                  Code: {{ member.door_code || 'none' }}
-                </div>
-              </button>
+                    <td class="px-3 py-2">
+                      {{ memberLabel(member) }}
+                    </td>
+                    <td class="px-3 py-2">
+                      <UBadge
+                        :color="memberStatusColor(member.effective_status)"
+                        size="xs"
+                        variant="soft"
+                      >
+                        {{ member.effective_status }}
+                      </UBadge>
+                    </td>
+                    <td class="px-3 py-2 font-mono">
+                      {{ member.door_code || 'none' }}
+                    </td>
+                    <td class="px-3 py-2 text-right">
+                      <UButton
+                        size="xs"
+                        color="neutral"
+                        variant="soft"
+                        @click="() => { selectedMemberId = member.membership_id; memberDoorCode = member.door_code ?? '' }"
+                      >
+                        Edit
+                      </UButton>
+                    </td>
+                  </tr>
+                  <tr v-if="!members.length">
+                    <td
+                      colspan="4"
+                      class="px-3 py-4 text-sm text-dimmed"
+                    >
+                      No members found.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
 
             <div
@@ -354,68 +461,107 @@ function formatDateTime(value: string | null) {
               </UButton>
             </div>
 
-            <div class="mt-4 space-y-2 max-h-80 overflow-auto pr-1">
-              <div
-                v-for="row in permanentCodes"
-                :key="row.id"
-                class="rounded-lg border border-default p-3 text-sm"
-              >
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                  <div class="font-medium">
-                    {{ row.label }}
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <UBadge
-                      :color="row.active ? 'success' : 'neutral'"
-                      size="xs"
-                      variant="soft"
-                    >
-                      {{ row.active ? 'active' : 'inactive' }}
-                    </UBadge>
-                    <UBadge
-                      :color="syncStatusColor(row.last_sync_status)"
-                      size="xs"
-                      variant="soft"
-                    >
-                      sync: {{ row.last_sync_status ?? 'unknown' }}
-                    </UBadge>
-                  </div>
-                </div>
-                <div class="mt-1 text-xs text-dimmed">
-                  Slot {{ row.slot_number }} · Code {{ row.code }} · Last sync {{ formatDateTime(row.last_synced_at) }}
-                </div>
-                <div
-                  v-if="row.last_sync_error"
-                  class="mt-1 text-xs text-error"
-                >
-                  {{ row.last_sync_error }}
-                </div>
-                <div class="mt-2 flex gap-2">
-                  <UButton
-                    size="xs"
-                    color="neutral"
-                    variant="soft"
-                    @click="editPermanentCode(row)"
+            <div class="mt-4 max-h-80 overflow-auto rounded-lg border border-default">
+              <table class="min-w-full text-sm">
+                <thead class="bg-elevated/50 text-left text-xs uppercase tracking-wide text-dimmed">
+                  <tr>
+                    <th class="px-3 py-2 font-medium">
+                      Label
+                    </th>
+                    <th class="px-3 py-2 font-medium">
+                      Slot
+                    </th>
+                    <th class="px-3 py-2 font-medium">
+                      Code
+                    </th>
+                    <th class="px-3 py-2 font-medium">
+                      Status
+                    </th>
+                    <th class="px-3 py-2 font-medium">
+                      Sync
+                    </th>
+                    <th class="px-3 py-2 font-medium">
+                      Last sync
+                    </th>
+                    <th class="px-3 py-2 font-medium text-right">
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="row in permanentCodes"
+                    :key="row.id"
+                    class="border-t border-default"
                   >
-                    Edit
-                  </UButton>
-                  <UButton
-                    size="xs"
-                    color="error"
-                    variant="soft"
-                    :loading="deletingPermanentId === row.id"
-                    @click="deletePermanentCode(row.id)"
-                  >
-                    Delete
-                  </UButton>
-                </div>
-              </div>
-              <div
-                v-if="!permanentCodes.length"
-                class="text-sm text-dimmed"
-              >
-                No permanent door codes configured.
-              </div>
+                    <td class="px-3 py-2">
+                      {{ row.label }}
+                    </td>
+                    <td class="px-3 py-2">
+                      {{ row.slot_number }}
+                    </td>
+                    <td class="px-3 py-2 font-mono">
+                      {{ row.code }}
+                    </td>
+                    <td class="px-3 py-2">
+                      <UBadge
+                        :color="row.active ? 'success' : 'neutral'"
+                        size="xs"
+                        variant="soft"
+                      >
+                        {{ row.active ? 'active' : 'inactive' }}
+                      </UBadge>
+                    </td>
+                    <td class="px-3 py-2">
+                      <UBadge
+                        :color="syncStatusColor(row.last_sync_status)"
+                        size="xs"
+                        variant="soft"
+                      >
+                        {{ row.last_sync_status ?? 'unknown' }}
+                      </UBadge>
+                    </td>
+                    <td class="px-3 py-2">
+                      <span class="text-xs text-dimmed">{{ formatDateTime(row.last_synced_at) }}</span>
+                      <div
+                        v-if="row.last_sync_error"
+                        class="mt-1 text-xs text-error"
+                      >
+                        {{ row.last_sync_error }}
+                      </div>
+                    </td>
+                    <td class="px-3 py-2">
+                      <div class="flex justify-end gap-2">
+                        <UButton
+                          size="xs"
+                          color="neutral"
+                          variant="soft"
+                          @click="editPermanentCode(row)"
+                        >
+                          Edit
+                        </UButton>
+                        <UButton
+                          size="xs"
+                          color="error"
+                          variant="soft"
+                          :loading="deletingPermanentId === row.id"
+                          @click="deletePermanentCode(row.id)"
+                        >
+                          Delete
+                        </UButton>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="!permanentCodes.length">
+                    <td
+                      colspan="7"
+                      class="px-3 py-4 text-sm text-dimmed"
+                    >
+                      No permanent door codes configured.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </UCard>
         </div>
