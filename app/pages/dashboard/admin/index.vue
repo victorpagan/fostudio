@@ -353,311 +353,317 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
     </template>
 
     <template #body>
-      <div
-        ref="opsScrollRef"
-        class="admin-ops-shell h-full overflow-y-auto p-4 sm:p-5 md:p-6 space-y-4 md:space-y-5"
-        :class="{
-          'admin-ops-shell--dark': isDarkMode,
-          'admin-ops-shell--scrolled-top': opsCanScrollUp,
-          'admin-ops-shell--scrolled-bottom': opsCanScrollDown
-        }"
-      >
-        <section class="admin-ops-hero rounded-2xl p-4 sm:p-5 md:p-6">
-          <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div class="space-y-2">
-              <p class="text-[11px] uppercase tracking-[0.22em] text-dimmed">
-                Revenue + Critical Operations
-              </p>
-              <p class="max-w-3xl text-sm text-toned">
-                Selected range drives all totals, trend bars, and pressure signals.
-              </p>
-            </div>
-            <div class="admin-period-toolbar flex items-center gap-2">
-              <UButton
-                size="sm"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-chevron-left"
-                @click="stepPeriod(-1)"
-              />
-              <div class="px-1 py-2 text-xs text-toned min-w-48 text-center">
-                {{ rangeLabel }}
+      <div class="admin-ops-shell-frame h-full">
+        <div
+          class="admin-ops-shell-shadow admin-ops-shell-shadow--top"
+          :class="{ 'is-visible': opsCanScrollUp }"
+        />
+        <div
+          class="admin-ops-shell-shadow admin-ops-shell-shadow--bottom"
+          :class="{ 'is-visible': opsCanScrollDown }"
+        />
+        <div
+          ref="opsScrollRef"
+          class="admin-ops-shell h-full overflow-y-auto p-4 sm:p-5 md:p-6 space-y-4 md:space-y-5"
+          :class="{ 'admin-ops-shell--dark': isDarkMode }"
+        >
+          <section class="admin-ops-hero rounded-2xl p-4 sm:p-5 md:p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div class="space-y-2">
+                <p class="text-[11px] uppercase tracking-[0.22em] text-dimmed">
+                  Revenue + Critical Operations
+                </p>
+                <p class="max-w-3xl text-sm text-toned">
+                  Selected range drives all totals, trend bars, and pressure signals.
+                </p>
               </div>
-              <UButton
-                size="sm"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-chevron-right"
-                :disabled="!canStepForward"
-                @click="stepPeriod(1)"
-              />
-            </div>
-          </div>
-
-          <div class="mt-4 flex flex-wrap items-center gap-2">
-            <UButton
-              v-for="mode in periodButtons"
-              :key="mode.value"
-              size="xs"
-              :color="periodMode === mode.value ? 'primary' : 'neutral'"
-              :variant="periodMode === mode.value ? 'solid' : 'ghost'"
-              @click="periodMode = mode.value"
-            >
-              {{ mode.label }}
-            </UButton>
-          </div>
-        </section>
-
-        <section class="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <UCard class="admin-kpi-card admin-kpi-card--accent border-0">
-            <div class="text-[11px] uppercase tracking-[0.2em] text-inverted/85">
-              Revenue
-            </div>
-            <div class="mt-2 text-3xl font-[var(--font-display)] font-light text-inverted">
-              {{ formatMoney(data?.summary?.totalRevenueCents) }}
-            </div>
-            <p class="mt-2 text-xs text-inverted/80">
-              {{ data?.summary?.totalOrders ?? 0 }} paid transactions in range
-            </p>
-          </UCard>
-
-          <UCard class="admin-kpi-card border-0">
-            <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-              Critical pressure
-            </div>
-            <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
-              {{ criticalPressureTotal }}
-            </div>
-            <p class="mt-2 text-xs text-dimmed">
-              Incidents + dead jobs + due grants
-            </p>
-            <UButton
-              class="mt-3 w-fit"
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              icon="i-lucide-panel-right-open"
-              @click="criticalDetailsOpen = true"
-            >
-              See sources
-            </UButton>
-          </UCard>
-
-          <UCard class="admin-kpi-card border-0">
-            <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-              Campaign reminders
-            </div>
-            <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
-              {{ campaignReminders.length }}
-            </div>
-            <p class="mt-2 text-xs text-dimmed">
-              {{ campaignReminders[0]?.dueLabel ?? 'No reminders queued' }}
-            </p>
-            <UButton
-              class="mt-3 w-fit"
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              to="/dashboard/admin/email-campaigns"
-            >
-              Open campaigns
-            </UButton>
-          </UCard>
-        </section>
-
-        <section class="grid gap-3 sm:gap-4 xl:grid-cols-[1.6fr_1fr]">
-          <UCard class="admin-panel-card border-0">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                  Sales trend
-                </div>
-                <h2 class="mt-1 text-xl font-[var(--font-display)] font-light">
-                  Revenue by {{ data?.range?.bucket === 'month' ? 'month' : data?.range?.bucket === 'week' ? 'week' : 'day' }}
-                </h2>
-              </div>
-              <UBadge
-                size="sm"
-                color="primary"
-                variant="soft"
-              >
-                {{ formatMoney(data?.summary?.totalRevenueCents) }}
-              </UBadge>
-            </div>
-
-            <div class="mt-4">
-              <div class="admin-revenue-chart">
-                <div
-                  v-for="point in revenueSeries"
-                  :key="point.key"
-                  class="admin-revenue-chart-col"
-                >
-                  <div class="admin-revenue-bar-shell">
-                    <div class="admin-revenue-bar-stack">
-                      <div
-                        class="admin-revenue-segment admin-revenue-segment--holds"
-                        :style="{ height: barSegmentHeight(point.holdTopupCents) }"
-                      />
-                      <div
-                        class="admin-revenue-segment admin-revenue-segment--topups"
-                        :style="{ height: barSegmentHeight(point.creditTopupCents) }"
-                      />
-                      <div
-                        class="admin-revenue-segment admin-revenue-segment--membership"
-                        :style="{ height: barSegmentHeight(point.membershipCents) }"
-                      />
-                    </div>
-                  </div>
-                  <div class="admin-revenue-label">
-                    {{ point.label }}
-                  </div>
-                </div>
-              </div>
-
-              <div class="mt-3 flex flex-wrap gap-2 text-[11px]">
-                <span class="admin-legend-pill">
-                  <span class="admin-legend-dot admin-legend-dot--membership" /> Membership
-                </span>
-                <span class="admin-legend-pill">
-                  <span class="admin-legend-dot admin-legend-dot--topups" /> Credits
-                </span>
-                <span class="admin-legend-pill">
-                  <span class="admin-legend-dot admin-legend-dot--holds" /> Holds
-                </span>
-              </div>
-            </div>
-          </UCard>
-
-          <UCard class="admin-panel-card admin-panel-card--transparent border-0">
-            <div class="flex items-center justify-between gap-2">
-              <div>
-                <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                  Usage leaders
-                </div>
-                <h2 class="mt-1 text-xl font-[var(--font-display)] font-light">
-                  Top 4 in {{ rangeLabel }}
-                </h2>
-              </div>
-            </div>
-
-            <p class="mt-2 text-xs text-dimmed">
-              Derived from non-canceled member bookings plus processed membership/top-up payments in {{ rangeLabel }}.
-            </p>
-
-            <div class="mt-3 grid gap-2 sm:grid-cols-2">
-              <NuxtLink
-                v-for="member in usageLeaders"
-                :key="member.userId"
-                class="admin-leader-tile"
-                :to="usageLeaderTo(member.userId)"
-              >
-                <div class="min-w-0 space-y-2">
-                  <div class="flex items-center gap-2">
-                    <div class="admin-leader-avatar">
-                      {{ (member.name || member.email || member.userId || '?').slice(0, 1).toUpperCase() }}
-                    </div>
-                    <div class="min-w-0">
-                      <div class="truncate text-sm font-medium text-highlighted">
-                        {{ member.name || member.email || member.userId }}
-                      </div>
-                      <div class="truncate text-xs text-dimmed">
-                        {{ member.email || member.userId }}
-                      </div>
-                    </div>
-                  </div>
-                  <div class="admin-leader-value">
-                    {{ formatMoney(member.revenueCents) }}
-                  </div>
-                  <div class="admin-leader-metrics">
-                    <span class="admin-leader-pill">{{ member.bookings }} bookings</span>
-                    <span class="admin-leader-pill">{{ member.creditsBurned }} cr</span>
-                    <span class="admin-leader-pill">Last {{ formatShortDate(member.lastBookingAt) }}</span>
-                  </div>
-                </div>
-                <div class="admin-leader-arrow">
-                  <UIcon
-                    name="i-lucide-arrow-up-right"
-                    class="size-4"
-                  />
-                </div>
-              </NuxtLink>
-              <div
-                v-if="!usageLeaders.length"
-                class="sm:col-span-2 text-center text-dimmed py-5 text-sm"
-              >
-                No member activity in selected period.
-              </div>
-            </div>
-          </UCard>
-        </section>
-
-        <section>
-          <div class="grid gap-3 sm:gap-4 md:grid-cols-2">
-            <UCard class="admin-panel-card border-0">
-              <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                Revenue mix
-              </div>
-              <p class="mt-1 text-xs text-dimmed">
-                Split for {{ rangeLabel }}
-              </p>
-              <div class="mt-3 flex items-center gap-4">
-                <div
-                  class="admin-mix-ring"
-                  :style="revenueMixStyle"
+              <div class="admin-period-toolbar flex items-center gap-2">
+                <UButton
+                  size="sm"
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-chevron-left"
+                  @click="stepPeriod(-1)"
                 />
-                <div class="space-y-1.5 text-xs text-dimmed">
-                  <div>Membership: <span class="text-highlighted">{{ formatMoney(data?.summary?.membershipRevenueCents) }}</span></div>
-                  <div>Credit topups: <span class="text-highlighted">{{ formatMoney(data?.summary?.creditTopupRevenueCents) }}</span></div>
-                  <div>Hold topups: <span class="text-highlighted">{{ formatMoney(data?.summary?.holdTopupRevenueCents) }}</span></div>
+                <div class="px-1 py-2 text-xs text-toned min-w-48 text-center">
+                  {{ rangeLabel }}
+                </div>
+                <UButton
+                  size="sm"
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-chevron-right"
+                  :disabled="!canStepForward"
+                  @click="stepPeriod(1)"
+                />
+              </div>
+            </div>
+
+            <div class="mt-4 flex flex-wrap items-center gap-2">
+              <UButton
+                v-for="mode in periodButtons"
+                :key="mode.value"
+                size="xs"
+                :color="periodMode === mode.value ? 'primary' : 'neutral'"
+                :variant="periodMode === mode.value ? 'solid' : 'ghost'"
+                @click="periodMode = mode.value"
+              >
+                {{ mode.label }}
+              </UButton>
+            </div>
+          </section>
+
+          <section class="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <UCard class="admin-kpi-card admin-kpi-card--accent border-0">
+              <div class="text-[11px] uppercase tracking-[0.2em] text-inverted/85">
+                Revenue
+              </div>
+              <div class="mt-2 text-3xl font-[var(--font-display)] font-light text-inverted">
+                {{ formatMoney(data?.summary?.totalRevenueCents) }}
+              </div>
+              <p class="mt-2 text-xs text-inverted/80">
+                {{ data?.summary?.totalOrders ?? 0 }} paid transactions in range
+              </p>
+            </UCard>
+
+            <UCard class="admin-kpi-card border-0">
+              <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                Critical pressure
+              </div>
+              <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
+                {{ criticalPressureTotal }}
+              </div>
+              <p class="mt-2 text-xs text-dimmed">
+                Incidents + dead jobs + due grants
+              </p>
+              <UButton
+                class="mt-3 w-fit"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-panel-right-open"
+                @click="criticalDetailsOpen = true"
+              >
+                See sources
+              </UButton>
+            </UCard>
+
+            <UCard class="admin-kpi-card border-0">
+              <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                Campaign reminders
+              </div>
+              <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
+                {{ campaignReminders.length }}
+              </div>
+              <p class="mt-2 text-xs text-dimmed">
+                {{ campaignReminders[0]?.dueLabel ?? 'No reminders queued' }}
+              </p>
+              <UButton
+                class="mt-3 w-fit"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                to="/dashboard/admin/email-campaigns"
+              >
+                Open campaigns
+              </UButton>
+            </UCard>
+          </section>
+
+          <section class="grid gap-3 sm:gap-4 xl:grid-cols-[1.6fr_1fr]">
+            <UCard class="admin-panel-card border-0">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                    Sales trend
+                  </div>
+                  <h2 class="mt-1 text-xl font-[var(--font-display)] font-light">
+                    Revenue by {{ data?.range?.bucket === 'month' ? 'month' : data?.range?.bucket === 'week' ? 'week' : 'day' }}
+                  </h2>
+                </div>
+                <UBadge
+                  size="sm"
+                  color="primary"
+                  variant="soft"
+                >
+                  {{ formatMoney(data?.summary?.totalRevenueCents) }}
+                </UBadge>
+              </div>
+
+              <div class="mt-4">
+                <div class="admin-revenue-chart">
+                  <div
+                    v-for="point in revenueSeries"
+                    :key="point.key"
+                    class="admin-revenue-chart-col"
+                  >
+                    <div class="admin-revenue-bar-shell">
+                      <div class="admin-revenue-bar-stack">
+                        <div
+                          class="admin-revenue-segment admin-revenue-segment--holds"
+                          :style="{ height: barSegmentHeight(point.holdTopupCents) }"
+                        />
+                        <div
+                          class="admin-revenue-segment admin-revenue-segment--topups"
+                          :style="{ height: barSegmentHeight(point.creditTopupCents) }"
+                        />
+                        <div
+                          class="admin-revenue-segment admin-revenue-segment--membership"
+                          :style="{ height: barSegmentHeight(point.membershipCents) }"
+                        />
+                      </div>
+                    </div>
+                    <div class="admin-revenue-label">
+                      {{ point.label }}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2 text-[11px]">
+                  <span class="admin-legend-pill">
+                    <span class="admin-legend-dot admin-legend-dot--membership" /> Membership
+                  </span>
+                  <span class="admin-legend-pill">
+                    <span class="admin-legend-dot admin-legend-dot--topups" /> Credits
+                  </span>
+                  <span class="admin-legend-pill">
+                    <span class="admin-legend-dot admin-legend-dot--holds" /> Holds
+                  </span>
                 </div>
               </div>
             </UCard>
 
-            <UCard class="admin-panel-card border-0">
-              <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                Access + door state
+            <UCard class="admin-panel-card admin-panel-card--transparent border-0">
+              <div class="flex items-center justify-between gap-2">
+                <div>
+                  <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                    Usage leaders
+                  </div>
+                  <h2 class="mt-1 text-xl font-[var(--font-display)] font-light">
+                    Top 4 in {{ rangeLabel }}
+                  </h2>
+                </div>
               </div>
-              <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <div class="admin-mini-stat">
-                  <span>Pending jobs</span>
-                  <strong>{{ accessStatus.pendingJobs }}</strong>
-                </div>
-                <div class="admin-mini-stat">
-                  <span>Dead jobs</span>
-                  <strong>{{ accessStatus.deadJobs }}</strong>
-                </div>
-                <div class="admin-mini-stat">
-                  <span>Open incidents</span>
-                  <strong>{{ accessStatus.openIncidents }}</strong>
-                </div>
-                <div class="admin-mini-stat">
-                  <span>Active permanent codes</span>
-                  <strong>{{ accessStatus.permanentCodesActive }}</strong>
-                </div>
-                <div class="admin-mini-stat col-span-2">
-                  <span>Abode disarm outside lab hours</span>
-                  <UBadge
-                    size="xs"
-                    :color="accessStatus.permanentCodesDisarmAbodeOutsideLabHours ? 'success' : 'neutral'"
-                    variant="soft"
-                  >
-                    {{ accessStatus.permanentCodesDisarmAbodeOutsideLabHours ? 'Enabled' : 'Disabled' }}
-                  </UBadge>
-                </div>
-                <div class="admin-mini-stat col-span-2">
-                  <span>Permanent sync errors</span>
-                  <UBadge
-                    size="xs"
-                    :color="accessStatus.permanentCodesSyncErrors > 0 ? 'warning' : 'success'"
-                    variant="soft"
-                  >
-                    {{ accessStatus.permanentCodesSyncErrors }}
-                  </UBadge>
+
+              <p class="mt-2 text-xs text-dimmed">
+                Derived from non-canceled member bookings plus processed membership/top-up payments in {{ rangeLabel }}.
+              </p>
+
+              <div class="mt-3 grid gap-2 sm:grid-cols-2">
+                <NuxtLink
+                  v-for="member in usageLeaders"
+                  :key="member.userId"
+                  class="admin-leader-tile"
+                  :to="usageLeaderTo(member.userId)"
+                >
+                  <div class="min-w-0 space-y-2">
+                    <div class="flex items-center gap-2">
+                      <div class="admin-leader-avatar">
+                        {{ (member.name || member.email || member.userId || '?').slice(0, 1).toUpperCase() }}
+                      </div>
+                      <div class="min-w-0">
+                        <div class="truncate text-sm font-medium text-highlighted">
+                          {{ member.name || member.email || member.userId }}
+                        </div>
+                        <div class="truncate text-xs text-dimmed">
+                          {{ member.email || member.userId }}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="admin-leader-value">
+                      {{ formatMoney(member.revenueCents) }}
+                    </div>
+                    <div class="admin-leader-metrics">
+                      <span class="admin-leader-pill">{{ member.bookings }} bookings</span>
+                      <span class="admin-leader-pill">{{ member.creditsBurned }} cr</span>
+                      <span class="admin-leader-pill">Last {{ formatShortDate(member.lastBookingAt) }}</span>
+                    </div>
+                  </div>
+                  <div class="admin-leader-arrow">
+                    <UIcon
+                      name="i-lucide-arrow-up-right"
+                      class="size-4"
+                    />
+                  </div>
+                </NuxtLink>
+                <div
+                  v-if="!usageLeaders.length"
+                  class="sm:col-span-2 text-center text-dimmed py-5 text-sm"
+                >
+                  No member activity in selected period.
                 </div>
               </div>
             </UCard>
-          </div>
-        </section>
+          </section>
+
+          <section>
+            <div class="grid gap-3 sm:gap-4 md:grid-cols-2">
+              <UCard class="admin-panel-card border-0">
+                <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                  Revenue mix
+                </div>
+                <p class="mt-1 text-xs text-dimmed">
+                  Split for {{ rangeLabel }}
+                </p>
+                <div class="mt-3 flex items-center gap-4">
+                  <div
+                    class="admin-mix-ring"
+                    :style="revenueMixStyle"
+                  />
+                  <div class="space-y-1.5 text-xs text-dimmed">
+                    <div>Membership: <span class="text-highlighted">{{ formatMoney(data?.summary?.membershipRevenueCents) }}</span></div>
+                    <div>Credit topups: <span class="text-highlighted">{{ formatMoney(data?.summary?.creditTopupRevenueCents) }}</span></div>
+                    <div>Hold topups: <span class="text-highlighted">{{ formatMoney(data?.summary?.holdTopupRevenueCents) }}</span></div>
+                  </div>
+                </div>
+              </UCard>
+
+              <UCard class="admin-panel-card border-0">
+                <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                  Access + door state
+                </div>
+                <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div class="admin-mini-stat">
+                    <span>Pending jobs</span>
+                    <strong>{{ accessStatus.pendingJobs }}</strong>
+                  </div>
+                  <div class="admin-mini-stat">
+                    <span>Dead jobs</span>
+                    <strong>{{ accessStatus.deadJobs }}</strong>
+                  </div>
+                  <div class="admin-mini-stat">
+                    <span>Open incidents</span>
+                    <strong>{{ accessStatus.openIncidents }}</strong>
+                  </div>
+                  <div class="admin-mini-stat">
+                    <span>Active permanent codes</span>
+                    <strong>{{ accessStatus.permanentCodesActive }}</strong>
+                  </div>
+                  <div class="admin-mini-stat col-span-2">
+                    <span>Abode disarm outside lab hours</span>
+                    <UBadge
+                      size="xs"
+                      :color="accessStatus.permanentCodesDisarmAbodeOutsideLabHours ? 'success' : 'neutral'"
+                      variant="soft"
+                    >
+                      {{ accessStatus.permanentCodesDisarmAbodeOutsideLabHours ? 'Enabled' : 'Disabled' }}
+                    </UBadge>
+                  </div>
+                  <div class="admin-mini-stat col-span-2">
+                    <span>Permanent sync errors</span>
+                    <UBadge
+                      size="xs"
+                      :color="accessStatus.permanentCodesSyncErrors > 0 ? 'warning' : 'success'"
+                      variant="soft"
+                    >
+                      {{ accessStatus.permanentCodesSyncErrors }}
+                    </UBadge>
+                  </div>
+                </div>
+              </UCard>
+            </div>
+          </section>
+        </div>
       </div>
 
       <USlideover
@@ -735,13 +741,44 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   background: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%) !important;
 }
 
+.admin-ops-shell-frame {
+  position: relative;
+  border-radius: 1rem 0 0 0;
+  overflow: hidden;
+}
+
+.admin-ops-shell-shadow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2.1rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+  z-index: 4;
+}
+
+.admin-ops-shell-shadow--top {
+  top: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.52), transparent);
+}
+
+.admin-ops-shell-shadow--bottom {
+  bottom: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.52), transparent);
+}
+
+.admin-ops-shell-shadow.is-visible {
+  opacity: 1;
+}
+
 .admin-ops-shell {
   position: relative;
   background:
     radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 7%, transparent), transparent 62%),
     radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 7%, transparent), transparent 58%),
     #cfd1d3;
-  border-radius: 1rem;
+  border-radius: 1rem 0 0 0;
   overflow-x: hidden;
   overflow-y: auto;
 }
@@ -756,37 +793,6 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 .admin-ops-shell > * {
   position: relative;
   z-index: 1;
-}
-
-.admin-ops-shell::before,
-.admin-ops-shell::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2rem;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 140ms ease-out;
-  z-index: 4;
-}
-
-.admin-ops-shell::before {
-  top: 0;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.52), transparent);
-}
-
-.admin-ops-shell::after {
-  bottom: 0;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.52), transparent);
-}
-
-.admin-ops-shell.admin-ops-shell--scrolled-top::before {
-  opacity: 1;
-}
-
-.admin-ops-shell.admin-ops-shell--scrolled-bottom::after {
-  opacity: 1;
 }
 
 :global(.dark) .admin-ops-panel {
