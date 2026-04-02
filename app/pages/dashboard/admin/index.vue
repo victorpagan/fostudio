@@ -530,9 +530,6 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               <p class="mt-2 text-xs text-dimmed">
                 Incidents + dead jobs + due grants
               </p>
-              <p class="mt-3 text-xs text-dimmed">
-                See sources
-              </p>
             </DashboardOpsKpiCard>
 
             <DashboardOpsKpiCard card-class="admin-kpi-card">

@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import type { RouteLocationRaw } from 'vue-router'
+
 const props = withDefaults(defineProps<{
   cardClass?: string
   showLinkAction?: boolean
   showNotificationAction?: boolean
   notificationDisabled?: boolean
   linkDisabled?: boolean
+  linkTo?: RouteLocationRaw | null
   linkAriaLabel?: string
   notificationAriaLabel?: string
 }>(), {
@@ -13,6 +16,7 @@ const props = withDefaults(defineProps<{
   showNotificationAction: false,
   notificationDisabled: true,
   linkDisabled: false,
+  linkTo: null,
   linkAriaLabel: 'Open details',
   notificationAriaLabel: 'Notifications'
 })
@@ -22,6 +26,7 @@ const emit = defineEmits<{
 }>()
 
 const hasActions = computed(() => props.showLinkAction || props.showNotificationAction)
+const hasLinkNavigation = computed(() => Boolean(props.linkTo) && !props.linkDisabled)
 
 function onLinkAction() {
   if (props.linkDisabled) return
@@ -67,8 +72,20 @@ function onNotificationAction() {
         />
       </button>
 
+      <NuxtLink
+        v-if="showLinkAction && hasLinkNavigation"
+        :to="linkTo as RouteLocationRaw"
+        class="ops-kpi-action-btn ops-kpi-action-btn--link"
+        :aria-label="linkAriaLabel"
+      >
+        <UIcon
+          name="i-lucide-arrow-up-right"
+          class="size-4"
+        />
+      </NuxtLink>
+
       <button
-        v-if="showLinkAction"
+        v-if="showLinkAction && !hasLinkNavigation"
         type="button"
         class="ops-kpi-action-btn ops-kpi-action-btn--link"
         :aria-label="linkAriaLabel"
