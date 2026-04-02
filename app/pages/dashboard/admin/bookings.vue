@@ -59,10 +59,12 @@ const bookingTab = ref<AdminBookingTab>('active')
 const pastPage = ref(1)
 const creatingBooking = ref(false)
 const memberSearch = ref('')
+const defaultCreateDate = DateTime.now().setZone('America/Los_Angeles').toISODate() ?? ''
 const createForm = reactive({
   userId: '',
-  startTime: '',
-  endTime: '',
+  date: defaultCreateDate,
+  startSlot: '',
+  endSlot: '',
   notes: '',
   requestHold: false,
   burnCredits: true
@@ -108,10 +110,65 @@ const selectedMemberCredits = computed(() => Math.max(0, Number(selectedMember.v
 
 const memberCreditWarning = computed(() => createForm.burnCredits && !!selectedMember.value && selectedMemberCredits.value <= 0)
 
+type TimeSlotItem = {
+  label: string
+  value: string
+  minutes: number
+}
+
+const halfHourSlotItems: TimeSlotItem[] = Array.from({ length: 48 }, (_, index) => {
+  const minutes = index * 30
+  const hour = Math.floor(minutes / 60)
+  const minute = minutes % 60
+  const value = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+  const label = DateTime.fromObject({ hour, minute }, { zone: 'America/Los_Angeles' }).toFormat('h:mm a')
+  return { label, value, minutes }
+})
+
+const startSlotItems = computed(() => halfHourSlotItems.slice(0, -1).map(item => ({
+  label: item.label,
+  value: item.value
+})))
+
+const selectedStartSlot = computed(() =>
+  halfHourSlotItems.find(item => item.value === createForm.startSlot) ?? null
+)
+
+const endSlotItems = computed(() => {
+  if (!selectedStartSlot.value) return []
+  return halfHourSlotItems
+    .filter(item => item.minutes > selectedStartSlot.value!.minutes)
+    .map(item => ({
+      label: item.label,
+      value: item.value
+    }))
+})
+
+watch(() => createForm.startSlot, (next) => {
+  if (!next) {
+    createForm.endSlot = ''
+    return
+  }
+
+  const startSlot = halfHourSlotItems.find(item => item.value === next)
+  if (!startSlot) {
+    createForm.endSlot = ''
+    return
+  }
+
+  const oneHourLater = startSlot.minutes + 60
+  const defaultEnd = halfHourSlotItems.find(item => item.minutes >= oneHourLater)
+    ?? halfHourSlotItems.find(item => item.minutes > startSlot.minutes)
+    ?? null
+
+  createForm.endSlot = defaultEnd?.value ?? ''
+})
+
 const canSubmitCreateBooking = computed(() =>
   !!createForm.userId
-  && !!createForm.startTime
-  && !!createForm.endTime
+  && !!createForm.date
+  && !!createForm.startSlot
+  && !!createForm.endSlot
   && !creatingBooking.value
 )
 
@@ -262,29 +319,30 @@ function goToPastPage(page: number) {
   pastPage.value = Math.min(Math.max(1, page), pastTotalPages.value)
 }
 
-function fromLocalInputValue(value: string) {
-  if (!value.trim()) return null
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return null
-  return dt.toISOString()
+function toIsoFromDateAndSlot(dateValue: string, timeValue: string) {
+  if (!dateValue.trim() || !timeValue.trim()) return null
+  const dt = DateTime.fromISO(`${dateValue}T${timeValue}`, { zone: 'America/Los_Angeles' })
+  if (!dt.isValid) return null
+  return dt.toUTC().toISO()
 }
 
 function resetCreateForm(options?: { keepMember?: boolean }) {
   if (!options?.keepMember) createForm.userId = ''
-  createForm.startTime = ''
-  createForm.endTime = ''
+  createForm.date = defaultCreateDate
+  createForm.startSlot = ''
+  createForm.endSlot = ''
   createForm.notes = ''
   createForm.requestHold = false
   createForm.burnCredits = true
 }
 
 async function createBookingOnBehalf() {
-  const startIso = fromLocalInputValue(createForm.startTime)
-  const endIso = fromLocalInputValue(createForm.endTime)
+  const startIso = toIsoFromDateAndSlot(createForm.date, createForm.startSlot)
+  const endIso = toIsoFromDateAndSlot(createForm.date, createForm.endSlot)
   if (!createForm.userId || !startIso || !endIso) {
     toast.add({
       title: 'Missing required fields',
-      description: 'Select a member plus start/end times.',
+      description: 'Select a member, date, and start/end time slots.',
       color: 'warning'
     })
     return
@@ -405,17 +463,27 @@ async function createBookingOnBehalf() {
                   />
                 </UFormField>
 
-                <UFormField label="Start (local time)">
+                <UFormField label="Date (local)">
                   <UInput
-                    v-model="createForm.startTime"
-                    type="datetime-local"
+                    v-model="createForm.date"
+                    type="date"
                   />
                 </UFormField>
 
-                <UFormField label="End (local time)">
-                  <UInput
-                    v-model="createForm.endTime"
-                    type="datetime-local"
+                <UFormField label="Start time (30-min)">
+                  <USelect
+                    v-model="createForm.startSlot"
+                    :items="startSlotItems"
+                    placeholder="Select start time"
+                  />
+                </UFormField>
+
+                <UFormField label="End time (30-min)">
+                  <USelect
+                    v-model="createForm.endSlot"
+                    :items="endSlotItems"
+                    :disabled="!createForm.startSlot || !endSlotItems.length"
+                    placeholder="Select end time"
                   />
                 </UFormField>
               </div>
