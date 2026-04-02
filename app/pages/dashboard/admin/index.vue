@@ -372,7 +372,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
           :class="{ 'admin-ops-shell--dark': isDarkMode }"
         >
           <section class="admin-ops-hero rounded-2xl p-4 sm:p-5 md:p-6">
-            <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div class="space-y-2">
                 <p class="text-[11px] uppercase tracking-[0.22em] text-dimmed">
                   Revenue + Critical Operations
@@ -383,16 +383,18 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               </div>
               <div class="admin-period-toolbar flex items-center gap-2">
                 <UButton
+                  class="admin-period-nav-btn"
                   size="sm"
                   color="neutral"
                   variant="ghost"
                   icon="i-lucide-chevron-left"
                   @click="stepPeriod(-1)"
                 />
-                <div class="admin-range-label px-1 py-1 min-w-[15rem] text-center">
+                <div class="admin-range-label text-center">
                   {{ rangeLabel }}
                 </div>
                 <UButton
+                  class="admin-period-nav-btn"
                   size="sm"
                   color="neutral"
                   variant="ghost"
@@ -853,13 +855,30 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-period-toolbar {
   border: 0;
+  align-self: stretch;
+  min-height: clamp(3rem, 7vw, 4.75rem);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.admin-period-nav-btn {
+  height: 100%;
+  min-width: clamp(2.4rem, 5vw, 3.15rem);
+  padding-inline: 0.25rem;
 }
 
 .admin-range-label {
   font-family: 'Avenir Next Condensed', 'Roboto Condensed', 'Sora', 'Manrope', sans-serif;
-  font-size: clamp(1.45rem, 3.1vw, 2.35rem);
-  line-height: 1;
-  letter-spacing: 0.05em;
+  flex: 1 1 auto;
+  min-width: 14rem;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(2rem, 4.2vw, 3.45rem);
+  line-height: 0.9;
+  letter-spacing: 0.06em;
   font-weight: 300;
   white-space: nowrap;
   background-image: linear-gradient(120deg, var(--gruv-accent-strong), var(--gruv-accent), color-mix(in srgb, var(--gruv-accent) 72%, #ff9bb0 28%));
