@@ -74,6 +74,10 @@ const { data, pending, refresh } = await useAsyncData<DoorCodesPayload>('admin:d
   }
 })
 
+onMounted(async () => {
+  await refresh()
+})
+
 const members = computed(() => data.value?.members ?? [])
 const permanentCodes = computed(() => data.value?.permanentCodes ?? [])
 const initialPermanentCodesDisarmOutsideLabHours = computed(() =>
