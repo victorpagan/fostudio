@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
+import type { H3Event } from 'h3'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { ensureNoExternalCalendarConflict } from '~~/server/utils/booking/externalCalendar'
 import {
@@ -12,7 +13,7 @@ import {
 } from '~~/server/utils/booking/holds'
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
-import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
+import { enqueueBookingAccessSync, processDueAccessJobs } from '~~/server/utils/access/jobs'
 import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 
 const schema = z.object({
@@ -57,6 +58,25 @@ function computeCredits(startIso: string, endIso: string, peakMultiplier: number
   }
 
   return Math.round(credits * 100) / 100
+}
+
+async function enqueueAndKickAccessSync(event: H3Event, bookingId: string) {
+  await enqueueBookingAccessSync(event, {
+    bookingId,
+    reason: 'admin_booking_create_on_behalf'
+  }).catch((error) => {
+    console.warn('[access/sync] failed to queue admin booking create sync', {
+      bookingId,
+      error: (error as Error)?.message ?? String(error)
+    })
+  })
+
+  await processDueAccessJobs(event, { limit: 25 }).catch((error) => {
+    console.warn('[access/jobs] failed to process due jobs after admin booking create', {
+      bookingId,
+      error: (error as Error)?.message ?? String(error)
+    })
+  })
 }
 
 export default defineEventHandler(async (event) => {
@@ -383,15 +403,7 @@ export default defineEventHandler(async (event) => {
       ? Number(resultRow?.new_balance)
       : null
     if (bookingId) {
-      await enqueueBookingAccessSync(event, {
-        bookingId,
-        reason: 'admin_booking_create_on_behalf'
-      }).catch((error) => {
-        console.warn('[access/sync] failed to queue admin booking create sync', {
-          bookingId,
-          error: (error as Error)?.message ?? String(error)
-        })
-      })
+      await enqueueAndKickAccessSync(event, bookingId)
 
       await maybeForceSyncGoogleCalendar(event, 'admin_booking_create_on_behalf').catch((error) => {
         console.warn('[gcal-sync] failed to force sync after admin booking create', {
@@ -473,15 +485,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  await enqueueBookingAccessSync(event, {
-    bookingId: booking.id,
-    reason: 'admin_booking_create_on_behalf'
-  }).catch((error) => {
-    console.warn('[access/sync] failed to queue admin booking create sync', {
-      bookingId: booking.id,
-      error: (error as Error)?.message ?? String(error)
-    })
-  })
+  await enqueueAndKickAccessSync(event, booking.id)
 
   await maybeForceSyncGoogleCalendar(event, 'admin_booking_create_on_behalf').catch((error) => {
     console.warn('[gcal-sync] failed to force sync after admin booking create', {
