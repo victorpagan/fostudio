@@ -832,7 +832,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-ops-hero {
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--gruv-accent) 10%, #d1d4d9 90%), color-mix(in srgb, #c7ccd3 80%, transparent 20%));
+    linear-gradient(135deg, color-mix(in srgb, var(--gruv-accent) 16%, var(--ui-bg) 84%), color-mix(in srgb, var(--gruv-bg-1) 72%, transparent 28%));
 }
 
 .admin-period-toolbar {
@@ -841,22 +841,12 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-kpi-card,
 .admin-panel-card {
-  background: color-mix(in srgb, #d7dade 86%, #c7ccd4 14%);
+  background: color-mix(in srgb, var(--ui-bg-elevated) 56%, transparent 44%);
   box-shadow: none;
 }
 
 .admin-panel-card--transparent {
   background: transparent;
-}
-
-:global(.dark) .admin-kpi-card,
-:global(.dark) .admin-panel-card {
-  background: color-mix(in srgb, #3a3a3a 82%, transparent 18%);
-}
-
-:global(.dark) .admin-ops-hero {
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--gruv-accent) 15%, #2b2b2b 85%), color-mix(in srgb, #2f2f2f 80%, transparent 20%));
 }
 
 .admin-kpi-card--accent {
@@ -1066,7 +1056,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 .admin-reminder-row {
   display: block;
   border-radius: 0.72rem;
-  background: color-mix(in srgb, #d6d9de 76%, #c8ced6 24%);
+  background: color-mix(in srgb, var(--ui-bg-elevated) 58%, transparent 42%);
   padding: 0.6rem 0.72rem;
 }
 
@@ -1078,7 +1068,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 }
 
 .admin-critical-slideover {
-  background: #d6d9de;
+  background: color-mix(in srgb, var(--ui-bg-elevated) 56%, transparent 44%);
 }
 
 .admin-critical-source {
@@ -1087,19 +1077,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   justify-content: space-between;
   gap: 0.8rem;
   border-radius: 0.75rem;
-  background: color-mix(in srgb, #d4d8de 76%, #c5ccd6 24%);
-  padding: 0.68rem 0.75rem;
-}
-
-:global(.dark) .admin-reminder-row {
   background: color-mix(in srgb, var(--ui-bg-elevated) 58%, transparent 42%);
-}
-
-:global(.dark) .admin-critical-slideover {
-  background: #2f2f2f;
-}
-
-:global(.dark) .admin-critical-source {
-  background: color-mix(in srgb, #404040 82%, transparent 18%);
+  padding: 0.68rem 0.75rem;
 }
 </style>
