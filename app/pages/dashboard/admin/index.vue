@@ -155,9 +155,48 @@ const { data, pending, refresh } = await useAsyncData<OpsResponse>('admin:overvi
   return await $fetch('/api/admin/ops', { query: queryParams.value })
 }, { watch: [queryParams] })
 
+const opsScrollRef = ref<HTMLElement | null>(null)
+const opsCanScrollUp = ref(false)
+const opsCanScrollDown = ref(false)
+
+function updateOpsScrollState() {
+  const host = opsScrollRef.value
+  if (!host) {
+    opsCanScrollUp.value = false
+    opsCanScrollDown.value = false
+    return
+  }
+
+  const top = host.scrollTop
+  const maxTop = Math.max(0, host.scrollHeight - host.clientHeight)
+  opsCanScrollUp.value = top > 6
+  opsCanScrollDown.value = top < (maxTop - 6)
+}
+
+function handleOpsScroll() {
+  updateOpsScrollState()
+}
+
 onMounted(async () => {
   await refresh()
+  await nextTick()
+  updateOpsScrollState()
+
+  const host = opsScrollRef.value
+  host?.addEventListener('scroll', handleOpsScroll, { passive: true })
+  window.addEventListener('resize', updateOpsScrollState)
 })
+
+onBeforeUnmount(() => {
+  const host = opsScrollRef.value
+  host?.removeEventListener('scroll', handleOpsScroll)
+  window.removeEventListener('resize', updateOpsScrollState)
+})
+
+watch([data, pending], async () => {
+  await nextTick()
+  updateOpsScrollState()
+}, { deep: true })
 
 const revenueSeries = computed(() => data.value?.revenueSeries ?? [])
 const maxRevenueCents = computed(() =>
@@ -193,6 +232,7 @@ const revenueMixStyle = computed(() => {
 })
 
 const topMembers = computed(() => data.value?.topMembers ?? [])
+const usageLeaders = computed(() => topMembers.value.slice(0, 4))
 const criticalIssues = computed(() => data.value?.criticalIssues ?? [])
 const campaignReminders = computed(() => data.value?.campaignReminders ?? [])
 const criticalDetailsOpen = ref(false)
@@ -246,6 +286,13 @@ function formatShortDate(value: string | null | undefined) {
   return parsed.setZone('America/Los_Angeles').toFormat('LLL d')
 }
 
+function usageLeaderTo(userId: string) {
+  return {
+    path: '/dashboard/admin/members',
+    query: { userId }
+  }
+}
+
 function issueTone(severity: string) {
   if (severity === 'error') return 'error'
   if (severity === 'warning') return 'warning'
@@ -271,12 +318,18 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 <template>
   <UDashboardPanel
     id="admin-overview"
-    class="min-h-0 flex-1"
+    class="min-h-0 flex-1 admin-ops-panel"
+    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+    :class="{
+      'admin-ops-panel--scrolled-top': opsCanScrollUp,
+      'admin-ops-panel--scrolled-bottom': opsCanScrollDown
+    }"
   >
     <template #header>
       <UDashboardNavbar
         title="Ops Overview"
-        :ui="{ right: 'gap-2' }"
+        class="admin-ops-navbar"
+        :ui="{ root: 'border-b-0', right: 'gap-2' }"
       >
         <template #leading>
           <UDashboardSidebarCollapse />
@@ -296,7 +349,10 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
     </template>
 
     <template #body>
-      <div class="admin-ops-shell h-full overflow-y-auto p-4 sm:p-5 md:p-6 space-y-4 md:space-y-5">
+      <div
+        ref="opsScrollRef"
+        class="admin-ops-shell h-full overflow-y-auto p-4 sm:p-5 md:p-6 space-y-4 md:space-y-5"
+      >
         <section class="admin-ops-hero rounded-2xl p-4 sm:p-5 md:p-6">
           <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div class="space-y-2">
@@ -522,14 +578,14 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
         </section>
 
         <section class="grid gap-3 sm:gap-4 xl:grid-cols-[1.2fr_1fr]">
-          <UCard class="admin-panel-card border-0">
+          <UCard class="admin-panel-card admin-panel-card--transparent border-0">
             <div class="flex items-center justify-between gap-2">
               <div>
                 <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
                   Usage leaders
                 </div>
                 <h2 class="mt-1 text-xl font-[var(--font-display)] font-light">
-                  Revenue + usage leaders
+                  Top 4 in {{ rangeLabel }}
                 </h2>
               </div>
             </div>
@@ -538,33 +594,47 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               Derived from non-canceled member bookings plus processed membership/top-up payments in {{ rangeLabel }}.
             </p>
 
-            <div class="mt-3 space-y-0.5">
-              <div
-                v-for="(member, index) in topMembers"
+            <div class="mt-3 grid gap-2 sm:grid-cols-2">
+              <NuxtLink
+                v-for="(member, index) in usageLeaders"
                 :key="member.userId"
-                class="admin-leader-row"
+                class="admin-leader-tile"
+                :to="usageLeaderTo(member.userId)"
               >
-                <div class="min-w-0">
+                <div class="min-w-0 space-y-2">
                   <div class="flex items-center gap-2">
                     <span class="admin-leader-rank">{{ index + 1 }}</span>
-                    <span class="truncate font-medium text-highlighted">
-                      {{ member.name || member.email || member.userId }}
-                    </span>
+                    <div class="admin-leader-avatar">
+                      {{ (member.name || member.email || member.userId || '?').slice(0, 1).toUpperCase() }}
+                    </div>
+                    <div class="min-w-0">
+                      <div class="truncate text-sm font-medium text-highlighted">
+                        {{ member.name || member.email || member.userId }}
+                      </div>
+                      <div class="truncate text-xs text-dimmed">
+                        {{ member.email || member.userId }}
+                      </div>
+                    </div>
                   </div>
-                  <div class="mt-0.5 truncate text-xs text-dimmed">
-                    {{ member.email || member.userId }}
+                  <div class="admin-leader-value">
+                    {{ formatMoney(member.revenueCents) }}
+                  </div>
+                  <div class="admin-leader-metrics">
+                    <span class="admin-leader-pill">{{ member.bookings }} bookings</span>
+                    <span class="admin-leader-pill">{{ member.creditsBurned }} cr</span>
+                    <span class="admin-leader-pill">Last {{ formatShortDate(member.lastBookingAt) }}</span>
                   </div>
                 </div>
-                <div class="admin-leader-metrics">
-                  <span class="admin-leader-pill">{{ formatMoney(member.revenueCents) }}</span>
-                  <span class="admin-leader-pill">{{ member.bookings }} bookings</span>
-                  <span class="admin-leader-pill">{{ member.creditsBurned }} cr</span>
-                  <span class="admin-leader-pill">Last {{ formatShortDate(member.lastBookingAt) }}</span>
+                <div class="admin-leader-arrow">
+                  <UIcon
+                    name="i-lucide-arrow-up-right"
+                    class="size-4"
+                  />
                 </div>
-              </div>
+              </NuxtLink>
               <div
-                v-if="!topMembers.length"
-                class="text-center text-dimmed py-5 text-sm"
+                v-if="!usageLeaders.length"
+                class="sm:col-span-2 text-center text-dimmed py-5 text-sm"
               >
                 No member activity in selected period.
               </div>
@@ -678,22 +748,39 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 </template>
 
 <style scoped>
+.admin-ops-panel {
+  background:
+    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
+    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%),
+    #2b2b2b;
+}
+
+.admin-ops-panel.admin-ops-panel--scrolled-top {
+  box-shadow: inset 0 16px 24px -20px rgba(0, 0, 0, 0.82);
+}
+
+.admin-ops-panel.admin-ops-panel--scrolled-bottom {
+  box-shadow: inset 0 -16px 24px -20px rgba(0, 0, 0, 0.82);
+}
+
+.admin-ops-panel.admin-ops-panel--scrolled-top.admin-ops-panel--scrolled-bottom {
+  box-shadow:
+    inset 0 16px 24px -20px rgba(0, 0, 0, 0.82),
+    inset 0 -16px 24px -20px rgba(0, 0, 0, 0.82);
+}
+
+.admin-ops-navbar {
+  background: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%);
+}
+
 .admin-ops-shell {
   position: relative;
-  background: #2b2b2b;
+  background: #1a1a1a;
   border-radius: 1rem;
 }
 
 .admin-ops-shell::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
-    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%);
-  opacity: 0.86;
+  content: none;
 }
 
 .admin-ops-shell > * {
@@ -714,6 +801,10 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 .admin-panel-card {
   background: color-mix(in srgb, #3a3a3a 82%, transparent 18%);
   box-shadow: none;
+}
+
+.admin-panel-card--transparent {
+  background: transparent;
 }
 
 .admin-kpi-card--accent {
@@ -834,17 +925,20 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   font-weight: 500;
 }
 
-.admin-leader-row {
+.admin-leader-tile {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.9rem;
-  padding: 0.7rem 0;
-  border-top: 1px solid color-mix(in srgb, var(--ui-border) 60%, transparent 40%);
+  border-radius: 1rem;
+  padding: 0.72rem;
+  background: color-mix(in srgb, #2f2f2f 88%, transparent 12%);
+  border: 1px solid color-mix(in srgb, var(--ui-border) 55%, transparent 45%);
 }
 
-.admin-leader-row:first-child {
-  border-top: 0;
+.admin-leader-tile:hover {
+  background: color-mix(in srgb, #383838 86%, transparent 14%);
+  border-color: color-mix(in srgb, var(--gruv-accent) 38%, var(--ui-border) 62%);
 }
 
 .admin-leader-rank {
@@ -855,14 +949,34 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   height: 1.2rem;
   border-radius: 999px;
   font-size: 0.68rem;
-  color: var(--ui-text-dimmed);
-  background: color-mix(in srgb, #4a4a4a 75%, transparent 25%);
+  color: color-mix(in srgb, var(--ui-text-dimmed) 85%, white 15%);
+  background: color-mix(in srgb, #464646 75%, transparent 25%);
+}
+
+.admin-leader-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ui-text-highlighted);
+  background: color-mix(in srgb, #525252 82%, transparent 18%);
+}
+
+.admin-leader-value {
+  font-size: 1.52rem;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--gruv-accent) 82%, #ffe7a0 18%);
 }
 
 .admin-leader-metrics {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 0.35rem;
   min-width: 0;
 }
@@ -875,6 +989,17 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   font-size: 0.68rem;
   color: var(--ui-text-toned);
   background: color-mix(in srgb, #474747 80%, transparent 20%);
+}
+
+.admin-leader-arrow {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--ui-text-dimmed) 78%, white 22%);
+  background: color-mix(in srgb, #444444 78%, transparent 22%);
 }
 
 .admin-issue-row,

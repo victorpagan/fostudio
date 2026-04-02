@@ -1,5 +1,7 @@
 <script setup lang="ts">
 definePageMeta({ middleware: ['admin'] })
+const route = useRoute()
+const router = useRouter()
 
 type MemberRecord = {
   membership_id: string
@@ -58,30 +60,63 @@ const selectedMember = computed(() =>
   members.value.find(member => member.membership_id === selectedMemberId.value) ?? null
 )
 
+function readQueryValue(value: unknown) {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (Array.isArray(value)) {
+    const first = value.find(item => typeof item === 'string' && item.trim())
+    if (typeof first === 'string' && first.trim()) return first.trim()
+  }
+  return null
+}
+
 function readErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Unknown error'
   const maybe = error as { data?: { statusMessage?: string }, message?: string }
   return maybe.data?.statusMessage ?? maybe.message ?? 'Unknown error'
 }
 
-watch(members, (next) => {
+function applySelectedMember(next: MemberRecord[]) {
   if (!next.length) return
-  if (!selectedMemberId.value) {
-    selectedMemberId.value = next[0]!.membership_id
-    statusForm.status = next[0]!.status ?? 'active'
-    doorCodeForm.value = next[0]!.door_code ?? ''
-    return
-  }
-  const current = next.find(member => member.membership_id === selectedMemberId.value)
-  if (!current) {
-    selectedMemberId.value = next[0]!.membership_id
-    statusForm.status = next[0]!.status ?? 'active'
-    doorCodeForm.value = next[0]!.door_code ?? ''
-    return
-  }
-  statusForm.status = current.status ?? 'active'
-  doorCodeForm.value = current.door_code ?? ''
-}, { immediate: true })
+
+  const queryMembershipId = readQueryValue(route.query.membershipId)
+  const queryUserId = readQueryValue(route.query.userId)
+  const fromMembershipQuery = queryMembershipId
+    ? next.find(member => member.membership_id === queryMembershipId)
+    : null
+  const fromUserQuery = queryUserId
+    ? next.find(member => member.user_id === queryUserId)
+    : null
+  const current = selectedMemberId.value
+    ? next.find(member => member.membership_id === selectedMemberId.value)
+    : null
+
+  const target = fromMembershipQuery ?? fromUserQuery ?? current ?? next[0]!
+  selectedMemberId.value = target.membership_id
+  statusForm.status = target.status ?? 'active'
+  doorCodeForm.value = target.door_code ?? ''
+}
+
+watch(
+  [members, () => route.query.userId, () => route.query.membershipId],
+  ([next]) => {
+    applySelectedMember(next ?? [])
+  },
+  { immediate: true }
+)
+
+function selectMember(member: MemberRecord) {
+  selectedMemberId.value = member.membership_id
+  statusForm.status = member.status ?? 'active'
+  doorCodeForm.value = member.door_code ?? ''
+
+  void router.replace({
+    path: route.path,
+    query: {
+      ...route.query,
+      userId: member.user_id
+    }
+  })
+}
 
 function memberLabel(member: MemberRecord) {
   const name = [member.customer_first_name, member.customer_last_name].filter(Boolean).join(' ')
@@ -241,7 +276,7 @@ onMounted(() => {
                 :key="member.membership_id"
                 class="w-full rounded-lg border border-default p-2 text-left text-sm transition hover:bg-elevated"
                 :class="selectedMemberId === member.membership_id ? 'bg-elevated border-primary' : ''"
-                @click="selectedMemberId = member.membership_id"
+                @click="selectMember(member)"
               >
                 <div class="flex items-center justify-between gap-2">
                   <span class="font-medium truncate">{{ memberLabel(member) }}</span>
