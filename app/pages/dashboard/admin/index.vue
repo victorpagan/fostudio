@@ -4,6 +4,7 @@ import { DateTime } from 'luxon'
 definePageMeta({ middleware: ['admin'] })
 
 type PeriodMode = 'week' | 'month' | '90d' | 'year'
+const OPS_TIMEZONE = 'America/Los_Angeles'
 
 type OpsResponse = {
   summary?: {
@@ -72,17 +73,17 @@ type OpsResponse = {
 }
 
 const periodMode = ref<PeriodMode>('month')
-const periodAnchorIso = ref(DateTime.utc().toISODate() ?? DateTime.now().toISODate() ?? '')
-const nowUtc = computed(() => DateTime.utc().endOf('day'))
+const periodAnchorIso = ref(DateTime.now().setZone(OPS_TIMEZONE).toISODate() ?? DateTime.now().toISODate() ?? '')
+const nowInZone = computed(() => DateTime.now().setZone(OPS_TIMEZONE).endOf('day'))
 
 function anchorDate() {
-  const parsed = DateTime.fromISO(periodAnchorIso.value, { zone: 'utc' })
+  const parsed = DateTime.fromISO(periodAnchorIso.value, { zone: OPS_TIMEZONE })
   if (parsed.isValid) return parsed.endOf('day')
-  return DateTime.utc().endOf('day')
+  return DateTime.now().setZone(OPS_TIMEZONE).endOf('day')
 }
 
 function clampToNow(date: DateTime) {
-  return date > nowUtc.value ? nowUtc.value : date
+  return date > nowInZone.value ? nowInZone.value : date
 }
 
 const activeRange = computed(() => {
@@ -109,8 +110,8 @@ const activeRange = computed(() => {
 })
 
 const rangeLabel = computed(() => {
-  const start = activeRange.value.start.setZone('America/Los_Angeles')
-  const end = activeRange.value.end.setZone('America/Los_Angeles')
+  const start = activeRange.value.start.setZone(OPS_TIMEZONE)
+  const end = activeRange.value.end.setZone(OPS_TIMEZONE)
   if (periodMode.value === 'year') return start.toFormat('yyyy')
   if (periodMode.value === 'month') return start.toFormat('LLLL yyyy')
   if (periodMode.value === 'week') return `${start.toFormat('LLL d')} - ${end.toFormat('LLL d, yyyy')}`
@@ -131,11 +132,11 @@ function stepPeriod(direction: -1 | 1) {
 
 const canStepForward = computed(() => {
   const anchor = anchorDate()
-  if (anchor >= nowUtc.value.startOf('day')) return false
-  if (periodMode.value === 'week') return anchor.plus({ weeks: 1 }).startOf('week') <= nowUtc.value
-  if (periodMode.value === 'year') return anchor.plus({ years: 1 }).startOf('year') <= nowUtc.value
-  if (periodMode.value === '90d') return anchor.plus({ days: 90 }) <= nowUtc.value
-  return anchor.plus({ months: 1 }).startOf('month') <= nowUtc.value
+  if (anchor >= nowInZone.value.startOf('day')) return false
+  if (periodMode.value === 'week') return anchor.plus({ weeks: 1 }).startOf('week') <= nowInZone.value
+  if (periodMode.value === 'year') return anchor.plus({ years: 1 }).startOf('year') <= nowInZone.value
+  if (periodMode.value === '90d') return anchor.plus({ days: 90 }) <= nowInZone.value
+  return anchor.plus({ months: 1 }).startOf('month') <= nowInZone.value
 })
 
 const periodButtons: Array<{ label: string, value: PeriodMode }> = [
@@ -178,6 +179,7 @@ function handleOpsScroll() {
 }
 
 onMounted(async () => {
+  periodAnchorIso.value = DateTime.now().setZone(OPS_TIMEZONE).toISODate() ?? periodAnchorIso.value
   await refresh()
   await nextTick()
   updateOpsScrollState()
@@ -200,7 +202,7 @@ watch([data, pending], async () => {
 
 watch(periodMode, (next, prev) => {
   if (next === 'month' && prev !== 'month') {
-    periodAnchorIso.value = DateTime.utc().toISODate() ?? periodAnchorIso.value
+    periodAnchorIso.value = DateTime.now().setZone(OPS_TIMEZONE).toISODate() ?? periodAnchorIso.value
   }
 })
 
@@ -292,7 +294,7 @@ function formatShortDate(value: string | null | undefined) {
   if (!value) return '—'
   const parsed = DateTime.fromISO(value, { zone: 'utc' })
   if (!parsed.isValid) return value
-  return parsed.setZone('America/Los_Angeles').toFormat('LLL d')
+  return parsed.setZone(OPS_TIMEZONE).toFormat('LLL d')
 }
 
 function usageLeaderTo(userId: string) {
@@ -697,27 +699,27 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 <style scoped>
 .admin-ops-panel {
-  background: #2b2b2b;
-  --ui-text: #e9e9e9;
-  --ui-text-toned: #d2d2d2;
-  --ui-text-dimmed: #a9a9a9;
-  --ui-text-highlighted: #f7f7f7;
-  --ui-text-inverted: #f7f7f7;
-  --ui-bg-elevated: #343434;
-  --ui-bg-muted: #2f2f2f;
-  --ui-border: rgba(255, 255, 255, 0.14);
+  background: #dadbdc;
+  --ui-text: #1f232b;
+  --ui-text-toned: #323a48;
+  --ui-text-dimmed: #5f6978;
+  --ui-text-highlighted: #121923;
+  --ui-text-inverted: #f7f8fb;
+  --ui-bg-elevated: #d3d6da;
+  --ui-bg-muted: #c4c9d0;
+  --ui-border: rgba(18, 24, 32, 0.18);
 }
 
 .admin-ops-navbar {
-  background: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%);
+  background: color-mix(in srgb, #dadbdc 94%, #c8cdd3 6%);
 }
 
 .admin-ops-shell {
   position: relative;
   background:
-    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
-    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%),
-    #222222;
+    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 7%, transparent), transparent 62%),
+    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 7%, transparent), transparent 58%),
+    #cfd1d3;
   border-radius: 1rem;
 }
 
@@ -740,6 +742,29 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
     inset 0 -16px 24px -20px rgba(0, 0, 0, 0.82);
 }
 
+:global(.dark) .admin-ops-panel {
+  background: #2b2b2b;
+  --ui-text: #e9e9e9;
+  --ui-text-toned: #d2d2d2;
+  --ui-text-dimmed: #a9a9a9;
+  --ui-text-highlighted: #f7f7f7;
+  --ui-text-inverted: #f7f7f7;
+  --ui-bg-elevated: #343434;
+  --ui-bg-muted: #2f2f2f;
+  --ui-border: rgba(255, 255, 255, 0.14);
+}
+
+:global(.dark) .admin-ops-navbar {
+  background: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%);
+}
+
+:global(.dark) .admin-ops-shell {
+  background:
+    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
+    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%),
+    #222222;
+}
+
 .admin-ops-hero {
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--gruv-accent) 15%, #2b2b2b 85%), color-mix(in srgb, #2f2f2f 80%, transparent 20%));
@@ -751,12 +776,17 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-kpi-card,
 .admin-panel-card {
-  background: color-mix(in srgb, #3a3a3a 82%, transparent 18%);
+  background: color-mix(in srgb, #d7dade 86%, #c7ccd4 14%);
   box-shadow: none;
 }
 
 .admin-panel-card--transparent {
   background: transparent;
+}
+
+:global(.dark) .admin-kpi-card,
+:global(.dark) .admin-panel-card {
+  background: color-mix(in srgb, #3a3a3a 82%, transparent 18%);
 }
 
 .admin-kpi-card--accent {
@@ -884,12 +914,12 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   gap: 0.9rem;
   border-radius: 1rem;
   padding: 0.72rem;
-  background: color-mix(in srgb, #2f2f2f 88%, transparent 12%);
+  background: color-mix(in srgb, #d8dce2 90%, #c7ccd5 10%);
   border: 0;
 }
 
 .admin-leader-tile:hover {
-  background: color-mix(in srgb, #383838 86%, transparent 14%);
+  background: color-mix(in srgb, #d0d5dd 90%, #c0c6d0 10%);
 }
 
 .admin-leader-avatar {
@@ -902,7 +932,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--ui-text-highlighted);
-  background: color-mix(in srgb, #525252 82%, transparent 18%);
+  background: color-mix(in srgb, #b9c0cc 72%, transparent 28%);
 }
 
 .admin-leader-value {
@@ -927,7 +957,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   padding: 0.2rem 0.52rem;
   font-size: 0.68rem;
   color: var(--ui-text-toned);
-  background: color-mix(in srgb, #474747 80%, transparent 20%);
+  background: color-mix(in srgb, #c2c8d1 72%, transparent 28%);
 }
 
 .admin-leader-arrow {
@@ -937,6 +967,27 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  color: color-mix(in srgb, var(--ui-text-dimmed) 92%, #101828 8%);
+  background: color-mix(in srgb, #bec5cf 72%, transparent 28%);
+}
+
+:global(.dark) .admin-leader-tile {
+  background: color-mix(in srgb, #2f2f2f 88%, transparent 12%);
+}
+
+:global(.dark) .admin-leader-tile:hover {
+  background: color-mix(in srgb, #383838 86%, transparent 14%);
+}
+
+:global(.dark) .admin-leader-avatar {
+  background: color-mix(in srgb, #525252 82%, transparent 18%);
+}
+
+:global(.dark) .admin-leader-pill {
+  background: color-mix(in srgb, #474747 80%, transparent 20%);
+}
+
+:global(.dark) .admin-leader-arrow {
   color: color-mix(in srgb, var(--ui-text-dimmed) 78%, white 22%);
   background: color-mix(in srgb, #444444 78%, transparent 22%);
 }
