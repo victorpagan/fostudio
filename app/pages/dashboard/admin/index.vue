@@ -161,6 +161,9 @@ const { data, pending, refresh } = await useAsyncData<OpsResponse>('admin:overvi
 const opsScrollRef = ref<HTMLElement | null>(null)
 const opsCanScrollUp = ref(false)
 const opsCanScrollDown = ref(false)
+const revenueScrollRef = ref<HTMLElement | null>(null)
+const revenueSeekValue = ref(0)
+const revenueSeekMax = ref(0)
 
 function updateOpsScrollState() {
   const host = opsScrollRef.value
@@ -180,6 +183,32 @@ function handleOpsScroll() {
   updateOpsScrollState()
 }
 
+function updateRevenueSeekState() {
+  const host = revenueScrollRef.value
+  if (!host) {
+    revenueSeekValue.value = 0
+    revenueSeekMax.value = 0
+    return
+  }
+
+  const max = Math.max(0, host.scrollWidth - host.clientWidth)
+  revenueSeekMax.value = max
+  revenueSeekValue.value = Math.min(max, host.scrollLeft)
+}
+
+function handleRevenueScroll() {
+  updateRevenueSeekState()
+}
+
+function onRevenueSeekInput(event: Event) {
+  const host = revenueScrollRef.value
+  if (!host) return
+  const target = event.target as HTMLInputElement | null
+  if (!target) return
+  const next = Number(target.value)
+  host.scrollLeft = Number.isFinite(next) ? next : 0
+}
+
 onMounted(async () => {
   periodAnchorIso.value = DateTime.now().setZone(OPS_TIMEZONE).toISODate() ?? periodAnchorIso.value
   await refresh()
@@ -188,18 +217,24 @@ onMounted(async () => {
 
   const host = opsScrollRef.value
   host?.addEventListener('scroll', handleOpsScroll, { passive: true })
+  revenueScrollRef.value?.addEventListener('scroll', handleRevenueScroll, { passive: true })
   window.addEventListener('resize', updateOpsScrollState)
+  window.addEventListener('resize', updateRevenueSeekState)
+  updateRevenueSeekState()
 })
 
 onBeforeUnmount(() => {
   const host = opsScrollRef.value
   host?.removeEventListener('scroll', handleOpsScroll)
+  revenueScrollRef.value?.removeEventListener('scroll', handleRevenueScroll)
   window.removeEventListener('resize', updateOpsScrollState)
+  window.removeEventListener('resize', updateRevenueSeekState)
 })
 
 watch([data, pending], async () => {
   await nextTick()
   updateOpsScrollState()
+  updateRevenueSeekState()
 }, { deep: true })
 
 watch(periodMode, (next, prev) => {
@@ -372,7 +407,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
           :class="{ 'admin-ops-shell--dark': isDarkMode }"
         >
           <section class="admin-ops-hero rounded-2xl p-4 sm:p-5 md:p-6">
-            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="admin-hero-grid gap-4">
               <div class="space-y-2">
                 <p class="text-[11px] uppercase tracking-[0.22em] text-dimmed">
                   Revenue + Critical Operations
@@ -380,8 +415,20 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                 <p class="max-w-3xl text-sm text-toned">
                   Selected range drives all totals, trend bars, and pressure signals.
                 </p>
+                <div class="mt-4 flex flex-wrap items-center gap-2">
+                  <UButton
+                    v-for="mode in periodButtons"
+                    :key="mode.value"
+                    size="xs"
+                    :color="periodMode === mode.value ? 'primary' : 'neutral'"
+                    :variant="periodMode === mode.value ? 'solid' : 'ghost'"
+                    @click="periodMode = mode.value"
+                  >
+                    {{ mode.label }}
+                  </UButton>
+                </div>
               </div>
-              <div class="admin-period-toolbar flex items-center gap-2">
+              <div class="admin-period-toolbar">
                 <UButton
                   class="admin-period-nav-btn"
                   size="sm"
@@ -403,19 +450,6 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                   @click="stepPeriod(1)"
                 />
               </div>
-            </div>
-
-            <div class="mt-4 flex flex-wrap items-center gap-2">
-              <UButton
-                v-for="mode in periodButtons"
-                :key="mode.value"
-                size="xs"
-                :color="periodMode === mode.value ? 'primary' : 'neutral'"
-                :variant="periodMode === mode.value ? 'solid' : 'ghost'"
-                @click="periodMode = mode.value"
-              >
-                {{ mode.label }}
-              </UButton>
             </div>
           </section>
 
@@ -497,7 +531,10 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               </div>
 
               <div class="admin-revenue-body mt-4">
-                <div class="admin-revenue-scroll">
+                <div
+                  ref="revenueScrollRef"
+                  class="admin-revenue-scroll"
+                >
                   <div
                     class="admin-revenue-chart"
                     :style="{ minWidth: revenueChartMinWidth }"
@@ -529,8 +566,22 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                     </div>
                   </div>
                 </div>
-
-                <div class="mt-3 flex flex-wrap gap-2 text-[11px]">
+                <div
+                  class="admin-revenue-seek mt-2"
+                  :class="{ 'admin-revenue-seek--disabled': revenueSeekMax <= 0 }"
+                >
+                  <input
+                    class="admin-revenue-seek-input"
+                    type="range"
+                    min="0"
+                    :max="revenueSeekMax"
+                    :step="1"
+                    :value="revenueSeekValue"
+                    :disabled="revenueSeekMax <= 0"
+                    @input="onRevenueSeekInput"
+                  >
+                </div>
+                <div class="admin-revenue-legend mt-3 flex flex-wrap gap-2 text-[11px]">
                   <span class="admin-legend-pill">
                     <span class="admin-legend-dot admin-legend-dot--membership" /> Membership
                   </span>
@@ -853,6 +904,19 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
     linear-gradient(135deg, color-mix(in srgb, var(--gruv-accent) 16%, var(--ui-bg) 84%), color-mix(in srgb, var(--gruv-bg-1) 72%, transparent 28%));
 }
 
+.admin-hero-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+}
+
+@media (min-width: 1024px) {
+  .admin-hero-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 32rem);
+    column-gap: 1rem;
+  }
+}
+
 .admin-period-toolbar {
   border: 0;
   align-self: stretch;
@@ -929,10 +993,10 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-revenue-scroll {
   flex: 1;
-  min-height: 0;
+  min-height: 14rem;
   overflow-x: scroll;
   overflow-y: hidden;
-  padding-bottom: 0.35rem;
+  padding-bottom: 0.15rem;
   scrollbar-gutter: stable both-edges;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--gruv-accent) 74%, transparent 26%) color-mix(in srgb, var(--ui-bg-muted) 72%, transparent 28%);
@@ -958,7 +1022,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-revenue-chart {
   height: 100%;
-  min-height: 15.5rem;
+  min-height: 14rem;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(56px, 1fr);
@@ -976,12 +1040,65 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-revenue-bar-shell {
   flex: 1;
-  min-height: 11.5rem;
+  min-height: 10.5rem;
   border-radius: 0.62rem;
   background: color-mix(in srgb, var(--ui-bg-muted) 62%, transparent 38%);
   padding: 0.2rem;
   display: flex;
   align-items: stretch;
+}
+
+.admin-revenue-seek {
+  opacity: 1;
+}
+
+.admin-revenue-seek--disabled {
+  opacity: 0.45;
+}
+
+.admin-revenue-seek-input {
+  width: 100%;
+  appearance: none;
+  height: 12px;
+  background: transparent;
+}
+
+.admin-revenue-seek-input::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-bg-muted) 72%, transparent 28%);
+}
+
+.admin-revenue-seek-input::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
+  border-radius: 999px;
+  border: 0;
+  background: linear-gradient(135deg, var(--gruv-accent), var(--gruv-accent-strong));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-bg) 72%, transparent 28%);
+  cursor: pointer;
+}
+
+.admin-revenue-seek-input::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  border: 0;
+  background: color-mix(in srgb, var(--ui-bg-muted) 72%, transparent 28%);
+}
+
+.admin-revenue-seek-input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 0;
+  background: linear-gradient(135deg, var(--gruv-accent), var(--gruv-accent-strong));
+  cursor: pointer;
+}
+
+.admin-revenue-legend {
+  margin-top: auto;
 }
 
 .admin-revenue-bar-stack {
