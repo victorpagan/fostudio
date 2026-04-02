@@ -322,10 +322,6 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
     id="admin-overview"
     class="min-h-0 flex-1 admin-ops-panel"
     :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
-    :class="{
-      'admin-ops-panel--scrolled-top': opsCanScrollUp,
-      'admin-ops-panel--scrolled-bottom': opsCanScrollDown
-    }"
   >
     <template #header>
       <UDashboardNavbar
@@ -354,6 +350,10 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
       <div
         ref="opsScrollRef"
         class="admin-ops-shell h-full overflow-y-auto p-4 sm:p-5 md:p-6 space-y-4 md:space-y-5"
+        :class="{
+          'admin-ops-shell--scrolled-top': opsCanScrollUp,
+          'admin-ops-shell--scrolled-bottom': opsCanScrollDown
+        }"
       >
         <section class="admin-ops-hero rounded-2xl p-4 sm:p-5 md:p-6">
           <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -697,33 +697,27 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 <style scoped>
 .admin-ops-panel {
-  background:
-    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 9%, transparent), transparent 62%),
-    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 8%, transparent), transparent 58%),
-    color-mix(in srgb, var(--ui-bg) 84%, var(--ui-bg-muted) 16%);
-}
-
-.admin-ops-panel.admin-ops-panel--scrolled-top {
-  box-shadow: inset 0 16px 24px -20px rgba(0, 0, 0, 0.82);
-}
-
-.admin-ops-panel.admin-ops-panel--scrolled-bottom {
-  box-shadow: inset 0 -16px 24px -20px rgba(0, 0, 0, 0.82);
-}
-
-.admin-ops-panel.admin-ops-panel--scrolled-top.admin-ops-panel--scrolled-bottom {
-  box-shadow:
-    inset 0 16px 24px -20px rgba(0, 0, 0, 0.82),
-    inset 0 -16px 24px -20px rgba(0, 0, 0, 0.82);
+  background: #2b2b2b;
+  --ui-text: #e9e9e9;
+  --ui-text-toned: #d2d2d2;
+  --ui-text-dimmed: #a9a9a9;
+  --ui-text-highlighted: #f7f7f7;
+  --ui-text-inverted: #f7f7f7;
+  --ui-bg-elevated: #343434;
+  --ui-bg-muted: #2f2f2f;
+  --ui-border: rgba(255, 255, 255, 0.14);
 }
 
 .admin-ops-navbar {
-  background: color-mix(in srgb, var(--ui-bg) 94%, var(--ui-bg-muted) 6%);
+  background: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%);
 }
 
 .admin-ops-shell {
   position: relative;
-  background: color-mix(in srgb, var(--ui-bg) 92%, var(--ui-bg-muted) 8%);
+  background:
+    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
+    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%),
+    #222222;
   border-radius: 1rem;
 }
 
@@ -732,19 +726,18 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   z-index: 1;
 }
 
-:global(.dark) .admin-ops-panel {
-  background:
-    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
-    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%),
-    #222222;
+.admin-ops-shell.admin-ops-shell--scrolled-top {
+  box-shadow: inset 0 16px 24px -20px rgba(0, 0, 0, 0.82);
 }
 
-:global(.dark) .admin-ops-navbar {
-  background: color-mix(in srgb, #222222 94%, #1a1a1a 6%);
+.admin-ops-shell.admin-ops-shell--scrolled-bottom {
+  box-shadow: inset 0 -16px 24px -20px rgba(0, 0, 0, 0.82);
 }
 
-:global(.dark) .admin-ops-shell {
-  background: #2b2b2b;
+.admin-ops-shell.admin-ops-shell--scrolled-top.admin-ops-shell--scrolled-bottom {
+  box-shadow:
+    inset 0 16px 24px -20px rgba(0, 0, 0, 0.82),
+    inset 0 -16px 24px -20px rgba(0, 0, 0, 0.82);
 }
 
 .admin-ops-hero {
