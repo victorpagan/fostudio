@@ -856,11 +856,11 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 }
 
 .admin-range-label {
-  font-family: Didot, 'Bodoni MT', 'Bodoni 72', 'Times New Roman', serif;
+  font-family: 'Avenir Next Condensed', 'Roboto Condensed', 'Sora', 'Manrope', sans-serif;
   font-size: clamp(1.45rem, 3.1vw, 2.35rem);
   line-height: 1;
-  letter-spacing: 0.01em;
-  font-weight: 400;
+  letter-spacing: 0.05em;
+  font-weight: 300;
   white-space: nowrap;
   background-image: linear-gradient(120deg, var(--gruv-accent-strong), var(--gruv-accent), color-mix(in srgb, var(--gruv-accent) 72%, #ff9bb0 28%));
   -webkit-background-clip: text;
