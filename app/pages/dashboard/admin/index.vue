@@ -752,7 +752,10 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 <style scoped>
 .admin-ops-panel {
-  background: color-mix(in srgb, var(--ui-bg) 90%, var(--ui-bg-muted) 10%);
+  background:
+    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 9%, transparent), transparent 62%),
+    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 8%, transparent), transparent 58%),
+    color-mix(in srgb, var(--ui-bg) 84%, var(--ui-bg-muted) 16%);
 }
 
 .admin-ops-panel.admin-ops-panel--scrolled-top {
@@ -775,10 +778,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-ops-shell {
   position: relative;
-  background:
-    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 9%, transparent), transparent 62%),
-    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 8%, transparent), transparent 58%),
-    color-mix(in srgb, var(--ui-bg) 84%, var(--ui-bg-muted) 16%);
+  background: color-mix(in srgb, var(--ui-bg) 92%, var(--ui-bg-muted) 8%);
   border-radius: 1rem;
 }
 
@@ -788,18 +788,18 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 }
 
 :global(.dark) .admin-ops-panel {
-  background: #2b2b2b;
-}
-
-:global(.dark) .admin-ops-navbar {
-  background: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%);
-}
-
-:global(.dark) .admin-ops-shell {
   background:
     radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
     radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%),
     #222222;
+}
+
+:global(.dark) .admin-ops-navbar {
+  background: color-mix(in srgb, #222222 94%, #1a1a1a 6%);
+}
+
+:global(.dark) .admin-ops-shell {
+  background: #2b2b2b;
 }
 
 .admin-ops-hero {
