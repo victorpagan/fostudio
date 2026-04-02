@@ -232,7 +232,11 @@ const revenueMixStyle = computed(() => {
 })
 
 const topMembers = computed(() => data.value?.topMembers ?? [])
-const usageLeaders = computed(() => topMembers.value.slice(0, 4))
+const usageLeaders = computed(() => (
+  topMembers.value
+    .filter(member => Number(member.revenueCents ?? 0) > 0)
+    .slice(0, 4)
+))
 const criticalIssues = computed(() => data.value?.criticalIssues ?? [])
 const campaignReminders = computed(() => data.value?.campaignReminders ?? [])
 const criticalDetailsOpen = ref(false)
@@ -596,14 +600,13 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
             <div class="mt-3 grid gap-2 sm:grid-cols-2">
               <NuxtLink
-                v-for="(member, index) in usageLeaders"
+                v-for="member in usageLeaders"
                 :key="member.userId"
                 class="admin-leader-tile"
                 :to="usageLeaderTo(member.userId)"
               >
                 <div class="min-w-0 space-y-2">
                   <div class="flex items-center gap-2">
-                    <span class="admin-leader-rank">{{ index + 1 }}</span>
                     <div class="admin-leader-avatar">
                       {{ (member.name || member.email || member.userId || '?').slice(0, 1).toUpperCase() }}
                     </div>
@@ -749,10 +752,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 <style scoped>
 .admin-ops-panel {
-  background:
-    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
-    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%),
-    #2b2b2b;
+  background: color-mix(in srgb, var(--ui-bg) 90%, var(--ui-bg-muted) 10%);
 }
 
 .admin-ops-panel.admin-ops-panel--scrolled-top {
@@ -770,22 +770,36 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 }
 
 .admin-ops-navbar {
-  background: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%);
+  background: color-mix(in srgb, var(--ui-bg) 94%, var(--ui-bg-muted) 6%);
 }
 
 .admin-ops-shell {
   position: relative;
-  background: #1a1a1a;
+  background:
+    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 9%, transparent), transparent 62%),
+    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 8%, transparent), transparent 58%),
+    color-mix(in srgb, var(--ui-bg) 84%, var(--ui-bg-muted) 16%);
   border-radius: 1rem;
-}
-
-.admin-ops-shell::before {
-  content: none;
 }
 
 .admin-ops-shell > * {
   position: relative;
   z-index: 1;
+}
+
+:global(.dark) .admin-ops-panel {
+  background: #2b2b2b;
+}
+
+:global(.dark) .admin-ops-navbar {
+  background: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%);
+}
+
+:global(.dark) .admin-ops-shell {
+  background:
+    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
+    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%),
+    #222222;
 }
 
 .admin-ops-hero {
@@ -939,18 +953,6 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 .admin-leader-tile:hover {
   background: color-mix(in srgb, #383838 86%, transparent 14%);
   border-color: color-mix(in srgb, var(--gruv-accent) 38%, var(--ui-border) 62%);
-}
-
-.admin-leader-rank {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.2rem;
-  height: 1.2rem;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  color: color-mix(in srgb, var(--ui-text-dimmed) 85%, white 15%);
-  background: color-mix(in srgb, #464646 75%, transparent 25%);
 }
 
 .admin-leader-avatar {
