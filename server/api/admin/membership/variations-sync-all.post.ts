@@ -11,7 +11,7 @@ type SyncResult = {
 
 async function syncVariationToSquare(
   square: Awaited<ReturnType<typeof useSquareClient>>,
-  tierId: string,
+  tierDisplayName: string,
   cadence: string,
   providerPlanId: string,
   providerPlanVariationId: string,
@@ -35,7 +35,8 @@ async function syncVariationToSquare(
     return 'Monthly'
   }
 
-  // Use RELATIVE pricing so Square shows item × quantity with discount applied
+  // Use RELATIVE pricing (same as variation-sync-square.post.ts)
+  // The order template and discount will be injected during checkout
   const phase: Record<string, unknown> = {
     cadence: cadenceToSquare(cadence),
     pricing: {
@@ -43,20 +44,21 @@ async function syncVariationToSquare(
     }
   }
 
-  // Set periods to match cadence multiplier (quarterly=3, annual=12)
+  // Set periods as a number (not BigInt) to match cadence multiplier
+  // Square expects: quarterly=3, annual=12, daily/weekly/monthly=1
   const months = cadence === 'quarterly' ? 3 : cadence === 'annual' ? 12 : 1
   if (months > 1) {
-    phase.periods = BigInt(months)
+    phase.periods = months
   }
 
   const payload = {
-    idempotencyKey: `sync-all:${tierId}:${cadence}:${Date.now()}`,
+    idempotencyKey: `sync-all:${providerPlanVariationId}:${cadence}:${Date.now()}`,
     object: {
       id: providerPlanVariationId,
       type: 'SUBSCRIPTION_PLAN_VARIATION' as const,
       presentAtAllLocations: true,
       subscriptionPlanVariationData: {
-        name: `${tierId} ${cadenceLabel(cadence)}`,
+        name: `${tierDisplayName} ${cadenceLabel(cadence)}`,
         subscriptionPlanId: providerPlanId,
         phases: [phase]
       }
