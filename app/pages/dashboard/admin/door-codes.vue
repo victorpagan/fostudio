@@ -30,6 +30,8 @@ type DoorCodesPayload = {
   }
 }
 
+type DoorCodesTab = 'members' | 'permanent'
+
 const toast = useToast()
 const selectedMemberId = ref<string | null>(null)
 const memberDoorCode = ref('')
@@ -38,6 +40,7 @@ const savingMemberDoorCode = ref(false)
 const savingPermanent = ref(false)
 const deletingPermanentId = ref<string | null>(null)
 const savingAccessSettings = ref(false)
+const doorCodesTab = ref<DoorCodesTab>('members')
 const permanentCodesDisarmAbodeOutsideLabHours = ref(false)
 const permanentForm = reactive({
   id: '' as string,
@@ -315,8 +318,27 @@ function formatDateTime(value: string | null) {
           </div>
         </UCard>
 
-        <div class="grid gap-4 xl:grid-cols-2">
-          <UCard>
+        <div class="flex flex-wrap items-center gap-2">
+          <UButton
+            size="sm"
+            :variant="doorCodesTab === 'members' ? 'solid' : 'soft'"
+            :color="doorCodesTab === 'members' ? 'primary' : 'neutral'"
+            @click="doorCodesTab = 'members'"
+          >
+            Member codes
+          </UButton>
+          <UButton
+            size="sm"
+            :variant="doorCodesTab === 'permanent' ? 'solid' : 'soft'"
+            :color="doorCodesTab === 'permanent' ? 'primary' : 'neutral'"
+            @click="doorCodesTab = 'permanent'"
+          >
+            Permanent codes
+          </UButton>
+        </div>
+
+        <div class="space-y-4">
+          <UCard v-if="doorCodesTab === 'members'">
             <div class="font-medium">
               Member door codes
             </div>
@@ -406,7 +428,7 @@ function formatDateTime(value: string | null) {
             </div>
           </UCard>
 
-          <UCard>
+          <UCard v-else>
             <div class="font-medium">
               Permanent door codes
             </div>
