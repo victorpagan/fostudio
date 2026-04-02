@@ -410,8 +410,11 @@ async function createBookingOnBehalf() {
 </script>
 
 <template>
-  <div>
-    <UDashboardPanel id="admin-bookings">
+  <div class="flex min-h-0 flex-1">
+    <UDashboardPanel
+      id="admin-bookings"
+      class="min-h-0 flex-1"
+    >
       <template #header>
         <UDashboardNavbar
           title="Bookings"
