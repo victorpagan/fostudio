@@ -198,12 +198,21 @@ function bookingEndsAtMillis(booking: AdminBooking) {
   return Number.isFinite(fallback) ? fallback : Number.NaN
 }
 
+function bookingStartsAtMillis(booking: AdminBooking) {
+  const parsed = parseBookingTime(booking.start_time)
+  if (parsed?.isValid) return parsed.toMillis()
+  const fallback = new Date(booking.start_time).getTime()
+  return Number.isFinite(fallback) ? fallback : Number.NaN
+}
+
 const activeBookings = computed(() =>
-  bookings.value.filter((booking) => {
-    if (booking.status === 'canceled') return false
-    const endMillis = bookingEndsAtMillis(booking)
-    return Number.isFinite(endMillis) ? endMillis >= Date.now() : true
-  })
+  bookings.value
+    .filter((booking) => {
+      if (booking.status === 'canceled') return false
+      const endMillis = bookingEndsAtMillis(booking)
+      return Number.isFinite(endMillis) ? endMillis >= Date.now() : true
+    })
+    .sort((a, b) => bookingStartsAtMillis(a) - bookingStartsAtMillis(b))
 )
 const activeHoldBookings = computed(() =>
   activeBookings.value.filter(booking => hasHold(booking))
