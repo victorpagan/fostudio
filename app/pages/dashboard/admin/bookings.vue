@@ -165,6 +165,15 @@ watch(() => createForm.startSlot, (next) => {
   createForm.endSlot = defaultEnd?.value ?? ''
 })
 
+onMounted(async () => {
+  await Promise.allSettled([refresh(), refreshMembers()])
+})
+
+watch(createBookingOpen, async (open) => {
+  if (!open) return
+  await refreshMembers()
+})
+
 const canSubmitCreateBooking = computed(() =>
   !!createForm.userId
   && !!createForm.date
