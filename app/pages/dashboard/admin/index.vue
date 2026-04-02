@@ -247,6 +247,10 @@ const usageLeaders = computed(() => (
     .filter(member => Number(member.revenueCents ?? 0) > 0)
     .slice(0, 4)
 ))
+const revenueChartMinWidth = computed(() => {
+  const points = Math.max(1, revenueSeries.value.length)
+  return `${Math.max(560, points * 64)}px`
+})
 const campaignReminders = computed(() => data.value?.campaignReminders ?? [])
 const criticalDetailsOpen = ref(false)
 
@@ -491,30 +495,35 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               </div>
 
               <div class="mt-4">
-                <div class="admin-revenue-chart">
+                <div class="admin-revenue-scroll">
                   <div
-                    v-for="point in revenueSeries"
-                    :key="point.key"
-                    class="admin-revenue-chart-col"
+                    class="admin-revenue-chart"
+                    :style="{ minWidth: revenueChartMinWidth }"
                   >
-                    <div class="admin-revenue-bar-shell">
-                      <div class="admin-revenue-bar-stack">
-                        <div
-                          class="admin-revenue-segment admin-revenue-segment--holds"
-                          :style="{ height: barSegmentHeight(point.holdTopupCents) }"
-                        />
-                        <div
-                          class="admin-revenue-segment admin-revenue-segment--topups"
-                          :style="{ height: barSegmentHeight(point.creditTopupCents) }"
-                        />
-                        <div
-                          class="admin-revenue-segment admin-revenue-segment--membership"
-                          :style="{ height: barSegmentHeight(point.membershipCents) }"
-                        />
+                    <div
+                      v-for="point in revenueSeries"
+                      :key="point.key"
+                      class="admin-revenue-chart-col"
+                    >
+                      <div class="admin-revenue-bar-shell">
+                        <div class="admin-revenue-bar-stack">
+                          <div
+                            class="admin-revenue-segment admin-revenue-segment--holds"
+                            :style="{ height: barSegmentHeight(point.holdTopupCents) }"
+                          />
+                          <div
+                            class="admin-revenue-segment admin-revenue-segment--topups"
+                            :style="{ height: barSegmentHeight(point.creditTopupCents) }"
+                          />
+                          <div
+                            class="admin-revenue-segment admin-revenue-segment--membership"
+                            :style="{ height: barSegmentHeight(point.membershipCents) }"
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <div class="admin-revenue-label">
-                      {{ point.label }}
+                      <div class="admin-revenue-label">
+                        {{ point.label }}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -880,9 +889,36 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong));
 }
 
+.admin-revenue-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.35rem;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--gruv-accent) 74%, transparent 26%) color-mix(in srgb, var(--ui-bg-muted) 72%, transparent 28%);
+}
+
+.admin-revenue-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.admin-revenue-scroll::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-bg-muted) 72%, transparent 28%);
+}
+
+.admin-revenue-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--gruv-accent-strong), var(--gruv-accent));
+}
+
+.admin-revenue-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, var(--gruv-accent), color-mix(in srgb, var(--gruv-accent) 76%, white 24%));
+}
+
 .admin-revenue-chart {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(34px, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(56px, 1fr);
   gap: 0.45rem;
   align-items: end;
 }
