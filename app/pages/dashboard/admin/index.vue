@@ -1007,7 +1007,8 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   color: transparent;
 }
 
-.admin-kpi-card,
+.admin-kpi-shell,
+:deep(.admin-kpi-card),
 .admin-panel-card {
   --admin-kpi-surface: color-mix(in srgb, #d8dce2 90%, #c7ccd5 10%);
   background: var(--admin-kpi-surface);
@@ -1018,7 +1019,8 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   background: transparent;
 }
 
-.admin-ops-panel--dark .admin-kpi-card,
+.admin-ops-panel--dark .admin-kpi-shell,
+.admin-ops-panel--dark :deep(.admin-kpi-card),
 .admin-ops-panel--dark .admin-panel-card {
   --admin-kpi-surface: color-mix(in srgb, #343434 86%, #2a2a2a 14%);
   background: var(--admin-kpi-surface);
@@ -1028,12 +1030,14 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   background: transparent;
 }
 
-.admin-kpi-card--accent {
+.admin-kpi-card--accent,
+:deep(.admin-kpi-card--accent) {
   --admin-kpi-surface: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong));
   background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong));
 }
 
-.admin-ops-panel--dark .admin-kpi-card--accent {
+.admin-ops-panel--dark .admin-kpi-card--accent,
+.admin-ops-panel--dark :deep(.admin-kpi-card--accent) {
   background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong)) !important;
 }
 

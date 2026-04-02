@@ -42,12 +42,11 @@ function onNotificationAction() {
 <template>
   <div
     class="ops-kpi-shell"
-    :class="{ 'ops-kpi-shell--with-actions': hasActions }"
+    :class="[cardClass, { 'ops-kpi-shell--with-actions': hasActions }]"
   >
     <UCard
       :class="[
         'ops-kpi-card border-0',
-        cardClass,
         { 'ops-kpi-card--with-actions': hasActions }
       ]"
     >
@@ -105,6 +104,7 @@ function onNotificationAction() {
 .ops-kpi-shell {
   position: relative;
   height: 100%;
+  --admin-kpi-surface: color-mix(in srgb, var(--ui-bg-elevated) 72%, transparent 28%);
 }
 
 .ops-kpi-card {
@@ -120,7 +120,7 @@ function onNotificationAction() {
   position: absolute;
   top: 0.4rem;
   right: 0.45rem;
-  z-index: 3;
+  z-index: 10;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
