@@ -758,11 +758,14 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   background: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%);
 }
 
-:global(.dark) .admin-ops-shell {
+:global(.dark) .admin-ops-shell,
+:global(.dark-mode) .admin-ops-shell,
+:global([data-theme='dark']) .admin-ops-shell,
+:global([data-color-mode='dark']) .admin-ops-shell {
   background:
     radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
     radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%),
-    #222222;
+    #222222 !important;
 }
 
 .admin-ops-hero {
