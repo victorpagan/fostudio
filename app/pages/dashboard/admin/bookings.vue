@@ -58,6 +58,7 @@ const cancelingId = ref<string | null>(null)
 const bookingTab = ref<AdminBookingTab>('active')
 const pastPage = ref(1)
 const creatingBooking = ref(false)
+const createBookingOpen = ref(false)
 const memberSearch = ref('')
 const defaultCreateDate = DateTime.now().setZone('America/Los_Angeles').toISODate() ?? ''
 const createForm = reactive({
@@ -405,6 +406,15 @@ async function createBookingOnBehalf() {
           <template #right>
             <UButton
               size="sm"
+              color="primary"
+              variant="soft"
+              icon="i-lucide-plus"
+              @click="createBookingOpen = true"
+            >
+              Create booking
+            </UButton>
+            <UButton
+              size="sm"
               color="neutral"
               variant="soft"
               icon="i-lucide-refresh-cw"
@@ -416,7 +426,7 @@ async function createBookingOnBehalf() {
       </template>
 
       <template #body>
-        <div class="p-4 space-y-4">
+        <div class="h-full overflow-y-auto p-4 space-y-4">
           <UAlert
             color="warning"
             variant="soft"
@@ -424,126 +434,6 @@ async function createBookingOnBehalf() {
             title="Booking operations"
             description="Review all member and guest bookings. Use admin cancel/reschedule when manual intervention is needed, or create bookings directly on behalf of members."
           />
-
-          <UCard>
-            <div class="space-y-4">
-              <div class="flex items-start justify-between gap-3">
-                <div>
-                  <h3 class="text-sm font-semibold">
-                    Create booking on behalf of member
-                  </h3>
-                  <p class="mt-1 text-xs text-dimmed">
-                    Optionally burn member credits and attach an overnight hold.
-                  </p>
-                </div>
-                <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="soft"
-                  icon="i-lucide-refresh-cw"
-                  :loading="membersPending"
-                  @click="() => refreshMembers()"
-                />
-              </div>
-
-              <div class="grid gap-3 md:grid-cols-2">
-                <UFormField label="Find member">
-                  <UInput
-                    v-model="memberSearch"
-                    placeholder="Search by name or email"
-                  />
-                </UFormField>
-
-                <UFormField label="Member">
-                  <USelect
-                    v-model="createForm.userId"
-                    class="w-full"
-                    :items="memberItems"
-                    placeholder="Select a member"
-                  />
-                </UFormField>
-
-                <UFormField label="Date (local)">
-                  <UInput
-                    v-model="createForm.date"
-                    type="date"
-                  />
-                </UFormField>
-
-                <UFormField label="Start time (30-min)">
-                  <USelect
-                    v-model="createForm.startSlot"
-                    :items="startSlotItems"
-                    placeholder="Select start time"
-                  />
-                </UFormField>
-
-                <UFormField label="End time (30-min)">
-                  <USelect
-                    v-model="createForm.endSlot"
-                    :items="endSlotItems"
-                    :disabled="!createForm.startSlot || !endSlotItems.length"
-                    placeholder="Select end time"
-                  />
-                </UFormField>
-              </div>
-
-              <div
-                v-if="selectedMember"
-                class="flex flex-wrap items-center gap-2 text-xs text-dimmed"
-              >
-                <UBadge
-                  size="xs"
-                  variant="soft"
-                  :color="selectedMember.effective_status === 'active' ? 'success' : 'warning'"
-                >
-                  {{ selectedMember.effective_status }}
-                </UBadge>
-                <span>{{ selectedMember.customer_email || selectedMember.user_id }}</span>
-                <span>·</span>
-                <span>{{ selectedMemberCredits }} credits available</span>
-                <span v-if="selectedMember.tier">· {{ selectedMember.tier }}</span>
-              </div>
-
-              <UAlert
-                v-if="memberCreditWarning"
-                color="warning"
-                variant="soft"
-                icon="i-lucide-wallet-cards"
-                title="No credits available"
-                description="This member has no available credits to burn. Disable credit burn or add credits first."
-              />
-
-              <div class="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
-                <UFormField label="Notes">
-                  <UTextarea
-                    v-model="createForm.notes"
-                    placeholder="Optional booking notes"
-                    :rows="2"
-                  />
-                </UFormField>
-
-                <div class="flex flex-wrap items-center gap-3">
-                  <UCheckbox
-                    v-model="createForm.burnCredits"
-                    label="Burn member credits"
-                  />
-                  <UCheckbox
-                    v-model="createForm.requestHold"
-                    label="Request overnight hold"
-                  />
-                  <UButton
-                    color="primary"
-                    :loading="creatingBooking"
-                    :disabled="!canSubmitCreateBooking"
-                    @click="createBookingOnBehalf"
-                  >
-                    Create booking
-                  </UButton>
-                </div>
-              </div>
-            </div>
-          </UCard>
 
           <UCard>
             <div class="flex flex-wrap items-center gap-3">
@@ -730,6 +620,133 @@ async function createBookingOnBehalf() {
         </div>
       </template>
     </UDashboardPanel>
+
+    <USlideover
+      v-model:open="createBookingOpen"
+      side="right"
+      title="Create booking"
+      description="Create a booking on behalf of a member, with optional credit burn and hold request."
+    >
+      <template #body>
+        <div class="space-y-4">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-semibold">
+                Booking details
+              </h3>
+              <p class="mt-1 text-xs text-dimmed">
+                Use 30-minute increments for all start and end times.
+              </p>
+            </div>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-refresh-cw"
+              :loading="membersPending"
+              @click="() => refreshMembers()"
+            />
+          </div>
+
+          <div class="grid gap-3 md:grid-cols-2">
+            <UFormField label="Find member">
+              <UInput
+                v-model="memberSearch"
+                placeholder="Search by name or email"
+              />
+            </UFormField>
+
+            <UFormField label="Member">
+              <USelect
+                v-model="createForm.userId"
+                class="w-full"
+                :items="memberItems"
+                placeholder="Select a member"
+              />
+            </UFormField>
+
+            <UFormField label="Date (local)">
+              <UInput
+                v-model="createForm.date"
+                type="date"
+              />
+            </UFormField>
+
+            <UFormField label="Start time (30-min)">
+              <USelect
+                v-model="createForm.startSlot"
+                :items="startSlotItems"
+                placeholder="Select start time"
+              />
+            </UFormField>
+
+            <UFormField label="End time (30-min)">
+              <USelect
+                v-model="createForm.endSlot"
+                :items="endSlotItems"
+                :disabled="!createForm.startSlot || !endSlotItems.length"
+                placeholder="Select end time"
+              />
+            </UFormField>
+          </div>
+
+          <div
+            v-if="selectedMember"
+            class="flex flex-wrap items-center gap-2 text-xs text-dimmed"
+          >
+            <UBadge
+              size="xs"
+              variant="soft"
+              :color="selectedMember.effective_status === 'active' ? 'success' : 'warning'"
+            >
+              {{ selectedMember.effective_status }}
+            </UBadge>
+            <span>{{ selectedMember.customer_email || selectedMember.user_id }}</span>
+            <span>·</span>
+            <span>{{ selectedMemberCredits }} credits available</span>
+            <span v-if="selectedMember.tier">· {{ selectedMember.tier }}</span>
+          </div>
+
+          <UAlert
+            v-if="memberCreditWarning"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-wallet-cards"
+            title="No credits available"
+            description="This member has no available credits to burn. Disable credit burn or add credits first."
+          />
+
+          <div class="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+            <UFormField label="Notes">
+              <UTextarea
+                v-model="createForm.notes"
+                placeholder="Optional booking notes"
+                :rows="2"
+              />
+            </UFormField>
+
+            <div class="flex flex-wrap items-center gap-3">
+              <UCheckbox
+                v-model="createForm.burnCredits"
+                label="Burn member credits"
+              />
+              <UCheckbox
+                v-model="createForm.requestHold"
+                label="Request overnight hold"
+              />
+              <UButton
+                color="primary"
+                :loading="creatingBooking"
+                :disabled="!canSubmitCreateBooking"
+                @click="createBookingOnBehalf"
+              >
+                Create booking
+              </UButton>
+            </div>
+          </div>
+        </div>
+      </template>
+    </USlideover>
 
     <AdminRescheduleModal
       v-model:open="rescheduleOpen"
