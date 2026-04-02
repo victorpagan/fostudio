@@ -11,6 +11,7 @@ type OpsResponse = {
     scheduledGrantCount?: number
     membershipsNeedingAttention?: number
     guestBookings?: number
+    activeBookingsInRange?: number
     membershipsMissingFutureSchedule?: number
     pendingLockJobs?: number
     deadLockJobs?: number
@@ -69,87 +70,6 @@ type OpsResponse = {
     permanentCodesDisarmAbodeOutsideLabHours: boolean
   }
 }
-
-const quickActions = [
-  {
-    title: 'Ops tools',
-    description: 'Grant processing, backfill controls, and guest booking monitoring.',
-    icon: 'i-lucide-wrench',
-    to: '/dashboard/admin/tools'
-  },
-  {
-    title: 'Subscriptions',
-    description: 'Create or edit tiers and plan variations, then sync subscription prices to Square.',
-    icon: 'i-lucide-badge-check',
-    to: '/dashboard/admin/subscriptions'
-  },
-  {
-    title: 'Credits',
-    description: 'Manage single-credit and bundle pricing, sale windows, and Square item linkage.',
-    icon: 'i-lucide-wallet-cards',
-    to: '/dashboard/admin/credits'
-  },
-  {
-    title: 'Promo codes',
-    description: 'Manage promo code inventory, validity windows, and redemption limits.',
-    icon: 'i-lucide-ticket-percent',
-    to: '/dashboard/admin/promos'
-  },
-  {
-    title: 'Members',
-    description: 'Review member accounts, adjust statuses, and apply manual credit corrections.',
-    icon: 'i-lucide-users',
-    to: '/dashboard/admin/members'
-  },
-  {
-    title: 'Door codes',
-    description: 'Manage member codes and permanent lock codes that remain active outside booking windows.',
-    icon: 'i-lucide-key-round',
-    to: '/dashboard/admin/door-codes'
-  },
-  {
-    title: 'Waiver templates',
-    description: 'Draft and publish member waiver versions. Publishing forces member re-signing.',
-    icon: 'i-lucide-file-signature',
-    to: '/dashboard/admin/waiver'
-  },
-  {
-    title: 'Bookings',
-    description: 'Review all bookings and run admin-level cancellation/refund actions.',
-    icon: 'i-lucide-calendar-range',
-    to: '/dashboard/admin/bookings'
-  },
-  {
-    title: 'Calendar settings',
-    description: 'Manage LA peak windows, booking windows, and blackout blocks.',
-    icon: 'i-lucide-calendar-clock',
-    to: '/dashboard/admin/calendar'
-  },
-  {
-    title: 'Google Calendar',
-    description: 'Connect and sync the external Peerspace Google Calendar into booking availability blocks.',
-    icon: 'i-lucide-calendar-sync',
-    to: '/dashboard/admin/google-calendar'
-  },
-  {
-    title: 'Email',
-    description: 'Manage customer mail preferences, admin copy behavior, and SendGrid template mappings.',
-    icon: 'i-lucide-mail',
-    to: '/dashboard/admin/email'
-  },
-  {
-    title: 'Email campaigns',
-    description: 'Build draft campaigns, choose a campaign template, and send member broadcast mailings.',
-    icon: 'i-lucide-megaphone',
-    to: '/dashboard/admin/email-campaigns'
-  },
-  {
-    title: 'Holds',
-    description: 'Configure hold fallback, hold top-up settings, and sync the hold item to Square.',
-    icon: 'i-lucide-package-plus',
-    to: '/dashboard/admin/holds'
-  }
-]
 
 const periodMode = ref<PeriodMode>('month')
 const periodAnchorIso = ref(DateTime.utc().toISODate() ?? DateTime.now().toISODate() ?? '')
@@ -275,6 +195,44 @@ const revenueMixStyle = computed(() => {
 const topMembers = computed(() => data.value?.topMembers ?? [])
 const criticalIssues = computed(() => data.value?.criticalIssues ?? [])
 const campaignReminders = computed(() => data.value?.campaignReminders ?? [])
+const criticalDetailsOpen = ref(false)
+
+const criticalPressureTotal = computed(() =>
+  Number(data.value?.summary?.openLockIncidents ?? 0)
+  + Number(data.value?.summary?.deadLockJobs ?? 0)
+  + Number(data.value?.summary?.dueGrantCount ?? 0)
+)
+
+const criticalPressureSources = computed(() => ([
+  {
+    id: 'lock-incidents',
+    title: 'Open lock incidents',
+    count: Number(data.value?.summary?.openLockIncidents ?? 0),
+    description: 'Incidents where lock actions or state checks need manual follow-up.',
+    to: '/dashboard/admin/tools'
+  },
+  {
+    id: 'dead-jobs',
+    title: 'Dead lock jobs',
+    count: Number(data.value?.summary?.deadLockJobs ?? 0),
+    description: 'Background lock jobs that exhausted retries and require retry/remediation.',
+    to: '/dashboard/admin/tools'
+  },
+  {
+    id: 'due-grants',
+    title: 'Credit grants due',
+    count: Number(data.value?.summary?.dueGrantCount ?? 0),
+    description: 'Scheduled credit grants now due for processing.',
+    to: '/dashboard/admin/tools'
+  },
+  {
+    id: 'missing-future-schedules',
+    title: 'Missing future grant schedules',
+    count: Number(data.value?.summary?.membershipsMissingFutureSchedule ?? 0),
+    description: 'Extended memberships missing future grant rows.',
+    to: '/dashboard/admin/tools'
+  }
+]))
 
 function formatMoney(cents: number | null | undefined) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -345,28 +303,25 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               <p class="text-[11px] uppercase tracking-[0.22em] text-dimmed">
                 Revenue + Critical Operations
               </p>
-              <h1 class="text-2xl sm:text-3xl font-[var(--font-display)] font-light leading-tight text-highlighted">
-                Sales, access, and membership ops in one view.
-              </h1>
               <p class="max-w-3xl text-sm text-toned">
-                Monitor cash movement, access incidents, grant pressure, and member activity from a single dashboard state.
+                Selected range drives all totals, trend bars, and pressure signals.
               </p>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="admin-period-toolbar flex items-center gap-2">
               <UButton
                 size="sm"
                 color="neutral"
-                variant="soft"
+                variant="ghost"
                 icon="i-lucide-chevron-left"
                 @click="stepPeriod(-1)"
               />
-              <div class="rounded-xl bg-elevated/55 px-3 py-2 text-xs text-toned min-w-48 text-center">
+              <div class="px-1 py-2 text-xs text-toned min-w-48 text-center">
                 {{ rangeLabel }}
               </div>
               <UButton
                 size="sm"
                 color="neutral"
-                variant="soft"
+                variant="ghost"
                 icon="i-lucide-chevron-right"
                 :disabled="!canStepForward"
                 @click="stepPeriod(1)"
@@ -380,7 +335,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               :key="mode.value"
               size="xs"
               :color="periodMode === mode.value ? 'primary' : 'neutral'"
-              :variant="periodMode === mode.value ? 'solid' : 'soft'"
+              :variant="periodMode === mode.value ? 'solid' : 'ghost'"
               @click="periodMode = mode.value"
             >
               {{ mode.label }}
@@ -388,7 +343,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
           </div>
         </section>
 
-        <section class="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <section class="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
           <UCard class="admin-kpi-card admin-kpi-card--accent border-0">
             <div class="text-[11px] uppercase tracking-[0.2em] text-inverted/85">
               Revenue
@@ -403,26 +358,24 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
           <UCard class="admin-kpi-card border-0">
             <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-              Membership sales
-            </div>
-            <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
-              {{ formatMoney(data?.summary?.membershipRevenueCents) }}
-            </div>
-            <p class="mt-2 text-xs text-dimmed">
-              Credit topups: {{ formatMoney(data?.summary?.creditTopupRevenueCents) }}
-            </p>
-          </UCard>
-
-          <UCard class="admin-kpi-card border-0">
-            <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
               Critical pressure
             </div>
             <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
-              {{ (data?.summary?.openLockIncidents ?? 0) + (data?.summary?.deadLockJobs ?? 0) + (data?.summary?.dueGrantCount ?? 0) }}
+              {{ criticalPressureTotal }}
             </div>
             <p class="mt-2 text-xs text-dimmed">
-              Incidents, dead jobs, and due grants combined
+              Incidents + dead jobs + due grants
             </p>
+            <UButton
+              class="mt-3 w-fit"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-panel-right-open"
+              @click="criticalDetailsOpen = true"
+            >
+              See sources
+            </UButton>
           </UCard>
 
           <UCard class="admin-kpi-card border-0">
@@ -430,10 +383,10 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               Active demand
             </div>
             <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
-              {{ data?.summary?.guestBookings ?? 0 }}
+              {{ data?.summary?.activeBookingsInRange ?? 0 }}
             </div>
             <p class="mt-2 text-xs text-dimmed">
-              Guest bookings in recent snapshot
+              All non-canceled bookings in selected range
             </p>
           </UCard>
         </section>
@@ -506,6 +459,9 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
                 Revenue mix
               </div>
+              <p class="mt-1 text-xs text-dimmed">
+                Split for {{ rangeLabel }}
+              </p>
               <div class="mt-3 flex items-center gap-4">
                 <div
                   class="admin-mix-ring"
@@ -570,7 +526,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
             <div class="flex items-center justify-between gap-2">
               <div>
                 <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                  Top members
+                  Usage leaders
                 </div>
                 <h2 class="mt-1 text-xl font-[var(--font-display)] font-light">
                   Revenue + usage leaders
@@ -578,45 +534,40 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               </div>
             </div>
 
-            <div class="mt-3 overflow-x-auto">
-              <table class="min-w-full text-sm admin-table">
-                <thead>
-                  <tr>
-                    <th>Member</th>
-                    <th>Revenue</th>
-                    <th>Bookings</th>
-                    <th>Credits</th>
-                    <th>Last booking</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="member in topMembers"
-                    :key="member.userId"
-                  >
-                    <td>
-                      <div class="font-medium text-highlighted">
-                        {{ member.name || member.email || member.userId }}
-                      </div>
-                      <div class="text-xs text-dimmed">
-                        {{ member.email || member.userId }}
-                      </div>
-                    </td>
-                    <td>{{ formatMoney(member.revenueCents) }}</td>
-                    <td>{{ member.bookings }}</td>
-                    <td>{{ member.creditsBurned }}</td>
-                    <td>{{ formatShortDate(member.lastBookingAt) }}</td>
-                  </tr>
-                  <tr v-if="!topMembers.length">
-                    <td
-                      colspan="5"
-                      class="text-center text-dimmed py-5"
-                    >
-                      No member activity in selected period.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <p class="mt-2 text-xs text-dimmed">
+              Derived from non-canceled member bookings plus processed membership/top-up payments in {{ rangeLabel }}.
+            </p>
+
+            <div class="mt-3 space-y-0.5">
+              <div
+                v-for="(member, index) in topMembers"
+                :key="member.userId"
+                class="admin-leader-row"
+              >
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="admin-leader-rank">{{ index + 1 }}</span>
+                    <span class="truncate font-medium text-highlighted">
+                      {{ member.name || member.email || member.userId }}
+                    </span>
+                  </div>
+                  <div class="mt-0.5 truncate text-xs text-dimmed">
+                    {{ member.email || member.userId }}
+                  </div>
+                </div>
+                <div class="admin-leader-metrics">
+                  <span class="admin-leader-pill">{{ formatMoney(member.revenueCents) }}</span>
+                  <span class="admin-leader-pill">{{ member.bookings }} bookings</span>
+                  <span class="admin-leader-pill">{{ member.creditsBurned }} cr</span>
+                  <span class="admin-leader-pill">Last {{ formatShortDate(member.lastBookingAt) }}</span>
+                </div>
+              </div>
+              <div
+                v-if="!topMembers.length"
+                class="text-center text-dimmed py-5 text-sm"
+              >
+                No member activity in selected period.
+              </div>
             </div>
           </UCard>
 
@@ -682,42 +633,46 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
             </UCard>
           </div>
         </section>
-
-        <section class="space-y-2">
-          <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-            Quick actions
-          </div>
-          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <UCard
-              v-for="section in quickActions"
-              :key="section.to"
-              class="admin-action-card border-0"
-            >
-              <div class="flex h-full flex-col">
-                <div class="flex items-center gap-2">
-                  <UIcon
-                    :name="section.icon"
-                    class="size-5 text-primary"
-                  />
-                  <div class="font-medium">
-                    {{ section.title }}
-                  </div>
-                </div>
-                <p class="mt-2 text-sm text-dimmed flex-1">
-                  {{ section.description }}
-                </p>
-                <UButton
-                  class="mt-4"
-                  :to="section.to"
-                  size="sm"
-                >
-                  Open
-                </UButton>
-              </div>
-            </UCard>
-          </div>
-        </section>
       </div>
+
+      <USlideover
+        v-model:open="criticalDetailsOpen"
+        side="right"
+        title="Critical pressure sources"
+        description="Signals that roll up into critical pressure and where to take action."
+        :ui="{ content: 'max-w-xl w-full border-0 admin-critical-slideover' }"
+      >
+        <template #body>
+          <div class="space-y-2 p-2">
+            <div class="pb-1 text-sm text-toned">
+              <span class="font-medium text-highlighted">{{ criticalPressureTotal }}</span> active pressure points
+            </div>
+            <NuxtLink
+              v-for="source in criticalPressureSources"
+              :key="source.id"
+              :to="source.to"
+              class="admin-critical-source"
+              @click="criticalDetailsOpen = false"
+            >
+              <div class="space-y-1">
+                <div class="text-sm font-medium text-highlighted">
+                  {{ source.title }}
+                </div>
+                <p class="text-xs text-dimmed">
+                  {{ source.description }}
+                </p>
+              </div>
+              <UBadge
+                size="sm"
+                :color="source.count > 0 ? 'warning' : 'neutral'"
+                variant="soft"
+              >
+                {{ source.count }}
+              </UBadge>
+            </NuxtLink>
+          </div>
+        </template>
+      </USlideover>
     </template>
   </UDashboardPanel>
 </template>
@@ -725,6 +680,8 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 <style scoped>
 .admin-ops-shell {
   position: relative;
+  background: #2b2b2b;
+  border-radius: 1rem;
 }
 
 .admin-ops-shell::before {
@@ -734,9 +691,9 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 17%, transparent), transparent 62%),
-    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 14%, transparent), transparent 58%);
-  opacity: 0.92;
+    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
+    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%);
+  opacity: 0.86;
 }
 
 .admin-ops-shell > * {
@@ -746,13 +703,16 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-ops-hero {
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--gruv-accent) 16%, var(--ui-bg) 84%), color-mix(in srgb, var(--gruv-bg-1) 72%, transparent 28%));
+    linear-gradient(135deg, color-mix(in srgb, var(--gruv-accent) 15%, #2b2b2b 85%), color-mix(in srgb, #2f2f2f 80%, transparent 20%));
+}
+
+.admin-period-toolbar {
+  border: 0;
 }
 
 .admin-kpi-card,
-.admin-panel-card,
-.admin-action-card {
-  background: color-mix(in srgb, var(--ui-bg-elevated) 56%, transparent 44%);
+.admin-panel-card {
+  background: color-mix(in srgb, #3a3a3a 82%, transparent 18%);
   box-shadow: none;
 }
 
@@ -874,19 +834,47 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   font-weight: 500;
 }
 
-.admin-table th {
-  text-align: left;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  color: var(--ui-text-dimmed);
-  padding: 0.5rem 0.7rem;
+.admin-leader-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid color-mix(in srgb, var(--ui-border) 60%, transparent 40%);
 }
 
-.admin-table td {
-  padding: 0.56rem 0.7rem;
+.admin-leader-row:first-child {
+  border-top: 0;
+}
+
+.admin-leader-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  color: var(--ui-text-dimmed);
+  background: color-mix(in srgb, #4a4a4a 75%, transparent 25%);
+}
+
+.admin-leader-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.admin-leader-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.2rem 0.52rem;
+  font-size: 0.68rem;
   color: var(--ui-text-toned);
-  border-top: 1px solid color-mix(in srgb, var(--ui-border) 70%, transparent 30%);
+  background: color-mix(in srgb, #474747 80%, transparent 20%);
 }
 
 .admin-issue-row,
@@ -902,5 +890,19 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.admin-critical-slideover {
+  background: #2f2f2f;
+}
+
+.admin-critical-source {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, #404040 82%, transparent 18%);
+  padding: 0.68rem 0.75rem;
 }
 </style>

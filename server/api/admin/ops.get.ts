@@ -121,6 +121,7 @@ export default defineEventHandler(async (event) => {
     upcomingGrantsRes,
     membershipsAttentionRes,
     recentGuestBookingsRes,
+    activeDemandBookingsRes,
     activeExtendedMembershipsRes,
     futureGrantMembershipsRes,
     pendingLockJobsRes,
@@ -171,6 +172,12 @@ export default defineEventHandler(async (event) => {
       .is('user_id', null)
       .order('created_at', { ascending: false })
       .limit(12),
+    supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .neq('status', 'canceled')
+      .gte('start_time', rangeStartIso)
+      .lte('start_time', rangeEndIso),
     supabase
       .from('memberships')
       .select('id, user_id, tier, cadence, status, current_period_start, current_period_end, last_invoice_id, last_paid_at')
@@ -253,6 +260,7 @@ export default defineEventHandler(async (event) => {
     upcomingGrantsRes.error,
     membershipsAttentionRes.error,
     recentGuestBookingsRes.error,
+    activeDemandBookingsRes.error,
     activeExtendedMembershipsRes.error,
     futureGrantMembershipsRes.error,
     pendingLockJobsRes.error,
@@ -494,6 +502,7 @@ export default defineEventHandler(async (event) => {
       scheduledGrantCount: scheduledGrantCountRes.count ?? 0,
       membershipsNeedingAttention: membershipsAttentionRes.data?.length ?? 0,
       guestBookings: recentGuestBookingsRes.data?.length ?? 0,
+      activeBookingsInRange: activeDemandBookingsRes.count ?? 0,
       membershipsMissingFutureSchedule: membershipsMissingFutureSchedule.length,
       pendingLockJobs: pendingLockJobsRes.count ?? 0,
       deadLockJobs: deadLockJobsRes.count ?? 0,
