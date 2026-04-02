@@ -389,7 +389,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                   icon="i-lucide-chevron-left"
                   @click="stepPeriod(-1)"
                 />
-                <div class="admin-range-label px-1 py-1 min-w-48 text-center">
+                <div class="admin-range-label px-1 py-1 min-w-[15rem] text-center">
                   {{ rangeLabel }}
                 </div>
                 <UButton
@@ -560,9 +560,10 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
               <div class="mt-3 grid gap-2 sm:grid-cols-2">
                 <NuxtLink
-                  v-for="member in usageLeaders"
+                  v-for="(member, index) in usageLeaders"
                   :key="member.userId"
                   class="admin-leader-tile"
+                  :class="{ 'admin-leader-tile--top': index === 0 }"
                   :to="usageLeaderTo(member.userId)"
                 >
                   <div class="min-w-0 space-y-2">
@@ -855,11 +856,12 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 }
 
 .admin-range-label {
-  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Times New Roman', serif;
-  font-size: clamp(1.1rem, 1.8vw, 1.5rem);
-  line-height: 1.1;
+  font-family: Didot, 'Bodoni MT', 'Bodoni 72', 'Times New Roman', serif;
+  font-size: clamp(1.45rem, 3.1vw, 2.35rem);
+  line-height: 1;
   letter-spacing: 0.01em;
-  font-weight: 500;
+  font-weight: 400;
+  white-space: nowrap;
   background-image: linear-gradient(120deg, var(--gruv-accent-strong), var(--gruv-accent), color-mix(in srgb, var(--gruv-accent) 72%, #ff9bb0 28%));
   -webkit-background-clip: text;
   background-clip: text;
@@ -887,6 +889,10 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-kpi-card--accent {
   background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong));
+}
+
+.admin-ops-panel--dark .admin-kpi-card--accent {
+  background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong)) !important;
 }
 
 .admin-revenue-scroll {
@@ -1059,15 +1065,38 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 }
 
 .admin-leader-value {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 0.72rem;
-  padding: 0.28rem 0.6rem;
   font-size: 1.52rem;
   line-height: 1;
   letter-spacing: 0.01em;
-  color: var(--ui-text-inverted);
-  background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong));
+  color: color-mix(in srgb, var(--gruv-accent) 82%, #ffe7a0 18%);
+}
+
+.admin-leader-tile--top {
+  background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong)) !important;
+}
+
+.admin-leader-tile--top .text-highlighted,
+.admin-leader-tile--top .text-dimmed {
+  color: color-mix(in srgb, #fff 92%, transparent 8%) !important;
+}
+
+.admin-leader-tile--top .admin-leader-avatar {
+  background: color-mix(in srgb, #fff 24%, transparent 76%) !important;
+  color: #fff;
+}
+
+.admin-leader-tile--top .admin-leader-value {
+  color: #fff;
+}
+
+.admin-leader-tile--top .admin-leader-pill {
+  color: color-mix(in srgb, #fff 94%, transparent 6%);
+  background: color-mix(in srgb, #fff 22%, transparent 78%);
+}
+
+.admin-leader-tile--top .admin-leader-arrow {
+  color: color-mix(in srgb, #fff 94%, transparent 6%);
+  background: color-mix(in srgb, #fff 22%, transparent 78%);
 }
 
 .admin-leader-metrics {
