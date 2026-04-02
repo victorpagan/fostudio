@@ -164,6 +164,11 @@ const opsCanScrollDown = ref(false)
 const revenueScrollRef = ref<HTMLElement | null>(null)
 const revenueSeekValue = ref(0)
 const revenueSeekMax = ref(0)
+const revenueCanScrollLeft = ref(false)
+const revenueCanScrollRight = ref(false)
+const revenueIsScrolling = ref(false)
+
+let revenueScrollIdleTimer: ReturnType<typeof setTimeout> | null = null
 
 function updateOpsScrollState() {
   const host = opsScrollRef.value
@@ -188,16 +193,45 @@ function updateRevenueSeekState() {
   if (!host) {
     revenueSeekValue.value = 0
     revenueSeekMax.value = 0
+    revenueCanScrollLeft.value = false
+    revenueCanScrollRight.value = false
     return
   }
 
   const max = Math.max(0, host.scrollWidth - host.clientWidth)
   revenueSeekMax.value = max
   revenueSeekValue.value = Math.min(max, host.scrollLeft)
+  revenueCanScrollLeft.value = host.scrollLeft > 6
+  revenueCanScrollRight.value = host.scrollLeft < (max - 6)
+}
+
+function snapRevenueScrollToStep() {
+  const host = revenueScrollRef.value
+  if (!host || revenueSeekMax.value <= 0) return
+
+  const columns = host.querySelectorAll<HTMLElement>('.admin-revenue-chart-col')
+  if (columns.length < 2) return
+
+  const step = columns[1].offsetLeft - columns[0].offsetLeft
+  if (!Number.isFinite(step) || step <= 0) return
+
+  const snapped = Math.round(host.scrollLeft / step) * step
+  const target = Math.max(0, Math.min(revenueSeekMax.value, snapped))
+  host.scrollTo({ left: target, behavior: 'smooth' })
 }
 
 function handleRevenueScroll() {
+  revenueIsScrolling.value = true
   updateRevenueSeekState()
+
+  if (revenueScrollIdleTimer) {
+    clearTimeout(revenueScrollIdleTimer)
+  }
+
+  revenueScrollIdleTimer = setTimeout(() => {
+    revenueIsScrolling.value = false
+    snapRevenueScrollToStep()
+  }, 170)
 }
 
 function onRevenueSeekInput(event: Event) {
@@ -229,6 +263,11 @@ onBeforeUnmount(() => {
   revenueScrollRef.value?.removeEventListener('scroll', handleRevenueScroll)
   window.removeEventListener('resize', updateOpsScrollState)
   window.removeEventListener('resize', updateRevenueSeekState)
+
+  if (revenueScrollIdleTimer) {
+    clearTimeout(revenueScrollIdleTimer)
+    revenueScrollIdleTimer = null
+  }
 })
 
 watch([data, pending], async () => {
@@ -466,26 +505,30 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               </p>
             </UCard>
 
-            <UCard class="admin-kpi-card border-0">
+            <UCard class="admin-kpi-card admin-kpi-card--pressure border-0">
               <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
                 Critical pressure
               </div>
+              <button
+                type="button"
+                class="admin-kpi-cutout-btn"
+                aria-label="Open critical pressure sources"
+                @click="criticalDetailsOpen = true"
+              >
+                <UIcon
+                  name="i-lucide-arrow-up-right"
+                  class="size-4"
+                />
+              </button>
               <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
                 {{ criticalPressureTotal }}
               </div>
               <p class="mt-2 text-xs text-dimmed">
                 Incidents + dead jobs + due grants
               </p>
-              <UButton
-                class="mt-3 w-fit"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-panel-right-open"
-                @click="criticalDetailsOpen = true"
-              >
+              <p class="mt-3 text-xs text-dimmed">
                 See sources
-              </UButton>
+              </p>
             </UCard>
 
             <UCard class="admin-kpi-card border-0">
@@ -511,7 +554,10 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
           </section>
 
           <section class="grid gap-3 sm:gap-4 xl:grid-cols-[1.6fr_1fr]">
-            <UCard class="admin-panel-card border-0 admin-revenue-panel">
+            <UCard
+              class="admin-panel-card border-0 admin-revenue-panel h-full"
+              :ui="{ body: 'h-full flex flex-col' }"
+            >
               <div class="flex items-center justify-between gap-3">
                 <div>
                   <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
@@ -532,8 +578,17 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
               <div class="admin-revenue-body mt-4">
                 <div
+                  class="admin-revenue-shadow admin-revenue-shadow--left"
+                  :class="{ 'is-visible': revenueCanScrollLeft }"
+                />
+                <div
+                  class="admin-revenue-shadow admin-revenue-shadow--right"
+                  :class="{ 'is-visible': revenueCanScrollRight }"
+                />
+                <div
                   ref="revenueScrollRef"
                   class="admin-revenue-scroll"
+                  :class="{ 'admin-revenue-scroll--scrolling': revenueIsScrolling }"
                 >
                   <div
                     class="admin-revenue-chart"
@@ -978,17 +1033,80 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong)) !important;
 }
 
+.admin-kpi-card--pressure {
+  position: relative;
+  overflow: visible;
+}
+
+.admin-kpi-card--pressure::after {
+  content: '';
+  position: absolute;
+  top: -0.45rem;
+  right: 2rem;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-bg) 92%, transparent 8%);
+}
+
+.admin-kpi-cutout-btn {
+  position: absolute;
+  top: -0.5rem;
+  right: -0.4rem;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 999px;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, #fff 94%, transparent 6%);
+  background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong));
+  cursor: pointer;
+}
+
+.admin-kpi-cutout-btn:hover {
+  filter: brightness(1.05);
+}
+
 .admin-revenue-panel {
   display: flex;
   flex-direction: column;
   min-height: 24rem;
+  height: 100%;
 }
 
 .admin-revenue-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.admin-revenue-shadow {
+  position: absolute;
+  top: 0;
+  bottom: 2rem;
+  width: 1.6rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+  z-index: 3;
+}
+
+.admin-revenue-shadow--left {
+  left: 0;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.42), transparent);
+}
+
+.admin-revenue-shadow--right {
+  right: 0;
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.42), transparent);
+}
+
+.admin-revenue-shadow.is-visible {
+  opacity: 1;
 }
 
 .admin-revenue-scroll {
@@ -1004,6 +1122,14 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-revenue-scroll::-webkit-scrollbar {
   height: 8px;
+}
+
+.admin-revenue-scroll.admin-revenue-scroll--scrolling {
+  scrollbar-width: none;
+}
+
+.admin-revenue-scroll.admin-revenue-scroll--scrolling::-webkit-scrollbar {
+  height: 0;
 }
 
 .admin-revenue-scroll::-webkit-scrollbar-track {
@@ -1098,7 +1224,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 }
 
 .admin-revenue-legend {
-  margin-top: auto;
+  margin-top: 0.6rem;
 }
 
 .admin-revenue-bar-stack {
