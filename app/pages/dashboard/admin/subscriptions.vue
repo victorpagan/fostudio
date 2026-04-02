@@ -122,7 +122,7 @@ const loading = ref(false)
 const savingAndSyncing = ref(false)
 const deleting = ref(false)
 const reordering = ref(false)
-const repairingVariations = ref(false)
+const syncingAllVariations = ref(false)
 const selectedTierId = ref<string | null>(null)
 const draggedTierId = ref<string | null>(null)
 
@@ -601,49 +601,45 @@ async function deleteTier() {
   }
 }
 
-async function repairSquareVariations() {
-  const confirmed = window.confirm('Repair Square plan variations for all active tiers? This creates fresh cadence variations and remaps IDs in the database.')
+async function syncAllVariations() {
+  const confirmed = window.confirm('Sync all active membership variations to Square? This updates plan phases with cadence multipliers and discounts.')
   if (!confirmed) return
 
-  repairingVariations.value = true
+  syncingAllVariations.value = true
   try {
     const res = await $fetch<{
+      ok: boolean
       total: number
-      repaired: number
-      skipped: number
+      synced: number
       failed: number
-      items: Array<{ status?: string, message?: string }>
-    }>('/api/admin/membership/variation-repair', {
-      method: 'POST',
-      body: {
-        force: true,
-        dryRun: false
-      }
+      results: Array<{ tierId: string, tierDisplayName: string, cadence: string, status: string, message?: string }>
+    }>('/api/admin/membership/variations-sync-all', {
+      method: 'POST'
     })
 
-    const firstFailure = res.items.find(item => item.status === 'failed')
     toast.add({
-      title: 'Square variation repair complete',
-      description: `Repaired ${res.repaired}/${res.total}. Skipped ${res.skipped}. Failed ${res.failed}.`
+      title: 'Variations synced to Square',
+      description: `Synced ${res.synced}/${res.total}. Failed ${res.failed}.`,
+      color: res.failed > 0 ? 'warning' : 'success'
     })
-    if (firstFailure?.message) {
+
+    const failures = res.results.filter(r => r.status === 'failed')
+    if (failures.length > 0) {
+      const failureList = failures.map(f => `${f.tierDisplayName} ${f.cadence}: ${f.message}`).slice(0, 3).join('\n')
       toast.add({
-        title: 'Repair warning',
-        description: firstFailure.message,
-        color: 'warning'
+        title: 'Sync failures',
+        description: failureList + (failures.length > 3 ? `\n... and ${failures.length - 3} more` : ''),
+        color: 'error'
       })
     }
-
-    await reloadTiers()
-    if (selectedTierId.value) loadTier(selectedTierId.value)
   } catch (error: unknown) {
     toast.add({
-      title: 'Could not repair Square variations',
+      title: 'Could not sync variations',
       description: readErrorMessage(error),
       color: 'error'
     })
   } finally {
-    repairingVariations.value = false
+    syncingAllVariations.value = false
   }
 }
 </script>
@@ -659,13 +655,13 @@ async function repairSquareVariations() {
         <template #right>
           <UButton
             size="sm"
-            color="warning"
+            color="primary"
             variant="soft"
-            icon="i-lucide-wrench"
-            :loading="repairingVariations"
-            @click="repairSquareVariations"
+            icon="i-lucide-sync"
+            :loading="syncingAllVariations"
+            @click="syncAllVariations"
           >
-            Repair Square Variations
+            Sync All to Square
           </UButton>
           <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-refresh-cw" :loading="loading" @click="reloadTiers" />
         </template>
