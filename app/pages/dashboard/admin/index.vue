@@ -721,6 +721,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
     radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 7%, transparent), transparent 58%),
     #cfd1d3;
   border-radius: 1rem;
+  overflow: hidden;
 }
 
 .admin-ops-shell > * {
@@ -728,18 +729,35 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   z-index: 1;
 }
 
-.admin-ops-shell.admin-ops-shell--scrolled-top {
-  box-shadow: inset 0 16px 24px -20px rgba(0, 0, 0, 0.82);
+.admin-ops-shell::before,
+.admin-ops-shell::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease-out;
+  z-index: 4;
 }
 
-.admin-ops-shell.admin-ops-shell--scrolled-bottom {
-  box-shadow: inset 0 -16px 24px -20px rgba(0, 0, 0, 0.82);
+.admin-ops-shell::before {
+  top: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.52), transparent);
 }
 
-.admin-ops-shell.admin-ops-shell--scrolled-top.admin-ops-shell--scrolled-bottom {
-  box-shadow:
-    inset 0 16px 24px -20px rgba(0, 0, 0, 0.82),
-    inset 0 -16px 24px -20px rgba(0, 0, 0, 0.82);
+.admin-ops-shell::after {
+  bottom: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.52), transparent);
+}
+
+.admin-ops-shell.admin-ops-shell--scrolled-top::before {
+  opacity: 1;
+}
+
+.admin-ops-shell.admin-ops-shell--scrolled-bottom::after {
+  opacity: 1;
 }
 
 :global(.dark) .admin-ops-panel {
