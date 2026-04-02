@@ -12,6 +12,7 @@ import {
   findPendingSwapAction,
   normalizeSquareActionType
 } from '~~/server/utils/square/subscriptionActions'
+import { computeCyclePriceCents } from '~~/server/utils/membership/cadencePricing'
 
 const bodySchema = z.object({
   tier: z.string().min(1),
@@ -90,7 +91,8 @@ async function createOrderTemplateIdForPlanVariation(
   square: any,
   planVariationId: string,
   locationId: string,
-  promoSquareDiscountId?: string | null
+  promoSquareDiscountId?: string | null,
+  cadence?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
 ) {
   const variationRes = await square.catalog.object.get({
     objectId: planVariationId,
@@ -129,6 +131,12 @@ async function createOrderTemplateIdForPlanVariation(
   const itemVariationId = readString(firstItemVariation, 'id')
   if (!itemVariationId) throw new Error(`Square item ${eligibleItemId} has no item variation id`)
 
+  // Use cadence multiplier for quantity: quarterly=3, annual=12, others=1
+  const cadenceQuantity = !cadence ? 1
+    : cadence === 'quarterly' ? 3
+    : cadence === 'annual' ? 12
+    : 1
+
   const orderPayload: Record<string, unknown> = {
     idempotencyKey: `mpswap-order:${planVariationId}:${Date.now()}`,
     order: {
@@ -137,7 +145,7 @@ async function createOrderTemplateIdForPlanVariation(
       lineItems: [
         {
           catalogObjectId: itemVariationId,
-          quantity: '1'
+          quantity: String(cadenceQuantity)
         }
       ]
     }
@@ -262,13 +270,15 @@ async function ensureRelativeOrderTemplatesOnPhases(params: {
   phases: Array<Record<string, unknown>> | null
   promoSquareDiscountId?: string | null
   forceRegenerateRelativeTemplates?: boolean
+  cadence?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
 }) {
   const {
     square,
     planVariationId,
     locationId,
     promoSquareDiscountId,
-    forceRegenerateRelativeTemplates
+    forceRegenerateRelativeTemplates,
+    cadence
   } = params
   let { phases } = params
   if (!Array.isArray(phases) || !phases.length) return phases
@@ -293,7 +303,8 @@ async function ensureRelativeOrderTemplatesOnPhases(params: {
     square,
     planVariationId,
     locationId,
-    promoSquareDiscountId ?? null
+    promoSquareDiscountId ?? null,
+    cadence
   )
   phases = phases.map((phase) => {
     const pricing = asRecord(phase.pricing)
@@ -516,6 +527,7 @@ export default defineEventHandler(async (event) => {
     square,
     planVariationId: targetPlanVariationId,
     locationId,
+    cadence: body.cadence,
     phases: targetPhases,
     promoSquareDiscountId: promoPricing?.squareDiscountId ?? null,
     forceRegenerateRelativeTemplates: Boolean(promoPricing?.squareDiscountId)
@@ -593,7 +605,8 @@ export default defineEventHandler(async (event) => {
         square,
         planVariationId: currentPlanVariationId,
         locationId,
-        phases: subscriptionPhases
+        phases: subscriptionPhases,
+        cadence: body.cadence
       })
       if (subscriptionPhases?.length) {
         createPayload.phases = subscriptionPhases
@@ -731,7 +744,8 @@ export default defineEventHandler(async (event) => {
     locationId: swapLocationId,
     phases: targetPhases,
     promoSquareDiscountId: promoPricing?.squareDiscountId ?? null,
-    forceRegenerateRelativeTemplates: Boolean(promoPricing?.squareDiscountId)
+    forceRegenerateRelativeTemplates: Boolean(promoPricing?.squareDiscountId),
+    cadence: body.cadence
   })
   console.info(logPrefix, 'target-phases-after-subscription-location-resolution', {
     locationId: swapLocationId,
@@ -778,7 +792,8 @@ export default defineEventHandler(async (event) => {
           locationId: swapLocationId,
           phases: targetPhases,
           promoSquareDiscountId: promoPricing?.squareDiscountId ?? null,
-          forceRegenerateRelativeTemplates: Boolean(promoPricing?.squareDiscountId)
+          forceRegenerateRelativeTemplates: Boolean(promoPricing?.squareDiscountId),
+          cadence: body.cadence
         })
       }
       const swapPhases = buildSwapPhases(targetPhases)
