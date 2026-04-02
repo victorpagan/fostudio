@@ -198,6 +198,12 @@ watch([data, pending], async () => {
   updateOpsScrollState()
 }, { deep: true })
 
+watch(periodMode, (next, prev) => {
+  if (next === 'month' && prev !== 'month') {
+    periodAnchorIso.value = DateTime.utc().toISODate() ?? periodAnchorIso.value
+  }
+})
+
 const revenueSeries = computed(() => data.value?.revenueSeries ?? [])
 const maxRevenueCents = computed(() =>
   Math.max(1, ...revenueSeries.value.map(item => Number(item.totalCents ?? 0)))
@@ -237,7 +243,6 @@ const usageLeaders = computed(() => (
     .filter(member => Number(member.revenueCents ?? 0) > 0)
     .slice(0, 4)
 ))
-const criticalIssues = computed(() => data.value?.criticalIssues ?? [])
 const campaignReminders = computed(() => data.value?.campaignReminders ?? [])
 const criticalDetailsOpen = ref(false)
 
@@ -295,13 +300,6 @@ function usageLeaderTo(userId: string) {
     path: '/dashboard/admin/members',
     query: { userId }
   }
-}
-
-function issueTone(severity: string) {
-  if (severity === 'error') return 'error'
-  if (severity === 'warning') return 'warning'
-  if (severity === 'success') return 'success'
-  return 'neutral'
 }
 
 function barSegmentHeight(value: number) {
@@ -440,14 +438,23 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
           <UCard class="admin-kpi-card border-0">
             <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-              Active demand
+              Campaign reminders
             </div>
             <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
-              {{ data?.summary?.activeBookingsInRange ?? 0 }}
+              {{ campaignReminders.length }}
             </div>
             <p class="mt-2 text-xs text-dimmed">
-              All non-canceled bookings in selected range
+              {{ campaignReminders[0]?.dueLabel ?? 'No reminders queued' }}
             </p>
+            <UButton
+              class="mt-3 w-fit"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              to="/dashboard/admin/email-campaigns"
+            >
+              Open campaigns
+            </UButton>
           </UCard>
         </section>
 
@@ -514,74 +521,6 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
             </div>
           </UCard>
 
-          <div class="grid gap-3 sm:gap-4">
-            <UCard class="admin-panel-card border-0">
-              <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                Revenue mix
-              </div>
-              <p class="mt-1 text-xs text-dimmed">
-                Split for {{ rangeLabel }}
-              </p>
-              <div class="mt-3 flex items-center gap-4">
-                <div
-                  class="admin-mix-ring"
-                  :style="revenueMixStyle"
-                />
-                <div class="space-y-1.5 text-xs text-dimmed">
-                  <div>Membership: <span class="text-highlighted">{{ formatMoney(data?.summary?.membershipRevenueCents) }}</span></div>
-                  <div>Credit topups: <span class="text-highlighted">{{ formatMoney(data?.summary?.creditTopupRevenueCents) }}</span></div>
-                  <div>Hold topups: <span class="text-highlighted">{{ formatMoney(data?.summary?.holdTopupRevenueCents) }}</span></div>
-                </div>
-              </div>
-            </UCard>
-
-            <UCard class="admin-panel-card border-0">
-              <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                Access + door state
-              </div>
-              <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <div class="admin-mini-stat">
-                  <span>Pending jobs</span>
-                  <strong>{{ accessStatus.pendingJobs }}</strong>
-                </div>
-                <div class="admin-mini-stat">
-                  <span>Dead jobs</span>
-                  <strong>{{ accessStatus.deadJobs }}</strong>
-                </div>
-                <div class="admin-mini-stat">
-                  <span>Open incidents</span>
-                  <strong>{{ accessStatus.openIncidents }}</strong>
-                </div>
-                <div class="admin-mini-stat">
-                  <span>Active permanent codes</span>
-                  <strong>{{ accessStatus.permanentCodesActive }}</strong>
-                </div>
-                <div class="admin-mini-stat col-span-2">
-                  <span>Abode disarm outside lab hours</span>
-                  <UBadge
-                    size="xs"
-                    :color="accessStatus.permanentCodesDisarmAbodeOutsideLabHours ? 'success' : 'neutral'"
-                    variant="soft"
-                  >
-                    {{ accessStatus.permanentCodesDisarmAbodeOutsideLabHours ? 'Enabled' : 'Disabled' }}
-                  </UBadge>
-                </div>
-                <div class="admin-mini-stat col-span-2">
-                  <span>Permanent sync errors</span>
-                  <UBadge
-                    size="xs"
-                    :color="accessStatus.permanentCodesSyncErrors > 0 ? 'warning' : 'success'"
-                    variant="soft"
-                  >
-                    {{ accessStatus.permanentCodesSyncErrors }}
-                  </UBadge>
-                </div>
-              </div>
-            </UCard>
-          </div>
-        </section>
-
-        <section class="grid gap-3 sm:gap-4 xl:grid-cols-[1.2fr_1fr]">
           <UCard class="admin-panel-card admin-panel-card--transparent border-0">
             <div class="flex items-center justify-between gap-2">
               <div>
@@ -643,65 +582,71 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               </div>
             </div>
           </UCard>
+        </section>
 
-          <div class="grid gap-3 sm:gap-4">
+        <section>
+          <div class="grid gap-3 sm:gap-4 md:grid-cols-2">
             <UCard class="admin-panel-card border-0">
               <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                Critical issues
+                Revenue mix
               </div>
-              <div class="mt-3 space-y-2">
-                <NuxtLink
-                  v-for="issue in criticalIssues"
-                  :key="issue.id"
-                  :to="issue.to"
-                  class="admin-issue-row"
-                >
-                  <div>
-                    <div class="text-sm font-medium text-highlighted">
-                      {{ issue.title }}
-                    </div>
-                    <div class="text-xs text-dimmed">
-                      {{ issue.description }}
-                    </div>
-                  </div>
-                  <UBadge
-                    size="sm"
-                    :color="issueTone(issue.severity)"
-                    variant="soft"
-                  >
-                    {{ issue.count }}
-                  </UBadge>
-                </NuxtLink>
+              <p class="mt-1 text-xs text-dimmed">
+                Split for {{ rangeLabel }}
+              </p>
+              <div class="mt-3 flex items-center gap-4">
                 <div
-                  v-if="!criticalIssues.length"
-                  class="text-xs text-dimmed rounded-lg bg-elevated/45 px-3 py-2"
-                >
-                  No active critical flags right now.
+                  class="admin-mix-ring"
+                  :style="revenueMixStyle"
+                />
+                <div class="space-y-1.5 text-xs text-dimmed">
+                  <div>Membership: <span class="text-highlighted">{{ formatMoney(data?.summary?.membershipRevenueCents) }}</span></div>
+                  <div>Credit topups: <span class="text-highlighted">{{ formatMoney(data?.summary?.creditTopupRevenueCents) }}</span></div>
+                  <div>Hold topups: <span class="text-highlighted">{{ formatMoney(data?.summary?.holdTopupRevenueCents) }}</span></div>
                 </div>
               </div>
             </UCard>
 
             <UCard class="admin-panel-card border-0">
               <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                Campaign reminders
+                Access + door state
               </div>
-              <div class="mt-3 space-y-2">
-                <NuxtLink
-                  v-for="item in campaignReminders"
-                  :key="item.id"
-                  :to="item.to"
-                  class="admin-reminder-row"
-                >
-                  <div class="text-sm font-medium text-highlighted">
-                    {{ item.title }}
-                  </div>
-                  <div class="text-xs text-dimmed">
-                    {{ item.description }}
-                  </div>
-                  <div class="text-[11px] uppercase tracking-[0.16em] text-primary">
-                    {{ item.dueLabel }}
-                  </div>
-                </NuxtLink>
+              <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <div class="admin-mini-stat">
+                  <span>Pending jobs</span>
+                  <strong>{{ accessStatus.pendingJobs }}</strong>
+                </div>
+                <div class="admin-mini-stat">
+                  <span>Dead jobs</span>
+                  <strong>{{ accessStatus.deadJobs }}</strong>
+                </div>
+                <div class="admin-mini-stat">
+                  <span>Open incidents</span>
+                  <strong>{{ accessStatus.openIncidents }}</strong>
+                </div>
+                <div class="admin-mini-stat">
+                  <span>Active permanent codes</span>
+                  <strong>{{ accessStatus.permanentCodesActive }}</strong>
+                </div>
+                <div class="admin-mini-stat col-span-2">
+                  <span>Abode disarm outside lab hours</span>
+                  <UBadge
+                    size="xs"
+                    :color="accessStatus.permanentCodesDisarmAbodeOutsideLabHours ? 'success' : 'neutral'"
+                    variant="soft"
+                  >
+                    {{ accessStatus.permanentCodesDisarmAbodeOutsideLabHours ? 'Enabled' : 'Disabled' }}
+                  </UBadge>
+                </div>
+                <div class="admin-mini-stat col-span-2">
+                  <span>Permanent sync errors</span>
+                  <UBadge
+                    size="xs"
+                    :color="accessStatus.permanentCodesSyncErrors > 0 ? 'warning' : 'success'"
+                    variant="soft"
+                  >
+                    {{ accessStatus.permanentCodesSyncErrors }}
+                  </UBadge>
+                </div>
               </div>
             </UCard>
           </div>
@@ -947,12 +892,11 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   border-radius: 1rem;
   padding: 0.72rem;
   background: color-mix(in srgb, #2f2f2f 88%, transparent 12%);
-  border: 1px solid color-mix(in srgb, var(--ui-border) 55%, transparent 45%);
+  border: 0;
 }
 
 .admin-leader-tile:hover {
   background: color-mix(in srgb, #383838 86%, transparent 14%);
-  border-color: color-mix(in srgb, var(--gruv-accent) 38%, var(--ui-border) 62%);
 }
 
 .admin-leader-avatar {
