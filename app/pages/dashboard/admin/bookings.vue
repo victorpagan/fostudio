@@ -30,6 +30,24 @@ type AdminBooking = {
   }[] | null
 }
 
+type AdminMember = {
+  user_id: string
+  customer_first_name: string | null
+  customer_last_name: string | null
+  customer_email: string | null
+  credit_balance: number | null
+  effective_status: string
+  tier: string | null
+}
+
+type AdminCreateBookingResponse = {
+  burnCredits: boolean
+  bookingId: string | null
+  holdId: string | null
+  burned: number | null
+  newBalance: number | null
+}
+
 const PAST_BOOKINGS_PAGE_SIZE = 10
 type AdminBookingTab = 'active' | 'holds' | 'past'
 
@@ -39,6 +57,16 @@ const refundCredits = ref(true)
 const cancelingId = ref<string | null>(null)
 const bookingTab = ref<AdminBookingTab>('active')
 const pastPage = ref(1)
+const creatingBooking = ref(false)
+const memberSearch = ref('')
+const createForm = reactive({
+  userId: '',
+  startTime: '',
+  endTime: '',
+  notes: '',
+  requestHold: false,
+  burnCredits: true
+})
 
 const { data: bookingRows, refresh, pending } = await useAsyncData('admin:bookings', async () => {
   const query = statusFilter.value === 'all'
@@ -49,6 +77,43 @@ const { data: bookingRows, refresh, pending } = await useAsyncData('admin:bookin
 }, { watch: [statusFilter] })
 
 const bookings = computed(() => bookingRows.value ?? [])
+
+const { data: memberRows, refresh: refreshMembers, pending: membersPending } = await useAsyncData('admin:bookings:members', async () => {
+  const res = await $fetch<{ members: AdminMember[] }>('/api/admin/members')
+  return res.members
+})
+
+const members = computed(() => memberRows.value ?? [])
+
+const filteredMembers = computed(() => {
+  const q = memberSearch.value.trim().toLowerCase()
+  if (!q) return members.value
+  return members.value.filter((member) => {
+    const name = [member.customer_first_name, member.customer_last_name].filter(Boolean).join(' ').toLowerCase()
+    const email = (member.customer_email ?? '').toLowerCase()
+    return name.includes(q) || email.includes(q) || member.user_id.toLowerCase().includes(q)
+  })
+})
+
+const memberItems = computed(() => filteredMembers.value.map(member => ({
+  label: `${[member.customer_first_name, member.customer_last_name].filter(Boolean).join(' ') || member.customer_email || member.user_id} · ${Math.max(0, Number(member.credit_balance ?? 0))} credits`,
+  value: member.user_id
+})))
+
+const selectedMember = computed(() =>
+  members.value.find(member => member.user_id === createForm.userId) ?? null
+)
+
+const selectedMemberCredits = computed(() => Math.max(0, Number(selectedMember.value?.credit_balance ?? 0)))
+
+const memberCreditWarning = computed(() => createForm.burnCredits && !!selectedMember.value && selectedMemberCredits.value <= 0)
+
+const canSubmitCreateBooking = computed(() =>
+  !!createForm.userId
+  && !!createForm.startTime
+  && !!createForm.endTime
+  && !creatingBooking.value
+)
 
 function parseBookingTime(value: string | null | undefined) {
   if (!value) return null
@@ -196,230 +261,434 @@ async function cancelBooking(bookingId: string) {
 function goToPastPage(page: number) {
   pastPage.value = Math.min(Math.max(1, page), pastTotalPages.value)
 }
+
+function fromLocalInputValue(value: string) {
+  if (!value.trim()) return null
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return null
+  return dt.toISOString()
+}
+
+function resetCreateForm(options?: { keepMember?: boolean }) {
+  if (!options?.keepMember) createForm.userId = ''
+  createForm.startTime = ''
+  createForm.endTime = ''
+  createForm.notes = ''
+  createForm.requestHold = false
+  createForm.burnCredits = true
+}
+
+async function createBookingOnBehalf() {
+  const startIso = fromLocalInputValue(createForm.startTime)
+  const endIso = fromLocalInputValue(createForm.endTime)
+  if (!createForm.userId || !startIso || !endIso) {
+    toast.add({
+      title: 'Missing required fields',
+      description: 'Select a member plus start/end times.',
+      color: 'warning'
+    })
+    return
+  }
+
+  creatingBooking.value = true
+  try {
+    const res = await $fetch<AdminCreateBookingResponse>('/api/admin/bookings/create', {
+      method: 'POST',
+      body: {
+        userId: createForm.userId,
+        startTime: startIso,
+        endTime: endIso,
+        notes: createForm.notes.trim() || null,
+        requestHold: createForm.requestHold,
+        burnCredits: createForm.burnCredits
+      }
+    })
+
+    const burned = Number(res.burned ?? 0)
+    const holdMessage = res.holdId ? ' Hold attached.' : ''
+    const burnMessage = res.burnCredits
+      ? `${burned} credits burned.${res.newBalance !== null ? ` New balance: ${res.newBalance}.` : ''}`
+      : 'Credits were not burned.'
+
+    toast.add({
+      title: 'Booking created',
+      description: `${burnMessage}${holdMessage}`
+    })
+
+    resetCreateForm({ keepMember: true })
+    await Promise.allSettled([refresh(), refreshMembers()])
+  } catch (error: unknown) {
+    const message = readErrorMessage(error)
+    toast.add({
+      title: 'Could not create booking',
+      description: message,
+      color: message.toLowerCase().includes('insufficient') || message.toLowerCase().includes('no available credits')
+        ? 'warning'
+        : 'error'
+    })
+  } finally {
+    creatingBooking.value = false
+  }
+}
 </script>
 
 <template>
-  <UDashboardPanel id="admin-bookings">
-    <template #header>
-      <UDashboardNavbar title="Bookings" :ui="{ right: 'gap-2' }">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
+  <div>
+    <UDashboardPanel id="admin-bookings">
+      <template #header>
+        <UDashboardNavbar
+          title="Bookings"
+          :ui="{ right: 'gap-2' }"
+        >
+          <template #leading>
+            <UDashboardSidebarCollapse />
+          </template>
 
-        <template #right>
-          <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-refresh-cw" :loading="pending" @click="() => refresh()" />
-        </template>
-      </UDashboardNavbar>
-    </template>
-
-    <template #body>
-      <div class="p-4 space-y-4">
-        <UAlert
-          color="warning"
-          variant="soft"
-          icon="i-lucide-calendar-range"
-          title="Booking operations"
-          description="Review all member and guest bookings. Use admin cancel and reschedule when manual intervention is needed."
-        />
-
-        <UCard>
-          <div class="flex flex-wrap items-center gap-3">
-            <UFormField label="Status filter">
-              <USelect
-                v-model="statusFilter"
-                class="min-w-44"
-                :items="[
-                  { label: 'All', value: 'all' },
-                  { label: 'Confirmed', value: 'confirmed' },
-                  { label: 'Requested', value: 'requested' },
-                  { label: 'Canceled', value: 'canceled' }
-                ]"
-              />
-            </UFormField>
-            <UCheckbox v-model="refundCredits" label="Refund credits on cancel" />
-          </div>
-        </UCard>
-
-        <div class="space-y-4">
-          <div class="flex flex-wrap items-center gap-2">
+          <template #right>
             <UButton
               size="sm"
-              :variant="bookingTab === 'active' ? 'solid' : 'soft'"
-              :color="bookingTab === 'active' ? 'primary' : 'neutral'"
-              @click="bookingTab = 'active'"
-            >
-              Active bookings
-            </UButton>
-            <UButton
-              size="sm"
-              :variant="bookingTab === 'holds' ? 'solid' : 'soft'"
-              :color="bookingTab === 'holds' ? 'primary' : 'neutral'"
-              @click="bookingTab = 'holds'"
-            >
-              Active holds
-            </UButton>
-            <UButton
-              size="sm"
-              :variant="bookingTab === 'past' ? 'solid' : 'soft'"
-              :color="bookingTab === 'past' ? 'primary' : 'neutral'"
-              @click="bookingTab = 'past'"
-            >
-              Past bookings
-            </UButton>
-          </div>
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-refresh-cw"
+              :loading="pending"
+              @click="() => refresh()"
+            />
+          </template>
+        </UDashboardNavbar>
+      </template>
 
-          <div
-            v-if="bookingTab === 'active' && !activeBookings.length"
-            class="rounded-lg border border-default p-3 text-sm text-dimmed"
-          >
-            No active bookings.
-          </div>
+      <template #body>
+        <div class="p-4 space-y-4">
+          <UAlert
+            color="warning"
+            variant="soft"
+            icon="i-lucide-calendar-range"
+            title="Booking operations"
+            description="Review all member and guest bookings. Use admin cancel/reschedule when manual intervention is needed, or create bookings directly on behalf of members."
+          />
 
-          <div
-            v-else-if="bookingTab === 'holds' && !activeHoldBookings.length"
-            class="rounded-lg border border-default p-3 text-sm text-dimmed"
-          >
-            No active holds.
-          </div>
-
-          <div
-            v-else-if="bookingTab === 'past' && !pastBookings.length"
-            class="rounded-lg border border-default p-3 text-sm text-dimmed"
-          >
-            No past bookings.
-          </div>
-
-          <div
-            v-else
-            class="space-y-3"
-          >
-            <UCard
-              v-for="booking in bookingTab === 'active' ? activeBookings : bookingTab === 'holds' ? activeHoldBookings : paginatedPastBookings"
-              :key="`${booking.id}-${bookingTab}`"
-            >
-              <div class="flex flex-wrap items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2">
-                    <div class="font-medium truncate">
-                      {{ bookingLabel(booking) }}
-                    </div>
-                    <UBadge :color="booking.status === 'confirmed' ? 'success' : booking.status === 'requested' ? 'warning' : 'neutral'" size="xs" variant="soft">
-                      {{ booking.status }}
-                    </UBadge>
-                    <UBadge :color="booking.is_guest ? 'neutral' : 'primary'" size="xs" variant="soft">
-                      {{ booking.is_guest ? 'guest' : 'member' }}
-                    </UBadge>
-                    <UBadge
-                      v-if="bookingTab === 'holds' || hasHold(booking)"
-                      color="warning"
-                      size="xs"
-                      variant="soft"
-                    >
-                      hold
-                    </UBadge>
-                  </div>
-                  <div class="mt-1 text-sm text-dimmed">
-                    {{ formatDate(booking.start_time) }} → {{ formatDate(booking.end_time) }} (LA)
-                  </div>
-                  <div
-                    v-if="hasHold(booking)"
-                    class="mt-1 text-xs text-dimmed"
-                  >
-                    Hold: {{ holdRangeLabel(booking) }}
-                  </div>
-                  <div class="mt-1 text-xs text-dimmed">
-                    Credits burned: {{ booking.credits_burned ?? 0 }} · Created {{ formatDate(booking.created_at) }}
-                  </div>
-                  <div v-if="booking.notes" class="mt-2 text-xs text-dimmed">
-                    {{ booking.notes }}
-                  </div>
+          <UCard>
+            <div class="space-y-4">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <h3 class="text-sm font-semibold">
+                    Create booking on behalf of member
+                  </h3>
+                  <p class="mt-1 text-xs text-dimmed">
+                    Optionally burn member credits and attach an overnight hold.
+                  </p>
                 </div>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  icon="i-lucide-refresh-cw"
+                  :loading="membersPending"
+                  @click="() => refreshMembers()"
+                />
+              </div>
 
-                <div class="flex flex-wrap items-center gap-2">
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField label="Find member">
+                  <UInput
+                    v-model="memberSearch"
+                    placeholder="Search by name or email"
+                  />
+                </UFormField>
+
+                <UFormField label="Member">
+                  <USelect
+                    v-model="createForm.userId"
+                    class="w-full"
+                    :items="memberItems"
+                    placeholder="Select a member"
+                  />
+                </UFormField>
+
+                <UFormField label="Start (local time)">
+                  <UInput
+                    v-model="createForm.startTime"
+                    type="datetime-local"
+                  />
+                </UFormField>
+
+                <UFormField label="End (local time)">
+                  <UInput
+                    v-model="createForm.endTime"
+                    type="datetime-local"
+                  />
+                </UFormField>
+              </div>
+
+              <div
+                v-if="selectedMember"
+                class="flex flex-wrap items-center gap-2 text-xs text-dimmed"
+              >
+                <UBadge
+                  size="xs"
+                  variant="soft"
+                  :color="selectedMember.effective_status === 'active' ? 'success' : 'warning'"
+                >
+                  {{ selectedMember.effective_status }}
+                </UBadge>
+                <span>{{ selectedMember.customer_email || selectedMember.user_id }}</span>
+                <span>·</span>
+                <span>{{ selectedMemberCredits }} credits available</span>
+                <span v-if="selectedMember.tier">· {{ selectedMember.tier }}</span>
+              </div>
+
+              <UAlert
+                v-if="memberCreditWarning"
+                color="warning"
+                variant="soft"
+                icon="i-lucide-wallet-cards"
+                title="No credits available"
+                description="This member has no available credits to burn. Disable credit burn or add credits first."
+              />
+
+              <div class="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+                <UFormField label="Notes">
+                  <UTextarea
+                    v-model="createForm.notes"
+                    placeholder="Optional booking notes"
+                    :rows="2"
+                  />
+                </UFormField>
+
+                <div class="flex flex-wrap items-center gap-3">
+                  <UCheckbox
+                    v-model="createForm.burnCredits"
+                    label="Burn member credits"
+                  />
+                  <UCheckbox
+                    v-model="createForm.requestHold"
+                    label="Request overnight hold"
+                  />
                   <UButton
-                    v-if="bookingTab !== 'past'"
-                    color="neutral"
-                    variant="soft"
-                    size="sm"
-                    @click="openReschedule(booking as AdminBookingForReschedule)"
+                    color="primary"
+                    :loading="creatingBooking"
+                    :disabled="!canSubmitCreateBooking"
+                    @click="createBookingOnBehalf"
                   >
-                    Edit time
-                  </UButton>
-                  <UButton
-                    v-if="bookingTab !== 'past'"
-                    color="error"
-                    variant="soft"
-                    size="sm"
-                    :loading="cancelingId === booking.id"
-                    :disabled="booking.status === 'canceled'"
-                    @click="cancelBooking(booking.id)"
-                  >
-                    Cancel booking
+                    Create booking
                   </UButton>
                 </div>
               </div>
-            </UCard>
-          </div>
+            </div>
+          </UCard>
 
-          <div
-            v-if="bookingTab === 'past' && pastBookings.length > 0"
-            class="flex items-center justify-between gap-2"
-          >
-            <p class="text-xs text-dimmed">
-              Page {{ pastPage }} of {{ pastTotalPages }}
-            </p>
-            <div class="flex items-center gap-2">
+          <UCard>
+            <div class="flex flex-wrap items-center gap-3">
+              <UFormField label="Status filter">
+                <USelect
+                  v-model="statusFilter"
+                  class="min-w-44"
+                  :items="[
+                    { label: 'All', value: 'all' },
+                    { label: 'Confirmed', value: 'confirmed' },
+                    { label: 'Requested', value: 'requested' },
+                    { label: 'Canceled', value: 'canceled' }
+                  ]"
+                />
+              </UFormField>
+              <UCheckbox
+                v-model="refundCredits"
+                label="Refund credits on cancel"
+              />
+            </div>
+          </UCard>
+
+          <div class="space-y-4">
+            <div class="flex flex-wrap items-center gap-2">
               <UButton
-                size="xs"
-                color="neutral"
-                variant="soft"
-                :disabled="pastPage <= 1"
-                @click="goToPastPage(pastPage - 1)"
+                size="sm"
+                :variant="bookingTab === 'active' ? 'solid' : 'soft'"
+                :color="bookingTab === 'active' ? 'primary' : 'neutral'"
+                @click="bookingTab = 'active'"
               >
-                Previous
+                Active bookings
               </UButton>
               <UButton
-                size="xs"
-                color="neutral"
-                variant="soft"
-                :disabled="pastPage >= pastTotalPages"
-                @click="goToPastPage(pastPage + 1)"
+                size="sm"
+                :variant="bookingTab === 'holds' ? 'solid' : 'soft'"
+                :color="bookingTab === 'holds' ? 'primary' : 'neutral'"
+                @click="bookingTab = 'holds'"
               >
-                Next
+                Active holds
               </UButton>
+              <UButton
+                size="sm"
+                :variant="bookingTab === 'past' ? 'solid' : 'soft'"
+                :color="bookingTab === 'past' ? 'primary' : 'neutral'"
+                @click="bookingTab = 'past'"
+              >
+                Past bookings
+              </UButton>
+            </div>
+
+            <div
+              v-if="bookingTab === 'active' && !activeBookings.length"
+              class="rounded-lg border border-default p-3 text-sm text-dimmed"
+            >
+              No active bookings.
+            </div>
+
+            <div
+              v-else-if="bookingTab === 'holds' && !activeHoldBookings.length"
+              class="rounded-lg border border-default p-3 text-sm text-dimmed"
+            >
+              No active holds.
+            </div>
+
+            <div
+              v-else-if="bookingTab === 'past' && !pastBookings.length"
+              class="rounded-lg border border-default p-3 text-sm text-dimmed"
+            >
+              No past bookings.
+            </div>
+
+            <div
+              v-else
+              class="space-y-3"
+            >
+              <UCard
+                v-for="booking in bookingTab === 'active' ? activeBookings : bookingTab === 'holds' ? activeHoldBookings : paginatedPastBookings"
+                :key="`${booking.id}-${bookingTab}`"
+              >
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                      <div class="font-medium truncate">
+                        {{ bookingLabel(booking) }}
+                      </div>
+                      <UBadge
+                        :color="booking.status === 'confirmed' ? 'success' : booking.status === 'requested' ? 'warning' : 'neutral'"
+                        size="xs"
+                        variant="soft"
+                      >
+                        {{ booking.status }}
+                      </UBadge>
+                      <UBadge
+                        :color="booking.is_guest ? 'neutral' : 'primary'"
+                        size="xs"
+                        variant="soft"
+                      >
+                        {{ booking.is_guest ? 'guest' : 'member' }}
+                      </UBadge>
+                      <UBadge
+                        v-if="bookingTab === 'holds' || hasHold(booking)"
+                        color="warning"
+                        size="xs"
+                        variant="soft"
+                      >
+                        hold
+                      </UBadge>
+                    </div>
+                    <div class="mt-1 text-sm text-dimmed">
+                      {{ formatDate(booking.start_time) }} → {{ formatDate(booking.end_time) }} (LA)
+                    </div>
+                    <div
+                      v-if="hasHold(booking)"
+                      class="mt-1 text-xs text-dimmed"
+                    >
+                      Hold: {{ holdRangeLabel(booking) }}
+                    </div>
+                    <div class="mt-1 text-xs text-dimmed">
+                      Credits burned: {{ booking.credits_burned ?? 0 }} · Created {{ formatDate(booking.created_at) }}
+                    </div>
+                    <div
+                      v-if="booking.notes"
+                      class="mt-2 text-xs text-dimmed"
+                    >
+                      {{ booking.notes }}
+                    </div>
+                  </div>
+
+                  <div class="flex flex-wrap items-center gap-2">
+                    <UButton
+                      v-if="bookingTab !== 'past'"
+                      color="neutral"
+                      variant="soft"
+                      size="sm"
+                      @click="openReschedule(booking as AdminBookingForReschedule)"
+                    >
+                      Edit time
+                    </UButton>
+                    <UButton
+                      v-if="bookingTab !== 'past'"
+                      color="error"
+                      variant="soft"
+                      size="sm"
+                      :loading="cancelingId === booking.id"
+                      :disabled="booking.status === 'canceled'"
+                      @click="cancelBooking(booking.id)"
+                    >
+                      Cancel booking
+                    </UButton>
+                  </div>
+                </div>
+              </UCard>
+            </div>
+
+            <div
+              v-if="bookingTab === 'past' && pastBookings.length > 0"
+              class="flex items-center justify-between gap-2"
+            >
+              <p class="text-xs text-dimmed">
+                Page {{ pastPage }} of {{ pastTotalPages }}
+              </p>
+              <div class="flex items-center gap-2">
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  :disabled="pastPage <= 1"
+                  @click="goToPastPage(pastPage - 1)"
+                >
+                  Previous
+                </UButton>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  :disabled="pastPage >= pastTotalPages"
+                  @click="goToPastPage(pastPage + 1)"
+                >
+                  Next
+                </UButton>
+              </div>
             </div>
           </div>
         </div>
+      </template>
+    </UDashboardPanel>
 
-      </div>
-    </template>
-  </UDashboardPanel>
-
-  <AdminRescheduleModal
-    v-model:open="rescheduleOpen"
-    :loading="Boolean(reschedulingId)"
-    :form="rescheduleForm"
-    :summary-label="rescheduleSummaryLabel"
-    :month-label="rescheduleMonthLabel"
-    :hints-loading="rescheduleHintsLoading"
-    :hints-error="rescheduleHintsError"
-    :month-cells="rescheduleMonthCells"
-    :start-options="selectedDayStartOptions"
-    :end-options="selectedDayEndOptions"
-    :fit-windows="selectedDayFitWindows"
-    :fit-windows-label="selectedDayFitWindowsLabel"
-    :duration-minutes="rescheduleDurationMinutes"
-    :hold-eligibility="holdEligibility"
-    :hold-min-end-label="holdMinEndLabel"
-    :hold-end-label="holdEndLabel"
-    :can-go-prev-month="canGoToPrevMonth"
-    :can-go-next-month="canGoToNextMonth"
-    @close="closeReschedule"
-    @apply-day="applyRescheduleDay"
-    @start-change="onRescheduleStartChange"
-    @end-change="onRescheduleEndChange"
-    @prev-month="goToPrevRescheduleMonth"
-    @next-month="goToNextRescheduleMonth"
-    @save="saveReschedule"
-  />
+    <AdminRescheduleModal
+      v-model:open="rescheduleOpen"
+      :loading="Boolean(reschedulingId)"
+      :form="rescheduleForm"
+      :summary-label="rescheduleSummaryLabel"
+      :month-label="rescheduleMonthLabel"
+      :hints-loading="rescheduleHintsLoading"
+      :hints-error="rescheduleHintsError"
+      :month-cells="rescheduleMonthCells"
+      :start-options="selectedDayStartOptions"
+      :end-options="selectedDayEndOptions"
+      :fit-windows="selectedDayFitWindows"
+      :fit-windows-label="selectedDayFitWindowsLabel"
+      :duration-minutes="rescheduleDurationMinutes"
+      :hold-eligibility="holdEligibility"
+      :hold-min-end-label="holdMinEndLabel"
+      :hold-end-label="holdEndLabel"
+      :can-go-prev-month="canGoToPrevMonth"
+      :can-go-next-month="canGoToNextMonth"
+      @close="closeReschedule"
+      @apply-day="applyRescheduleDay"
+      @start-change="onRescheduleStartChange"
+      @end-change="onRescheduleEndChange"
+      @prev-month="goToPrevRescheduleMonth"
+      @next-month="goToNextRescheduleMonth"
+      @save="saveReschedule"
+    />
+  </div>
 </template>
