@@ -385,7 +385,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                   icon="i-lucide-chevron-left"
                   @click="stepPeriod(-1)"
                 />
-                <div class="px-1 py-2 text-xs text-toned min-w-48 text-center">
+                <div class="admin-range-label px-1 py-1 min-w-48 text-center">
                   {{ rangeLabel }}
                 </div>
                 <UButton
@@ -843,6 +843,18 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-period-toolbar {
   border: 0;
+}
+
+.admin-range-label {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Times New Roman', serif;
+  font-size: clamp(1.1rem, 1.8vw, 1.5rem);
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  font-weight: 500;
+  background-image: linear-gradient(120deg, var(--gruv-accent-strong), var(--gruv-accent), color-mix(in srgb, var(--gruv-accent) 72%, #ff9bb0 28%));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .admin-kpi-card,
