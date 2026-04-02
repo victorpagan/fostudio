@@ -157,6 +157,12 @@ h6 {
   z-index: 1;
 }
 
+.dashboard-sidebar-admin {
+  background: transparent !important;
+  border-right: 0 !important;
+  box-shadow: none !important;
+}
+
 .site-page-frame {
   min-height: 100%;
 }

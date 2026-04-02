@@ -268,6 +268,16 @@ const sidebarLinks = computed<NavigationMenuItem[]>(() =>
     : primaryLinks.value
 )
 
+const sidebarClass = computed(() =>
+  isAdminSidebarMode.value
+    ? 'dashboard-sidebar-admin bg-transparent !border-0 shadow-none'
+    : 'bg-elevated/25'
+)
+
+const sidebarUi = computed(() => ({
+  footer: isAdminSidebarMode.value ? 'lg:border-t-0' : 'lg:border-t lg:border-default'
+}))
+
 const supportLinks = [{
   label: 'Help & Support',
   icon: 'i-lucide-info',
@@ -461,8 +471,8 @@ onBeforeUnmount(() => {
       v-model:open="open"
       collapsible
       resizable
-      class="bg-elevated/25"
-      :ui="{ footer: 'lg:border-t lg:border-default' }"
+      :class="sidebarClass"
+      :ui="sidebarUi"
     >
       <template #header="{ collapsed }">
         <div class="px-2 py-2">
@@ -503,7 +513,7 @@ onBeforeUnmount(() => {
         />
 
         <UCard
-          v-if="!collapsed"
+          v-if="!collapsed && !isAdminSidebarMode"
           class="mt-4 border-default/70 bg-elevated/60"
         >
           <div class="space-y-2">
