@@ -167,6 +167,7 @@ const revenueSeekMax = ref(0)
 const revenueCanScrollLeft = ref(false)
 const revenueCanScrollRight = ref(false)
 const revenueIsScrolling = ref(false)
+const revenueHasUserScrolled = ref(false)
 
 let revenueScrollIdleTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -222,6 +223,9 @@ function snapRevenueScrollToStep() {
 
 function handleRevenueScroll() {
   revenueIsScrolling.value = true
+  if (revenueScrollRef.value && revenueScrollRef.value.scrollLeft > 6) {
+    revenueHasUserScrolled.value = true
+  }
   updateRevenueSeekState()
 
   if (revenueScrollIdleTimer) {
@@ -241,6 +245,7 @@ function onRevenueSeekInput(event: Event) {
   if (!target) return
   const next = Number(target.value)
   host.scrollLeft = Number.isFinite(next) ? next : 0
+  if (host.scrollLeft > 6) revenueHasUserScrolled.value = true
 }
 
 onMounted(async () => {
@@ -274,6 +279,9 @@ watch([data, pending], async () => {
   await nextTick()
   updateOpsScrollState()
   updateRevenueSeekState()
+  if (revenueSeekValue.value <= 6) {
+    revenueHasUserScrolled.value = false
+  }
 }, { deep: true })
 
 watch(periodMode, (next, prev) => {
@@ -493,7 +501,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
           </section>
 
           <section class="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <UCard class="admin-kpi-card admin-kpi-card--accent border-0">
+            <DashboardOpsKpiCard card-class="admin-kpi-card admin-kpi-card--accent">
               <div class="text-[11px] uppercase tracking-[0.2em] text-inverted/85">
                 Revenue
               </div>
@@ -503,23 +511,19 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               <p class="mt-2 text-xs text-inverted/80">
                 {{ data?.summary?.totalOrders ?? 0 }} paid transactions in range
               </p>
-            </UCard>
+            </DashboardOpsKpiCard>
 
-            <UCard class="admin-kpi-card admin-kpi-card--pressure border-0">
+            <DashboardOpsKpiCard
+              card-class="admin-kpi-card admin-kpi-card--pressure"
+              show-link-action
+              show-notification-action
+              :notification-disabled="true"
+              link-aria-label="Open critical pressure sources"
+              @link="criticalDetailsOpen = true"
+            >
               <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
                 Critical pressure
               </div>
-              <button
-                type="button"
-                class="admin-kpi-cutout-btn"
-                aria-label="Open critical pressure sources"
-                @click="criticalDetailsOpen = true"
-              >
-                <UIcon
-                  name="i-lucide-arrow-up-right"
-                  class="size-4"
-                />
-              </button>
               <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
                 {{ criticalPressureTotal }}
               </div>
@@ -529,9 +533,9 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               <p class="mt-3 text-xs text-dimmed">
                 See sources
               </p>
-            </UCard>
+            </DashboardOpsKpiCard>
 
-            <UCard class="admin-kpi-card border-0">
+            <DashboardOpsKpiCard card-class="admin-kpi-card">
               <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
                 Campaign reminders
               </div>
@@ -550,13 +554,13 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               >
                 Open campaigns
               </UButton>
-            </UCard>
+            </DashboardOpsKpiCard>
           </section>
 
           <section class="grid gap-3 sm:gap-4 xl:grid-cols-[1.6fr_1fr]">
             <UCard
               class="admin-panel-card border-0 admin-revenue-panel h-full"
-              :ui="{ body: 'h-full flex flex-col' }"
+              :ui="{ root: 'h-full flex flex-col', body: 'h-full flex flex-col min-h-0' }"
             >
               <div class="flex items-center justify-between gap-3">
                 <div>
@@ -579,11 +583,11 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               <div class="admin-revenue-body mt-4">
                 <div
                   class="admin-revenue-shadow admin-revenue-shadow--left"
-                  :class="{ 'is-visible': revenueCanScrollLeft }"
+                  :class="{ 'is-visible': revenueHasUserScrolled && revenueCanScrollLeft }"
                 />
                 <div
                   class="admin-revenue-shadow admin-revenue-shadow--right"
-                  :class="{ 'is-visible': revenueCanScrollRight }"
+                  :class="{ 'is-visible': revenueHasUserScrolled && revenueCanScrollRight }"
                 />
                 <div
                   ref="revenueScrollRef"
@@ -1008,7 +1012,8 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-kpi-card,
 .admin-panel-card {
-  background: color-mix(in srgb, #d8dce2 90%, #c7ccd5 10%);
+  --admin-kpi-surface: color-mix(in srgb, #d8dce2 90%, #c7ccd5 10%);
+  background: var(--admin-kpi-surface);
   box-shadow: none;
 }
 
@@ -1018,7 +1023,8 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
 .admin-ops-panel--dark .admin-kpi-card,
 .admin-ops-panel--dark .admin-panel-card {
-  background: color-mix(in srgb, #343434 86%, #2a2a2a 14%);
+  --admin-kpi-surface: color-mix(in srgb, #343434 86%, #2a2a2a 14%);
+  background: var(--admin-kpi-surface);
 }
 
 .admin-ops-panel--dark .admin-panel-card--transparent {
@@ -1026,6 +1032,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 }
 
 .admin-kpi-card--accent {
+  --admin-kpi-surface: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong));
   background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong));
 }
 
@@ -1033,47 +1040,14 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong)) !important;
 }
 
-.admin-kpi-card--pressure {
-  position: relative;
-  overflow: visible;
-}
-
-.admin-kpi-card--pressure::after {
-  content: '';
-  position: absolute;
-  top: -0.45rem;
-  right: 2rem;
-  width: 1.85rem;
-  height: 1.85rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--ui-bg) 92%, transparent 8%);
-}
-
-.admin-kpi-cutout-btn {
-  position: absolute;
-  top: -0.5rem;
-  right: -0.4rem;
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 999px;
-  border: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: color-mix(in srgb, #fff 94%, transparent 6%);
-  background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong));
-  cursor: pointer;
-}
-
-.admin-kpi-cutout-btn:hover {
-  filter: brightness(1.05);
-}
-
 .admin-revenue-panel {
   display: flex;
   flex-direction: column;
   min-height: 24rem;
   height: 100%;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .admin-revenue-body {
@@ -1117,6 +1091,9 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   padding-bottom: 0.15rem;
   scrollbar-gutter: stable both-edges;
   scrollbar-width: thin;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
   scrollbar-color: color-mix(in srgb, var(--gruv-accent) 74%, transparent 26%) color-mix(in srgb, var(--ui-bg-muted) 72%, transparent 28%);
 }
 
