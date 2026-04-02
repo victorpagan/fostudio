@@ -475,7 +475,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
           </section>
 
           <section class="grid gap-3 sm:gap-4 xl:grid-cols-[1.6fr_1fr]">
-            <UCard class="admin-panel-card border-0">
+            <UCard class="admin-panel-card border-0 admin-revenue-panel">
               <div class="flex items-center justify-between gap-3">
                 <div>
                   <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
@@ -494,7 +494,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                 </UBadge>
               </div>
 
-              <div class="mt-4">
+              <div class="admin-revenue-body mt-4">
                 <div class="admin-revenue-scroll">
                   <div
                     class="admin-revenue-chart"
@@ -895,10 +895,26 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong)) !important;
 }
 
+.admin-revenue-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 24rem;
+}
+
+.admin-revenue-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .admin-revenue-scroll {
-  overflow-x: auto;
+  flex: 1;
+  min-height: 0;
+  overflow-x: scroll;
   overflow-y: hidden;
   padding-bottom: 0.35rem;
+  scrollbar-gutter: stable both-edges;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--gruv-accent) 74%, transparent 26%) color-mix(in srgb, var(--ui-bg-muted) 72%, transparent 28%);
 }
@@ -922,6 +938,8 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 }
 
 .admin-revenue-chart {
+  height: 100%;
+  min-height: 15.5rem;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(56px, 1fr);
@@ -930,11 +948,16 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 }
 
 .admin-revenue-chart-col {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   min-width: 0;
 }
 
 .admin-revenue-bar-shell {
-  height: 11.5rem;
+  flex: 1;
+  min-height: 11.5rem;
   border-radius: 0.62rem;
   background: color-mix(in srgb, var(--ui-bg-muted) 62%, transparent 38%);
   padding: 0.2rem;
