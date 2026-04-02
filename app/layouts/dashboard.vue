@@ -11,6 +11,13 @@ const user = useSupabaseUser()
 const { isAdmin } = useCurrentUser()
 const topupRecoveryRunning = useState<boolean>('topup-recovery-running', () => false)
 const lastTopupRecoveryAt = useState<number>('topup-recovery-last-at', () => 0)
+const dashboardNavProgress = ref(0)
+
+let dashboardProgressTimer: ReturnType<typeof setInterval> | null = null
+let dashboardProgressResetTimer: ReturnType<typeof setTimeout> | null = null
+let removeDashboardBeforeGuard: (() => void) | null = null
+let removeDashboardAfterGuard: (() => void) | null = null
+let removeDashboardErrorGuard: (() => void) | null = null
 
 type SidebarMembershipRow = {
   tier: string | null
@@ -284,6 +291,52 @@ function readQueryString(value: unknown) {
   return null
 }
 
+function clearDashboardProgressTimers() {
+  if (dashboardProgressTimer) {
+    clearInterval(dashboardProgressTimer)
+    dashboardProgressTimer = null
+  }
+  if (dashboardProgressResetTimer) {
+    clearTimeout(dashboardProgressResetTimer)
+    dashboardProgressResetTimer = null
+  }
+}
+
+function startDashboardProgress() {
+  if (dashboardProgressResetTimer) {
+    clearTimeout(dashboardProgressResetTimer)
+    dashboardProgressResetTimer = null
+  }
+
+  if (dashboardNavProgress.value <= 0 || dashboardNavProgress.value >= 100) {
+    dashboardNavProgress.value = 8
+  }
+
+  if (dashboardProgressTimer) return
+
+  dashboardProgressTimer = setInterval(() => {
+    if (dashboardNavProgress.value >= 92) return
+
+    if (dashboardNavProgress.value < 75) {
+      dashboardNavProgress.value = Math.min(75, dashboardNavProgress.value + 9)
+      return
+    }
+
+    dashboardNavProgress.value = Math.min(92, dashboardNavProgress.value + 2)
+  }, 140)
+}
+
+function finishDashboardProgress() {
+  clearDashboardProgressTimers()
+  if (dashboardNavProgress.value <= 0) return
+
+  dashboardNavProgress.value = 100
+  dashboardProgressResetTimer = setTimeout(() => {
+    dashboardNavProgress.value = 0
+    dashboardProgressResetTimer = null
+  }, 220)
+}
+
 async function recoverPendingTopups() {
   if (import.meta.server || topupRecoveryRunning.value) return
   if (!route.path.startsWith('/dashboard')) return
@@ -325,6 +378,28 @@ async function recoverPendingTopups() {
 }
 
 onMounted(() => {
+  if (!removeDashboardBeforeGuard) {
+    removeDashboardBeforeGuard = router.beforeEach((to, from) => {
+      if (to.fullPath === from.fullPath) return
+      if (!(to.path.startsWith('/dashboard') && from.path.startsWith('/dashboard'))) return
+      startDashboardProgress()
+    })
+  }
+
+  if (!removeDashboardAfterGuard) {
+    removeDashboardAfterGuard = router.afterEach((to, from) => {
+      if (to.fullPath === from.fullPath) return
+      if (!(to.path.startsWith('/dashboard') && from.path.startsWith('/dashboard'))) return
+      finishDashboardProgress()
+    })
+  }
+
+  if (!removeDashboardErrorGuard) {
+    removeDashboardErrorGuard = router.onError(() => {
+      finishDashboardProgress()
+    })
+  }
+
   void recoverPendingTopups()
 })
 
@@ -334,10 +409,37 @@ watch(
     if (import.meta.client) void recoverPendingTopups()
   }
 )
+
+onBeforeUnmount(() => {
+  clearDashboardProgressTimers()
+
+  if (removeDashboardBeforeGuard) {
+    removeDashboardBeforeGuard()
+    removeDashboardBeforeGuard = null
+  }
+
+  if (removeDashboardAfterGuard) {
+    removeDashboardAfterGuard()
+    removeDashboardAfterGuard = null
+  }
+
+  if (removeDashboardErrorGuard) {
+    removeDashboardErrorGuard()
+    removeDashboardErrorGuard = null
+  }
+})
 </script>
 
 <template>
   <UDashboardGroup unit="rem">
+    <div class="pointer-events-none fixed inset-x-0 top-0 z-[80] h-1">
+      <div
+        class="h-full bg-primary transition-[width,opacity] duration-200 ease-out"
+        :class="dashboardNavProgress > 0 ? 'opacity-100' : 'opacity-0'"
+        :style="{ width: `${dashboardNavProgress}%` }"
+      />
+    </div>
+
     <UDashboardSidebar
       id="default"
       v-model:open="open"
