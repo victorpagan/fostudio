@@ -270,7 +270,7 @@ const sidebarLinks = computed<NavigationMenuItem[]>(() =>
 
 const sidebarClass = computed(() =>
   isAdminSidebarMode.value
-    ? 'dashboard-sidebar-admin bg-transparent !border-0 shadow-none'
+    ? 'dashboard-sidebar-admin !border-0 shadow-none'
     : 'bg-elevated/25'
 )
 
@@ -457,7 +457,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <UDashboardGroup unit="rem">
+  <UDashboardGroup
+    unit="rem"
+    :class="{ 'dashboard-admin-outer': isAdminSidebarMode }"
+  >
     <div class="pointer-events-none fixed inset-x-0 top-0 z-[80] h-1">
       <div
         class="h-full bg-primary transition-[width,opacity] duration-200 ease-out"

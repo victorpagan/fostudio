@@ -158,9 +158,21 @@ h6 {
 }
 
 .dashboard-sidebar-admin {
-  background: transparent !important;
+  background: #dadbdc !important;
   border-right: 0 !important;
   box-shadow: none !important;
+}
+
+.dashboard-admin-outer {
+  background: #dadbdc;
+}
+
+.dark .dashboard-admin-outer {
+  background: #2b2b2b;
+}
+
+.dark .dashboard-sidebar-admin {
+  background: #2b2b2b !important;
 }
 
 .site-page-frame {
