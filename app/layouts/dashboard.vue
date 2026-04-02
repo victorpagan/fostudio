@@ -108,12 +108,23 @@ const sidebarCreditsProgress = computed(() => {
   return Math.max(0, Math.min(100, ratio))
 })
 
+const isAdminSidebarMode = computed(() =>
+  isAdmin.value && route.path.startsWith('/dashboard/admin')
+)
+
 const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
   ? [
       {
-        label: 'Overview',
+        label: 'Back to Dashboard',
+        icon: 'i-lucide-arrow-left',
+        to: '/dashboard',
+        onSelect: () => { open.value = false }
+      },
+      {
+        label: 'Ops Overview',
         icon: 'i-lucide-layout-dashboard',
         to: '/dashboard/admin',
+        exact: true,
         onSelect: () => { open.value = false }
       },
       {
@@ -241,16 +252,21 @@ const primaryLinks = computed<NavigationMenuItem[]>(() => [
     to: '/dashboard/profile',
     onSelect: () => { open.value = false }
   },
-  ...(adminLinks.value.length
+  ...(isAdmin.value
     ? [{
         label: 'Admin',
         icon: 'i-lucide-shield',
-        children: adminLinks.value,
-        defaultOpen: route.path.startsWith('/dashboard/admin'),
+        to: '/dashboard/admin',
         onSelect: () => { open.value = false }
       }]
     : [])
 ])
+
+const sidebarLinks = computed<NavigationMenuItem[]>(() =>
+  isAdminSidebarMode.value
+    ? adminLinks.value
+    : primaryLinks.value
+)
 
 const supportLinks = [{
   label: 'Help & Support',
@@ -480,7 +496,7 @@ onBeforeUnmount(() => {
 
         <UNavigationMenu
           :collapsed="collapsed"
-          :items="primaryLinks"
+          :items="sidebarLinks"
           orientation="vertical"
           tooltip
           popover
