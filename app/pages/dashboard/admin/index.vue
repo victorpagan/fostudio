@@ -872,6 +872,10 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   background: color-mix(in srgb, #343434 86%, #2a2a2a 14%);
 }
 
+.admin-ops-panel--dark .admin-panel-card--transparent {
+  background: transparent;
+}
+
 .admin-kpi-card--accent {
   background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong));
 }
