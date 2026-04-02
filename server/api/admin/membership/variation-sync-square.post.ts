@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { useSquareClient } from '~~/server/utils/square'
+import { computeCyclePriceCents } from '~~/server/utils/membership/cadencePricing'
 
 const bodySchema = z.object({
   tierId: z.string().min(1),
@@ -50,7 +51,7 @@ export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
   const body = bodySchema.parse(await readBody(event))
 
-  const [{ data: tier, error: tierErr }, { data: variation, error: varErr }] = await Promise.all([
+  const [{ data: tier, error: tierErr }, { data: variation, error: varErr }, { data: monthlyVariation }] = await Promise.all([
     supabase
       .from('membership_tiers')
       .select('id,display_name')
@@ -58,10 +59,17 @@ export default defineEventHandler(async (event) => {
       .maybeSingle(),
     supabase
       .from('membership_plan_variations')
-      .select('tier_id,cadence,provider,provider_plan_id,provider_plan_variation_id,price_cents,currency')
+      .select('tier_id,cadence,provider,provider_plan_id,provider_plan_variation_id,price_cents,currency,discount_label')
       .eq('tier_id', body.tierId)
       .eq('provider', 'square')
       .eq('cadence', body.cadence)
+      .maybeSingle(),
+    supabase
+      .from('membership_plan_variations')
+      .select('price_cents')
+      .eq('tier_id', body.tierId)
+      .eq('provider', 'square')
+      .eq('cadence', 'monthly')
       .maybeSingle()
   ])
 
@@ -76,15 +84,33 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const priceCents = Number(variation.price_cents ?? 0)
-  if (priceCents !== 0 && priceCents < 100) {
+  const monthlyPriceCents = Number(monthlyVariation?.price_cents ?? variation.price_cents ?? 0)
+
+  if (monthlyPriceCents !== 0 && monthlyPriceCents < 100) {
     throw createError({
       statusCode: 400,
-      statusMessage: `${cadenceLabel(body.cadence)} price must be at least 100 cents ($1.00), or exactly 0 for a free plan.`
+      statusMessage: `Monthly base price must be at least 100 cents ($1.00), or exactly 0 for a free plan.`
     })
   }
 
   const square = await useSquareClient(event)
+
+  // Use RELATIVE pricing so Square shows item × quantity with discount applied
+  // e.g., $950 × 3 (quarterly) with 5% discount = $2,707.50
+  // The order template and discount will be injected during checkout
+  const phase: Record<string, unknown> = {
+    cadence: cadenceToSquare(body.cadence),
+    pricing: {
+      type: 'RELATIVE' as const
+    }
+  }
+
+  // Set periods to match cadence multiplier (quarterly=3, annual=12)
+  // This tells Square how many items to bill per cycle
+  const months = body.cadence === 'quarterly' ? 3 : body.cadence === 'annual' ? 12 : 1
+  if (months > 1) {
+    phase.periods = BigInt(months)
+  }
 
   const payload = {
     idempotencyKey: randomUUID(),
@@ -95,18 +121,7 @@ export default defineEventHandler(async (event) => {
       subscriptionPlanVariationData: {
         name: `${tier.display_name} ${cadenceLabel(body.cadence)}`,
         subscriptionPlanId: variation.provider_plan_id,
-        phases: [
-          {
-            cadence: cadenceToSquare(body.cadence),
-            pricing: {
-              type: 'STATIC' as const,
-              priceMoney: {
-                amount: BigInt(priceCents),
-                currency: (variation.currency || 'USD').toUpperCase()
-              }
-            }
-          }
-        ]
+        phases: [phase]
       }
     }
   }

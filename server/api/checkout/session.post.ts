@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { resolveServerUserRole } from '~~/server/utils/auth'
 import { getSingleTierCapacity, isPriorityMemberForWaitlist } from '~~/server/utils/membership/capacity'
 import { normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
+import { computeCyclePriceCents } from '~~/server/utils/membership/cadencePricing'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 
 const bodySchema = z.object({
@@ -11,6 +12,9 @@ const bodySchema = z.object({
   cadence: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'annual']).optional(),
   returnTo: z.string().min(1).optional(),
   guest_email: z.string().email().optional(),
+  guest_first_name: z.string().max(100).optional(),
+  guest_last_name: z.string().max(100).optional(),
+  guest_phone: z.string().max(30).optional(),
   promo_code: z.string().min(2).max(64).optional()
 })
 
@@ -57,6 +61,9 @@ export default defineEventHandler(async (event) => {
   const cadence = parsed.cadence ?? 'monthly'
   const returnTo = normalizeReturnTo(parsed.returnTo)
   const guestEmail = normalizeEmail(parsed.guest_email)
+  const guestFirstName = (parsed.guest_first_name ?? '').trim() || null
+  const guestLastName = (parsed.guest_last_name ?? '').trim() || null
+  const guestPhone = (parsed.guest_phone ?? '').trim() || null
   const promoCode = normalizePromoCode(parsed.promo_code)
 
   const { isAdmin } = await resolveServerUserRole(event, user)
@@ -96,20 +103,34 @@ export default defineEventHandler(async (event) => {
   }
 
   // ── 2) Lookup plan variation ─────────────────────────────────────────────
-  const { data: variation, error: varErr } = await supabase
-    .from('membership_plan_variations')
-    .select('provider,provider_plan_variation_id,active,visible,price_cents,currency,credits_per_month')
-    .eq('tier_id', tierId)
-    .eq('cadence', cadence)
-    .eq('provider', 'square')
-    .maybeSingle()
+  const [{ data: variation, error: varErr }, { data: monthlyVariation }] = await Promise.all([
+    supabase
+      .from('membership_plan_variations')
+      .select('provider,provider_plan_variation_id,active,visible,price_cents,currency,credits_per_month,discount_label')
+      .eq('tier_id', tierId)
+      .eq('cadence', cadence)
+      .eq('provider', 'square')
+      .maybeSingle(),
+    supabase
+      .from('membership_plan_variations')
+      .select('price_cents')
+      .eq('tier_id', tierId)
+      .eq('cadence', 'monthly')
+      .eq('provider', 'square')
+      .maybeSingle()
+  ])
 
   if (varErr) throw createError({ statusCode: 500, statusMessage: varErr.message })
   if (!variation || !variation.active) {
     throw createError({ statusCode: 400, statusMessage: 'Plan option not available' })
   }
 
-  const planPriceCents = Number(variation.price_cents ?? 0)
+  const monthlyBaseCents = Number(monthlyVariation?.price_cents ?? variation.price_cents ?? 0)
+  const planPriceCents = computeCyclePriceCents({
+    monthlyPriceCents: monthlyBaseCents,
+    cadence,
+    discountLabel: variation.discount_label
+  })
   const planCurrency = typeof variation.currency === 'string' && variation.currency.trim()
     ? variation.currency.trim().toUpperCase()
     : 'USD'
@@ -194,6 +215,12 @@ export default defineEventHandler(async (event) => {
       }
     }
 
+    const guestContactMeta = {
+      ...(guestFirstName ? { guest_first_name: guestFirstName } : {}),
+      ...(guestLastName ? { guest_last_name: guestLastName } : {}),
+      ...(guestPhone ? { guest_phone: guestPhone } : {})
+    }
+
     const checkoutToken = randomUUID()
     const { data: checkoutSession, error: sessionErr } = await supabase
       .from('membership_checkout_sessions')
@@ -213,9 +240,10 @@ export default defineEventHandler(async (event) => {
               promo_discount_cents: promoPricing.discountCents,
               promo_square_discount_id: promoPricing.squareDiscountId,
               base_price_cents: planPriceCents,
-              effective_price_cents: effectivePlanPriceCents
+              effective_price_cents: effectivePlanPriceCents,
+              ...guestContactMeta
             }
-          : null
+          : Object.keys(guestContactMeta).length ? guestContactMeta : null
       })
       .select('id,token')
       .single()
@@ -288,6 +316,12 @@ export default defineEventHandler(async (event) => {
 
   let authCheckoutSession: GuestCheckoutSessionInsertResult | null = null
   if (!isTestTier) {
+    const authContactMeta = {
+      ...(guestFirstName ? { guest_first_name: guestFirstName } : {}),
+      ...(guestLastName ? { guest_last_name: guestLastName } : {}),
+      ...(guestPhone ? { guest_phone: guestPhone } : {})
+    }
+
     const checkoutToken = randomUUID()
     const { data: checkoutSession, error: checkoutSessionErr } = await supabase
       .from('membership_checkout_sessions')
@@ -307,9 +341,10 @@ export default defineEventHandler(async (event) => {
               promo_discount_cents: promoPricing.discountCents,
               promo_square_discount_id: promoPricing.squareDiscountId,
               base_price_cents: planPriceCents,
-              effective_price_cents: effectivePlanPriceCents
+              effective_price_cents: effectivePlanPriceCents,
+              ...authContactMeta
             }
-          : null
+          : Object.keys(authContactMeta).length ? authContactMeta : null
       })
       .select('id,token')
       .single()
