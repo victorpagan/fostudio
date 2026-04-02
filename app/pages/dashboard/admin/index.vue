@@ -721,7 +721,8 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
     radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 7%, transparent), transparent 58%),
     #cfd1d3;
   border-radius: 1rem;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .admin-ops-shell > * {
