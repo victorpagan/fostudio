@@ -17,6 +17,7 @@ import { resolveAvailableCreditBalance } from '~~/server/utils/credits/available
 import { assertCurrentWaiver } from '~~/server/utils/waiver/status'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
+import { sendMemberBookingLifecycleMail } from '~~/server/utils/mail/memberBookingLifecycle'
 
 const schema = z.object({
   start_time: z.string(),
@@ -138,28 +139,29 @@ export default defineEventHandler(async (event) => {
 
   // Some pre-launch environments may have an active test membership without
   // a seeded membership_tiers('test') row. Allow safe defaults for that tier.
-  const effectiveTier: TierRules | null = tierRow
-    ? {
-        booking_window_days: Number(tierRow.booking_window_days ?? 30),
-        peak_multiplier: Number(tierRow.peak_multiplier ?? 1.5),
-        holds_included: Number(tierRow.holds_included ?? 0),
-        active_hold_cap: Number((tierRow as Record<string, unknown>).active_hold_cap ?? 0)
-      }
-    : membership?.tier === TEST_TIER_ID
-      ? {
-          booking_window_days: 30,
-          peak_multiplier: 1,
-          holds_included: 1,
-          active_hold_cap: 1
-        }
-      : !membership && remainingCredits > 0
-        ? {
-            booking_window_days: 30,
-            peak_multiplier: 1.5,
-            holds_included: 0,
-            active_hold_cap: 0
-          }
-      : null
+  let effectiveTier: TierRules | null = null
+  if (tierRow) {
+    effectiveTier = {
+      booking_window_days: Number(tierRow.booking_window_days ?? 30),
+      peak_multiplier: Number(tierRow.peak_multiplier ?? 1.5),
+      holds_included: Number(tierRow.holds_included ?? 0),
+      active_hold_cap: Number((tierRow as Record<string, unknown>).active_hold_cap ?? 0)
+    }
+  } else if (membership?.tier === TEST_TIER_ID) {
+    effectiveTier = {
+      booking_window_days: 30,
+      peak_multiplier: 1,
+      holds_included: 1,
+      active_hold_cap: 1
+    }
+  } else if (!membership && remainingCredits > 0) {
+    effectiveTier = {
+      booking_window_days: 30,
+      peak_multiplier: 1.5,
+      holds_included: 0,
+      active_hold_cap: 0
+    }
+  }
 
   if (!effectiveTier) throw createError({ statusCode: 400, statusMessage: 'Tier configuration missing' })
 
@@ -439,6 +441,18 @@ export default defineEventHandler(async (event) => {
         bookingId,
         error: (error as Error)?.message ?? String(error)
       })
+    })
+
+    await sendMemberBookingLifecycleMail(event, {
+      eventType: 'booking.memberCreated',
+      userId: user.sub,
+      bookingId,
+      bookingStart: startIso,
+      bookingEnd: endIso,
+      creditsBurned: Number(result?.[0]?.credits_burned ?? creditsNeeded),
+      holdRequested: Boolean(body.request_hold),
+      holdCreated: Boolean(result?.[0]?.hold_id),
+      actionedBy: 'member'
     })
   }
 

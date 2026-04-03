@@ -39,6 +39,8 @@ export function buildAdminMailPayload(params: BuildAdminMailPayloadParams) {
   const currentPeriodEnd = isoDate(29)
   const bookingStart = isoDate(1)
   const bookingEnd = isoDate(1 + (2 / 24))
+  const previousBookingStart = isoDate(0)
+  const previousBookingEnd = isoDate(0 + (2 / 24))
   const humanPeriodStart = formatHumanDate(currentPeriodStart)
   const humanPeriodEnd = formatHumanDate(currentPeriodEnd)
   const tierName = 'Nano'
@@ -96,6 +98,21 @@ export function buildAdminMailPayload(params: BuildAdminMailPayloadParams) {
     bookingId: 'test-booking-001',
     bookingStart,
     bookingEnd,
+    bookingStartHuman: formatHumanDate(bookingStart),
+    bookingEndHuman: formatHumanDate(bookingEnd),
+    previousBookingStart,
+    previousBookingEnd,
+    previousBookingStartHuman: formatHumanDate(previousBookingStart),
+    previousBookingEndHuman: formatHumanDate(previousBookingEnd),
+    creditsBurned: 3,
+    creditsDelta: 1,
+    creditsRefunded: 0,
+    holdRequested: false,
+    holdCreated: false,
+    holdKept: false,
+    holdRemoved: false,
+    holdStatus: 'No overnight hold',
+    actionedBy: 'member',
     accessCode: '654321',
     submittedAt: new Date().toISOString(),
     source: 'site.contact',

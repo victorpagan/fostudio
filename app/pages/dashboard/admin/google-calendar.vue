@@ -265,9 +265,17 @@ async function startOauthConnect() {
 </script>
 
 <template>
-  <UDashboardPanel id="admin-google-calendar">
+  <UDashboardPanel
+    id="admin-google-calendar"
+    class="min-h-0 flex-1 admin-ops-panel"
+    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  >
     <template #header>
-      <UDashboardNavbar title="Google Calendar Sync" :ui="{ right: 'gap-2' }">
+      <UDashboardNavbar
+        title="Google Calendar Sync"
+        class="admin-ops-navbar"
+        :ui="{ root: 'border-b-0', right: 'gap-2' }"
+      >
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
@@ -286,7 +294,7 @@ async function startOauthConnect() {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
+      <AdminOpsShell>
         <UAlert
           color="warning"
           variant="soft"
@@ -428,7 +436,7 @@ async function startOauthConnect() {
             </UButton>
           </div>
         </UCard>
-      </div>
+      </AdminOpsShell>
     </template>
   </UDashboardPanel>
 </template>

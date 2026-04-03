@@ -72,6 +72,21 @@ const REGISTERED_MAIL_EVENTS: RegisteredMailEvent[] = [
     description: 'Guest booking confirmation with access details.'
   },
   {
+    eventType: 'booking.memberCreated',
+    category: 'critical',
+    description: 'Member booking confirmation after a session is created.'
+  },
+  {
+    eventType: 'booking.memberRescheduled',
+    category: 'critical',
+    description: 'Member booking schedule updated (reschedule/extension).'
+  },
+  {
+    eventType: 'booking.memberCanceled',
+    category: 'critical',
+    description: 'Member booking canceled with refund details when applicable.'
+  },
+  {
     eventType: 'contact.formSubmitted',
     category: 'critical',
     description: 'Contact form submission delivered to studio admins.'
@@ -212,6 +227,63 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'bookingStart',
     'bookingEnd',
     'accessCode',
+    'calendarUrl',
+    'manageUrl',
+    'studioAddress'
+  ],
+  'booking.memberCreated': [
+    'customerName',
+    'customerEmail',
+    'bookingId',
+    'bookingStart',
+    'bookingEnd',
+    'bookingStartHuman',
+    'bookingEndHuman',
+    'creditsBurned',
+    'holdRequested',
+    'holdCreated',
+    'holdStatus',
+    'actionedBy',
+    'calendarUrl',
+    'manageUrl',
+    'studioAddress'
+  ],
+  'booking.memberRescheduled': [
+    'customerName',
+    'customerEmail',
+    'bookingId',
+    'bookingStart',
+    'bookingEnd',
+    'bookingStartHuman',
+    'bookingEndHuman',
+    'previousBookingStart',
+    'previousBookingEnd',
+    'previousBookingStartHuman',
+    'previousBookingEndHuman',
+    'creditsBurned',
+    'creditsDelta',
+    'holdCreated',
+    'holdKept',
+    'holdRemoved',
+    'holdStatus',
+    'actionedBy',
+    'calendarUrl',
+    'manageUrl',
+    'studioAddress'
+  ],
+  'booking.memberCanceled': [
+    'customerName',
+    'customerEmail',
+    'bookingId',
+    'bookingStart',
+    'bookingEnd',
+    'bookingStartHuman',
+    'bookingEndHuman',
+    'creditsBurned',
+    'creditsRefunded',
+    'holdRemoved',
+    'holdStatus',
+    'actionedBy',
     'calendarUrl',
     'manageUrl',
     'studioAddress'
@@ -398,6 +470,61 @@ const EVENT_DEFAULT_COPY: Record<string, MailTemplateDefaultCopy> = {
 </div>
 <p style="margin:0 0 8px;"><a href="{{ calendarUrl }}">Add to calendar</a></p>
 <p style="margin:0 0 8px;"><a href="{{ manageUrl }}">View booking details</a></p>
+<p style="margin:0;"><strong>Studio address:</strong> {{ studioAddress }}</p>
+</div>`
+  },
+  'booking.memberCreated': {
+    subjectTemplate: 'Booking confirmed: {{ bookingStartHuman }}',
+    preheaderTemplate: 'Your FO Studio session is confirmed.',
+    bodyTemplate: `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;max-width:640px;margin:0 auto;">
+<h1 style="font-size:24px;margin:0 0 12px;">Booking confirmed</h1>
+<p style="margin:0 0 14px;">Hi {{ customerName }}, your booking is confirmed.</p>
+<div style="background:#f6f6f6;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin:0 0 16px;">
+<p style="margin:0 0 8px;"><strong>Booking ID:</strong> {{ bookingId }}</p>
+<p style="margin:0 0 8px;"><strong>Start:</strong> {{ bookingStartHuman }}</p>
+<p style="margin:0 0 8px;"><strong>End:</strong> {{ bookingEndHuman }}</p>
+<p style="margin:0 0 8px;"><strong>Credits used:</strong> {{ creditsBurned }}</p>
+<p style="margin:0;"><strong>Hold status:</strong> {{ holdStatus }}</p>
+</div>
+<p style="margin:0 0 8px;"><a href="{{ manageUrl }}">Manage booking</a></p>
+<p style="margin:0 0 8px;"><a href="{{ calendarUrl }}">View calendar</a></p>
+<p style="margin:0;"><strong>Studio address:</strong> {{ studioAddress }}</p>
+</div>`
+  },
+  'booking.memberRescheduled': {
+    subjectTemplate: 'Booking updated: {{ bookingStartHuman }}',
+    preheaderTemplate: 'Your FO Studio booking schedule has been updated.',
+    bodyTemplate: `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;max-width:640px;margin:0 auto;">
+<h1 style="font-size:24px;margin:0 0 12px;">Booking updated</h1>
+<p style="margin:0 0 14px;">Hi {{ customerName }}, your booking was updated by {{ actionedBy }}.</p>
+<div style="background:#f6f6f6;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin:0 0 16px;">
+<p style="margin:0 0 8px;"><strong>Booking ID:</strong> {{ bookingId }}</p>
+<p style="margin:0 0 8px;"><strong>Previous:</strong> {{ previousBookingStartHuman }} → {{ previousBookingEndHuman }}</p>
+<p style="margin:0 0 8px;"><strong>Updated:</strong> {{ bookingStartHuman }} → {{ bookingEndHuman }}</p>
+<p style="margin:0 0 8px;"><strong>Credits now burned:</strong> {{ creditsBurned }}</p>
+<p style="margin:0 0 8px;"><strong>Credit delta:</strong> {{ creditsDelta }}</p>
+<p style="margin:0;"><strong>Hold status:</strong> {{ holdStatus }}</p>
+</div>
+<p style="margin:0 0 8px;"><a href="{{ manageUrl }}">Manage booking</a></p>
+<p style="margin:0 0 8px;"><a href="{{ calendarUrl }}">View calendar</a></p>
+<p style="margin:0;"><strong>Studio address:</strong> {{ studioAddress }}</p>
+</div>`
+  },
+  'booking.memberCanceled': {
+    subjectTemplate: 'Booking canceled: {{ bookingStartHuman }}',
+    preheaderTemplate: 'Your FO Studio booking has been canceled.',
+    bodyTemplate: `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;max-width:640px;margin:0 auto;">
+<h1 style="font-size:24px;margin:0 0 12px;">Booking canceled</h1>
+<p style="margin:0 0 14px;">Hi {{ customerName }}, this booking was canceled by {{ actionedBy }}.</p>
+<div style="background:#f6f6f6;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin:0 0 16px;">
+<p style="margin:0 0 8px;"><strong>Booking ID:</strong> {{ bookingId }}</p>
+<p style="margin:0 0 8px;"><strong>Original time:</strong> {{ bookingStartHuman }} → {{ bookingEndHuman }}</p>
+<p style="margin:0 0 8px;"><strong>Credits originally burned:</strong> {{ creditsBurned }}</p>
+<p style="margin:0 0 8px;"><strong>Credits refunded:</strong> {{ creditsRefunded }}</p>
+<p style="margin:0;"><strong>Hold status:</strong> {{ holdStatus }}</p>
+</div>
+<p style="margin:0 0 8px;"><a href="{{ manageUrl }}">View bookings</a></p>
+<p style="margin:0 0 8px;"><a href="{{ calendarUrl }}">View calendar</a></p>
 <p style="margin:0;"><strong>Studio address:</strong> {{ studioAddress }}</p>
 </div>`
   },

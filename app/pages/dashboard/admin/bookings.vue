@@ -413,12 +413,14 @@ async function createBookingOnBehalf() {
   <div class="flex min-h-0 flex-1">
     <UDashboardPanel
       id="admin-bookings"
-      class="min-h-0 flex-1"
+      class="min-h-0 flex-1 admin-ops-panel"
+      :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
     >
       <template #header>
         <UDashboardNavbar
           title="Bookings"
-          :ui="{ right: 'gap-2' }"
+          class="admin-ops-navbar"
+          :ui="{ root: 'border-b-0', right: 'gap-2' }"
         >
           <template #leading>
             <UDashboardSidebarCollapse />
@@ -447,7 +449,7 @@ async function createBookingOnBehalf() {
       </template>
 
       <template #body>
-        <div class="h-full overflow-y-auto p-4 space-y-4">
+        <AdminOpsShell>
           <UAlert
             color="warning"
             variant="soft"
@@ -638,7 +640,7 @@ async function createBookingOnBehalf() {
               </div>
             </div>
           </div>
-        </div>
+        </AdminOpsShell>
       </template>
     </UDashboardPanel>
 

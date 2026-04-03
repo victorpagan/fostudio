@@ -913,11 +913,16 @@ watch(templates, (nextTemplates) => {
 
 <template>
   <div class="contents">
-    <UDashboardPanel id="admin-email-settings">
+    <UDashboardPanel
+      id="admin-email-settings"
+      class="min-h-0 flex-1 admin-ops-panel"
+      :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+    >
       <template #header>
         <UDashboardNavbar
           title="Email Settings"
-          :ui="{ right: 'gap-2' }"
+          class="admin-ops-navbar"
+          :ui="{ root: 'border-b-0', right: 'gap-2' }"
         >
           <template #leading>
             <UDashboardSidebarCollapse />
@@ -936,7 +941,7 @@ watch(templates, (nextTemplates) => {
       </template>
 
       <template #body>
-        <div class="p-4 space-y-4">
+        <AdminOpsShell>
           <div class="rounded-lg border border-info/30 bg-info/10 p-3">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="space-y-1">
@@ -1325,7 +1330,7 @@ watch(templates, (nextTemplates) => {
               </UCard>
             </aside>
           </div>
-        </div>
+        </AdminOpsShell>
       </template>
     </UDashboardPanel>
   </div>

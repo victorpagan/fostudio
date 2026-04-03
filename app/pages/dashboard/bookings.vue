@@ -1489,12 +1489,14 @@ watch(
   <div class="flex min-h-0 flex-1">
     <UDashboardPanel
       id="bookings"
-      class="min-h-0 flex-1"
+      class="min-h-0 flex-1 admin-ops-panel"
+      :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
     >
       <template #header>
         <UDashboardNavbar
           title="My Bookings"
-          :ui="{ right: 'gap-3' }"
+          class="admin-ops-navbar"
+          :ui="{ root: 'border-b-0', right: 'gap-3' }"
         >
           <template #leading>
             <UDashboardSidebarCollapse />
@@ -1521,11 +1523,11 @@ watch(
       </template>
 
       <template #body>
-        <div class="h-full overflow-y-auto">
+        <AdminOpsShell>
           <!-- ── No active membership: show tier upsell ── -->
           <div
             v-if="!hasMembership"
-            class="p-4 space-y-6"
+            class="space-y-6"
           >
             <UCard>
               <div class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1650,7 +1652,7 @@ watch(
           <!-- ── Active membership: show bookings ── -->
           <div
             v-else
-            class="p-4 space-y-6"
+            class="space-y-6"
           >
             <UAlert
               color="neutral"
@@ -1991,7 +1993,7 @@ watch(
               </div>
             </div>
           </div>
-        </div>
+        </AdminOpsShell>
       </template>
     </UDashboardPanel>
 

@@ -242,9 +242,17 @@ onMounted(() => {
 </script>
 
 <template>
-  <UDashboardPanel id="admin-members">
+  <UDashboardPanel
+    id="admin-members"
+    class="min-h-0 flex-1 admin-ops-panel"
+    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  >
     <template #header>
-      <UDashboardNavbar title="Members Management" :ui="{ right: 'gap-2' }">
+      <UDashboardNavbar
+        title="Members Management"
+        class="admin-ops-navbar"
+        :ui="{ root: 'border-b-0', right: 'gap-2' }"
+      >
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
@@ -256,7 +264,7 @@ onMounted(() => {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
+      <AdminOpsShell>
         <UAlert
           color="warning"
           variant="soft"
@@ -453,7 +461,7 @@ onMounted(() => {
             </UCard>
           </div>
         </div>
-      </div>
+      </AdminOpsShell>
     </template>
   </UDashboardPanel>
 </template>

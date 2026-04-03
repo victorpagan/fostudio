@@ -670,11 +670,16 @@ function hasPreviewBody(value: unknown) {
 </script>
 
 <template>
-  <UDashboardPanel id="admin-waiver">
+  <UDashboardPanel
+    id="admin-waiver"
+    class="min-h-0 flex-1 admin-ops-panel"
+    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  >
     <template #header>
       <UDashboardNavbar
         title="Waiver Templates"
-        :ui="{ right: 'gap-2' }"
+        class="admin-ops-navbar"
+        :ui="{ root: 'border-b-0', right: 'gap-2' }"
       >
         <template #leading>
           <UDashboardSidebarCollapse />
@@ -694,7 +699,7 @@ function hasPreviewBody(value: unknown) {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
+      <AdminOpsShell>
         <UAlert
           color="warning"
           variant="soft"
@@ -870,7 +875,7 @@ function hasPreviewBody(value: unknown) {
             No waiver body content yet.
           </div>
         </UCard>
-      </div>
+      </AdminOpsShell>
     </template>
   </UDashboardPanel>
 </template>

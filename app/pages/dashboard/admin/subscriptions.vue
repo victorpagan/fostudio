@@ -645,9 +645,17 @@ async function syncAllVariations() {
 </script>
 
 <template>
-  <UDashboardPanel id="admin-subscriptions">
+  <UDashboardPanel
+    id="admin-subscriptions"
+    class="min-h-0 flex-1 admin-ops-panel"
+    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  >
     <template #header>
-      <UDashboardNavbar title="Subscriptions Creator" :ui="{ right: 'gap-2' }">
+      <UDashboardNavbar
+        title="Subscriptions Creator"
+        class="admin-ops-navbar"
+        :ui="{ root: 'border-b-0', right: 'gap-2' }"
+      >
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
@@ -663,219 +671,339 @@ async function syncAllVariations() {
           >
             Sync All to Square
           </UButton>
-          <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-refresh-cw" :loading="loading" @click="reloadTiers" />
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-refresh-cw"
+            :loading="loading"
+            @click="reloadTiers"
+          />
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
-      <ClientOnly fallback-tag="div" fallback="Loading subscription management...">
-        <div class="p-4 space-y-4">
-          <UAlert
-            color="warning"
-            variant="soft"
-            icon="i-lucide-badge-check"
-            title="Subscription management"
-            description="Create new plans and keep database + Square variations in sync."
-          />
-          <div class="text-xs text-dimmed">
-            Credit release behavior: daily plans release per day, weekly per week, and monthly/quarterly/annual release monthly (quarterly/annual are split across months).
-            Hold cap / month resets on each monthly grant cycle.
-          </div>
+      <AdminOpsShell>
+        <ClientOnly
+          fallback-tag="div"
+          fallback="Loading subscription management..."
+        >
+          <div class="space-y-4">
+            <UAlert
+              color="warning"
+              variant="soft"
+              icon="i-lucide-badge-check"
+              title="Subscription management"
+              description="Create new plans and keep database + Square variations in sync."
+            />
+            <div class="text-xs text-dimmed">
+              Credit release behavior: daily plans release per day, weekly per week, and monthly/quarterly/annual release monthly (quarterly/annual are split across months).
+              Hold cap / month resets on each monthly grant cycle.
+            </div>
 
-          <div class="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-            <UCard>
-              <div class="flex items-center justify-between gap-2">
-                <div class="font-medium">
-                  Existing tiers
-                </div>
-                <UButton size="xs" color="neutral" variant="soft" @click="resetForm">
-                  New tier
-                </UButton>
-              </div>
-              <div class="mt-3 space-y-2">
-                <div v-if="!reorderedTiers.length" class="text-xs text-dimmed">
-                  No tiers found yet. Hit refresh to load.
-                </div>
-                <template v-else>
-                  <button
-                    v-for="tier in reorderedTiers"
-                    :key="tier.id"
-                    class="group/row w-full rounded-lg border border-default p-2 text-left text-sm transition hover:bg-elevated"
-                    :class="selectedTierId === tier.id ? 'bg-elevated border-primary' : ''"
-                    draggable="true"
-                    @dragstart="onTierDragStart($event, tier.id)"
-                    @dragover="onTierDragOver"
-                    @drop="onTierDrop($event, tier.id)"
-                    @dragend="onTierDragEnd"
-                    @click="loadTier(tier.id)"
+            <div class="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+              <UCard>
+                <div class="flex items-center justify-between gap-2">
+                  <div class="font-medium">
+                    Existing tiers
+                  </div>
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="soft"
+                    @click="resetForm"
                   >
-                    <div class="flex min-h-6 items-center gap-2">
-                      <UIcon
-                        name="i-lucide-grip-vertical"
-                        class="size-4 flex-shrink-0 text-dimmed opacity-70 group-hover/row:opacity-100"
-                      />
-                      <span class="min-w-0 flex-1 truncate font-medium">{{ tier.display_name }}</span>
-                      <UBadge :color="tier.active ? 'success' : 'neutral'" size="xs" variant="soft" class="shrink-0">
-                        {{ tier.active ? 'active' : 'inactive' }}
-                      </UBadge>
-                    </div>
-                    <div class="mt-1 text-xs text-dimmed truncate">
-                      {{ tier.id }}
-                    </div>
-                  </button>
-                  <div v-if="reordering" class="text-xs text-dimmed">
-                    Saving order...
+                    New tier
+                  </UButton>
+                </div>
+                <div class="mt-3 space-y-2">
+                  <div
+                    v-if="!reorderedTiers.length"
+                    class="text-xs text-dimmed"
+                  >
+                    No tiers found yet. Hit refresh to load.
                   </div>
-                </template>
-              </div>
-            </UCard>
-
-            <UCard>
-              <div class="grid gap-3 md:grid-cols-2">
-                <UFormField label="Tier id">
-                  <UInput v-model="form.id" placeholder="creator_plus" />
-                </UFormField>
-                <UFormField label="Display name">
-                  <UInput v-model="form.displayName" placeholder="Creator+" />
-                </UFormField>
-                <UFormField label="Description" class="md:col-span-2">
-                  <UInput v-model="form.description" placeholder="Visible in catalog and checkout pages" />
-                </UFormField>
-                <UFormField label="Booking window (days)">
-                  <UInput v-model.number="form.bookingWindowDays" type="number" min="1" />
-                </UFormField>
-                <UFormField label="Peak credits/hr">
-                  <UInput v-model.number="form.peakMultiplier" type="number" step="0.25" min="1" />
-                </UFormField>
-                <UFormField label="Credit cap">
-                  <UInput v-model.number="form.maxBank" type="number" min="0" />
-                </UFormField>
-                <UFormField label="Membership credit expiry (days)">
-                  <UInput v-model.number="form.creditExpiryDays" type="number" min="1" max="3650" />
-                </UFormField>
-                <UFormField label="Top-off credit expiry (days)">
-                  <UInput v-model.number="form.topoffCreditExpiryDays" type="number" min="1" max="3650" />
-                </UFormField>
-                <UFormField label="Member cap">
-                  <UInput v-model.number="form.maxSlots" type="number" min="1" />
-                </UFormField>
-                <UFormField label="Hold cap / month">
-                  <UInput v-model.number="form.holdsIncluded" type="number" min="0" />
-                </UFormField>
-                <UFormField label="Active hold cap">
-                  <UInput v-model.number="form.activeHoldCap" type="number" min="0" max="50" />
-                </UFormField>
-              </div>
-
-              <div class="mt-4 flex flex-wrap gap-4">
-                <UCheckbox v-model="form.active" label="Active" />
-                <UCheckbox v-model="form.visible" label="Visible" />
-                <UCheckbox v-model="form.directAccessOnly" label="Direct access only" />
-              </div>
-
-              <div class="mt-4 grid gap-3 xl:grid-cols-3">
-                <div
-                  v-for="variation in form.variations"
-                  :key="variation.cadence"
-                  class="rounded-lg border border-default p-3"
-                >
-                  <div class="mb-2 flex items-center justify-between gap-2">
-                    <div class="font-medium">
-                      {{ cadenceTitle(variation.cadence) }}
-                    </div>
-                    <UCheckbox v-model="variation.active" label="Enabled" />
-                  </div>
-                  <div class="space-y-2">
-                    <UFormField :label="`Credits / ${cadenceCreditsUnit(variation.cadence)}`">
-                      <UFieldGroup>
-                        <UBadge variant="outline" color="neutral" size="sm">
-                          {{ cadenceCreditsUnit(variation.cadence) }}
+                  <template v-else>
+                    <button
+                      v-for="tier in reorderedTiers"
+                      :key="tier.id"
+                      class="group/row w-full rounded-lg border border-default p-2 text-left text-sm transition hover:bg-elevated"
+                      :class="selectedTierId === tier.id ? 'bg-elevated border-primary' : ''"
+                      draggable="true"
+                      @dragstart="onTierDragStart($event, tier.id)"
+                      @dragover="onTierDragOver"
+                      @drop="onTierDrop($event, tier.id)"
+                      @dragend="onTierDragEnd"
+                      @click="loadTier(tier.id)"
+                    >
+                      <div class="flex min-h-6 items-center gap-2">
+                        <UIcon
+                          name="i-lucide-grip-vertical"
+                          class="size-4 flex-shrink-0 text-dimmed opacity-70 group-hover/row:opacity-100"
+                        />
+                        <span class="min-w-0 flex-1 truncate font-medium">{{ tier.display_name }}</span>
+                        <UBadge
+                          :color="tier.active ? 'success' : 'neutral'"
+                          size="xs"
+                          variant="soft"
+                          class="shrink-0"
+                        >
+                          {{ tier.active ? 'active' : 'inactive' }}
                         </UBadge>
-                        <UInput
-                          v-model.number="variation.creditsPerMonth"
-                          type="number"
-                          min="0"
-                        />
-                      </UFieldGroup>
-                    </UFormField>
-                    <UFormField label="Discount">
-                      <UFieldGroup>
-                        <USelect
-                          v-model="variation.discountType"
-                          :items="discountTypeOptions"
-                          value-key="value"
-                          option-attribute="label"
-                          size="sm"
-                        />
-                        <template v-if="variation.discountType === 'percent'">
-                          <UInput
-                            v-model="variation.discountAmount"
-                            type="text"
-                            inputmode="decimal"
-                            placeholder="5"
-                          />
-                          <UBadge variant="outline" color="neutral" size="sm">
-                            %
+                      </div>
+                      <div class="mt-1 text-xs text-dimmed truncate">
+                        {{ tier.id }}
+                      </div>
+                    </button>
+                    <div
+                      v-if="reordering"
+                      class="text-xs text-dimmed"
+                    >
+                      Saving order...
+                    </div>
+                  </template>
+                </div>
+              </UCard>
+
+              <UCard>
+                <div class="grid gap-3 md:grid-cols-2">
+                  <UFormField label="Tier id">
+                    <UInput
+                      v-model="form.id"
+                      placeholder="creator_plus"
+                    />
+                  </UFormField>
+                  <UFormField label="Display name">
+                    <UInput
+                      v-model="form.displayName"
+                      placeholder="Creator+"
+                    />
+                  </UFormField>
+                  <UFormField
+                    label="Description"
+                    class="md:col-span-2"
+                  >
+                    <UInput
+                      v-model="form.description"
+                      placeholder="Visible in catalog and checkout pages"
+                    />
+                  </UFormField>
+                  <UFormField label="Booking window (days)">
+                    <UInput
+                      v-model.number="form.bookingWindowDays"
+                      type="number"
+                      min="1"
+                    />
+                  </UFormField>
+                  <UFormField label="Peak credits/hr">
+                    <UInput
+                      v-model.number="form.peakMultiplier"
+                      type="number"
+                      step="0.25"
+                      min="1"
+                    />
+                  </UFormField>
+                  <UFormField label="Credit cap">
+                    <UInput
+                      v-model.number="form.maxBank"
+                      type="number"
+                      min="0"
+                    />
+                  </UFormField>
+                  <UFormField label="Membership credit expiry (days)">
+                    <UInput
+                      v-model.number="form.creditExpiryDays"
+                      type="number"
+                      min="1"
+                      max="3650"
+                    />
+                  </UFormField>
+                  <UFormField label="Top-off credit expiry (days)">
+                    <UInput
+                      v-model.number="form.topoffCreditExpiryDays"
+                      type="number"
+                      min="1"
+                      max="3650"
+                    />
+                  </UFormField>
+                  <UFormField label="Member cap">
+                    <UInput
+                      v-model.number="form.maxSlots"
+                      type="number"
+                      min="1"
+                    />
+                  </UFormField>
+                  <UFormField label="Hold cap / month">
+                    <UInput
+                      v-model.number="form.holdsIncluded"
+                      type="number"
+                      min="0"
+                    />
+                  </UFormField>
+                  <UFormField label="Active hold cap">
+                    <UInput
+                      v-model.number="form.activeHoldCap"
+                      type="number"
+                      min="0"
+                      max="50"
+                    />
+                  </UFormField>
+                </div>
+
+                <div class="mt-4 flex flex-wrap gap-4">
+                  <UCheckbox
+                    v-model="form.active"
+                    label="Active"
+                  />
+                  <UCheckbox
+                    v-model="form.visible"
+                    label="Visible"
+                  />
+                  <UCheckbox
+                    v-model="form.directAccessOnly"
+                    label="Direct access only"
+                  />
+                </div>
+
+                <div class="mt-4 grid gap-3 xl:grid-cols-3">
+                  <div
+                    v-for="variation in form.variations"
+                    :key="variation.cadence"
+                    class="rounded-lg border border-default p-3"
+                  >
+                    <div class="mb-2 flex items-center justify-between gap-2">
+                      <div class="font-medium">
+                        {{ cadenceTitle(variation.cadence) }}
+                      </div>
+                      <UCheckbox
+                        v-model="variation.active"
+                        label="Enabled"
+                      />
+                    </div>
+                    <div class="space-y-2">
+                      <UFormField :label="`Credits / ${cadenceCreditsUnit(variation.cadence)}`">
+                        <UFieldGroup>
+                          <UBadge
+                            variant="outline"
+                            color="neutral"
+                            size="sm"
+                          >
+                            {{ cadenceCreditsUnit(variation.cadence) }}
                           </UBadge>
-                        </template>
-                        <template v-else-if="variation.discountType === 'dollar'">
-                          <UBadge variant="outline" color="neutral" size="sm">
-                            $
-                          </UBadge>
                           <UInput
-                            v-model="variation.discountAmount"
-                            type="text"
-                            inputmode="decimal"
-                            placeholder="10.00"
+                            v-model.number="variation.creditsPerMonth"
+                            type="number"
+                            min="0"
                           />
-                        </template>
-                        <template v-else>
-                          <UBadge color="neutral" variant="outline" size="sm">
-                            None
-                          </UBadge>
-                          <UInput
-                            v-model="variation.discountLabel"
-                            placeholder="No discount text"
+                        </UFieldGroup>
+                      </UFormField>
+                      <UFormField label="Discount">
+                        <UFieldGroup>
+                          <USelect
+                            v-model="variation.discountType"
+                            :items="discountTypeOptions"
+                            value-key="value"
+                            option-attribute="label"
+                            size="sm"
                           />
-                        </template>
-                      </UFieldGroup>
-                    </UFormField>
+                          <template v-if="variation.discountType === 'percent'">
+                            <UInput
+                              v-model="variation.discountAmount"
+                              type="text"
+                              inputmode="decimal"
+                              placeholder="5"
+                            />
+                            <UBadge
+                              variant="outline"
+                              color="neutral"
+                              size="sm"
+                            >
+                              %
+                            </UBadge>
+                          </template>
+                          <template v-else-if="variation.discountType === 'dollar'">
+                            <UBadge
+                              variant="outline"
+                              color="neutral"
+                              size="sm"
+                            >
+                              $
+                            </UBadge>
+                            <UInput
+                              v-model="variation.discountAmount"
+                              type="text"
+                              inputmode="decimal"
+                              placeholder="10.00"
+                            />
+                          </template>
+                          <template v-else>
+                            <UBadge
+                              color="neutral"
+                              variant="outline"
+                              size="sm"
+                            >
+                              None
+                            </UBadge>
+                            <UInput
+                              v-model="variation.discountLabel"
+                              placeholder="No discount text"
+                            />
+                          </template>
+                        </UFieldGroup>
+                      </UFormField>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div class="mt-4">
-                <UFormField label="Price">
-                  <UFieldGroup>
-                    <UBadge variant="outline" color="neutral" size="sm">
-                      $
-                    </UBadge>
-                    <UInput
-                      v-model="form.priceDollars"
-                      type="text"
-                      inputmode="decimal"
-                      placeholder="199.99"
-                    />
-                  </UFieldGroup>
-                </UFormField>
-              </div>
+                <div class="mt-4">
+                  <UFormField label="Price">
+                    <UFieldGroup>
+                      <UBadge
+                        variant="outline"
+                        color="neutral"
+                        size="sm"
+                      >
+                        $
+                      </UBadge>
+                      <UInput
+                        v-model="form.priceDollars"
+                        type="text"
+                        inputmode="decimal"
+                        placeholder="199.99"
+                      />
+                    </UFieldGroup>
+                  </UFormField>
+                </div>
 
-              <div class="mt-4 flex flex-wrap gap-2">
-                <UButton :loading="savingAndSyncing" @click="saveTier">
-                  Save tier
-                </UButton>
-                <UButton color="neutral" variant="soft" @click="duplicateTier">
-                  Duplicate tier
-                </UButton>
-                <UButton color="error" variant="soft" :loading="deleting" @click="deleteTier">
-                  Delete tier
-                </UButton>
-              </div>
-            </UCard>
+                <div class="mt-4 flex flex-wrap gap-2">
+                  <UButton
+                    :loading="savingAndSyncing"
+                    @click="saveTier"
+                  >
+                    Save tier
+                  </UButton>
+                  <UButton
+                    color="neutral"
+                    variant="soft"
+                    @click="duplicateTier"
+                  >
+                    Duplicate tier
+                  </UButton>
+                  <UButton
+                    color="error"
+                    variant="soft"
+                    :loading="deleting"
+                    @click="deleteTier"
+                  >
+                    Delete tier
+                  </UButton>
+                </div>
+              </UCard>
+            </div>
           </div>
-        </div>
-      </ClientOnly>
+        </ClientOnly>
+      </AdminOpsShell>
     </template>
   </UDashboardPanel>
 </template>

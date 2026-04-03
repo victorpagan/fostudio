@@ -113,12 +113,21 @@ async function deleteSelectedPlans() {
 </script>
 
 <template>
-  <UDashboardPanel id="admin-square-plans-temp">
+  <UDashboardPanel
+    id="admin-square-plans-temp"
+    class="min-h-0 flex-1 admin-ops-panel"
+    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  >
     <template #header>
       <UDashboardNavbar
         title="Square Plan Cleanup (Temp)"
-        :ui="{ right: 'gap-2' }"
+        class="admin-ops-navbar"
+        :ui="{ root: 'border-b-0', right: 'gap-2' }"
       >
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
+
         <template #right>
           <UButton
             color="neutral"
@@ -143,7 +152,7 @@ async function deleteSelectedPlans() {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
+      <AdminOpsShell>
         <UAlert
           color="warning"
           variant="soft"
@@ -231,7 +240,7 @@ async function deleteSelectedPlans() {
             </div>
           </div>
         </UCard>
-      </div>
+      </AdminOpsShell>
     </template>
   </UDashboardPanel>
 </template>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatMembershipTierLabel } from '~~/app/utils/membershipTierLabel'
 import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
+
 definePageMeta({ middleware: ['auth'] })
 
 const supabase = useSupabaseClient()
@@ -209,9 +210,9 @@ async function changePassword() {
 }
 
 const isDirty = computed(() =>
-  form.first_name !== (customer.value?.first_name ?? '') ||
-  form.last_name !== (customer.value?.last_name ?? '') ||
-  form.phone !== (customer.value?.phone ?? '')
+  form.first_name !== (customer.value?.first_name ?? '')
+  || form.last_name !== (customer.value?.last_name ?? '')
+  || form.phone !== (customer.value?.phone ?? '')
 )
 const savedCards = computed(() => paymentMethodsData.value?.methods ?? [])
 const defaultCardId = computed(() => paymentMethodsData.value?.defaultCardId ?? null)
@@ -368,9 +369,17 @@ async function saveEmailPreferences() {
 </script>
 
 <template>
-  <UDashboardPanel id="profile">
+  <UDashboardPanel
+    id="profile"
+    class="min-h-0 flex-1 admin-ops-panel"
+    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  >
     <template #header>
-      <UDashboardNavbar title="Profile">
+      <UDashboardNavbar
+        title="Profile"
+        class="admin-ops-navbar"
+        :ui="{ root: 'border-b-0' }"
+      >
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
@@ -378,255 +387,363 @@ async function saveEmailPreferences() {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4 max-w-xl">
-        <UCard>
-          <div class="space-y-4">
-            <div class="flex items-center justify-between gap-2">
-              <div class="text-sm font-medium">Billing</div>
-              <UButton size="xs" color="neutral" variant="soft" @click="refreshSubscriptionState(); refreshMembershipSummary(); refreshPaymentMethods(); refreshWaiverStatus()">
-                Refresh
-              </UButton>
-            </div>
-
-            <div class="rounded-lg border border-default p-3 space-y-2 text-sm">
-              <div class="flex justify-between">
-                <span class="text-dimmed">Tier</span>
-                <span class="font-medium">{{ membershipTierLabel ?? 'No active membership' }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-dimmed">Cadence</span>
-                <span>{{ membershipSummary?.cadence ?? '—' }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-dimmed">Status</span>
-                <UBadge :color="membershipUiStatusColor" variant="soft" size="xs">
-                  {{ membershipUiStatusLabel }}
-                </UBadge>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-dimmed">Billing provider</span>
-                <span>{{ membershipSummary?.billing_provider ?? '—' }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-dimmed">Current period end</span>
-                <span>{{ formatExactDate(subscriptionState?.currentPeriodEnd ?? membershipSummary?.current_period_end) ?? '—' }}</span>
-              </div>
-            </div>
-
-            <div class="space-y-2">
+      <AdminOpsShell>
+        <div class="space-y-4 max-w-xl">
+          <UCard>
+            <div class="space-y-4">
               <div class="flex items-center justify-between gap-2">
-                <div class="text-sm font-medium">Saved cards</div>
-                <UButton size="xs" @click="cardModalOpen = true">
-                  Add card
+                <div class="text-sm font-medium">
+                  Billing
+                </div>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  @click="refreshSubscriptionState(); refreshMembershipSummary(); refreshPaymentMethods(); refreshWaiverStatus()"
+                >
+                  Refresh
                 </UButton>
               </div>
 
-              <div v-if="savedCards.length === 0" class="text-xs text-dimmed">
-                No saved cards yet.
+              <div class="rounded-lg border border-default p-3 space-y-2 text-sm">
+                <div class="flex justify-between">
+                  <span class="text-dimmed">Tier</span>
+                  <span class="font-medium">{{ membershipTierLabel ?? 'No active membership' }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-dimmed">Cadence</span>
+                  <span>{{ membershipSummary?.cadence ?? '—' }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-dimmed">Status</span>
+                  <UBadge
+                    :color="membershipUiStatusColor"
+                    variant="soft"
+                    size="xs"
+                  >
+                    {{ membershipUiStatusLabel }}
+                  </UBadge>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-dimmed">Billing provider</span>
+                  <span>{{ membershipSummary?.billing_provider ?? '—' }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-dimmed">Current period end</span>
+                  <span>{{ formatExactDate(subscriptionState?.currentPeriodEnd ?? membershipSummary?.current_period_end) ?? '—' }}</span>
+                </div>
               </div>
-              <div v-else class="space-y-2">
-                <div
-                  v-for="card in savedCards"
-                  :key="card.id"
-                  class="rounded-lg border border-default p-3 flex items-center justify-between gap-3"
-                >
-                  <div class="min-w-0">
-                    <div class="text-sm font-medium truncate flex items-center gap-2">
-                      {{ card.brand ?? 'Card' }} •••• {{ card.last4 ?? '----' }}
-                      <UBadge v-if="defaultCardId === card.id" size="xs" color="success" variant="soft" label="Default" />
-                    </div>
-                    <div class="text-xs text-dimmed">
-                      Expires {{ formatCardExpiry(card.expMonth, card.expYear) }}
-                      <span v-if="isCardExpired(card.expMonth, card.expYear)" class="text-warning"> · expired</span>
-                    </div>
+
+              <div class="space-y-2">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="text-sm font-medium">
+                    Saved cards
                   </div>
-                  <div class="flex items-center gap-2">
-                    <UButton
-                      v-if="defaultCardId !== card.id"
-                      size="xs"
-                      color="neutral"
-                      variant="soft"
-                      :loading="settingDefaultCardId === card.id"
-                      @click="setDefaultPaymentMethod(card.id)"
-                    >
-                      Make default
-                    </UButton>
-                    <UButton
-                      size="xs"
-                      color="error"
-                      variant="soft"
-                      :loading="removingCardId === card.id"
-                      @click="removePaymentMethod(card.id)"
-                    >
-                      Remove
-                    </UButton>
+                  <UButton
+                    size="xs"
+                    @click="cardModalOpen = true"
+                  >
+                    Add card
+                  </UButton>
+                </div>
+
+                <div
+                  v-if="savedCards.length === 0"
+                  class="text-xs text-dimmed"
+                >
+                  No saved cards yet.
+                </div>
+                <div
+                  v-else
+                  class="space-y-2"
+                >
+                  <div
+                    v-for="card in savedCards"
+                    :key="card.id"
+                    class="rounded-lg border border-default p-3 flex items-center justify-between gap-3"
+                  >
+                    <div class="min-w-0">
+                      <div class="text-sm font-medium truncate flex items-center gap-2">
+                        {{ card.brand ?? 'Card' }} •••• {{ card.last4 ?? '----' }}
+                        <UBadge
+                          v-if="defaultCardId === card.id"
+                          size="xs"
+                          color="success"
+                          variant="soft"
+                          label="Default"
+                        />
+                      </div>
+                      <div class="text-xs text-dimmed">
+                        Expires {{ formatCardExpiry(card.expMonth, card.expYear) }}
+                        <span
+                          v-if="isCardExpired(card.expMonth, card.expYear)"
+                          class="text-warning"
+                        > · expired</span>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <UButton
+                        v-if="defaultCardId !== card.id"
+                        size="xs"
+                        color="neutral"
+                        variant="soft"
+                        :loading="settingDefaultCardId === card.id"
+                        @click="setDefaultPaymentMethod(card.id)"
+                      >
+                        Make default
+                      </UButton>
+                      <UButton
+                        size="xs"
+                        color="error"
+                        variant="soft"
+                        :loading="removingCardId === card.id"
+                        @click="removePaymentMethod(card.id)"
+                      >
+                        Remove
+                      </UButton>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        </UCard>
+          </UCard>
 
-        <UCard>
-          <div class="flex items-center justify-between gap-2">
-            <div class="text-sm font-medium">Waiver</div>
-            <UBadge :color="waiverStatusColor" variant="soft" size="xs">
-              {{ waiverStatusLabel }}
-            </UBadge>
-          </div>
-          <div class="mt-3 rounded-lg border border-default p-3 space-y-2 text-sm">
-            <div class="flex justify-between">
-              <span class="text-dimmed">Active version</span>
-              <span>{{ waiverStatus?.activeTemplate?.version ?? '—' }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-dimmed">Signed version</span>
-              <span>{{ waiverStatus?.latestSignature?.templateVersion ?? '—' }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-dimmed">Signed at</span>
-              <span>{{ formatExactDate(waiverStatus?.latestSignature?.signedAt) ?? '—' }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-dimmed">Expires at</span>
-              <span>{{ formatExactDate(waiverStatus?.latestSignature?.expiresAt) ?? '—' }}</span>
-            </div>
-          </div>
-          <div class="mt-3 flex justify-end">
-            <UButton size="sm" to="/dashboard/waiver">
-              View waiver
-            </UButton>
-          </div>
-        </UCard>
-
-        <UCard>
-          <div class="space-y-4">
-            <div class="text-sm font-medium">Appearance</div>
-            <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
-              <div>
-                <div class="text-sm font-medium">Dark mode</div>
-                <div class="text-xs text-dimmed">Choose the dashboard color theme.</div>
-              </div>
-              <USwitch v-model="prefersDarkMode" />
-            </div>
-          </div>
-        </UCard>
-
-        <UCard>
-          <div class="space-y-4">
+          <UCard>
             <div class="flex items-center justify-between gap-2">
-              <div class="text-sm font-medium">Email preferences</div>
-              <UButton size="xs" color="neutral" variant="soft" @click="() => refreshEmailPreferences()">
-                Refresh
-              </UButton>
-            </div>
-
-            <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
-              <div>
-                <div class="text-sm font-medium">Critical emails</div>
-                <div class="text-xs text-dimmed">Membership and booking status updates.</div>
+              <div class="text-sm font-medium">
+                Waiver
               </div>
-              <USwitch v-model="emailPreferences.criticalEnabled" />
-            </div>
-
-            <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
-              <div>
-                <div class="text-sm font-medium">Non-critical emails</div>
-                <div class="text-xs text-dimmed">Optional reminders and informational messages.</div>
-              </div>
-              <USwitch v-model="emailPreferences.nonCriticalEnabled" />
-            </div>
-
-            <div class="flex justify-end">
-              <UButton
-                :loading="emailPreferencesSaving"
-                :disabled="!emailPreferencesDirty"
-                @click="saveEmailPreferences"
-              >
-                Save email preferences
-              </UButton>
-            </div>
-          </div>
-        </UCard>
-
-        <!-- Account info -->
-        <UCard>
-          <div class="space-y-4">
-            <div class="text-sm font-medium">Account</div>
-
-            <div class="space-y-1">
-              <div class="text-xs text-dimmed">Email</div>
-              <div class="text-sm font-medium">{{ user?.email ?? '—' }}</div>
-              <p class="text-xs text-dimmed">Email cannot be changed here. Contact support if needed.</p>
-            </div>
-
-            <div class="border-t border-default pt-4 grid grid-cols-2 gap-3">
-              <UFormField label="First name">
-                <UInput v-model="form.first_name" placeholder="Jane" class="w-full" />
-              </UFormField>
-              <UFormField label="Last name">
-                <UInput v-model="form.last_name" placeholder="Smith" class="w-full" />
-              </UFormField>
-            </div>
-
-            <UFormField label="Phone number">
-              <UInput v-model="form.phone" type="tel" placeholder="+1 555 000 0000" class="w-full" />
-            </UFormField>
-
-            <div class="flex justify-end gap-2 pt-2">
-              <UButton
-                :loading="saving"
-                :disabled="!isDirty"
-                @click="saveProfile"
-              >
-                Save changes
-              </UButton>
-            </div>
-          </div>
-        </UCard>
-
-        <!-- Change password -->
-        <UCard>
-          <div class="space-y-4">
-            <div class="text-sm font-medium">Change password</div>
-
-            <UFormField label="New password">
-              <UInput v-model="pwForm.next" type="password" placeholder="••••••••" class="w-full" />
-            </UFormField>
-            <UFormField label="Confirm new password">
-              <UInput v-model="pwForm.confirm" type="password" placeholder="••••••••" class="w-full" />
-            </UFormField>
-
-            <UAlert v-if="pwError" color="error" variant="soft" :title="pwError" />
-
-            <div class="flex justify-end">
-              <UButton
-                :loading="pwSaving"
-                :disabled="!pwForm.next || !pwForm.confirm"
-                color="neutral"
+              <UBadge
+                :color="waiverStatusColor"
                 variant="soft"
-                @click="changePassword"
+                size="xs"
               >
-                Update password
+                {{ waiverStatusLabel }}
+              </UBadge>
+            </div>
+            <div class="mt-3 rounded-lg border border-default p-3 space-y-2 text-sm">
+              <div class="flex justify-between">
+                <span class="text-dimmed">Active version</span>
+                <span>{{ waiverStatus?.activeTemplate?.version ?? '—' }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-dimmed">Signed version</span>
+                <span>{{ waiverStatus?.latestSignature?.templateVersion ?? '—' }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-dimmed">Signed at</span>
+                <span>{{ formatExactDate(waiverStatus?.latestSignature?.signedAt) ?? '—' }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-dimmed">Expires at</span>
+                <span>{{ formatExactDate(waiverStatus?.latestSignature?.expiresAt) ?? '—' }}</span>
+              </div>
+            </div>
+            <div class="mt-3 flex justify-end">
+              <UButton
+                size="sm"
+                to="/dashboard/waiver"
+              >
+                View waiver
               </UButton>
             </div>
-          </div>
-        </UCard>
+          </UCard>
 
-        <!-- Danger zone -->
-        <UCard>
-          <div class="space-y-3">
-            <div class="text-sm font-medium text-red-600 dark:text-red-400">Danger zone</div>
-            <p class="text-sm text-dimmed">
-              To cancel your membership or delete your account, please contact us directly.
-              Active memberships are managed through Square and must be canceled before account deletion.
-            </p>
-            <UButton color="error" variant="soft" size="sm" disabled>
-              Delete account (contact support)
-            </UButton>
-          </div>
-        </UCard>
-      </div>
+          <UCard>
+            <div class="space-y-4">
+              <div class="text-sm font-medium">
+                Appearance
+              </div>
+              <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
+                <div>
+                  <div class="text-sm font-medium">
+                    Dark mode
+                  </div>
+                  <div class="text-xs text-dimmed">
+                    Choose the dashboard color theme.
+                  </div>
+                </div>
+                <USwitch v-model="prefersDarkMode" />
+              </div>
+            </div>
+          </UCard>
+
+          <UCard>
+            <div class="space-y-4">
+              <div class="flex items-center justify-between gap-2">
+                <div class="text-sm font-medium">
+                  Email preferences
+                </div>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  @click="() => refreshEmailPreferences()"
+                >
+                  Refresh
+                </UButton>
+              </div>
+
+              <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
+                <div>
+                  <div class="text-sm font-medium">
+                    Critical emails
+                  </div>
+                  <div class="text-xs text-dimmed">
+                    Membership and booking status updates.
+                  </div>
+                </div>
+                <USwitch v-model="emailPreferences.criticalEnabled" />
+              </div>
+
+              <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
+                <div>
+                  <div class="text-sm font-medium">
+                    Non-critical emails
+                  </div>
+                  <div class="text-xs text-dimmed">
+                    Optional reminders and informational messages.
+                  </div>
+                </div>
+                <USwitch v-model="emailPreferences.nonCriticalEnabled" />
+              </div>
+
+              <div class="flex justify-end">
+                <UButton
+                  :loading="emailPreferencesSaving"
+                  :disabled="!emailPreferencesDirty"
+                  @click="saveEmailPreferences"
+                >
+                  Save email preferences
+                </UButton>
+              </div>
+            </div>
+          </UCard>
+
+          <!-- Account info -->
+          <UCard>
+            <div class="space-y-4">
+              <div class="text-sm font-medium">
+                Account
+              </div>
+
+              <div class="space-y-1">
+                <div class="text-xs text-dimmed">
+                  Email
+                </div>
+                <div class="text-sm font-medium">
+                  {{ user?.email ?? '—' }}
+                </div>
+                <p class="text-xs text-dimmed">
+                  Email cannot be changed here. Contact support if needed.
+                </p>
+              </div>
+
+              <div class="border-t border-default pt-4 grid grid-cols-2 gap-3">
+                <UFormField label="First name">
+                  <UInput
+                    v-model="form.first_name"
+                    placeholder="Jane"
+                    class="w-full"
+                  />
+                </UFormField>
+                <UFormField label="Last name">
+                  <UInput
+                    v-model="form.last_name"
+                    placeholder="Smith"
+                    class="w-full"
+                  />
+                </UFormField>
+              </div>
+
+              <UFormField label="Phone number">
+                <UInput
+                  v-model="form.phone"
+                  type="tel"
+                  placeholder="+1 555 000 0000"
+                  class="w-full"
+                />
+              </UFormField>
+
+              <div class="flex justify-end gap-2 pt-2">
+                <UButton
+                  :loading="saving"
+                  :disabled="!isDirty"
+                  @click="saveProfile"
+                >
+                  Save changes
+                </UButton>
+              </div>
+            </div>
+          </UCard>
+
+          <!-- Change password -->
+          <UCard>
+            <div class="space-y-4">
+              <div class="text-sm font-medium">
+                Change password
+              </div>
+
+              <UFormField label="New password">
+                <UInput
+                  v-model="pwForm.next"
+                  type="password"
+                  placeholder="••••••••"
+                  class="w-full"
+                />
+              </UFormField>
+              <UFormField label="Confirm new password">
+                <UInput
+                  v-model="pwForm.confirm"
+                  type="password"
+                  placeholder="••••••••"
+                  class="w-full"
+                />
+              </UFormField>
+
+              <UAlert
+                v-if="pwError"
+                color="error"
+                variant="soft"
+                :title="pwError"
+              />
+
+              <div class="flex justify-end">
+                <UButton
+                  :loading="pwSaving"
+                  :disabled="!pwForm.next || !pwForm.confirm"
+                  color="neutral"
+                  variant="soft"
+                  @click="changePassword"
+                >
+                  Update password
+                </UButton>
+              </div>
+            </div>
+          </UCard>
+
+          <!-- Danger zone -->
+          <UCard>
+            <div class="space-y-3">
+              <div class="text-sm font-medium text-red-600 dark:text-red-400">
+                Danger zone
+              </div>
+              <p class="text-sm text-dimmed">
+                To cancel your membership or delete your account, please contact us directly.
+                Active memberships are managed through Square and must be canceled before account deletion.
+              </p>
+              <UButton
+                color="error"
+                variant="soft"
+                size="sm"
+                disabled
+              >
+                Delete account (contact support)
+              </UButton>
+            </div>
+          </UCard>
+        </div>
+      </AdminOpsShell>
 
       <SquareCardPaymentModal
         v-model:open="cardModalOpen"

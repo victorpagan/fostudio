@@ -107,7 +107,7 @@ function formatDate(value: string | null | undefined) {
 function getErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Request failed.'
   if ('data' in error && error.data && typeof error.data === 'object') {
-    const data = error.data as { statusMessage?: string; message?: string; }
+    const data = error.data as { statusMessage?: string, message?: string }
     if (typeof data.statusMessage === 'string') return data.statusMessage
     if (typeof data.message === 'string') return data.message
   }
@@ -143,9 +143,17 @@ async function signWaiver() {
 </script>
 
 <template>
-  <UDashboardPanel id="waiver">
+  <UDashboardPanel
+    id="waiver"
+    class="min-h-0 flex-1 admin-ops-panel"
+    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  >
     <template #header>
-      <UDashboardNavbar title="Member Waiver">
+      <UDashboardNavbar
+        title="Member Waiver"
+        class="admin-ops-navbar"
+        :ui="{ root: 'border-b-0' }"
+      >
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
@@ -153,99 +161,124 @@ async function signWaiver() {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4 max-w-4xl">
-        <UCard>
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div class="text-sm font-medium">Waiver status</div>
-              <p class="text-sm text-dimmed mt-1">
-                {{ statusDescription }}
-              </p>
+      <AdminOpsShell>
+        <div class="space-y-4 max-w-4xl">
+          <UCard>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div class="text-sm font-medium">
+                  Waiver status
+                </div>
+                <p class="text-sm text-dimmed mt-1">
+                  {{ statusDescription }}
+                </p>
+              </div>
+              <UBadge
+                :color="statusColor(waiverStatus)"
+                variant="soft"
+              >
+                {{ statusLabel(waiverStatus) }}
+              </UBadge>
             </div>
-            <UBadge :color="statusColor(waiverStatus)" variant="soft">
-              {{ statusLabel(waiverStatus) }}
-            </UBadge>
-          </div>
 
-          <div class="mt-4 grid gap-3 sm:grid-cols-2 text-sm">
-            <div>
-              <div class="text-xs uppercase tracking-wide text-dimmed">Signed at</div>
-              <div class="mt-1">{{ formatDate(latestSignature?.signedAt) }}</div>
-            </div>
-            <div>
-              <div class="text-xs uppercase tracking-wide text-dimmed">Expires at</div>
-              <div class="mt-1">{{ formatDate(latestSignature?.expiresAt) }}</div>
-            </div>
-            <div>
-              <div class="text-xs uppercase tracking-wide text-dimmed">Signed version</div>
-              <div class="mt-1">{{ latestSignature?.templateVersion ?? '—' }}</div>
-            </div>
-            <div>
-              <div class="text-xs uppercase tracking-wide text-dimmed">Active version</div>
-              <div class="mt-1">{{ activeTemplate?.version ?? '—' }}</div>
-            </div>
-          </div>
-        </UCard>
-
-        <UCard v-if="activeTemplate">
-          <template #header>
-            <div>
-              <div class="text-base font-semibold">{{ activeTemplate.title }}</div>
-              <div class="text-xs text-dimmed mt-1">
-                Version {{ activeTemplate.version }} · Published {{ formatDate(activeTemplate.publishedAt) }}
+            <div class="mt-4 grid gap-3 sm:grid-cols-2 text-sm">
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Signed at
+                </div>
+                <div class="mt-1">
+                  {{ formatDate(latestSignature?.signedAt) }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Expires at
+                </div>
+                <div class="mt-1">
+                  {{ formatDate(latestSignature?.expiresAt) }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Signed version
+                </div>
+                <div class="mt-1">
+                  {{ latestSignature?.templateVersion ?? '—' }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Active version
+                </div>
+                <div class="mt-1">
+                  {{ activeTemplate?.version ?? '—' }}
+                </div>
               </div>
             </div>
-          </template>
+          </UCard>
 
-          <div
-            class="waiver-rich-content max-w-none rounded-md border border-default p-4 text-sm leading-6 max-h-[50vh] overflow-y-auto"
-            v-html="toRenderableHtml(activeTemplate.body)"
-          />
+          <UCard v-if="activeTemplate">
+            <template #header>
+              <div>
+                <div class="text-base font-semibold">
+                  {{ activeTemplate.title }}
+                </div>
+                <div class="text-xs text-dimmed mt-1">
+                  Version {{ activeTemplate.version }} · Published {{ formatDate(activeTemplate.publishedAt) }}
+                </div>
+              </div>
+            </template>
 
-          <div class="mt-4 space-y-3">
-            <UFormField label="Legal full name">
-              <UInput
-                v-model="form.signerName"
-                placeholder="Enter your legal full name"
-              />
-            </UFormField>
-
-            <UCheckbox
-              v-model="form.accepted"
-              label="I have read and agree to the waiver terms and studio rules."
+            <div
+              class="waiver-rich-content max-w-none rounded-md border border-default p-4 text-sm leading-6 max-h-[50vh] overflow-y-auto"
+              v-html="toRenderableHtml(activeTemplate.body)"
             />
 
-            <div class="flex flex-wrap items-center gap-2">
-              <UButton
-                icon="i-lucide-pen-line"
-                :loading="signing"
-                :disabled="!canSign"
-                @click="signWaiver"
-              >
-                {{ isCurrent ? 'Re-sign waiver' : 'Sign waiver' }}
-              </UButton>
+            <div class="mt-4 space-y-3">
+              <UFormField label="Legal full name">
+                <UInput
+                  v-model="form.signerName"
+                  placeholder="Enter your legal full name"
+                />
+              </UFormField>
 
-              <UButton
-                v-if="isCurrent"
-                color="neutral"
-                variant="soft"
-                icon="i-lucide-arrow-right"
-                @click="router.push(returnTo)"
-              >
-                Continue
-              </UButton>
+              <UCheckbox
+                v-model="form.accepted"
+                label="I have read and agree to the waiver terms and studio rules."
+              />
+
+              <div class="flex flex-wrap items-center gap-2">
+                <UButton
+                  icon="i-lucide-pen-line"
+                  :loading="signing"
+                  :disabled="!canSign"
+                  @click="signWaiver"
+                >
+                  {{ isCurrent ? 'Re-sign waiver' : 'Sign waiver' }}
+                </UButton>
+
+                <UButton
+                  v-if="isCurrent"
+                  color="neutral"
+                  variant="soft"
+                  icon="i-lucide-arrow-right"
+                  @click="router.push(returnTo)"
+                >
+                  Continue
+                </UButton>
+              </div>
             </div>
-          </div>
-        </UCard>
+          </UCard>
 
-        <UAlert
-          v-else-if="!pending"
-          color="error"
-          variant="soft"
-          title="No active waiver template"
-          description="An active waiver has not been published yet. Please contact support."
-        />
-      </div>
+          <UAlert
+            v-else-if="!pending"
+            color="error"
+            variant="soft"
+            title="No active waiver template"
+            description="An active waiver has not been published yet. Please contact support."
+          />
+        </div>
+      </AdminOpsShell>
     </template>
   </UDashboardPanel>
 </template>

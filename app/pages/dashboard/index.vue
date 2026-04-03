@@ -186,11 +186,16 @@ const pendingCancelSummary = computed(() => {
 </script>
 
 <template>
-  <UDashboardPanel id="home">
+  <UDashboardPanel
+    id="home"
+    class="min-h-0 flex-1 admin-ops-panel"
+    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  >
     <template #header>
       <UDashboardNavbar
         title="Dashboard"
-        :ui="{ right: 'gap-3' }"
+        class="admin-ops-navbar"
+        :ui="{ root: 'border-b-0', right: 'gap-3' }"
       >
         <template #leading>
           <UDashboardSidebarCollapse />
@@ -231,8 +236,8 @@ const pendingCancelSummary = computed(() => {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
-        <div class="w-full">
+      <AdminOpsShell>
+        <div class="w-full space-y-4">
           <!-- Admin bypass notice -->
           <UAlert
             v-if="isAdmin"
@@ -461,7 +466,7 @@ const pendingCancelSummary = computed(() => {
             </div>
           </UCard>
         </div>
-      </div>
+      </AdminOpsShell>
     </template>
   </UDashboardPanel>
 </template>

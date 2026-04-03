@@ -62,6 +62,17 @@ type OpsResponse = {
     description: string
     to: string
   }>
+  recentLockIncidents?: Array<{
+    id: string
+    incident_type: string
+    severity: string
+    status: string
+    title: string
+    message: string | null
+    booking_id: string | null
+    user_id: string | null
+    created_at: string
+  }>
   accessStatus?: {
     pendingJobs: number
     deadJobs: number
@@ -75,9 +86,6 @@ type OpsResponse = {
 const periodMode = ref<PeriodMode>('month')
 const periodAnchorIso = ref(DateTime.now().setZone(OPS_TIMEZONE).toISODate() ?? DateTime.now().toISODate() ?? '')
 const nowInZone = computed(() => DateTime.now().setZone(OPS_TIMEZONE).endOf('day'))
-const colorMode = useColorMode()
-const isDarkMode = computed(() => colorMode.value === 'dark')
-
 function anchorDate() {
   const parsed = DateTime.fromISO(periodAnchorIso.value, { zone: OPS_TIMEZONE })
   if (parsed.isValid) return parsed.endOf('day')
@@ -213,7 +221,11 @@ function snapRevenueScrollToStep() {
   const columns = host.querySelectorAll<HTMLElement>('.admin-revenue-chart-col')
   if (columns.length < 2) return
 
-  const step = columns[1].offsetLeft - columns[0].offsetLeft
+  const firstColumn = columns.item(0)
+  const secondColumn = columns.item(1)
+  if (!firstColumn || !secondColumn) return
+
+  const step = secondColumn.offsetLeft - firstColumn.offsetLeft
   if (!Number.isFinite(step) || step <= 0) return
 
   const snapped = Math.round(host.scrollLeft / step) * step
@@ -324,6 +336,7 @@ const revenueMixStyle = computed(() => {
 })
 
 const topMembers = computed(() => data.value?.topMembers ?? [])
+const recentLockIncidents = computed(() => data.value?.recentLockIncidents ?? [])
 const usageLeaders = computed(() => (
   topMembers.value
     .filter(member => Number(member.revenueCents ?? 0) > 0)
@@ -348,28 +361,28 @@ const criticalPressureSources = computed(() => ([
     title: 'Open lock incidents',
     count: Number(data.value?.summary?.openLockIncidents ?? 0),
     description: 'Incidents where lock actions or state checks need manual follow-up.',
-    to: '/dashboard/admin/tools'
+    to: '/dashboard/admin/door-codes'
   },
   {
     id: 'dead-jobs',
     title: 'Dead lock jobs',
     count: Number(data.value?.summary?.deadLockJobs ?? 0),
     description: 'Background lock jobs that exhausted retries and require retry/remediation.',
-    to: '/dashboard/admin/tools'
+    to: '/dashboard/admin/door-codes'
   },
   {
     id: 'due-grants',
     title: 'Credit grants due',
     count: Number(data.value?.summary?.dueGrantCount ?? 0),
     description: 'Scheduled credit grants now due for processing.',
-    to: '/dashboard/admin/tools'
+    to: '/dashboard/admin/subscriptions'
   },
   {
     id: 'missing-future-schedules',
     title: 'Missing future grant schedules',
     count: Number(data.value?.summary?.membershipsMissingFutureSchedule ?? 0),
     description: 'Extended memberships missing future grant rows.',
-    to: '/dashboard/admin/tools'
+    to: '/dashboard/admin/subscriptions'
   }
 ]))
 
@@ -411,14 +424,12 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   <UDashboardPanel
     id="admin-overview"
     class="min-h-0 flex-1 admin-ops-panel"
-    :class="{ 'admin-ops-panel--dark': isDarkMode }"
     :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
   >
     <template #header>
       <UDashboardNavbar
         title="Ops Overview"
         class="admin-ops-navbar"
-        :class="{ 'admin-ops-navbar--dark': isDarkMode }"
         :ui="{ root: 'border-b-0', right: 'gap-2' }"
       >
         <template #leading>
@@ -451,7 +462,6 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
         <div
           ref="opsScrollRef"
           class="admin-ops-shell h-full overflow-y-auto p-4 sm:p-5 md:p-6 space-y-4 md:space-y-5"
-          :class="{ 'admin-ops-shell--dark': isDarkMode }"
         >
           <section class="admin-ops-hero rounded-2xl p-4 sm:p-5 md:p-6">
             <div class="admin-hero-grid gap-4">
@@ -501,7 +511,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
           </section>
 
           <section class="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <DashboardOpsKpiCard card-class="admin-kpi-card admin-kpi-card--accent">
+            <OpsKpiCard card-class="admin-kpi-card admin-kpi-card--revenue">
               <div class="text-[11px] uppercase tracking-[0.2em] text-inverted/85">
                 Revenue
               </div>
@@ -511,9 +521,9 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               <p class="mt-2 text-xs text-inverted/80">
                 {{ data?.summary?.totalOrders ?? 0 }} paid transactions in range
               </p>
-            </DashboardOpsKpiCard>
+            </OpsKpiCard>
 
-            <DashboardOpsKpiCard
+            <OpsKpiCard
               card-class="admin-kpi-card admin-kpi-card--pressure"
               show-link-action
               show-notification-action
@@ -530,9 +540,9 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               <p class="mt-2 text-xs text-dimmed">
                 Incidents + dead jobs + due grants
               </p>
-            </DashboardOpsKpiCard>
+            </OpsKpiCard>
 
-            <DashboardOpsKpiCard card-class="admin-kpi-card">
+            <OpsKpiCard card-class="admin-kpi-card">
               <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
                 Campaign reminders
               </div>
@@ -551,7 +561,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               >
                 Open campaigns
               </UButton>
-            </DashboardOpsKpiCard>
+            </OpsKpiCard>
           </section>
 
           <section class="grid gap-3 sm:gap-4 xl:grid-cols-[1.6fr_1fr]">
@@ -651,7 +661,10 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               </div>
             </UCard>
 
-            <UCard class="admin-panel-card admin-panel-card--transparent border-0">
+            <UCard
+              class="border-0 admin-usage-panel"
+              :ui="{ root: 'bg-transparent shadow-none ring-0', body: 'bg-transparent' }"
+            >
               <div class="flex items-center justify-between gap-2">
                 <div>
                   <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
@@ -780,6 +793,68 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                   </div>
                 </div>
               </UCard>
+
+              <UCard class="admin-panel-card border-0 md:col-span-2">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                      Recent lock incidents
+                    </div>
+                    <p class="mt-1 text-xs text-dimmed">
+                      Latest access incidents requiring manual verification.
+                    </p>
+                  </div>
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="soft"
+                    icon="i-lucide-panel-right"
+                    @click="criticalDetailsOpen = true"
+                  >
+                    See sources
+                  </UButton>
+                </div>
+
+                <div
+                  v-if="!recentLockIncidents.length"
+                  class="mt-3 rounded-lg border border-default/60 bg-elevated/45 p-3 text-xs text-dimmed"
+                >
+                  No lock incidents recorded.
+                </div>
+
+                <div
+                  v-else
+                  class="mt-3 space-y-2"
+                >
+                  <div
+                    v-for="incident in recentLockIncidents.slice(0, 6)"
+                    :key="incident.id"
+                    class="rounded-lg border border-default/60 bg-elevated/45 p-3"
+                  >
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="text-sm font-medium text-highlighted">
+                        {{ incident.title }}
+                      </div>
+                      <UBadge
+                        size="xs"
+                        :color="incident.severity === 'critical' ? 'error' : incident.severity === 'warning' ? 'warning' : 'neutral'"
+                        variant="soft"
+                      >
+                        {{ incident.severity }}
+                      </UBadge>
+                    </div>
+                    <div class="mt-1 text-xs text-dimmed">
+                      {{ incident.incident_type }} · {{ incident.status }} · {{ formatShortDate(incident.created_at) }}
+                    </div>
+                    <div
+                      v-if="incident.message"
+                      class="mt-1 text-xs text-dimmed"
+                    >
+                      {{ incident.message }}
+                    </div>
+                  </div>
+                </div>
+              </UCard>
             </div>
           </section>
         </div>
@@ -835,29 +910,17 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   --ui-text-dimmed: #5f6978;
   --ui-text-highlighted: #121923;
   --ui-text-inverted: #f7f8fb;
-  --ui-bg-elevated: #d3d6da;
-  --ui-bg-muted: #c4c9d0;
+  --ui-bg-elevated: #dadbdc;
+  --ui-bg-muted: #cfd1d3;
   --ui-border: rgba(18, 24, 32, 0.18);
-}
-
-.admin-ops-panel--dark {
-  background: #2b2b2b !important;
-  --ui-text: #e9e9e9;
-  --ui-text-toned: #d2d2d2;
-  --ui-text-dimmed: #a9a9a9;
-  --ui-text-highlighted: #f7f7f7;
-  --ui-text-inverted: #f7f7f7;
-  --ui-bg-elevated: #343434;
-  --ui-bg-muted: #2f2f2f;
-  --ui-border: rgba(255, 255, 255, 0.14);
+  --admin-ops-navbar-bg: color-mix(in srgb, #dadbdc 94%, #c8cdd3 6%);
+  --admin-ops-shell-bg: #cfd1d3;
+  --admin-ops-shell-accent-strength: 7%;
+  --admin-ops-shell-aqua-strength: 7%;
 }
 
 .admin-ops-navbar {
-  background: color-mix(in srgb, #dadbdc 94%, #c8cdd3 6%);
-}
-
-.admin-ops-navbar--dark {
-  background: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%) !important;
+  background: var(--admin-ops-navbar-bg);
 }
 
 .admin-ops-shell-frame {
@@ -894,19 +957,12 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 .admin-ops-shell {
   position: relative;
   background:
-    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 7%, transparent), transparent 62%),
-    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 7%, transparent), transparent 58%),
-    #cfd1d3;
+    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) var(--admin-ops-shell-accent-strength), transparent), transparent 62%),
+    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) var(--admin-ops-shell-aqua-strength), transparent), transparent 58%),
+    var(--admin-ops-shell-bg);
   border-radius: 1rem 0 0 0;
   overflow-x: hidden;
   overflow-y: auto;
-}
-
-.admin-ops-shell--dark {
-  background:
-    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
-    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%),
-    #222222 !important;
 }
 
 .admin-ops-shell > * {
@@ -914,7 +970,14 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   z-index: 1;
 }
 
-:global(.dark) .admin-ops-panel {
+:global(.dark) .admin-ops-panel,
+:global(.dark-mode) .admin-ops-panel,
+:global([data-theme='dark']) .admin-ops-panel,
+:global([data-color-mode='dark']) .admin-ops-panel,
+:global(html.dark) .admin-ops-panel,
+:global(html.dark-mode) .admin-ops-panel,
+:global(html[data-theme='dark']) .admin-ops-panel,
+:global(html[data-color-mode='dark']) .admin-ops-panel {
   background: #2b2b2b !important;
   --ui-text: #e9e9e9;
   --ui-text-toned: #d2d2d2;
@@ -924,35 +987,23 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   --ui-bg-elevated: #343434;
   --ui-bg-muted: #2f2f2f;
   --ui-border: rgba(255, 255, 255, 0.14);
-}
-
-:global(.dark) .admin-ops-navbar {
-  background: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%) !important;
+  --admin-ops-navbar-bg: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%);
+  --admin-ops-shell-bg: #222222;
+  --admin-ops-shell-accent-strength: 12%;
+  --admin-ops-shell-aqua-strength: 10%;
 }
 
 :global(.dark) .admin-ops-shell,
 :global(.dark-mode) .admin-ops-shell,
 :global([data-theme='dark']) .admin-ops-shell,
-:global([data-color-mode='dark']) .admin-ops-shell {
-  background:
-    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
-    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%),
-    #222222 !important;
-}
-
-:global(html.dark) .admin-ops-panel {
-  background: #2b2b2b !important;
-}
-
-:global(html.dark) .admin-ops-navbar {
-  background: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%) !important;
-}
-
-:global(html.dark) .admin-ops-shell {
-  background:
-    radial-gradient(900px 420px at 78% -10%, color-mix(in srgb, var(--gruv-accent) 12%, transparent), transparent 62%),
-    radial-gradient(760px 420px at 12% 110%, color-mix(in srgb, var(--gruv-aqua) 10%, transparent), transparent 58%),
-    #222222 !important;
+:global([data-color-mode='dark']) .admin-ops-shell,
+:global(html.dark) .admin-ops-shell,
+:global(html.dark-mode) .admin-ops-shell,
+:global(html[data-theme='dark']) .admin-ops-shell,
+:global(html[data-color-mode='dark']) .admin-ops-shell {
+  --admin-ops-shell-bg: #222222 !important;
+  --admin-ops-shell-accent-strength: 12% !important;
+  --admin-ops-shell-aqua-strength: 10% !important;
 }
 
 .admin-ops-hero {
@@ -1010,23 +1061,13 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 .admin-kpi-shell,
 :deep(.admin-kpi-card),
 .admin-panel-card {
-  --admin-kpi-surface: color-mix(in srgb, #d8dce2 90%, #c7ccd5 10%);
+  --admin-kpi-surface: #dadbdc;
   background: var(--admin-kpi-surface);
+  border-radius: 1rem;
   box-shadow: none;
 }
 
 .admin-panel-card--transparent {
-  background: transparent;
-}
-
-.admin-ops-panel--dark .admin-kpi-shell,
-.admin-ops-panel--dark :deep(.admin-kpi-card),
-.admin-ops-panel--dark .admin-panel-card {
-  --admin-kpi-surface: color-mix(in srgb, #343434 86%, #2a2a2a 14%);
-  background: var(--admin-kpi-surface);
-}
-
-.admin-ops-panel--dark .admin-panel-card--transparent {
   background: transparent;
 }
 
@@ -1036,9 +1077,15 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong));
 }
 
-.admin-ops-panel--dark .admin-kpi-card--accent,
-.admin-ops-panel--dark :deep(.admin-kpi-card--accent) {
-  background: linear-gradient(152deg, var(--gruv-accent), var(--gruv-accent-strong)) !important;
+.admin-kpi-card--revenue,
+:deep(.admin-kpi-card--revenue) {
+  --admin-kpi-surface: var(--gruv-accent);
+  background: var(--gruv-accent);
+}
+
+.admin-usage-panel,
+:deep(.admin-usage-panel) {
+  background: transparent !important;
 }
 
 .admin-revenue-panel {
@@ -1306,12 +1353,12 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   gap: 0.9rem;
   border-radius: 1rem;
   padding: 0.72rem;
-  background: color-mix(in srgb, #d8dce2 90%, #c7ccd5 10%);
+  background: color-mix(in srgb, var(--ui-bg-elevated) 88%, var(--ui-bg-muted) 12%);
   border: 0;
 }
 
 .admin-leader-tile:hover {
-  background: color-mix(in srgb, #d0d5dd 90%, #c0c6d0 10%);
+  background: color-mix(in srgb, var(--ui-bg-elevated) 78%, var(--ui-bg-muted) 22%);
 }
 
 .admin-leader-avatar {
@@ -1324,7 +1371,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--ui-text-highlighted);
-  background: color-mix(in srgb, #b9c0cc 72%, transparent 28%);
+  background: color-mix(in srgb, var(--ui-bg-muted) 72%, transparent 28%);
 }
 
 .admin-leader-value {
@@ -1377,7 +1424,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   padding: 0.2rem 0.52rem;
   font-size: 0.68rem;
   color: var(--ui-text-toned);
-  background: color-mix(in srgb, #c2c8d1 72%, transparent 28%);
+  background: color-mix(in srgb, var(--ui-bg-muted) 72%, transparent 28%);
 }
 
 .admin-leader-arrow {
@@ -1388,28 +1435,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   align-items: center;
   justify-content: center;
   color: color-mix(in srgb, var(--ui-text-dimmed) 92%, #101828 8%);
-  background: color-mix(in srgb, #bec5cf 72%, transparent 28%);
-}
-
-.admin-ops-panel--dark .admin-leader-tile {
-  background: color-mix(in srgb, #2f2f2f 88%, transparent 12%);
-}
-
-.admin-ops-panel--dark .admin-leader-tile:hover {
-  background: color-mix(in srgb, #383838 86%, transparent 14%);
-}
-
-.admin-ops-panel--dark .admin-leader-avatar {
-  background: color-mix(in srgb, #525252 82%, transparent 18%);
-}
-
-.admin-ops-panel--dark .admin-leader-pill {
-  background: color-mix(in srgb, #474747 80%, transparent 20%);
-}
-
-.admin-ops-panel--dark .admin-leader-arrow {
-  color: color-mix(in srgb, var(--ui-text-dimmed) 78%, white 22%);
-  background: color-mix(in srgb, #444444 78%, transparent 22%);
+  background: color-mix(in srgb, var(--ui-bg-muted) 72%, transparent 28%);
 }
 
 .admin-issue-row,

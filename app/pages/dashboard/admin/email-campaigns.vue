@@ -1296,11 +1296,16 @@ watch(() => draft.templateId, () => {
 </script>
 
 <template>
-  <UDashboardPanel id="admin-email-campaigns">
+  <UDashboardPanel
+    id="admin-email-campaigns"
+    class="min-h-0 flex-1 admin-ops-panel"
+    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  >
     <template #header>
       <UDashboardNavbar
         title="Email Campaigns"
-        :ui="{ right: 'gap-2' }"
+        class="admin-ops-navbar"
+        :ui="{ root: 'border-b-0', right: 'gap-2' }"
       >
         <template #leading>
           <UDashboardSidebarCollapse />
@@ -1319,7 +1324,7 @@ watch(() => draft.templateId, () => {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
+      <AdminOpsShell>
         <UAlert
           color="info"
           variant="soft"
@@ -1853,7 +1858,7 @@ watch(() => draft.templateId, () => {
             </UCard>
           </aside>
         </div>
-      </div>
+      </AdminOpsShell>
     </template>
   </UDashboardPanel>
 </template>

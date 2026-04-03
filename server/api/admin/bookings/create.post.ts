@@ -15,6 +15,7 @@ import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
 import { enqueueBookingAccessSync, processDueAccessJobs } from '~~/server/utils/access/jobs'
 import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
+import { sendMemberBookingLifecycleMail } from '~~/server/utils/mail/memberBookingLifecycle'
 
 const schema = z.object({
   userId: z.string().uuid(),
@@ -411,6 +412,18 @@ export default defineEventHandler(async (event) => {
           error: (error as Error)?.message ?? String(error)
         })
       })
+
+      await sendMemberBookingLifecycleMail(event, {
+        eventType: 'booking.memberCreated',
+        userId: body.userId,
+        bookingId,
+        bookingStart: startIso,
+        bookingEnd: endIso,
+        creditsBurned: burned ?? creditsNeeded,
+        holdRequested: body.requestHold,
+        holdCreated: Boolean(holdId),
+        actionedBy: 'admin'
+      })
     }
 
     return {
@@ -492,6 +505,18 @@ export default defineEventHandler(async (event) => {
       bookingId: booking.id,
       error: (error as Error)?.message ?? String(error)
     })
+  })
+
+  await sendMemberBookingLifecycleMail(event, {
+    eventType: 'booking.memberCreated',
+    userId: body.userId,
+    bookingId: booking.id,
+    bookingStart: startIso,
+    bookingEnd: endIso,
+    creditsBurned: 0,
+    holdRequested: body.requestHold,
+    holdCreated: Boolean(holdId),
+    actionedBy: 'admin'
   })
 
   return {

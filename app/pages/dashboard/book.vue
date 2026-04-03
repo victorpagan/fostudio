@@ -553,12 +553,14 @@ function formatPeakCredits(value: number) {
   <div class="flex min-h-0 flex-1">
     <UDashboardPanel
       id="book"
-      class="min-h-0 flex-1"
+      class="min-h-0 flex-1 admin-ops-panel"
+      :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
     >
       <template #header>
         <UDashboardNavbar
           title="Book Studio"
-          :ui="{ right: 'gap-3' }"
+          class="admin-ops-navbar"
+          :ui="{ root: 'border-b-0', right: 'gap-3' }"
         >
           <template #leading>
             <UDashboardSidebarCollapse />
@@ -575,45 +577,44 @@ function formatPeakCredits(value: number) {
             </UButton>
           </template>
         </UDashboardNavbar>
-
-        <UDashboardToolbar>
-          <template #left>
-            <p class="text-sm text-dimmed">
-              Click and drag on the calendar to select a time slot (30-minute increments). Your tier's booking window and peak-hour credit rates apply. Reschedules require {{ memberRescheduleNoticeHours }}+ hours notice.
-            </p>
-          </template>
-        </UDashboardToolbar>
       </template>
 
       <template #body>
-        <div class="p-4">
-          <UAlert
-            v-if="!hasActiveMembership"
-            color="warning"
-            variant="soft"
-            title="No active membership"
-            description="You can still book with remaining unexpired credits. Renew or switch plans to restore full membership access."
-            class="mb-4"
-          >
-            <template #actions>
-              <UButton
-                color="warning"
-                variant="soft"
-                size="sm"
-                to="/memberships"
-              >
-                View memberships
-              </UButton>
-            </template>
-          </UAlert>
+        <AdminOpsShell>
+          <div class="w-full space-y-4">
+            <UCard class="admin-panel-card border-0">
+              <p class="text-sm text-dimmed">
+                Click and drag on the calendar to select a time slot (30-minute increments). Your tier's booking window and peak-hour credit rates apply. Reschedules require {{ memberRescheduleNoticeHours }}+ hours notice.
+              </p>
+            </UCard>
 
-          <AvailabilityCalendar
-            :key="calendarKey"
-            endpoint="/api/calendar/member"
-            @select="onSelect"
-            @booking-click="onOwnBookingClick"
-          />
-        </div>
+            <UAlert
+              v-if="!hasActiveMembership"
+              color="warning"
+              variant="soft"
+              title="No active membership"
+              description="You can still book with remaining unexpired credits. Renew or switch plans to restore full membership access."
+            >
+              <template #actions>
+                <UButton
+                  color="warning"
+                  variant="soft"
+                  size="sm"
+                  to="/memberships"
+                >
+                  View memberships
+                </UButton>
+              </template>
+            </UAlert>
+
+            <AvailabilityCalendar
+              :key="calendarKey"
+              endpoint="/api/calendar/member"
+              @select="onSelect"
+              @booking-click="onOwnBookingClick"
+            />
+          </div>
+        </AdminOpsShell>
       </template>
     </UDashboardPanel>
 

@@ -15,6 +15,7 @@ import {
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
+import { sendMemberBookingLifecycleMail } from '~~/server/utils/mail/memberBookingLifecycle'
 
 const bodySchema = z.object({
   start_time: z.string().datetime(),
@@ -589,6 +590,23 @@ export default defineEventHandler(async (event) => {
       bookingId,
       error: (error as Error)?.message ?? String(error)
     })
+  })
+
+  await sendMemberBookingLifecycleMail(event, {
+    eventType: 'booking.memberRescheduled',
+    userId: bookingUserId,
+    bookingId,
+    bookingStart: startIso,
+    bookingEnd: endIso,
+    previousBookingStart: booking.start_time,
+    previousBookingEnd: booking.end_time,
+    creditsBurned: recalculatedCreditsBurned,
+    creditsDelta: roundedCreditDelta,
+    holdRequested: requestNewHold,
+    holdCreated: requestNewHold && !isRetainingExistingHold,
+    holdKept: isRetainingExistingHold,
+    holdRemoved: hasLinkedHold && !requestNewHold,
+    actionedBy: 'member'
   })
 
   return {

@@ -18,6 +18,7 @@ import { isAdminRole, readUserRole } from '~~/server/utils/auth'
 import type { RoleCarrier } from '~~/server/utils/auth'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
+import { sendMemberBookingLifecycleMail } from '~~/server/utils/mail/memberBookingLifecycle'
 
 const TZ = 'America/Los_Angeles'
 const REFUND_WINDOW_HOURS = 24
@@ -150,6 +151,20 @@ export default defineEventHandler(async (event) => {
       error: (error as Error)?.message ?? String(error)
     })
   })
+
+  if (booking.user_id) {
+    await sendMemberBookingLifecycleMail(event, {
+      eventType: 'booking.memberCanceled',
+      userId: booking.user_id,
+      bookingId,
+      bookingStart: booking.start_time,
+      bookingEnd: booking.end_time,
+      creditsBurned: Number(booking.credits_burned ?? 0),
+      creditsRefunded: Number(creditsToRefund ?? 0),
+      holdRemoved: holdsRemoved > 0,
+      actionedBy: isAdmin ? 'admin' : 'member'
+    })
+  }
 
   return {
     ok: true,

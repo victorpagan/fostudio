@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
+import { sendMemberBookingLifecycleMail } from '~~/server/utils/mail/memberBookingLifecycle'
 
 const bodySchema = z.object({
   bookingId: z.string().uuid(),
@@ -14,7 +15,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: booking, error: bookingErr } = await supabase
     .from('bookings')
-    .select('id,user_id,status,credits_burned')
+    .select('id,user_id,status,start_time,end_time,credits_burned')
     .eq('id', body.bookingId)
     .maybeSingle()
 
@@ -86,6 +87,20 @@ export default defineEventHandler(async (event) => {
       error: (error as Error)?.message ?? String(error)
     })
   })
+
+  if (booking.user_id) {
+    await sendMemberBookingLifecycleMail(event, {
+      eventType: 'booking.memberCanceled',
+      userId: booking.user_id,
+      bookingId: booking.id,
+      bookingStart: booking.start_time,
+      bookingEnd: booking.end_time,
+      creditsBurned: Number(booking.credits_burned ?? 0),
+      creditsRefunded: refundedCredits,
+      holdRemoved: true,
+      actionedBy: 'admin'
+    })
+  }
 
   return {
     ok: true,

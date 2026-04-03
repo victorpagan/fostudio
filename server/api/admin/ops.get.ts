@@ -448,7 +448,7 @@ export default defineEventHandler(async (event) => {
       title: 'Credit grants due',
       severity: (dueGrantCountRes.count ?? 0) > 0 ? 'warning' : 'neutral',
       count: dueGrantCountRes.count ?? 0,
-      to: '/dashboard/admin/tools',
+      to: '/dashboard/admin/subscriptions',
       description: 'Scheduled grants waiting to process.'
     },
     {
@@ -456,7 +456,7 @@ export default defineEventHandler(async (event) => {
       title: 'Memberships missing future grant schedule',
       severity: membershipsMissingFutureSchedule.length > 0 ? 'error' : 'neutral',
       count: membershipsMissingFutureSchedule.length,
-      to: '/dashboard/admin/tools',
+      to: '/dashboard/admin/subscriptions',
       description: 'Active annual/quarterly memberships with no future grant row.'
     },
     {
@@ -464,7 +464,7 @@ export default defineEventHandler(async (event) => {
       title: 'Open lock incidents',
       severity: (openLockIncidentsRes.count ?? 0) > 0 ? 'error' : 'neutral',
       count: openLockIncidentsRes.count ?? 0,
-      to: '/dashboard/admin/tools',
+      to: '/dashboard/admin/door-codes',
       description: 'Access flow incidents requiring review.'
     },
     {
@@ -472,7 +472,7 @@ export default defineEventHandler(async (event) => {
       title: 'Dead lock jobs',
       severity: (deadLockJobsRes.count ?? 0) > 0 ? 'error' : 'neutral',
       count: deadLockJobsRes.count ?? 0,
-      to: '/dashboard/admin/tools',
+      to: '/dashboard/admin/door-codes',
       description: 'Failed access automation tasks.'
     }
   ]

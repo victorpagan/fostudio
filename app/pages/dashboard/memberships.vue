@@ -181,10 +181,15 @@ function openTierDetails(tierId: string) {
   <div class="flex min-h-0 flex-1">
     <UDashboardPanel
       id="memberships"
-      class="min-h-0 flex-1"
+      class="min-h-0 flex-1 admin-ops-panel"
+      :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
     >
       <template #header>
-        <UDashboardNavbar title="Browse Memberships">
+        <UDashboardNavbar
+          title="Browse Memberships"
+          class="admin-ops-navbar"
+          :ui="{ root: 'border-b-0' }"
+        >
           <template #leading>
             <UDashboardSidebarCollapse />
           </template>
@@ -201,157 +206,159 @@ function openTierDetails(tierId: string) {
       </template>
 
       <template #body>
-        <div class="p-4 space-y-4">
-          <UAlert
-            v-if="catalogError"
-            color="error"
-            variant="soft"
-            icon="i-lucide-circle-alert"
-            title="Could not load memberships"
-            :description="catalogError.message"
-          />
+        <AdminOpsShell>
+          <div class="space-y-4">
+            <UAlert
+              v-if="catalogError"
+              color="error"
+              variant="soft"
+              icon="i-lucide-circle-alert"
+              title="Could not load memberships"
+              :description="catalogError.message"
+            />
 
-          <UAlert
-            v-else-if="!catalogPending && !tiers.length"
-            color="warning"
-            variant="soft"
-            icon="i-lucide-search-x"
-            title="No memberships available"
-            description="No visible membership tiers were returned for this account."
-          />
+            <UAlert
+              v-else-if="!catalogPending && !tiers.length"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-search-x"
+              title="No memberships available"
+              description="No visible membership tiers were returned for this account."
+            />
 
-          <UAlert
-            v-if="hasActiveMembership"
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-calendar-clock"
-            title="Membership changes apply next cycle"
-            description="Upgrades and downgrades are scheduled for your next billing cycle. Mid-cycle prorated membership changes are not applied."
-          />
+            <UAlert
+              v-if="hasActiveMembership"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-calendar-clock"
+              title="Membership changes apply next cycle"
+              description="Upgrades and downgrades are scheduled for your next billing cycle. Mid-cycle prorated membership changes are not applied."
+            />
 
-          <div
-            v-if="tiers.length"
-            class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-          >
-            <UCard
-              v-for="tier in tiers"
-              :key="tier.id"
-              :ui="{body:'h-full flex flex-col justify-between'}"
+            <div
+              v-if="tiers.length"
+              class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
             >
-              <div class="space-y-3">
-                <div class="flex items-center gap-2">
-                  <div class="font-semibold text-base">
-                    {{ tier.display_name }}
+              <UCard
+                v-for="tier in tiers"
+                :key="tier.id"
+                :ui="{ body: 'h-full flex flex-col justify-between' }"
+              >
+                <div class="space-y-3">
+                  <div class="flex items-center gap-2">
+                    <div class="font-semibold text-base">
+                      {{ tier.display_name }}
+                    </div>
+                    <UBadge
+                      v-if="tier.adminOnly"
+                      color="warning"
+                      variant="soft"
+                      size="xs"
+                    >
+                      Admin only
+                    </UBadge>
+                    <UBadge
+                      v-if="tier.is_full"
+                      color="error"
+                      variant="soft"
+                      size="xs"
+                    >
+                      Waitlist open
+                    </UBadge>
                   </div>
-                  <UBadge
-                    v-if="tier.adminOnly"
-                    color="warning"
-                    variant="soft"
-                    size="xs"
+                  <p
+                    v-if="tier.description"
+                    class="text-sm text-dimmed"
                   >
-                    Admin only
-                  </UBadge>
-                  <UBadge
-                    v-if="tier.is_full"
-                    color="error"
-                    variant="soft"
-                    size="xs"
-                  >
-                    Waitlist open
-                  </UBadge>
+                    {{ tier.description }}
+                  </p>
+
+                  <ul class="text-sm space-y-1.5 text-dimmed">
+                    <li class="flex justify-between">
+                      <span>Booking window</span>
+                      <span class="font-medium text-default">{{ tier.booking_window_days }}d</span>
+                    </li>
+                    <li class="flex justify-between">
+                      <span>Peak-hour rate</span>
+                      <span class="font-medium text-default">{{ formatPeakCredits(tier.peak_multiplier) }} credits/hr</span>
+                    </li>
+                    <li class="flex justify-between">
+                      <span>Credit cap</span>
+                      <span class="font-medium text-default">{{ tier.max_bank }} credits</span>
+                    </li>
+                    <li class="flex justify-between">
+                      <span>Capacity</span>
+                      <span class="font-medium text-default">
+                        {{ tier.cap === null ? 'Unlimited' : `${Math.max(0, tier.spots_left ?? 0)} available` }}
+                      </span>
+                    </li>
+                  </ul>
                 </div>
-                <p
-                  v-if="tier.description"
-                  class="text-sm text-dimmed"
-                >
-                  {{ tier.description }}
-                </p>
 
-                <ul class="text-sm space-y-1.5 text-dimmed">
-                  <li class="flex justify-between">
-                    <span>Booking window</span>
-                    <span class="font-medium text-default">{{ tier.booking_window_days }}d</span>
-                  </li>
-                  <li class="flex justify-between">
-                    <span>Peak-hour rate</span>
-                    <span class="font-medium text-default">{{ formatPeakCredits(tier.peak_multiplier) }} credits/hr</span>
-                  </li>
-                  <li class="flex justify-between">
-                    <span>Credit cap</span>
-                    <span class="font-medium text-default">{{ tier.max_bank }} credits</span>
-                  </li>
-                  <li class="flex justify-between">
-                    <span>Capacity</span>
-                    <span class="font-medium text-default">
-                      {{ tier.cap === null ? 'Unlimited' : `${Math.max(0, tier.spots_left ?? 0)} available` }}
-                    </span>
-                  </li>
-                </ul>
-              </div>
-
-              <div class="space-y-2 pt-4">
-                <UButton
-                  size="xs"
-                  variant="ghost"
-                  color="neutral"
-                  icon="i-lucide-info"
-                  @click="openTierDetails(tier.id)"
-                >
-                  See full plan breakdown
-                </UButton>
-                  <USeparator />
-                <div
-                  v-for="plan in tier.membership_plan_variations"
-                  :key="`${tier.id}-${plan.cadence}`"
-                  class="rounded-lg border border-default p-3"
-                >
-                  <div class="flex items-center justify-between gap-2">
-                    <div class="text-sm">
-                      <span class="font-medium">{{ formatCadence(plan.cadence) }}</span>
-                      <span class="text-dimmed"> · {{ plan.credits_per_month ?? '—' }} {{ creditsCycleAbbrev(plan.cadence) }}</span>
-                      <UBadge
-                        v-if="getDiscountLabel(plan.discount_label)"
-                        color="success"
-                        variant="soft"
-                        size="xs"
-                        class="ml-1"
-                      >
-                        {{ getDiscountLabel(plan.discount_label) }}
-                      </UBadge>
-                    </div>
-                    <div class="text-sm font-medium">
-                      {{ formatPrice(plan.price_cents, plan.currency) }}
-                    </div>
-                  </div>
-
+                <div class="space-y-2 pt-4">
                   <UButton
-                    v-if="!isTierBlockedForNewMembers(tier)"
-                    class="mt-3"
                     size="xs"
-                    block
-                    :disabled="isCurrentPlan(tier.id, plan.cadence)"
-                    @click="goToPlan(tier.id, plan.cadence)"
-                  >
-                    {{ isCurrentPlan(tier.id, plan.cadence)
-                      ? 'Current plan'
-                      : (hasPriorityMembership ? `Schedule ${formatCadence(plan.cadence)}` : `Choose ${formatCadence(plan.cadence)}`) }}
-                  </UButton>
-                  <UButton
-                    v-else
-                    class="mt-3"
-                    size="xs"
-                    block
+                    variant="ghost"
                     color="neutral"
-                    variant="soft"
-                    @click="openWaitlist(tier.id, plan.cadence)"
+                    icon="i-lucide-info"
+                    @click="openTierDetails(tier.id)"
                   >
-                    Join waitlist
+                    See full plan breakdown
                   </UButton>
+                  <USeparator />
+                  <div
+                    v-for="plan in tier.membership_plan_variations"
+                    :key="`${tier.id}-${plan.cadence}`"
+                    class="rounded-lg border border-default p-3"
+                  >
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="text-sm">
+                        <span class="font-medium">{{ formatCadence(plan.cadence) }}</span>
+                        <span class="text-dimmed"> · {{ plan.credits_per_month ?? '—' }} {{ creditsCycleAbbrev(plan.cadence) }}</span>
+                        <UBadge
+                          v-if="getDiscountLabel(plan.discount_label)"
+                          color="success"
+                          variant="soft"
+                          size="xs"
+                          class="ml-1"
+                        >
+                          {{ getDiscountLabel(plan.discount_label) }}
+                        </UBadge>
+                      </div>
+                      <div class="text-sm font-medium">
+                        {{ formatPrice(plan.price_cents, plan.currency) }}
+                      </div>
+                    </div>
+
+                    <UButton
+                      v-if="!isTierBlockedForNewMembers(tier)"
+                      class="mt-3"
+                      size="xs"
+                      block
+                      :disabled="isCurrentPlan(tier.id, plan.cadence)"
+                      @click="goToPlan(tier.id, plan.cadence)"
+                    >
+                      {{ isCurrentPlan(tier.id, plan.cadence)
+                        ? 'Current plan'
+                        : (hasPriorityMembership ? `Schedule ${formatCadence(plan.cadence)}` : `Choose ${formatCadence(plan.cadence)}`) }}
+                    </UButton>
+                    <UButton
+                      v-else
+                      class="mt-3"
+                      size="xs"
+                      block
+                      color="neutral"
+                      variant="soft"
+                      @click="openWaitlist(tier.id, plan.cadence)"
+                    >
+                      Join waitlist
+                    </UButton>
+                  </div>
                 </div>
-              </div>
-            </UCard>
+              </UCard>
+            </div>
           </div>
-        </div>
+        </AdminOpsShell>
       </template>
     </UDashboardPanel>
 

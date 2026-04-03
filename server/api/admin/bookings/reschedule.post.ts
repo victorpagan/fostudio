@@ -11,6 +11,7 @@ import {
 } from '~~/server/utils/booking/holds'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
+import { sendMemberBookingLifecycleMail } from '~~/server/utils/mail/memberBookingLifecycle'
 
 const STUDIO_TZ = 'America/Los_Angeles'
 
@@ -53,7 +54,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: booking, error: bookingErr } = await supabase
     .from('bookings')
-    .select('id,user_id,status')
+    .select('id,user_id,status,start_time,end_time,credits_burned')
     .eq('id', body.bookingId)
     .maybeSingle()
 
@@ -302,6 +303,25 @@ export default defineEventHandler(async (event) => {
       error: (error as Error)?.message ?? String(error)
     })
   })
+
+  if (booking.user_id) {
+    await sendMemberBookingLifecycleMail(event, {
+      eventType: 'booking.memberRescheduled',
+      userId: booking.user_id,
+      bookingId: body.bookingId,
+      bookingStart: nextStartIso,
+      bookingEnd: nextEndIso,
+      previousBookingStart: booking.start_time,
+      previousBookingEnd: booking.end_time,
+      creditsBurned: asNumber(booking.credits_burned),
+      creditsDelta: 0,
+      holdRequested: body.keepHold,
+      holdCreated: keepHold && !hasLinkedHold,
+      holdKept: keepHold && hasLinkedHold,
+      holdRemoved: hasLinkedHold && !keepHold,
+      actionedBy: 'admin'
+    })
+  }
 
   return {
     booking: updated,

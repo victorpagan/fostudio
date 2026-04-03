@@ -270,21 +270,36 @@ function formatSquareSyncReason(reason: string | null | undefined) {
 </script>
 
 <template>
-  <UDashboardPanel id="admin-promos">
+  <UDashboardPanel
+    id="admin-promos"
+    class="min-h-0 flex-1 admin-ops-panel"
+    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  >
     <template #header>
-      <UDashboardNavbar title="Promo Code Management" :ui="{ right: 'gap-2' }">
+      <UDashboardNavbar
+        title="Promo Code Management"
+        class="admin-ops-navbar"
+        :ui="{ root: 'border-b-0', right: 'gap-2' }"
+      >
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
 
         <template #right>
-          <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-refresh-cw" :loading="pending" @click="() => refresh()" />
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-refresh-cw"
+            :loading="pending"
+            @click="() => refresh()"
+          />
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
+      <AdminOpsShell>
         <UAlert
           color="warning"
           variant="soft"
@@ -299,7 +314,12 @@ function formatSquareSyncReason(reason: string | null | undefined) {
               <div class="font-medium">
                 Promo codes
               </div>
-              <UButton size="xs" color="neutral" variant="soft" @click="resetForm">
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="soft"
+                @click="resetForm"
+              >
                 New promo
               </UButton>
             </div>
@@ -310,10 +330,17 @@ function formatSquareSyncReason(reason: string | null | undefined) {
                 class="rounded-lg border border-default p-2"
                 :class="selectedId === promo.id ? 'border-primary bg-elevated' : ''"
               >
-                <button class="w-full text-left" @click="loadPromo(promo.id)">
+                <button
+                  class="w-full text-left"
+                  @click="loadPromo(promo.id)"
+                >
                   <div class="flex items-center justify-between gap-2">
                     <span class="font-medium">{{ promo.code }}</span>
-                    <UBadge :color="promo.active ? 'success' : 'neutral'" size="xs" variant="soft">
+                    <UBadge
+                      :color="promo.active ? 'success' : 'neutral'"
+                      size="xs"
+                      variant="soft"
+                    >
                       {{ promo.active ? 'active' : 'inactive' }}
                     </UBadge>
                   </div>
@@ -354,7 +381,10 @@ function formatSquareSyncReason(reason: string | null | undefined) {
           <UCard>
             <div class="grid gap-3 md:grid-cols-2">
               <UFormField label="Code">
-                <UInput v-model="form.code" placeholder="SPRING20" />
+                <UInput
+                  v-model="form.code"
+                  placeholder="SPRING20"
+                />
               </UFormField>
               <UFormField label="Applies to">
                 <USelect
@@ -404,7 +434,8 @@ function formatSquareSyncReason(reason: string | null | undefined) {
                       @update:model-value="(checked) => {
                         if (checked) {
                           if (!form.appliesTierIds.includes(tier.id)) form.appliesTierIds.push(tier.id)
-                        } else {
+                        }
+                        else {
                           form.appliesTierIds = form.appliesTierIds.filter(id => id !== tier.id)
                         }
                       }"
@@ -448,7 +479,8 @@ function formatSquareSyncReason(reason: string | null | undefined) {
                       @update:model-value="(checked) => {
                         if (checked) {
                           if (!form.appliesCreditOptionKeys.includes(option.key)) form.appliesCreditOptionKeys.push(option.key)
-                        } else {
+                        }
+                        else {
                           form.appliesCreditOptionKeys = form.appliesCreditOptionKeys.filter(key => key !== option.key)
                         }
                       }"
@@ -459,8 +491,14 @@ function formatSquareSyncReason(reason: string | null | undefined) {
                   </p>
                 </div>
               </UFormField>
-              <UFormField label="Description" class="md:col-span-2">
-                <UInput v-model="form.description" placeholder="Spring campaign promo" />
+              <UFormField
+                label="Description"
+                class="md:col-span-2"
+              >
+                <UInput
+                  v-model="form.description"
+                  placeholder="Spring campaign promo"
+                />
               </UFormField>
               <UFormField label="Discount type">
                 <USelect
@@ -481,8 +519,18 @@ function formatSquareSyncReason(reason: string | null | undefined) {
                   step="0.01"
                 />
                 <UFieldGroup v-else>
-                  <UBadge color="neutral" variant="outline" size="lg" label="$" />
-                  <UInput v-model.number="form.discountValue" type="number" min="0.01" step="0.01" />
+                  <UBadge
+                    color="neutral"
+                    variant="outline"
+                    size="lg"
+                    label="$"
+                  />
+                  <UInput
+                    v-model.number="form.discountValue"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                  />
                 </UFieldGroup>
               </UFormField>
               <UFormField label="Starts at">
@@ -500,12 +548,19 @@ function formatSquareSyncReason(reason: string | null | undefined) {
                 />
               </UFormField>
               <UFormField label="Max redemptions">
-                <UInput v-model.number="form.maxRedemptions" type="number" min="0" />
+                <UInput
+                  v-model.number="form.maxRedemptions"
+                  type="number"
+                  min="0"
+                />
               </UFormField>
             </div>
 
             <div class="mt-4 flex items-center gap-4">
-              <UCheckbox v-model="form.active" label="Active" />
+              <UCheckbox
+                v-model="form.active"
+                label="Active"
+              />
             </div>
 
             <UAlert
@@ -528,13 +583,17 @@ function formatSquareSyncReason(reason: string | null | undefined) {
             />
 
             <div class="mt-4">
-              <UButton :loading="saving" :disabled="!canSave" @click="savePromo">
+              <UButton
+                :loading="saving"
+                :disabled="!canSave"
+                @click="savePromo"
+              >
                 Save promo
               </UButton>
             </div>
           </UCard>
         </div>
-      </div>
+      </AdminOpsShell>
     </template>
   </UDashboardPanel>
 </template>
