@@ -1370,7 +1370,7 @@ onUnmounted(() => {
               <!-- Canceled/inactive state notice -->
               <UAlert
                 v-if="membershipState === 'canceled' || membershipState === 'inactive'"
-                color="neutral"
+                color="error"
                 variant="soft"
                 icon="i-lucide-circle-off"
                 title="Membership ended"

@@ -1067,6 +1067,33 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   box-shadow: none;
 }
 
+:global(.dark) .admin-kpi-shell,
+:global(.dark-mode) .admin-kpi-shell,
+:global([data-theme='dark']) .admin-kpi-shell,
+:global([data-color-mode='dark']) .admin-kpi-shell,
+:global(html.dark) .admin-kpi-shell,
+:global(html.dark-mode) .admin-kpi-shell,
+:global(html[data-theme='dark']) .admin-kpi-shell,
+:global(html[data-color-mode='dark']) .admin-kpi-shell,
+:global(.dark) :deep(.admin-kpi-card),
+:global(.dark-mode) :deep(.admin-kpi-card),
+:global([data-theme='dark']) :deep(.admin-kpi-card),
+:global([data-color-mode='dark']) :deep(.admin-kpi-card),
+:global(html.dark) :deep(.admin-kpi-card),
+:global(html.dark-mode) :deep(.admin-kpi-card),
+:global(html[data-theme='dark']) :deep(.admin-kpi-card),
+:global(html[data-color-mode='dark']) :deep(.admin-kpi-card),
+:global(.dark) .admin-panel-card,
+:global(.dark-mode) .admin-panel-card,
+:global([data-theme='dark']) .admin-panel-card,
+:global([data-color-mode='dark']) .admin-panel-card,
+:global(html.dark) .admin-panel-card,
+:global(html.dark-mode) .admin-panel-card,
+:global(html[data-theme='dark']) .admin-panel-card,
+:global(html[data-color-mode='dark']) .admin-panel-card {
+  --admin-kpi-surface: color-mix(in srgb, #343434 88%, #2f2f2f 12%);
+}
+
 .admin-panel-card--transparent {
   background: transparent;
 }

@@ -234,16 +234,16 @@ const primaryLinks = computed<NavigationMenuItem[]>(() => [
     onSelect: () => { open.value = false }
   },
   {
-    label: 'Waiver',
-    icon: 'i-lucide-file-signature',
-    to: '/dashboard/waiver',
-    onSelect: () => { open.value = false }
-  },
-  {
     label: 'Credits',
     icon: 'i-lucide-wallet-cards',
     to: '/dashboard/credits',
     onSelect: () => { open.value = false }
+  },
+  {
+      label: 'Waiver',
+      icon: 'i-lucide-file-signature',
+      to: '/dashboard/waiver',
+      onSelect: () => { open.value = false }
   },
   {
     label: 'Profile',

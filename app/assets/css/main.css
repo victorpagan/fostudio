@@ -2765,86 +2765,172 @@ body.dashboard-ui :where(.campaign-editor-shell, .waiver-editor-shell) :is(.tipt
 }
 
 /* Semantic alert surfaces for dashboard and admin panels. */
-.dashboard-admin-outer [role='alert'][data-slot='root'],
-.site-shell [role='alert'][data-slot='root'] {
+.dashboard-admin-outer [role='alert'],
+.site-shell [role='alert'] {
   border: 1px solid color-mix(in srgb, var(--gruv-line) 78%, transparent);
   border-radius: 1.05rem;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02), inset 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
 
-.dashboard-admin-outer [role='alert'][data-slot='root'][class*='text-warning'],
-.site-shell [role='alert'][data-slot='root'][class*='text-warning'] {
-  background: color-mix(in srgb, var(--ui-warning) 76%, var(--gruv-bg-0) 24%) !important;
-  border-color: color-mix(in srgb, var(--ui-warning) 56%, transparent) !important;
+.dashboard-admin-outer [role='alert']:is([class*='text-warning'], [class*='bg-warning'], [data-color='warning']),
+.site-shell [role='alert']:is([class*='text-warning'], [class*='bg-warning'], [data-color='warning']) {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ui-warning) 84%, #fff 16%), color-mix(in srgb, var(--ui-warning) 68%, #000 32%)) !important;
+  border-color: color-mix(in srgb, var(--ui-warning) 62%, transparent) !important;
+  color: #fffaf2 !important;
+}
+
+.dashboard-admin-outer [role='alert']:is([class*='text-success'], [class*='bg-success'], [data-color='success']),
+.site-shell [role='alert']:is([class*='text-success'], [class*='bg-success'], [data-color='success']) {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ui-success) 84%, #fff 16%), color-mix(in srgb, var(--ui-success) 68%, #000 32%)) !important;
+  border-color: color-mix(in srgb, var(--ui-success) 62%, transparent) !important;
   color: var(--gruv-ink-0) !important;
 }
 
-.dashboard-admin-outer [role='alert'][data-slot='root'][class*='text-success'],
-.site-shell [role='alert'][data-slot='root'][class*='text-success'] {
-  background: color-mix(in srgb, var(--ui-success) 78%, var(--gruv-bg-0) 22%) !important;
-  border-color: color-mix(in srgb, var(--ui-success) 56%, transparent) !important;
-  color: var(--gruv-ink-0) !important;
-}
-
-.dashboard-admin-outer [role='alert'][data-slot='root'][class*='text-error'],
-.site-shell [role='alert'][data-slot='root'][class*='text-error'] {
-  background: color-mix(in srgb, var(--ui-error) 78%, var(--gruv-bg-0) 22%) !important;
-  border-color: color-mix(in srgb, var(--ui-error) 56%, transparent) !important;
+.dashboard-admin-outer [role='alert']:is([class*='text-error'], [class*='bg-error'], [data-color='error'], [data-color='danger']),
+.site-shell [role='alert']:is([class*='text-error'], [class*='bg-error'], [data-color='error'], [data-color='danger']) {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ui-error) 86%, #fff 14%), color-mix(in srgb, var(--ui-error) 72%, #000 28%)) !important;
+  border-color: color-mix(in srgb, var(--ui-error) 62%, transparent) !important;
   color: #fff6f8 !important;
 }
 
-.dashboard-admin-outer [role='alert'][data-slot='root'][class*='text-info'],
-.site-shell [role='alert'][data-slot='root'][class*='text-info'] {
-  background: color-mix(in srgb, var(--ui-info) 78%, var(--gruv-bg-0) 22%) !important;
-  border-color: color-mix(in srgb, var(--ui-info) 56%, transparent) !important;
+.dashboard-admin-outer [role='alert']:is([class*='text-info'], [class*='bg-info'], [data-color='info']),
+.site-shell [role='alert']:is([class*='text-info'], [class*='bg-info'], [data-color='info']) {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ui-info) 84%, #fff 16%), color-mix(in srgb, var(--ui-info) 68%, #000 32%)) !important;
+  border-color: color-mix(in srgb, var(--ui-info) 62%, transparent) !important;
   color: #f5fbff !important;
 }
 
-.dashboard-admin-outer [role='alert'][data-slot='root'][class*='text-neutral'],
-.site-shell [role='alert'][data-slot='root'][class*='text-neutral'] {
+.dashboard-admin-outer [role='alert']:is([class*='text-neutral'], [class*='bg-neutral'], [data-color='neutral']),
+.site-shell [role='alert']:is([class*='text-neutral'], [class*='bg-neutral'], [data-color='neutral']) {
   background: color-mix(in srgb, var(--gruv-bg-0) 92%, var(--gruv-ink-3) 8%) !important;
   border-color: color-mix(in srgb, var(--gruv-ink-3) 30%, transparent) !important;
   color: var(--gruv-ink-1) !important;
 }
 
-.dashboard-admin-outer [role='alert'][data-slot='root'] :is([data-slot='icon'], [data-slot='title']),
-.site-shell [role='alert'][data-slot='root'] :is([data-slot='icon'], [data-slot='title']) {
+.dashboard-admin-outer [role='alert'] :is([data-slot='icon'], [data-slot='title']),
+.site-shell [role='alert'] :is([data-slot='icon'], [data-slot='title']) {
   color: inherit !important;
 }
 
-.dark .dashboard-admin-outer [role='alert'][data-slot='root'],
-.dark .site-shell [role='alert'][data-slot='root'] {
+.dashboard-admin-outer [role='alert'] :is([data-slot='description'], p, span, li, strong, em),
+.site-shell [role='alert'] :is([data-slot='description'], p, span, li, strong, em) {
+  color: inherit !important;
+}
+
+.dashboard-admin-outer [role='alert'] :is(button, a, [role='button']),
+.site-shell [role='alert'] :is(button, a, [role='button']),
+.dashboard-shell :is(
+  [data-slot='root'][data-orientation][class*='bg-warning/10'][class*='text-warning'],
+  [data-slot='root'][data-orientation][class*='bg-success/10'][class*='text-success'],
+  [data-slot='root'][data-orientation][class*='bg-error/10'][class*='text-error'],
+  [data-slot='root'][data-orientation][class*='bg-info/10'][class*='text-info']
+) :is(button, a, [role='button']) {
+  background: color-mix(in srgb, #111111 82%, transparent) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.38) !important;
+  box-shadow: none !important;
+}
+
+.dark .dashboard-admin-outer [role='alert'] :is(button, a, [role='button']),
+.dark .site-shell [role='alert'] :is(button, a, [role='button']),
+.dark .dashboard-shell :is(
+  [data-slot='root'][data-orientation][class*='bg-warning/10'][class*='text-warning'],
+  [data-slot='root'][data-orientation][class*='bg-success/10'][class*='text-success'],
+  [data-slot='root'][data-orientation][class*='bg-error/10'][class*='text-error'],
+  [data-slot='root'][data-orientation][class*='bg-info/10'][class*='text-info']
+) :is(button, a, [role='button']) {
+  background: color-mix(in srgb, #0e0e0e 86%, transparent) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.42) !important;
+}
+
+.dark .dashboard-admin-outer [role='alert'],
+.dark .site-shell [role='alert'] {
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
-.dark .dashboard-admin-outer [role='alert'][data-slot='root'][class*='text-warning'],
-.dark .site-shell [role='alert'][data-slot='root'][class*='text-warning'] {
-  background: color-mix(in srgb, var(--ui-warning) 74%, #1f1f1f 26%) !important;
+.dark .dashboard-admin-outer [role='alert']:is([class*='text-warning'], [class*='bg-warning'], [data-color='warning']),
+.dark .site-shell [role='alert']:is([class*='text-warning'], [class*='bg-warning'], [data-color='warning']) {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ui-warning) 86%, #fff 14%), color-mix(in srgb, var(--ui-warning) 72%, #1f1f1f 28%)) !important;
   color: #111111 !important;
 }
 
-.dark .dashboard-admin-outer [role='alert'][data-slot='root'][class*='text-success'],
-.dark .site-shell [role='alert'][data-slot='root'][class*='text-success'] {
-  background: color-mix(in srgb, var(--ui-success) 74%, #1f1f1f 26%) !important;
+.dark .dashboard-admin-outer [role='alert']:is([class*='text-success'], [class*='bg-success'], [data-color='success']),
+.dark .site-shell [role='alert']:is([class*='text-success'], [class*='bg-success'], [data-color='success']) {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ui-success) 86%, #fff 14%), color-mix(in srgb, var(--ui-success) 72%, #1f1f1f 28%)) !important;
   color: #111111 !important;
 }
 
-.dark .dashboard-admin-outer [role='alert'][data-slot='root'][class*='text-error'],
-.dark .site-shell [role='alert'][data-slot='root'][class*='text-error'] {
-  background: color-mix(in srgb, var(--ui-error) 76%, #1f1f1f 24%) !important;
+.dark .dashboard-admin-outer [role='alert']:is([class*='text-error'], [class*='bg-error'], [data-color='error'], [data-color='danger']),
+.dark .site-shell [role='alert']:is([class*='text-error'], [class*='bg-error'], [data-color='error'], [data-color='danger']) {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ui-error) 88%, #fff 12%), color-mix(in srgb, var(--ui-error) 74%, #1f1f1f 26%)) !important;
   color: #fff7f8 !important;
 }
 
-.dark .dashboard-admin-outer [role='alert'][data-slot='root'][class*='text-info'],
-.dark .site-shell [role='alert'][data-slot='root'][class*='text-info'] {
-  background: color-mix(in srgb, var(--ui-info) 76%, #1f1f1f 24%) !important;
+.dark .dashboard-admin-outer [role='alert']:is([class*='text-info'], [class*='bg-info'], [data-color='info']),
+.dark .site-shell [role='alert']:is([class*='text-info'], [class*='bg-info'], [data-color='info']) {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ui-info) 86%, #fff 14%), color-mix(in srgb, var(--ui-info) 72%, #1f1f1f 28%)) !important;
   color: #f5fbff !important;
 }
 
-.dark .dashboard-admin-outer [role='alert'][data-slot='root'][class*='text-neutral'],
-.dark .site-shell [role='alert'][data-slot='root'][class*='text-neutral'] {
+.dark .dashboard-admin-outer [role='alert']:is([class*='text-neutral'], [class*='bg-neutral'], [data-color='neutral']),
+.dark .site-shell [role='alert']:is([class*='text-neutral'], [class*='bg-neutral'], [data-color='neutral']) {
   background: color-mix(in srgb, #1f1f1f 90%, var(--gruv-ink-2) 10%) !important;
   color: var(--gruv-ink-0) !important;
+}
+
+/* Fallback for UAlert variants that do not render role or data-color attributes */
+.dashboard-shell :is([data-slot='root'][data-orientation][class*='bg-warning/10'][class*='text-warning']),
+.site-shell :is([data-slot='root'][data-orientation][class*='bg-warning/10'][class*='text-warning']) {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ui-warning) 84%, #fff 16%), color-mix(in srgb, var(--ui-warning) 68%, #000 32%)) !important;
+  border-color: color-mix(in srgb, var(--ui-warning) 62%, transparent) !important;
+  color: #fffaf2 !important;
+}
+
+.dashboard-shell :is([data-slot='root'][data-orientation][class*='bg-success/10'][class*='text-success']),
+.site-shell :is([data-slot='root'][data-orientation][class*='bg-success/10'][class*='text-success']) {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ui-success) 84%, #fff 16%), color-mix(in srgb, var(--ui-success) 68%, #000 32%)) !important;
+  border-color: color-mix(in srgb, var(--ui-success) 62%, transparent) !important;
+  color: #0f1712 !important;
+}
+
+.dashboard-shell :is([data-slot='root'][data-orientation][class*='bg-error/10'][class*='text-error']),
+.site-shell :is([data-slot='root'][data-orientation][class*='bg-error/10'][class*='text-error']) {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ui-error) 86%, #fff 14%), color-mix(in srgb, var(--ui-error) 72%, #000 28%)) !important;
+  border-color: color-mix(in srgb, var(--ui-error) 62%, transparent) !important;
+  color: #fff6f8 !important;
+}
+
+.dashboard-shell :is([data-slot='root'][data-orientation][class*='bg-info/10'][class*='text-info']),
+.site-shell :is([data-slot='root'][data-orientation][class*='bg-info/10'][class*='text-info']) {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ui-info) 84%, #fff 16%), color-mix(in srgb, var(--ui-info) 68%, #000 32%)) !important;
+  border-color: color-mix(in srgb, var(--ui-info) 62%, transparent) !important;
+  color: #f5fbff !important;
+}
+
+/* Force admin overview KPI/panel card surfaces in dark mode from global scope */
+.dark .dashboard-admin-outer .admin-ops-shell :is(.admin-kpi-card, .admin-panel-card),
+.dark-mode .dashboard-admin-outer .admin-ops-shell :is(.admin-kpi-card, .admin-panel-card),
+[data-theme='dark'] .dashboard-admin-outer .admin-ops-shell :is(.admin-kpi-card, .admin-panel-card),
+[data-color-mode='dark'] .dashboard-admin-outer .admin-ops-shell :is(.admin-kpi-card, .admin-panel-card),
+html.dark .dashboard-admin-outer .admin-ops-shell :is(.admin-kpi-card, .admin-panel-card),
+html.dark-mode .dashboard-admin-outer .admin-ops-shell :is(.admin-kpi-card, .admin-panel-card),
+html[data-theme='dark'] .dashboard-admin-outer .admin-ops-shell :is(.admin-kpi-card, .admin-panel-card),
+html[data-color-mode='dark'] .dashboard-admin-outer .admin-ops-shell :is(.admin-kpi-card, .admin-panel-card) {
+  --admin-kpi-surface: color-mix(in srgb, #343434 88%, #2f2f2f 12%) !important;
+  background: var(--admin-kpi-surface) !important;
+}
+
+.dark .dashboard-admin-outer .admin-ops-shell .admin-kpi-card--revenue,
+.dark-mode .dashboard-admin-outer .admin-ops-shell .admin-kpi-card--revenue,
+[data-theme='dark'] .dashboard-admin-outer .admin-ops-shell .admin-kpi-card--revenue,
+[data-color-mode='dark'] .dashboard-admin-outer .admin-ops-shell .admin-kpi-card--revenue,
+html.dark .dashboard-admin-outer .admin-ops-shell .admin-kpi-card--revenue,
+html.dark-mode .dashboard-admin-outer .admin-ops-shell .admin-kpi-card--revenue,
+html[data-theme='dark'] .dashboard-admin-outer .admin-ops-shell .admin-kpi-card--revenue,
+html[data-color-mode='dark'] .dashboard-admin-outer .admin-ops-shell .admin-kpi-card--revenue {
+  --admin-kpi-surface: var(--gruv-accent) !important;
+  background: var(--gruv-accent) !important;
 }
 
 @media (max-width: 1023px) {
