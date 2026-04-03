@@ -6,18 +6,23 @@ import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 const open = ref(false)
 const route = useRoute()
 const router = useRouter()
+const nuxtApp = useNuxtApp()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const { isAdmin } = useCurrentUser()
 const topupRecoveryRunning = useState<boolean>('topup-recovery-running', () => false)
 const lastTopupRecoveryAt = useState<number>('topup-recovery-last-at', () => 0)
+const dashboardPageHooksBound = useState<boolean>('dashboard-page-hooks-bound', () => false)
 const dashboardNavProgress = ref(0)
+const DASHBOARD_PROGRESS_MIN_VISIBLE_MS = 420
+const DASHBOARD_PROGRESS_RESET_MS = 220
 
 let dashboardProgressTimer: ReturnType<typeof setInterval> | null = null
+let dashboardProgressDelayTimer: ReturnType<typeof setTimeout> | null = null
 let dashboardProgressResetTimer: ReturnType<typeof setTimeout> | null = null
 let removeDashboardBeforeGuard: (() => void) | null = null
-let removeDashboardAfterGuard: (() => void) | null = null
 let removeDashboardErrorGuard: (() => void) | null = null
+let dashboardProgressStartedAt = 0
 
 type SidebarMembershipRow = {
   tier: string | null
@@ -125,12 +130,6 @@ const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
         icon: 'i-lucide-layout-dashboard',
         to: '/dashboard/admin',
         exact: true,
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Ops Tools',
-        icon: 'i-lucide-wrench',
-        to: '/dashboard/admin/tools',
         onSelect: () => { open.value = false }
       },
       {
@@ -271,11 +270,12 @@ const sidebarLinks = computed<NavigationMenuItem[]>(() =>
 const sidebarClass = computed(() =>
   isAdminSidebarMode.value
     ? 'dashboard-sidebar-admin !border-0 shadow-none'
-    : 'bg-elevated/25'
+    : 'bg-elevated/25 !border-0 shadow-none'
 )
 
 const sidebarUi = computed(() => ({
-  footer: isAdminSidebarMode.value ? 'lg:border-t-0' : 'lg:border-t lg:border-default'
+  root: 'border-0 ring-0 shadow-none',
+  footer: 'lg:border-t-0'
 }))
 
 const supportLinks = [{
@@ -322,6 +322,10 @@ function clearDashboardProgressTimers() {
     clearInterval(dashboardProgressTimer)
     dashboardProgressTimer = null
   }
+  if (dashboardProgressDelayTimer) {
+    clearTimeout(dashboardProgressDelayTimer)
+    dashboardProgressDelayTimer = null
+  }
   if (dashboardProgressResetTimer) {
     clearTimeout(dashboardProgressResetTimer)
     dashboardProgressResetTimer = null
@@ -329,6 +333,11 @@ function clearDashboardProgressTimers() {
 }
 
 function startDashboardProgress() {
+  if (dashboardProgressDelayTimer) {
+    clearTimeout(dashboardProgressDelayTimer)
+    dashboardProgressDelayTimer = null
+  }
+
   if (dashboardProgressResetTimer) {
     clearTimeout(dashboardProgressResetTimer)
     dashboardProgressResetTimer = null
@@ -336,6 +345,9 @@ function startDashboardProgress() {
 
   if (dashboardNavProgress.value <= 0 || dashboardNavProgress.value >= 100) {
     dashboardNavProgress.value = 8
+    dashboardProgressStartedAt = Date.now()
+  } else if (!dashboardProgressStartedAt) {
+    dashboardProgressStartedAt = Date.now()
   }
 
   if (dashboardProgressTimer) return
@@ -353,14 +365,39 @@ function startDashboardProgress() {
 }
 
 function finishDashboardProgress() {
-  clearDashboardProgressTimers()
+  const completeProgress = () => {
+    if (dashboardProgressTimer) {
+      clearInterval(dashboardProgressTimer)
+      dashboardProgressTimer = null
+    }
+    dashboardNavProgress.value = 100
+    dashboardProgressStartedAt = 0
+
+    if (dashboardProgressResetTimer) {
+      clearTimeout(dashboardProgressResetTimer)
+    }
+    dashboardProgressResetTimer = setTimeout(() => {
+      dashboardNavProgress.value = 0
+      dashboardProgressResetTimer = null
+    }, DASHBOARD_PROGRESS_RESET_MS)
+  }
+
   if (dashboardNavProgress.value <= 0) return
 
-  dashboardNavProgress.value = 100
-  dashboardProgressResetTimer = setTimeout(() => {
-    dashboardNavProgress.value = 0
-    dashboardProgressResetTimer = null
-  }, 220)
+  const elapsed = dashboardProgressStartedAt > 0 ? (Date.now() - dashboardProgressStartedAt) : DASHBOARD_PROGRESS_MIN_VISIBLE_MS
+  const remainingVisibleMs = Math.max(0, DASHBOARD_PROGRESS_MIN_VISIBLE_MS - elapsed)
+  if (remainingVisibleMs > 0) {
+    if (dashboardProgressDelayTimer) {
+      clearTimeout(dashboardProgressDelayTimer)
+    }
+    dashboardProgressDelayTimer = setTimeout(() => {
+      dashboardProgressDelayTimer = null
+      completeProgress()
+    }, remainingVisibleMs)
+    return
+  }
+
+  completeProgress()
 }
 
 async function recoverPendingTopups() {
@@ -404,6 +441,8 @@ async function recoverPendingTopups() {
 }
 
 onMounted(() => {
+  document.body.classList.add('dashboard-ui')
+
   if (!removeDashboardBeforeGuard) {
     removeDashboardBeforeGuard = router.beforeEach((to, from) => {
       if (to.fullPath === from.fullPath) return
@@ -412,11 +451,14 @@ onMounted(() => {
     })
   }
 
-  if (!removeDashboardAfterGuard) {
-    removeDashboardAfterGuard = router.afterEach((to, from) => {
-      if (to.fullPath === from.fullPath) return
-      if (!(to.path.startsWith('/dashboard') && from.path.startsWith('/dashboard'))) return
-      finishDashboardProgress()
+  if (!dashboardPageHooksBound.value) {
+    dashboardPageHooksBound.value = true
+    nuxtApp.hook('page:finish', () => {
+      if (dashboardNavProgress.value > 0) finishDashboardProgress()
+    })
+
+    nuxtApp.hook('app:error', () => {
+      if (dashboardNavProgress.value > 0) finishDashboardProgress()
     })
   }
 
@@ -437,16 +479,12 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  document.body.classList.remove('dashboard-ui')
   clearDashboardProgressTimers()
 
   if (removeDashboardBeforeGuard) {
     removeDashboardBeforeGuard()
     removeDashboardBeforeGuard = null
-  }
-
-  if (removeDashboardAfterGuard) {
-    removeDashboardAfterGuard()
-    removeDashboardAfterGuard = null
   }
 
   if (removeDashboardErrorGuard) {
@@ -459,7 +497,7 @@ onBeforeUnmount(() => {
 <template>
   <UDashboardGroup
     unit="rem"
-    :class="{ 'dashboard-admin-outer': isAdminSidebarMode }"
+    :class="['dashboard-shell', { 'dashboard-admin-outer': isAdminSidebarMode }]"
   >
     <div class="pointer-events-none fixed inset-x-0 top-0 z-[80] h-1">
       <div
