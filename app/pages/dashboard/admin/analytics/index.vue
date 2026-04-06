@@ -236,6 +236,13 @@ async function copyValue(value: string, label: string) {
                 >
                   Open weekly report
                 </UButton>
+                <UButton
+                  size="sm"
+                  variant="soft"
+                  to="/dashboard/admin/analytics/integrations"
+                >
+                  Open integrations
+                </UButton>
               </div>
             </UCard>
           </div>

@@ -6,7 +6,8 @@ const links = [
   { label: 'Metrics', to: '/dashboard/admin/analytics/metrics' },
   { label: 'Trends', to: '/dashboard/admin/analytics/trends' },
   { label: 'Alerts', to: '/dashboard/admin/analytics/alerts' },
-  { label: 'Weekly report', to: '/dashboard/admin/analytics/report' }
+  { label: 'Weekly report', to: '/dashboard/admin/analytics/report' },
+  { label: 'Integrations', to: '/dashboard/admin/analytics/integrations' }
 ]
 
 function isActive(path: string) {

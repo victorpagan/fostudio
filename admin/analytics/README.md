@@ -38,7 +38,16 @@ Set these to enable Supabase ingestion:
 
 ## Ads Ingestion Requirements (Real Data)
 
-Ads ingest reads from Supabase table(s), prioritizing:
+Ads data is loaded in two phases:
+
+1. `pnpm analytics:ads:sync` pulls from platform APIs (if configured) and upserts into `analytics_ad_daily`.
+2. `ingest_ads.ts` reads Supabase ad tables for pipeline normalization.
+
+Canonical table:
+
+- `analytics_ad_daily` (created by migration `20260406193000_analytics_ad_daily.sql`)
+
+Legacy fallback read order:
 
 1. `analytics_ad_daily`
 2. `analytics_ads_daily`
@@ -55,6 +64,34 @@ Expected columns:
 - `conversions` (number)
 
 Current migration in this repo creates `analytics_ad_daily` as canonical.
+
+### Ads integrations config keys
+
+Store these in `system_config` (editable from `/dashboard/admin/analytics/integrations`):
+
+- `analytics_ads_sync_enabled`
+- `analytics_ads_lookback_days`
+- `analytics_ads_google_enabled`
+- `analytics_ads_google_customer_id`
+- `analytics_ads_google_login_customer_id`
+- `analytics_ads_google_api_version`
+- `analytics_ads_google_developer_token_secret_name`
+- `analytics_ads_google_client_id_secret_name`
+- `analytics_ads_google_client_secret_secret_name`
+- `analytics_ads_google_refresh_token_secret_name`
+- `analytics_ads_meta_enabled`
+- `analytics_ads_meta_ad_account_id`
+- `analytics_ads_meta_api_version`
+- `analytics_ads_meta_access_token_secret_name`
+- `analytics_ads_meta_conversion_action_types`
+
+Note: Meta Marketing API data includes Instagram placements when campaigns serve there.
+
+Secrets are referenced by name. Actual secret values should be set in Supabase secrets/vault.
+
+Manual sync endpoint (admin auth required):
+
+- `POST /api/admin/analytics/integrations/sync` (body: `{ "dryRun": true|false }`)
 
 ## API access for chat/integrations
 
@@ -120,6 +157,7 @@ Run from repo root:
 
 ```bash
 pnpm analytics:ingest
+pnpm analytics:ads:sync
 pnpm analytics:compute
 pnpm analytics:report
 pnpm analytics:publish

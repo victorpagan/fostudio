@@ -14,10 +14,35 @@ type AdRow = {
   conversions: number | string | null
 }
 
+type SystemConfigRow = {
+  key: string
+  value: unknown
+}
+
+type AdsSyncStatusProvider = {
+  platform?: string
+  enabled?: boolean
+  ok?: boolean
+  skippedReason?: string | null
+}
+
+type AdsSyncStatus = {
+  ok?: boolean
+  sync_enabled?: boolean
+  providers?: AdsSyncStatusProvider[]
+}
+
 const CANDIDATE_TABLES = [
   'analytics_ad_daily',
   'analytics_ads_daily',
   'ad_performance_daily'
+] as const
+
+const ADS_SETTINGS_KEYS = [
+  'analytics_ads_sync_enabled',
+  'analytics_ads_google_enabled',
+  'analytics_ads_meta_enabled',
+  'analytics_ads_last_sync_status'
 ] as const
 
 function normalizePlatform(value: string | null | undefined): RawAdRecord['platform'] {
@@ -39,6 +64,36 @@ function normalizeAdRow(row: AdRow): RawAdRecord {
   }
 }
 
+function asBoolean(value: unknown, fallback: boolean) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (!normalized) return fallback
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false
+  }
+  return fallback
+}
+
+function mapConfigRows(rows: SystemConfigRow[]) {
+  return new Map(rows.map(row => [row.key, row.value] as const))
+}
+
+function readSyncStatus(value: unknown): AdsSyncStatus | null {
+  if (!value || typeof value !== 'object') return null
+  return value as AdsSyncStatus
+}
+
+function hasSuccessfulProviderSync(status: AdsSyncStatus | null) {
+  if (!status || !Array.isArray(status.providers)) return false
+  return status.providers.some(provider =>
+    Boolean(provider?.enabled)
+    && provider?.ok === true
+    && !provider?.skippedReason
+  )
+}
+
 async function loadFromSupabase() {
   const supabase = createSupabaseClient()
   if (!supabase) {
@@ -50,6 +105,31 @@ async function loadFromSupabase() {
   }
 
   const notes: string[] = []
+  const settingsRes = await supabase
+    .from('system_config')
+    .select('key,value')
+    .in('key', [...ADS_SETTINGS_KEYS])
+
+  if (settingsRes.error) {
+    notes.push(`Could not read analytics ads settings: ${settingsRes.error.message}`)
+  }
+
+  const configMap = mapConfigRows((settingsRes.data ?? []) as SystemConfigRow[])
+  const globalEnabled = asBoolean(configMap.get('analytics_ads_sync_enabled'), false)
+  const googleEnabled = asBoolean(configMap.get('analytics_ads_google_enabled'), false)
+  const metaEnabled = asBoolean(configMap.get('analytics_ads_meta_enabled'), false)
+  const anyProviderEnabled = googleEnabled || metaEnabled
+
+  if (!globalEnabled || !anyProviderEnabled) {
+    return {
+      source: 'unavailable' as IngestSource,
+      records: [] as RawAdRecord[],
+      notes: [
+        ...notes,
+        'Ads source is unavailable because analytics ads sync is disabled or no ad platform is enabled.'
+      ]
+    }
+  }
 
   for (const table of CANDIDATE_TABLES) {
     const { data, error } = await supabase
@@ -63,6 +143,18 @@ async function loadFromSupabase() {
     }
 
     const rows = ((data ?? []) as AdRow[]).map(normalizeAdRow)
+    const status = readSyncStatus(configMap.get('analytics_ads_last_sync_status'))
+
+    if (rows.length === 0 && !hasSuccessfulProviderSync(status)) {
+      return {
+        source: 'unavailable' as IngestSource,
+        records: [] as RawAdRecord[],
+        notes: [
+          ...notes,
+          `Table ${table} returned 0 rows and no successful provider sync was recorded.`
+        ]
+      }
+    }
 
     return {
       source: 'supabase' as IngestSource,
