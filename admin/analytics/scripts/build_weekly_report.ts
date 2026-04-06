@@ -7,36 +7,76 @@ import {
   WEEKLY_REPORT_MD_PATH
 } from './lib/constants'
 import { readJsonFile, writeJsonFile, writeTextFile } from './lib/fs'
-import type { AlertsOutputItem, MetricsOutput, TrendsOutput, WeeklyReportJson } from './lib/types'
+import type {
+  AlertsOutputItem,
+  DataAvailability,
+  IngestSource,
+  MetricsOutput,
+  TrendsOutput,
+  WeeklyReportJson
+} from './lib/types'
 
-function asPct(value: number) {
+function isNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function asPct(value: number | null | undefined) {
+  if (!isNumber(value)) return 'Data unavailable'
   const sign = value > 0 ? '+' : ''
   return `${sign}${value.toFixed(1)}%`
 }
 
-function asCurrency(value: number) {
+function asCurrency(value: number | null | undefined) {
+  if (!isNumber(value)) return 'Data unavailable'
   return `$${value.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 }
 
-function asInt(value: number) {
-  return Math.round(value)
+function asInt(value: number | null | undefined) {
+  if (!isNumber(value)) return 'Data unavailable'
+  return String(Math.round(value))
+}
+
+function asHours(value: number | null | undefined) {
+  if (!isNumber(value)) return 'Data unavailable'
+  return value.toFixed(1)
+}
+
+function asUtilization(value: number | null | undefined) {
+  if (!isNumber(value)) return 'Data unavailable'
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function isAvailable(source: IngestSource) {
+  return source === 'supabase'
+}
+
+function sourceLabel(source: IngestSource) {
+  return isAvailable(source) ? 'Available' : 'Data unavailable'
 }
 
 function buildWhatChanged(metrics: MetricsOutput, trends: TrendsOutput) {
   const items: string[] = []
 
-  if (metrics.week.revenue_wow_pct >= 0) {
-    items.push(`Revenue increased ${asPct(metrics.week.revenue_wow_pct)} week-over-week.`)
+  if (isNumber(metrics.week.revenue_wow_pct)) {
+    if (metrics.week.revenue_wow_pct >= 0) {
+      items.push(`Revenue increased ${asPct(metrics.week.revenue_wow_pct)} week-over-week.`)
+    } else {
+      items.push(`Revenue declined ${asPct(metrics.week.revenue_wow_pct)} week-over-week.`)
+    }
   } else {
-    items.push(`Revenue declined ${asPct(metrics.week.revenue_wow_pct)} week-over-week.`)
+    items.push('Revenue trend is unavailable because revenue data is missing.')
   }
 
-  if (metrics.week.net_members > 0) {
-    items.push(`Membership growth was net +${metrics.week.net_members} this week.`)
-  } else if (metrics.week.net_members < 0) {
-    items.push(`Memberships net changed by ${metrics.week.net_members} this week.`)
+  if (isNumber(metrics.week.net_members)) {
+    if (metrics.week.net_members > 0) {
+      items.push(`Membership growth was net +${metrics.week.net_members} this week.`)
+    } else if (metrics.week.net_members < 0) {
+      items.push(`Memberships net changed by ${metrics.week.net_members} this week.`)
+    } else {
+      items.push('Membership count was flat week-over-week.')
+    }
   } else {
-    items.push('Membership count was flat week-over-week.')
+    items.push('Membership growth trend is unavailable because membership data is missing.')
   }
 
   const utilizationSeries = trends.utilization_by_week
@@ -48,6 +88,8 @@ function buildWhatChanged(metrics: MetricsOutput, trends: TrendsOutput) {
     } else {
       items.push('Studio utilization softened versus the previous week.')
     }
+  } else if (!isAvailable(metrics.data_availability.bookings)) {
+    items.push('Utilization trend is unavailable because booking data is missing.')
   }
 
   return items.slice(0, 3)
@@ -56,8 +98,14 @@ function buildWhatChanged(metrics: MetricsOutput, trends: TrendsOutput) {
 function buildRecommendedActions(metrics: MetricsOutput, alerts: AlertsOutputItem[]) {
   const actions: string[] = []
 
-  if (metrics.ads.meta.cost_per_conversion > 0 && metrics.ads.google.cost_per_conversion > 0) {
-    if (metrics.ads.meta.cost_per_conversion > metrics.ads.google.cost_per_conversion * 1.5) {
+  if (!isAvailable(metrics.data_availability.ads)) {
+    actions.push('Connect Google Ads and Meta Ads data ingestion so paid-channel performance can be measured accurately.')
+  }
+
+  const metaCpa = metrics.ads.meta?.cost_per_conversion
+  const googleCpa = metrics.ads.google?.cost_per_conversion
+  if (isNumber(metaCpa) && isNumber(googleCpa) && metaCpa > 0 && googleCpa > 0) {
+    if (metaCpa > googleCpa * 1.5) {
       actions.push('Shift 20-30% of Meta budget to high-intent Google Search campaigns.')
     }
   }
@@ -66,18 +114,26 @@ function buildRecommendedActions(metrics: MetricsOutput, alerts: AlertsOutputIte
     actions.push('Run a Wednesday fill-rate promotion with a booking deadline and reminder email.')
   }
 
-  if (metrics.week.new_members > 0 || metrics.week.bookings_total > 0) {
+  if (isNumber(metrics.week.new_members) && isNumber(metrics.week.bookings_total) && (metrics.week.new_members > 0 || metrics.week.bookings_total > 0)) {
     actions.push('Promote first-booker membership upgrade offer in follow-up email and Instagram stories.')
+  }
+
+  if (!isAvailable(metrics.data_availability.memberships)) {
+    actions.push('Verify membership sync health in Supabase so retention and growth recommendations are based on live data.')
   }
 
   if (actions.length < 3) {
     actions.push('Send a targeted Creator-tier nurture campaign focused on underused credits and session planning.')
   }
 
-  return actions.slice(0, 3)
+  return [...new Set(actions)].slice(0, 3)
 }
 
 function buildEmailRecommendations(metrics: MetricsOutput) {
+  const activeMembersLabel = isNumber(metrics.week.active_members)
+    ? String(metrics.week.active_members)
+    : 'Data unavailable'
+
   return [
     {
       campaign_name: 'First-Time Booker to Member Upgrade',
@@ -115,15 +171,23 @@ function buildEmailRecommendations(metrics: MetricsOutput) {
     }
   ].map(recommendation => ({
     ...recommendation,
-    objective: recommendation.objective,
-    audience: recommendation.audience,
-    key_points: recommendation.key_points,
-    subject_options: recommendation.subject_options,
-    send_window: recommendation.send_window,
-    cta: recommendation.cta,
-    campaign_name: recommendation.campaign_name,
-    note: `Weekly active members: ${metrics.week.active_members}`
+    note: `Weekly active members: ${activeMembersLabel}`
   }))
+}
+
+function safeAvailability(input: DataAvailability | undefined): DataAvailability {
+  return input ?? {
+    memberships: 'unavailable',
+    bookings: 'unavailable',
+    revenue: 'unavailable',
+    ads: 'unavailable',
+    notes: {
+      memberships: [],
+      bookings: [],
+      revenue: [],
+      ads: []
+    }
+  }
 }
 
 async function run() {
@@ -140,12 +204,14 @@ async function run() {
   const safeTrends: TrendsOutput = trends ?? {
     generated_at: new Date().toISOString(),
     week_of: metrics.week_of,
+    data_availability: metrics.data_availability,
     revenue_by_week: [],
     members_by_week: [],
     utilization_by_week: []
   }
 
   const safeAlerts = alerts ?? []
+  const availability = safeAvailability(metrics.data_availability)
 
   const whatChanged = buildWhatChanged(metrics, safeTrends)
   const recommendedActions = buildRecommendedActions(metrics, safeAlerts)
@@ -154,6 +220,7 @@ async function run() {
   const jsonReport: WeeklyReportJson = {
     generated_at: new Date().toISOString(),
     week_of: metrics.week_of,
+    data_availability: availability,
     snapshot: {
       revenue: metrics.week.revenue_total,
       revenue_wow_pct: metrics.week.revenue_wow_pct,
@@ -180,6 +247,14 @@ async function run() {
     email_recommendations: emailRecommendations
   }
 
+  const googleAdsLine = metrics.ads.google
+    ? `${asCurrency(metrics.ads.google.spend)} spend, ${asInt(metrics.ads.google.conversions)} conversions, ${asCurrency(metrics.ads.google.cost_per_conversion)} CPA`
+    : 'Data unavailable.'
+
+  const metaAdsLine = metrics.ads.meta
+    ? `${asCurrency(metrics.ads.meta.spend)} spend, ${asInt(metrics.ads.meta.conversions)} conversions, ${asCurrency(metrics.ads.meta.cost_per_conversion)} CPA`
+    : 'Data unavailable.'
+
   const markdown = [
     '# FO Studio Weekly Report',
     `Week of: ${metrics.week_of}`,
@@ -187,8 +262,8 @@ async function run() {
     '## Snapshot',
     `- Revenue: ${asCurrency(metrics.week.revenue_total)} (${asPct(metrics.week.revenue_wow_pct)} WoW)`,
     `- Bookings: ${asInt(metrics.week.bookings_total)}`,
-    `- Booked hours: ${metrics.week.booked_hours.toFixed(1)}`,
-    `- Utilization: ${(metrics.week.utilization_rate * 100).toFixed(1)}%`,
+    `- Booked hours: ${asHours(metrics.week.booked_hours)}`,
+    `- Utilization: ${asUtilization(metrics.week.utilization_rate)}`,
     `- Active members: ${asInt(metrics.week.active_members)}`,
     `- New members: ${asInt(metrics.week.new_members)}`,
     `- Cancellations: ${asInt(metrics.week.canceled_members)}`,
@@ -197,11 +272,17 @@ async function run() {
     `- ${analyticsMetricDefinitions.tierLabels.creator}: ${asInt(metrics.tiers.creator)}`,
     `- ${analyticsMetricDefinitions.tierLabels.pro}: ${asInt(metrics.tiers.pro)}`,
     `- ${analyticsMetricDefinitions.tierLabels.studio_plus}: ${asInt(metrics.tiers.studio_plus)}`,
-    `- Net growth: ${metrics.week.net_members >= 0 ? '+' : ''}${asInt(metrics.week.net_members)}`,
+    `- Net growth: ${isNumber(metrics.week.net_members) ? `${metrics.week.net_members >= 0 ? '+' : ''}${asInt(metrics.week.net_members)}` : 'Data unavailable'}`,
     '',
     '## Marketing',
-    `- Google Ads: ${asCurrency(metrics.ads.google.spend)} spend, ${asInt(metrics.ads.google.conversions)} conversions, ${asCurrency(metrics.ads.google.cost_per_conversion)} CPA`,
-    `- Meta Ads: ${asCurrency(metrics.ads.meta.spend)} spend, ${asInt(metrics.ads.meta.conversions)} conversions, ${asCurrency(metrics.ads.meta.cost_per_conversion)} CPA`,
+    `- Google Ads: ${googleAdsLine}`,
+    `- Meta Ads: ${metaAdsLine}`,
+    '',
+    '## Data availability',
+    `- Memberships: ${sourceLabel(availability.memberships)}`,
+    `- Bookings: ${sourceLabel(availability.bookings)}`,
+    `- Revenue: ${sourceLabel(availability.revenue)}`,
+    `- Ads: ${sourceLabel(availability.ads)}`,
     '',
     '## What changed',
     ...whatChanged.map(item => `- ${item}`),
@@ -229,7 +310,8 @@ async function run() {
 
   console.log('[analytics] weekly report generated', {
     week_of: jsonReport.week_of,
-    alerts: safeAlerts.length
+    alerts: safeAlerts.length,
+    ads_available: availability.ads === 'supabase'
   })
 }
 

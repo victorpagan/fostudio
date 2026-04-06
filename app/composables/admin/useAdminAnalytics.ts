@@ -1,41 +1,57 @@
 export type AnalyticsSeverity = 'low' | 'medium' | 'high'
+export type AnalyticsSource = 'supabase' | 'unavailable'
+
+type AvailabilityBlock = {
+  memberships?: AnalyticsSource
+  bookings?: AnalyticsSource
+  revenue?: AnalyticsSource
+  ads?: AnalyticsSource
+  notes?: {
+    memberships?: string[]
+    bookings?: string[]
+    revenue?: string[]
+    ads?: string[]
+  }
+}
 
 export type AnalyticsPayload = {
   metrics: {
     generated_at?: string
     week_of?: string
+    data_availability?: AvailabilityBlock
     week?: {
-      revenue_total?: number
-      revenue_wow_pct?: number
-      bookings_total?: number
-      booked_hours?: number
-      utilization_rate?: number
-      active_members?: number
-      new_members?: number
-      canceled_members?: number
-      net_members?: number
+      revenue_total?: number | null
+      revenue_wow_pct?: number | null
+      bookings_total?: number | null
+      booked_hours?: number | null
+      utilization_rate?: number | null
+      active_members?: number | null
+      new_members?: number | null
+      canceled_members?: number | null
+      net_members?: number | null
     }
     tiers?: {
-      creator?: number
-      pro?: number
-      studio_plus?: number
+      creator?: number | null
+      pro?: number | null
+      studio_plus?: number | null
     }
     ads?: {
       google?: {
-        spend?: number
-        conversions?: number
-        cost_per_conversion?: number
-      }
+        spend?: number | null
+        conversions?: number | null
+        cost_per_conversion?: number | null
+      } | null
       meta?: {
-        spend?: number
-        conversions?: number
-        cost_per_conversion?: number
-      }
+        spend?: number | null
+        conversions?: number | null
+        cost_per_conversion?: number | null
+      } | null
     }
   } | null
   trends: {
     generated_at?: string
     week_of?: string
+    data_availability?: AvailabilityBlock
     revenue_by_week?: Array<{ week: string, value: number }>
     members_by_week?: Array<{ week: string, active: number, new_members?: number, canceled_members?: number }>
     utilization_by_week?: Array<{ week: string, value: number, booked_hours?: number }>
@@ -50,6 +66,7 @@ export type AnalyticsPayload = {
   weeklyReportJson: {
     generated_at?: string
     week_of?: string
+    data_availability?: AvailabilityBlock
     recommended_next_actions?: string[]
     email_recommendations?: Array<{
       campaign_name?: string
@@ -80,7 +97,12 @@ export async function useAdminAnalyticsData(keySuffix = 'default') {
   return { data, pending, refresh, error, status }
 }
 
-export function formatAnalyticsCurrency(value: number) {
+function isNumeric(value: number | null | undefined): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+export function formatAnalyticsCurrency(value: number | null | undefined) {
+  if (!isNumeric(value)) return 'Data unavailable'
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
@@ -88,12 +110,24 @@ export function formatAnalyticsCurrency(value: number) {
   }).format(value)
 }
 
-export function formatAnalyticsNumber(value: number) {
+export function formatAnalyticsNumber(value: number | null | undefined) {
+  if (!isNumeric(value)) return 'Data unavailable'
   return new Intl.NumberFormat('en-US').format(Math.round(value))
 }
 
-export function formatAnalyticsSignedPct(value: number) {
+export function formatAnalyticsSignedPct(value: number | null | undefined) {
+  if (!isNumeric(value)) return 'Data unavailable'
   return value > 0 ? `+${value.toFixed(1)}%` : `${value.toFixed(1)}%`
+}
+
+export function formatAnalyticsHours(value: number | null | undefined, digits = 1) {
+  if (!isNumeric(value)) return 'Data unavailable'
+  return value.toFixed(digits)
+}
+
+export function formatAnalyticsRatioPct(value: number | null | undefined, digits = 1) {
+  if (!isNumeric(value)) return 'Data unavailable'
+  return `${(value * 100).toFixed(digits)}%`
 }
 
 export function formatAnalyticsDatetime(value: string | null | undefined) {

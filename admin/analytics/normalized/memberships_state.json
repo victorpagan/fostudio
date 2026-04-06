@@ -61,10 +61,10 @@
     "customer_id": "39efa596-dc41-43d1-a858-ff0c6edc7644",
     "tier": "studio_plus",
     "cadence": "monthly",
-    "status": "active",
+    "status": "canceled",
     "amount": 950,
     "created_at": "2026-03-09T21:36:08.486982+00:00",
-    "canceled_at": null,
+    "canceled_at": "2026-04-06T02:22:51.441+00:00",
     "current_period_start": "2026-03-11T00:00:00+00:00",
     "current_period_end": "2026-04-13T00:00:00+00:00",
     "last_paid_at": "2026-03-13T12:47:23.113+00:00"

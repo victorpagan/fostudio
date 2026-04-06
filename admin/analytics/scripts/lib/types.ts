@@ -1,7 +1,22 @@
 export type TierKey = 'creator' | 'pro' | 'studio_plus' | 'other'
 export type AdPlatform = 'meta' | 'google' | 'other'
 
-export type IngestSource = 'supabase' | 'csv'
+export type IngestSource = 'supabase' | 'unavailable'
+
+export type SourceNotesMap = {
+  memberships: string[]
+  bookings: string[]
+  revenue: string[]
+  ads: string[]
+}
+
+export type DataAvailability = {
+  memberships: IngestSource
+  bookings: IngestSource
+  revenue: IngestSource
+  ads: IngestSource
+  notes: SourceNotesMap
+}
 
 export type IngestManifest = {
   generated_at: string
@@ -121,41 +136,42 @@ export type NormalizedAdRecord = NormalizedDateDims & {
 }
 
 export type WeeklyMetrics = {
-  revenue_total: number
-  revenue_wow_pct: number
-  bookings_total: number
-  booked_hours: number
-  utilization_rate: number
-  active_members: number
-  new_members: number
-  canceled_members: number
-  net_members: number
+  revenue_total: number | null
+  revenue_wow_pct: number | null
+  bookings_total: number | null
+  booked_hours: number | null
+  utilization_rate: number | null
+  active_members: number | null
+  new_members: number | null
+  canceled_members: number | null
+  net_members: number | null
 }
 
 export type PlatformSummary = {
-  spend: number
-  conversions: number
-  cost_per_conversion: number
+  spend: number | null
+  conversions: number | null
+  cost_per_conversion: number | null
 }
 
 export type MetricsOutput = {
   generated_at: string
   week_of: string
+  data_availability: DataAvailability
   week: WeeklyMetrics
   tiers: {
-    creator: number
-    pro: number
-    studio_plus: number
+    creator: number | null
+    pro: number | null
+    studio_plus: number | null
   }
   ads: {
-    google: PlatformSummary
-    meta: PlatformSummary
+    google: PlatformSummary | null
+    meta: PlatformSummary | null
   }
 }
 
 export type AlertsOutputItem = {
   severity: 'low' | 'medium' | 'high'
-  type: 'ads' | 'retention' | 'bookings' | 'revenue' | 'memberships' | 'channel'
+  type: 'ads' | 'retention' | 'bookings' | 'revenue' | 'memberships' | 'channel' | 'data'
   title: string
   detail: string
 }
@@ -163,6 +179,7 @@ export type AlertsOutputItem = {
 export type TrendsOutput = {
   generated_at: string
   week_of: string
+  data_availability: DataAvailability
   revenue_by_week: Array<{ week: string, value: number }>
   members_by_week: Array<{ week: string, active: number, new_members: number, canceled_members: number }>
   utilization_by_week: Array<{ week: string, value: number, booked_hours: number }>
@@ -171,25 +188,26 @@ export type TrendsOutput = {
 export type WeeklyReportJson = {
   generated_at: string
   week_of: string
+  data_availability: DataAvailability
   snapshot: {
-    revenue: number
-    revenue_wow_pct: number
-    bookings: number
-    booked_hours: number
-    utilization_rate: number
-    active_members: number
-    new_members: number
-    cancellations: number
+    revenue: number | null
+    revenue_wow_pct: number | null
+    bookings: number | null
+    booked_hours: number | null
+    utilization_rate: number | null
+    active_members: number | null
+    new_members: number | null
+    cancellations: number | null
   }
   memberships: {
-    creator: number
-    pro: number
-    studio_plus: number
-    net_growth: number
+    creator: number | null
+    pro: number | null
+    studio_plus: number | null
+    net_growth: number | null
   }
   marketing: {
-    google_ads: PlatformSummary
-    meta_ads: PlatformSummary
+    google_ads: PlatformSummary | null
+    meta_ads: PlatformSummary | null
   }
   what_changed: string[]
   alerts: string[]
@@ -202,5 +220,6 @@ export type WeeklyReportJson = {
     key_points: string[]
     cta: string
     send_window: string
+    note?: string
   }>
 }

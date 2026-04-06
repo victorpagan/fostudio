@@ -1,16 +1,13 @@
 import { DateTime } from 'luxon'
 import {
-  INPUT_BOOKINGS_CSV_PATH,
-  INPUT_REVENUE_CSV_PATH,
   RAW_BOOKINGS_PATH,
   RAW_REVENUE_PATH
 } from './lib/constants'
-import { readCsv } from './lib/csv'
 import { toDateDims } from './lib/dates'
 import { writeJsonFile } from './lib/fs'
-import { toNumber, toStringOrNull } from './lib/parse'
+import { toStringOrNull } from './lib/parse'
 import { createSupabaseClient } from './lib/supabase'
-import type { IngestManifest, RawBookingRecord, RawRevenueEventRecord } from './lib/types'
+import type { IngestManifest, IngestSource, RawBookingRecord, RawRevenueEventRecord } from './lib/types'
 
 type BookingRow = {
   id: string
@@ -27,9 +24,6 @@ type OrderRow = {
   orderId: string | null
   total: number | null
   state: string | null
-  created: string | null
-  user_id: string | null
-  email: string | null
 }
 
 type VariationRow = {
@@ -46,14 +40,12 @@ type MembershipSessionRow = {
   cadence: string | null
   claimed_by_user_id: string | null
   customer_id: string | null
-  status: string
 }
 
 type TopupRow = {
   paid_at: string | null
   user_id: string | null
   amount_cents: number | null
-  status: string
 }
 
 function hoursBetween(startIso: string, endIso: string) {
@@ -61,39 +53,6 @@ function hoursBetween(startIso: string, endIso: string) {
   const end = DateTime.fromISO(endIso)
   if (!start.isValid || !end.isValid || end <= start) return 0
   return Number(end.diff(start, 'hours').hours.toFixed(2))
-}
-
-function normalizeBookingFromCsv(row: Record<string, string>, idx: number): RawBookingRecord {
-  const start = String(row.start_time || row.date || new Date().toISOString())
-  const end = String(row.end_time || start)
-  const hours = toNumber(row.hours, hoursBetween(start, end))
-
-  return {
-    booking_id: String(row.booking_id || `csv-booking-${idx + 1}`).trim(),
-    customer_id: String(row.customer_id || row.user_id || `csv-customer-${idx + 1}`).trim(),
-    user_id: toStringOrNull(row.user_id),
-    start_time: start,
-    end_time: end,
-    status: String(row.status || 'confirmed').trim().toLowerCase(),
-    hours,
-    revenue: toNumber(row.revenue, 0),
-    booking_type: (String(row.booking_type || (row.user_id ? 'member' : 'guest')).trim().toLowerCase() as RawBookingRecord['booking_type']),
-    channel: String(row.channel || 'website').trim().toLowerCase()
-  }
-}
-
-function normalizeRevenueFromCsv(row: Record<string, string>): RawRevenueEventRecord {
-  const date = String(row.date || row.paid_at || new Date().toISOString())
-  return {
-    date,
-    user_id: toStringOrNull(row.user_id),
-    customer_id: toStringOrNull(row.customer_id),
-    source: (String(row.source || 'other').trim().toLowerCase() as RawRevenueEventRecord['source']),
-    amount: toNumber(row.amount, 0),
-    order_id: toStringOrNull(row.order_id),
-    tier: toStringOrNull(row.tier),
-    cadence: toStringOrNull(row.cadence)
-  }
 }
 
 function toPricingMap(rows: VariationRow[]) {
@@ -127,10 +86,10 @@ async function loadFromSupabase() {
   const supabase = createSupabaseClient()
   if (!supabase) {
     return {
-      ok: false,
+      source: 'unavailable' as IngestSource,
       bookings: [] as RawBookingRecord[],
       revenue: [] as RawRevenueEventRecord[],
-      notes: ['Supabase credentials were not found; CSV fallback will be used.']
+      notes: ['Supabase credentials were not found. Booking and revenue data are unavailable.']
     }
   }
 
@@ -148,11 +107,11 @@ async function loadFromSupabase() {
       .limit(10000),
     supabase
       .from('orders2')
-      .select('orderId,total,state,created,user_id,email')
+      .select('orderId,total,state')
       .limit(10000),
     supabase
       .from('membership_checkout_sessions')
-      .select('paid_at,plan_variation_id,tier,cadence,claimed_by_user_id,customer_id,status')
+      .select('paid_at,plan_variation_id,tier,cadence,claimed_by_user_id,customer_id')
       .not('paid_at', 'is', null)
       .limit(8000),
     supabase
@@ -161,13 +120,13 @@ async function loadFromSupabase() {
       .limit(200),
     supabase
       .from('credit_topup_sessions')
-      .select('paid_at,user_id,amount_cents,status')
+      .select('paid_at,user_id,amount_cents')
       .eq('status', 'processed')
       .not('paid_at', 'is', null)
       .limit(10000),
     supabase
       .from('hold_topup_sessions')
-      .select('paid_at,user_id,amount_cents,status')
+      .select('paid_at,user_id,amount_cents')
       .eq('status', 'processed')
       .not('paid_at', 'is', null)
       .limit(10000)
@@ -184,7 +143,7 @@ async function loadFromSupabase() {
 
   if (failed.length) {
     return {
-      ok: false,
+      source: 'unavailable' as IngestSource,
       bookings: [] as RawBookingRecord[],
       revenue: [] as RawRevenueEventRecord[],
       notes: [`Supabase bookings/revenue query failed: ${failed[0]?.message ?? 'unknown error'}`]
@@ -297,7 +256,7 @@ async function loadFromSupabase() {
   }
 
   return {
-    ok: true,
+    source: 'supabase' as IngestSource,
     bookings,
     revenue,
     notes: [
@@ -307,55 +266,21 @@ async function loadFromSupabase() {
   }
 }
 
-async function loadFromCsv() {
-  const [bookingRows, revenueRows] = await Promise.all([
-    readCsv(INPUT_BOOKINGS_CSV_PATH),
-    readCsv(INPUT_REVENUE_CSV_PATH)
-  ])
-
-  const bookings = bookingRows.map((row, idx) => normalizeBookingFromCsv(row, idx))
-  const revenue = revenueRows.map(row => normalizeRevenueFromCsv(row))
-
-  return {
-    bookings,
-    revenue,
-    notes: [
-      `Loaded ${bookings.length} booking rows from CSV (${INPUT_BOOKINGS_CSV_PATH}).`,
-      `Loaded ${revenue.length} revenue rows from CSV (${INPUT_REVENUE_CSV_PATH}).`
-    ]
-  }
-}
-
 async function run() {
-  const requireSupabase = process.env.ANALYTICS_REQUIRE_SUPABASE === '1'
-    || process.argv.includes('--require-supabase')
-
-  const supabaseResult = await loadFromSupabase()
-  const useCsvFallback = !supabaseResult.ok
-  if (requireSupabase && useCsvFallback) {
-    throw new Error(`[analytics] Supabase required for bookings ingest but unavailable. ${supabaseResult.notes.join(' ')}`)
-  }
-
-  const csvResult = useCsvFallback
-    ? await loadFromCsv()
-    : { bookings: [] as RawBookingRecord[], revenue: [] as RawRevenueEventRecord[], notes: [] as string[] }
-
-  const source = useCsvFallback ? 'csv' : 'supabase'
-  const bookings = useCsvFallback ? csvResult.bookings : supabaseResult.bookings
-  const revenue = useCsvFallback ? csvResult.revenue : supabaseResult.revenue
+  const result = await loadFromSupabase()
 
   const manifest: IngestManifest = {
     generated_at: new Date().toISOString(),
-    source,
-    notes: [...supabaseResult.notes, ...csvResult.notes]
+    source: result.source,
+    notes: result.notes
   }
 
   await Promise.all([
-    writeJsonFile(RAW_BOOKINGS_PATH, { manifest, records: bookings }),
-    writeJsonFile(RAW_REVENUE_PATH, { manifest, records: revenue })
+    writeJsonFile(RAW_BOOKINGS_PATH, { manifest, records: result.bookings }),
+    writeJsonFile(RAW_REVENUE_PATH, { manifest, records: result.revenue })
   ])
 
-  console.log(`[analytics] bookings ingest complete: ${bookings.length} bookings, ${revenue.length} revenue events (${source})`)
+  console.log(`[analytics] bookings ingest complete: ${result.bookings.length} bookings, ${result.revenue.length} revenue events (${result.source})`)
 }
 
 run().catch((error: unknown) => {

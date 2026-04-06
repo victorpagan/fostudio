@@ -1,6 +1,12 @@
 [
   {
     "severity": "medium",
+    "type": "data",
+    "title": "Ads data unavailable",
+    "detail": "Google/Meta ad performance is unavailable, so paid-channel metrics and CPA alerts may be incomplete. Table analytics_ad_daily unavailable: relation \"public.analytics_ad_daily\" does not exist"
+  },
+  {
+    "severity": "medium",
     "type": "revenue",
     "title": "Revenue trend softened week-over-week",
     "detail": "Revenue is down 28.9% week-over-week."

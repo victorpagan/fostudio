@@ -10,14 +10,14 @@ const ARTIFACT_MAP = {
 } as const
 
 type SummaryPayload = {
-  revenue_total: number
-  new_members: number
-  active_members: number
+  revenue_total: number | null
+  new_members: number | null
+  active_members: number | null
 }
 
 function asNumber(value: unknown) {
   const num = Number(value)
-  return Number.isFinite(num) ? num : 0
+  return Number.isFinite(num) ? num : null
 }
 
 export function buildAnalyticsArtifactList(outputs: Pick<AnalyticsOutputsPayload, 'missingFiles'>) {

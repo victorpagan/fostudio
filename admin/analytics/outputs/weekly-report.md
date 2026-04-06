@@ -6,30 +6,37 @@ Week of: 2026-03-30
 - Bookings: 5
 - Booked hours: 10.0
 - Utilization: 5.9%
-- Active members: 6
+- Active members: 5
 - New members: 3
-- Cancellations: 0
+- Cancellations: 1
 
 ## Memberships
 - Creator: 2
 - Pro: 1
-- Studio+: 2
-- Net growth: +3
+- Studio+: 1
+- Net growth: +2
 
 ## Marketing
-- Google Ads: $210 spend, 4 conversions, $52.5 CPA
-- Meta Ads: $180 spend, 1 conversions, $180 CPA
+- Google Ads: Data unavailable.
+- Meta Ads: Data unavailable.
+
+## Data availability
+- Memberships: Available
+- Bookings: Available
+- Revenue: Available
+- Ads: Data unavailable
 
 ## What changed
 - Revenue declined -28.9% week-over-week.
-- Membership growth was net +3 this week.
+- Membership growth was net +2 this week.
 - Studio utilization trend improved versus the previous week.
 
 ## Alerts
+- Ads data unavailable: Google/Meta ad performance is unavailable, so paid-channel metrics and CPA alerts may be incomplete. Table analytics_ad_daily unavailable: relation "public.analytics_ad_daily" does not exist
 - Revenue trend softened week-over-week: Revenue is down 28.9% week-over-week.
 
 ## Recommended next actions
-1. Shift 20-30% of Meta budget to high-intent Google Search campaigns.
+1. Connect Google Ads and Meta Ads data ingestion so paid-channel performance can be measured accurately.
 2. Promote first-booker membership upgrade offer in follow-up email and Instagram stories.
 3. Send a targeted Creator-tier nurture campaign focused on underused credits and session planning.
 

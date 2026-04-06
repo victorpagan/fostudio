@@ -7,7 +7,7 @@
     "user_id": "39efa596-dc41-43d1-a858-ff0c6edc7644",
     "membership_id": "d7c642cf-2eb3-41af-8628-d277965ed13d",
     "tier": "studio_plus",
-    "status": "active",
+    "status": "canceled",
     "amount": 950,
     "is_new": true,
     "is_canceled": false
@@ -76,5 +76,18 @@
     "amount": 650,
     "is_new": true,
     "is_canceled": false
+  },
+  {
+    "date": "2026-04-05",
+    "week": "2026-W14",
+    "month": "2026-04",
+    "customer_id": "39efa596-dc41-43d1-a858-ff0c6edc7644",
+    "user_id": "39efa596-dc41-43d1-a858-ff0c6edc7644",
+    "membership_id": "d7c642cf-2eb3-41af-8628-d277965ed13d",
+    "tier": "studio_plus",
+    "status": "canceled",
+    "amount": 0,
+    "is_new": false,
+    "is_canceled": true
   }
 ]

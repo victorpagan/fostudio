@@ -1,18 +1,37 @@
-import {
-  INPUT_ADS_GOOGLE_CSV_PATH,
-  INPUT_ADS_META_CSV_PATH,
-  RAW_ADS_PATH
-} from './lib/constants'
-import { readCsv } from './lib/csv'
+import { RAW_ADS_PATH } from './lib/constants'
 import { writeJsonFile } from './lib/fs'
 import { toNumber } from './lib/parse'
-import type { IngestManifest, RawAdRecord } from './lib/types'
+import { createSupabaseClient } from './lib/supabase'
+import type { IngestManifest, IngestSource, RawAdRecord } from './lib/types'
 
-function normalizeAdRow(row: Record<string, string>, platform: RawAdRecord['platform']): RawAdRecord {
+type AdRow = {
+  date: string | null
+  platform: string | null
+  campaign: string | null
+  spend: number | string | null
+  clicks: number | string | null
+  impressions: number | string | null
+  conversions: number | string | null
+}
+
+const CANDIDATE_TABLES = [
+  'analytics_ad_daily',
+  'analytics_ads_daily',
+  'ad_performance_daily'
+] as const
+
+function normalizePlatform(value: string | null | undefined): RawAdRecord['platform'] {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized.includes('meta') || normalized.includes('facebook') || normalized.includes('instagram')) return 'meta'
+  if (normalized.includes('google')) return 'google'
+  return 'other'
+}
+
+function normalizeAdRow(row: AdRow): RawAdRecord {
   return {
     date: String(row.date || new Date().toISOString()),
-    platform,
-    campaign: String(row.campaign || row.campaign_name || 'unknown-campaign').trim(),
+    platform: normalizePlatform(row.platform),
+    campaign: String(row.campaign || 'unknown-campaign').trim(),
     spend: toNumber(row.spend, 0),
     clicks: toNumber(row.clicks, 0),
     impressions: toNumber(row.impressions, 0),
@@ -20,32 +39,63 @@ function normalizeAdRow(row: Record<string, string>, platform: RawAdRecord['plat
   }
 }
 
-async function run() {
-  const [metaRows, googleRows] = await Promise.all([
-    readCsv(INPUT_ADS_META_CSV_PATH),
-    readCsv(INPUT_ADS_GOOGLE_CSV_PATH)
-  ])
+async function loadFromSupabase() {
+  const supabase = createSupabaseClient()
+  if (!supabase) {
+    return {
+      source: 'unavailable' as IngestSource,
+      records: [] as RawAdRecord[],
+      notes: ['Supabase credentials were not found. Ads data is unavailable.']
+    }
+  }
 
-  const records: RawAdRecord[] = [
-    ...metaRows.map(row => normalizeAdRow(row, 'meta')),
-    ...googleRows.map(row => normalizeAdRow(row, 'google'))
-  ]
+  const notes: string[] = []
+
+  for (const table of CANDIDATE_TABLES) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('date,platform,campaign,spend,clicks,impressions,conversions')
+      .limit(50000)
+
+    if (error) {
+      notes.push(`Table ${table} unavailable: ${error.message}`)
+      continue
+    }
+
+    const rows = ((data ?? []) as AdRow[]).map(normalizeAdRow)
+
+    return {
+      source: 'supabase' as IngestSource,
+      records: rows,
+      notes: [`Loaded ${rows.length} ad rows from Supabase table ${table}.`]
+    }
+  }
+
+  return {
+    source: 'unavailable' as IngestSource,
+    records: [] as RawAdRecord[],
+    notes: [
+      ...notes,
+      'No supported Supabase ads table found. Expected one of: analytics_ad_daily, analytics_ads_daily, ad_performance_daily.'
+    ]
+  }
+}
+
+async function run() {
+  const result = await loadFromSupabase()
 
   const manifest: IngestManifest = {
     generated_at: new Date().toISOString(),
-    source: 'csv',
-    notes: [
-      `Loaded ${metaRows.length} Meta ad rows from ${INPUT_ADS_META_CSV_PATH}.`,
-      `Loaded ${googleRows.length} Google ad rows from ${INPUT_ADS_GOOGLE_CSV_PATH}.`
-    ]
+    source: result.source,
+    notes: result.notes
   }
 
   await writeJsonFile(RAW_ADS_PATH, {
     manifest,
-    records
+    records: result.records
   })
 
-  console.log(`[analytics] ads ingest complete: ${records.length} rows (csv)`)
+  console.log(`[analytics] ads ingest complete: ${result.records.length} rows (${result.source})`)
 }
 
 run().catch((error: unknown) => {

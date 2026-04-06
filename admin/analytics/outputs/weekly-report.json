@@ -1,44 +1,62 @@
 {
-  "generated_at": "2026-04-06T01:58:56.490Z",
+  "generated_at": "2026-04-06T02:35:09.539Z",
   "week_of": "2026-03-30",
+  "data_availability": {
+    "memberships": "supabase",
+    "bookings": "supabase",
+    "revenue": "supabase",
+    "ads": "unavailable",
+    "notes": {
+      "memberships": [
+        "Loaded 6 membership rows from Supabase."
+      ],
+      "bookings": [
+        "Loaded 37 booking rows from Supabase.",
+        "Loaded 16 revenue events from Supabase."
+      ],
+      "revenue": [
+        "Loaded 37 booking rows from Supabase.",
+        "Loaded 16 revenue events from Supabase."
+      ],
+      "ads": [
+        "Table analytics_ad_daily unavailable: relation \"public.analytics_ad_daily\" does not exist",
+        "Table analytics_ads_daily unavailable: relation \"public.analytics_ads_daily\" does not exist",
+        "Table ad_performance_daily unavailable: relation \"public.ad_performance_daily\" does not exist",
+        "No supported Supabase ads table found. Expected one of: analytics_ad_daily, analytics_ads_daily, ad_performance_daily."
+      ]
+    }
+  },
   "snapshot": {
     "revenue": 1350,
     "revenue_wow_pct": -28.95,
     "bookings": 5,
     "booked_hours": 10,
     "utilization_rate": 0.0595,
-    "active_members": 6,
+    "active_members": 5,
     "new_members": 3,
-    "cancellations": 0
+    "cancellations": 1
   },
   "memberships": {
     "creator": 2,
     "pro": 1,
-    "studio_plus": 2,
-    "net_growth": 3
+    "studio_plus": 1,
+    "net_growth": 2
   },
   "marketing": {
-    "google_ads": {
-      "spend": 210,
-      "conversions": 4,
-      "cost_per_conversion": 52.5
-    },
-    "meta_ads": {
-      "spend": 180,
-      "conversions": 1,
-      "cost_per_conversion": 180
-    }
+    "google_ads": null,
+    "meta_ads": null
   },
   "what_changed": [
     "Revenue declined -28.9% week-over-week.",
-    "Membership growth was net +3 this week.",
+    "Membership growth was net +2 this week.",
     "Studio utilization trend improved versus the previous week."
   ],
   "alerts": [
+    "Ads data unavailable",
     "Revenue trend softened week-over-week"
   ],
   "recommended_next_actions": [
-    "Shift 20-30% of Meta budget to high-intent Google Search campaigns.",
+    "Connect Google Ads and Meta Ads data ingestion so paid-channel performance can be measured accurately.",
     "Promote first-booker membership upgrade offer in follow-up email and Instagram stories.",
     "Send a targeted Creator-tier nurture campaign focused on underused credits and session planning."
   ],
@@ -59,7 +77,7 @@
       ],
       "cta": "Compare memberships",
       "send_window": "Tuesday 10:00 AM America/Los_Angeles",
-      "note": "Weekly active members: 6"
+      "note": "Weekly active members: 5"
     },
     {
       "campaign_name": "Low-Usage Creator Re-engagement",
@@ -77,7 +95,7 @@
       ],
       "cta": "Book your next session",
       "send_window": "Monday 4:00 PM America/Los_Angeles",
-      "note": "Weekly active members: 6"
+      "note": "Weekly active members: 5"
     }
   ]
 }

@@ -1,6 +1,31 @@
 {
-  "generated_at": "2026-04-06T01:58:55.693Z",
+  "generated_at": "2026-04-06T02:35:08.779Z",
   "week_of": "2026-03-30",
+  "data_availability": {
+    "memberships": "supabase",
+    "bookings": "supabase",
+    "revenue": "supabase",
+    "ads": "unavailable",
+    "notes": {
+      "memberships": [
+        "Loaded 6 membership rows from Supabase."
+      ],
+      "bookings": [
+        "Loaded 37 booking rows from Supabase.",
+        "Loaded 16 revenue events from Supabase."
+      ],
+      "revenue": [
+        "Loaded 37 booking rows from Supabase.",
+        "Loaded 16 revenue events from Supabase."
+      ],
+      "ads": [
+        "Table analytics_ad_daily unavailable: relation \"public.analytics_ad_daily\" does not exist",
+        "Table analytics_ads_daily unavailable: relation \"public.analytics_ads_daily\" does not exist",
+        "Table ad_performance_daily unavailable: relation \"public.ad_performance_daily\" does not exist",
+        "No supported Supabase ads table found. Expected one of: analytics_ad_daily, analytics_ads_daily, ad_performance_daily."
+      ]
+    }
+  },
   "revenue_by_week": [
     {
       "week": "2026-W03",
@@ -102,27 +127,27 @@
     },
     {
       "week": "2026-W11",
-      "active": 2,
+      "active": 1,
       "new_members": 2,
       "canceled_members": 0
     },
     {
       "week": "2026-W12",
-      "active": 2,
+      "active": 1,
       "new_members": 0,
       "canceled_members": 0
     },
     {
       "week": "2026-W13",
-      "active": 3,
+      "active": 2,
       "new_members": 1,
       "canceled_members": 0
     },
     {
       "week": "2026-W14",
-      "active": 6,
+      "active": 5,
       "new_members": 3,
-      "canceled_members": 0
+      "canceled_members": 1
     }
   ],
   "utilization_by_week": [

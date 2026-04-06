@@ -5,9 +5,9 @@ type RunResponse = {
   generatedAt?: string | null
   artifacts?: string[]
   summary?: {
-    revenue_total: number
-    new_members: number
-    active_members: number
+    revenue_total: number | null
+    new_members: number | null
+    active_members: number | null
   }
   run: {
     durationMs: number

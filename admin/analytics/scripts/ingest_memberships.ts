@@ -1,12 +1,8 @@
-import {
-  INPUT_MEMBERSHIPS_CSV_PATH,
-  RAW_MEMBERSHIPS_PATH
-} from './lib/constants'
-import { readCsv } from './lib/csv'
+import { RAW_MEMBERSHIPS_PATH } from './lib/constants'
 import { writeJsonFile } from './lib/fs'
-import { toNumber, toStringOrNull } from './lib/parse'
+import { toStringOrNull } from './lib/parse'
 import { createSupabaseClient } from './lib/supabase'
-import type { IngestManifest, RawMembershipRecord } from './lib/types'
+import type { IngestManifest, IngestSource, RawMembershipRecord } from './lib/types'
 
 type MembershipRow = {
   id: string
@@ -64,39 +60,13 @@ function normalizeMembershipFromDb(row: MembershipRow, pricingMap: Map<string, n
   }
 }
 
-function normalizeMembershipFromCsv(row: Record<string, string>, idx: number): RawMembershipRecord {
-  const tier = String(row.tier ?? '').trim().toLowerCase() || 'other'
-  const cadence = toStringOrNull(row.cadence)?.toLowerCase() ?? null
-  const createdAt = String(
-    row.created_at
-    || row.date
-    || row.start_date
-    || new Date().toISOString()
-  )
-
-  return {
-    membership_id: String(row.membership_id || `csv-membership-${idx + 1}`).trim(),
-    user_id: String(row.user_id || row.customer_id || `csv-user-${idx + 1}`).trim(),
-    customer_id: toStringOrNull(row.customer_id || row.user_id || `csv-user-${idx + 1}`),
-    tier,
-    cadence,
-    status: String(row.status ?? 'active').trim().toLowerCase(),
-    amount: toNumber(row.amount, 0),
-    created_at: createdAt,
-    canceled_at: toStringOrNull(row.canceled_at),
-    current_period_start: toStringOrNull(row.current_period_start),
-    current_period_end: toStringOrNull(row.current_period_end),
-    last_paid_at: toStringOrNull(row.last_paid_at)
-  }
-}
-
 async function loadFromSupabase() {
   const supabase = createSupabaseClient()
   if (!supabase) {
     return {
-      ok: false,
+      source: 'unavailable' as IngestSource,
       records: [] as RawMembershipRecord[],
-      notes: ['Supabase credentials were not found; CSV fallback will be used.']
+      notes: ['Supabase credentials were not found. Membership data is unavailable.']
     }
   }
 
@@ -113,7 +83,7 @@ async function loadFromSupabase() {
 
   if (membershipRes.error) {
     return {
-      ok: false,
+      source: 'unavailable' as IngestSource,
       records: [] as RawMembershipRecord[],
       notes: [`Supabase memberships query failed: ${membershipRes.error.message}`]
     }
@@ -121,7 +91,7 @@ async function loadFromSupabase() {
 
   if (variationRes.error) {
     return {
-      ok: false,
+      source: 'unavailable' as IngestSource,
       records: [] as RawMembershipRecord[],
       notes: [`Supabase variation query failed: ${variationRes.error.message}`]
     }
@@ -132,48 +102,27 @@ async function loadFromSupabase() {
     .map(row => normalizeMembershipFromDb(row, pricingMap))
 
   return {
-    ok: true,
+    source: 'supabase' as IngestSource,
     records,
     notes: [`Loaded ${records.length} membership rows from Supabase.`]
   }
 }
 
-async function loadFromCsv() {
-  const rows = await readCsv(INPUT_MEMBERSHIPS_CSV_PATH)
-  const records = rows.map((row, idx) => normalizeMembershipFromCsv(row, idx))
-  return {
-    records,
-    notes: [`Loaded ${records.length} membership rows from CSV (${INPUT_MEMBERSHIPS_CSV_PATH}).`]
-  }
-}
-
 async function run() {
-  const requireSupabase = process.env.ANALYTICS_REQUIRE_SUPABASE === '1'
-    || process.argv.includes('--require-supabase')
-
-  const supabaseResult = await loadFromSupabase()
-  const useCsvFallback = !supabaseResult.ok
-  if (requireSupabase && useCsvFallback) {
-    throw new Error(`[analytics] Supabase required for memberships ingest but unavailable. ${supabaseResult.notes.join(' ')}`)
-  }
-
-  const csvResult = useCsvFallback ? await loadFromCsv() : { records: [] as RawMembershipRecord[], notes: [] as string[] }
-
-  const source = useCsvFallback ? 'csv' : 'supabase'
-  const records = useCsvFallback ? csvResult.records : supabaseResult.records
+  const result = await loadFromSupabase()
 
   const manifest: IngestManifest = {
     generated_at: new Date().toISOString(),
-    source,
-    notes: [...supabaseResult.notes, ...csvResult.notes]
+    source: result.source,
+    notes: result.notes
   }
 
   await writeJsonFile(RAW_MEMBERSHIPS_PATH, {
     manifest,
-    records
+    records: result.records
   })
 
-  console.log(`[analytics] memberships ingest complete: ${records.length} rows (${source})`)
+  console.log(`[analytics] memberships ingest complete: ${result.records.length} rows (${result.source})`)
 }
 
 run().catch((error: unknown) => {

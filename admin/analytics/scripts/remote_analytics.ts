@@ -8,7 +8,6 @@ type ParsedArgs = {
   mode: Mode
   url: string
   scope: Scope
-  requireSupabase: boolean
   json: boolean
 }
 
@@ -16,13 +15,12 @@ function printUsage() {
   console.log(
     [
       'Usage:',
-      '  pnpm analytics:remote:run [--url=https://fo.studio] [--scope=weekly|monthly|refresh] [--allow-fallback] [--json]',
+      '  pnpm analytics:remote:run [--url=https://fo.studio] [--scope=weekly|monthly|refresh] [--json]',
       '  pnpm analytics:remote:outputs [--url=https://fo.studio] [--json]',
       '',
       'Flags:',
       '  --url=<url>          Analytics app base URL (default: https://fo.studio)',
       '  --scope=<scope>      Scope for run mode (weekly, monthly, refresh)',
-      '  --allow-fallback     For run mode, allow CSV fallback when Supabase ingest fails',
       '  --json               Print full endpoint JSON response'
     ].join('\n')
   )
@@ -102,14 +100,12 @@ function parseArgs(argv: string[]): ParsedArgs | null {
   const scope = (scopeRaw === 'weekly' || scopeRaw === 'monthly' || scopeRaw === 'refresh')
     ? scopeRaw
     : (() => { throw new Error(`Invalid --scope value "${scopeRaw}". Expected weekly, monthly, or refresh.`) })()
-  const requireSupabase = mode === 'run' ? !hasFlag(argv, 'allow-fallback') : true
   const json = hasFlag(argv, 'json')
 
   return {
     mode,
     url,
     scope,
-    requireSupabase,
     json
   }
 }
@@ -191,7 +187,7 @@ async function main() {
       'content-type': 'application/json'
     },
     body: args.mode === 'run'
-      ? JSON.stringify({ requireSupabase: args.requireSupabase })
+      ? JSON.stringify({ requireSupabase: true })
       : undefined
   })
 

@@ -3,7 +3,9 @@ import {
   copyAnalyticsText,
   formatAnalyticsCurrency,
   formatAnalyticsDatetime,
+  formatAnalyticsHours,
   formatAnalyticsNumber,
+  formatAnalyticsRatioPct,
   formatAnalyticsSignedPct,
   useAdminAnalyticsData
 } from '~~/app/composables/admin/useAdminAnalytics'
@@ -21,12 +23,12 @@ const weeklyReportJson = computed(() => data.value?.weeklyReportJson)
 const summaryCards = computed(() => {
   const week = metrics.value?.week
   return [
-    { label: 'Revenue', value: formatAnalyticsCurrency(week?.revenue_total ?? 0) },
-    { label: 'Revenue WoW', value: formatAnalyticsSignedPct(week?.revenue_wow_pct ?? 0) },
-    { label: 'Bookings', value: formatAnalyticsNumber(week?.bookings_total ?? 0) },
-    { label: 'Booked hours', value: (week?.booked_hours ?? 0).toFixed(1) },
-    { label: 'Utilization', value: `${((week?.utilization_rate ?? 0) * 100).toFixed(1)}%` },
-    { label: 'Active members', value: formatAnalyticsNumber(week?.active_members ?? 0) }
+    { label: 'Revenue', value: formatAnalyticsCurrency(week?.revenue_total) },
+    { label: 'Revenue WoW', value: formatAnalyticsSignedPct(week?.revenue_wow_pct) },
+    { label: 'Bookings', value: formatAnalyticsNumber(week?.bookings_total) },
+    { label: 'Booked hours', value: formatAnalyticsHours(week?.booked_hours) },
+    { label: 'Utilization', value: formatAnalyticsRatioPct(week?.utilization_rate) },
+    { label: 'Active members', value: formatAnalyticsNumber(week?.active_members) }
   ]
 })
 

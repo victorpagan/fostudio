@@ -5,11 +5,17 @@ import {
   NORMALIZED_BOOKINGS_PATH,
   NORMALIZED_MEMBERSHIPS_PATH,
   NORMALIZED_MEMBERSHIP_STATE_PATH,
-  NORMALIZED_REVENUE_PATH
+  NORMALIZED_REVENUE_PATH,
+  RAW_ADS_PATH,
+  RAW_BOOKINGS_PATH,
+  RAW_MEMBERSHIPS_PATH,
+  RAW_REVENUE_PATH
 } from './constants'
 import { weekRangeFromWeekOf } from './dates'
 import { readJsonFile } from './fs'
 import type {
+  DataAvailability,
+  IngestSource,
   MembershipStateRecord,
   NormalizedAdRecord,
   NormalizedBookingRecord,
@@ -18,12 +24,82 @@ import type {
   TierKey
 } from './types'
 
+type RawManifestWrapper = {
+  manifest?: {
+    source?: IngestSource | string | null
+    notes?: unknown
+  }
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function normalizeSource(value: unknown): IngestSource {
+  return value === 'supabase' ? 'supabase' : 'unavailable'
+}
+
+function normalizeNotes(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value
+    .map(item => String(item ?? '').trim())
+    .filter(Boolean)
+}
+
+async function readManifest(pathname: string, label: string) {
+  const raw = await readJsonFile<RawManifestWrapper>(pathname)
+  if (!raw?.manifest) {
+    return {
+      source: 'unavailable' as IngestSource,
+      notes: [`No ingest manifest found for ${label}.`]
+    }
+  }
+
+  const source = normalizeSource(raw.manifest.source)
+  const notes = normalizeNotes(raw.manifest.notes)
+
+  if (source === 'unavailable' && notes.length === 0) {
+    return {
+      source,
+      notes: [`${label} data is unavailable from Supabase.`]
+    }
+  }
+
+  return {
+    source,
+    notes
+  }
+}
+
+async function loadAvailability(): Promise<DataAvailability> {
+  const [memberships, bookings, revenue, ads] = await Promise.all([
+    readManifest(RAW_MEMBERSHIPS_PATH, 'memberships'),
+    readManifest(RAW_BOOKINGS_PATH, 'bookings'),
+    readManifest(RAW_REVENUE_PATH, 'revenue'),
+    readManifest(RAW_ADS_PATH, 'ads')
+  ])
+
+  return {
+    memberships: memberships.source,
+    bookings: bookings.source,
+    revenue: revenue.source,
+    ads: ads.source,
+    notes: {
+      memberships: memberships.notes,
+      bookings: bookings.notes,
+      revenue: revenue.notes,
+      ads: ads.notes
+    }
+  }
+}
+
 export type AnalyticsDataSet = {
   memberships: NormalizedMembershipRecord[]
   membershipState: MembershipStateRecord[]
   bookings: NormalizedBookingRecord[]
   revenue: NormalizedRevenueEventRecord[]
   ads: NormalizedAdRecord[]
+  availability: DataAvailability
 }
 
 export function parseWeekOfArg() {
@@ -36,7 +112,7 @@ export function parseWeekOfArg() {
 }
 
 export function safePercentChange(current: number, previous: number) {
-  if (!Number.isFinite(current) || !Number.isFinite(previous)) return 0
+  if (!isFiniteNumber(current) || !isFiniteNumber(previous)) return 0
   if (previous === 0) return current === 0 ? 0 : 100
   return Number((((current - previous) / Math.abs(previous)) * 100).toFixed(2))
 }
@@ -55,12 +131,13 @@ function isWithin(dateValue: string, start: DateTime, end: DateTime) {
 }
 
 export async function loadAnalyticsData(): Promise<AnalyticsDataSet> {
-  const [memberships, membershipState, bookings, revenue, ads] = await Promise.all([
+  const [memberships, membershipState, bookings, revenue, ads, availability] = await Promise.all([
     readJsonFile<NormalizedMembershipRecord[]>(NORMALIZED_MEMBERSHIPS_PATH),
     readJsonFile<MembershipStateRecord[]>(NORMALIZED_MEMBERSHIP_STATE_PATH),
     readJsonFile<NormalizedBookingRecord[]>(NORMALIZED_BOOKINGS_PATH),
     readJsonFile<NormalizedRevenueEventRecord[]>(NORMALIZED_REVENUE_PATH),
-    readJsonFile<NormalizedAdRecord[]>(NORMALIZED_ADS_PATH)
+    readJsonFile<NormalizedAdRecord[]>(NORMALIZED_ADS_PATH),
+    loadAvailability()
   ])
 
   return {
@@ -68,7 +145,8 @@ export async function loadAnalyticsData(): Promise<AnalyticsDataSet> {
     membershipState: membershipState ?? [],
     bookings: bookings ?? [],
     revenue: revenue ?? [],
-    ads: ads ?? []
+    ads: ads ?? [],
+    availability
   }
 }
 

@@ -3,7 +3,9 @@ import {
   copyAnalyticsText,
   formatAnalyticsCurrency,
   formatAnalyticsDatetime,
+  formatAnalyticsHours,
   formatAnalyticsNumber,
+  formatAnalyticsRatioPct,
   formatAnalyticsSignedPct,
   useAdminAnalyticsData
 } from '~~/app/composables/admin/useAdminAnalytics'
@@ -20,16 +22,28 @@ const metricsJsonText = computed(() => JSON.stringify(metrics.value ?? {}, null,
 const weekRows = computed(() => {
   const week = metrics.value?.week
   return [
-    ['Revenue total', formatAnalyticsCurrency(week?.revenue_total ?? 0)],
-    ['Revenue WoW', formatAnalyticsSignedPct(week?.revenue_wow_pct ?? 0)],
-    ['Bookings total', formatAnalyticsNumber(week?.bookings_total ?? 0)],
-    ['Booked hours', (week?.booked_hours ?? 0).toFixed(1)],
-    ['Utilization rate', `${((week?.utilization_rate ?? 0) * 100).toFixed(1)}%`],
-    ['Active members', formatAnalyticsNumber(week?.active_members ?? 0)],
-    ['New members', formatAnalyticsNumber(week?.new_members ?? 0)],
-    ['Canceled members', formatAnalyticsNumber(week?.canceled_members ?? 0)],
-    ['Net membership change', formatAnalyticsNumber(week?.net_members ?? 0)]
+    ['Revenue total', formatAnalyticsCurrency(week?.revenue_total)],
+    ['Revenue WoW', formatAnalyticsSignedPct(week?.revenue_wow_pct)],
+    ['Bookings total', formatAnalyticsNumber(week?.bookings_total)],
+    ['Booked hours', formatAnalyticsHours(week?.booked_hours)],
+    ['Utilization rate', formatAnalyticsRatioPct(week?.utilization_rate)],
+    ['Active members', formatAnalyticsNumber(week?.active_members)],
+    ['New members', formatAnalyticsNumber(week?.new_members)],
+    ['Canceled members', formatAnalyticsNumber(week?.canceled_members)],
+    ['Net membership change', formatAnalyticsNumber(week?.net_members)]
   ]
+})
+
+const googleAdsSummary = computed(() => {
+  const google = metrics.value?.ads?.google
+  if (!google) return 'Google Ads: Data unavailable.'
+  return `Google: ${formatAnalyticsCurrency(google.spend)} spend, ${formatAnalyticsNumber(google.conversions)} conversions, ${formatAnalyticsCurrency(google.cost_per_conversion)} CPA`
+})
+
+const metaAdsSummary = computed(() => {
+  const meta = metrics.value?.ads?.meta
+  if (!meta) return 'Meta Ads: Data unavailable.'
+  return `Meta: ${formatAnalyticsCurrency(meta.spend)} spend, ${formatAnalyticsNumber(meta.conversions)} conversions, ${formatAnalyticsCurrency(meta.cost_per_conversion)} CPA`
 })
 
 async function copyValue(value: string, label: string) {
@@ -140,13 +154,13 @@ async function copyValue(value: string, label: string) {
                   </div>
                   <div class="mt-2 grid grid-cols-3 gap-2">
                     <div class="rounded-md border border-default px-3 py-2">
-                      Creator: {{ metrics?.tiers?.creator ?? 0 }}
+                      Creator: {{ formatAnalyticsNumber(metrics?.tiers?.creator) }}
                     </div>
                     <div class="rounded-md border border-default px-3 py-2">
-                      Pro: {{ metrics?.tiers?.pro ?? 0 }}
+                      Pro: {{ formatAnalyticsNumber(metrics?.tiers?.pro) }}
                     </div>
                     <div class="rounded-md border border-default px-3 py-2">
-                      Studio+: {{ metrics?.tiers?.studio_plus ?? 0 }}
+                      Studio+: {{ formatAnalyticsNumber(metrics?.tiers?.studio_plus) }}
                     </div>
                   </div>
                 </div>
@@ -157,14 +171,10 @@ async function copyValue(value: string, label: string) {
                   </div>
                   <div class="mt-2 space-y-2">
                     <div class="rounded-md border border-default px-3 py-2">
-                      Google: {{ formatAnalyticsCurrency(metrics?.ads?.google?.spend ?? 0) }} spend,
-                      {{ metrics?.ads?.google?.conversions ?? 0 }} conversions,
-                      {{ formatAnalyticsCurrency(metrics?.ads?.google?.cost_per_conversion ?? 0) }} CPA
+                      {{ googleAdsSummary }}
                     </div>
                     <div class="rounded-md border border-default px-3 py-2">
-                      Meta: {{ formatAnalyticsCurrency(metrics?.ads?.meta?.spend ?? 0) }} spend,
-                      {{ metrics?.ads?.meta?.conversions ?? 0 }} conversions,
-                      {{ formatAnalyticsCurrency(metrics?.ads?.meta?.cost_per_conversion ?? 0) }} CPA
+                      {{ metaAdsSummary }}
                     </div>
                   </div>
                 </div>
