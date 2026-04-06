@@ -10,11 +10,20 @@ import { readJsonFile, writeJsonFile, writeTextFile } from './lib/fs'
 import type {
   AlertsOutputItem,
   DataAvailability,
+  DataQualityMetadata,
   IngestSource,
   MetricsOutput,
   TrendsOutput,
   WeeklyReportJson
 } from './lib/types'
+
+type TrendsWeekday = TrendsOutput['weekday_utilization']['weakest_day']
+
+const QUALITY_LABEL: Record<DataQualityMetadata['confidence']['label'], string> = {
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low'
+}
 
 function isNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
@@ -54,127 +63,6 @@ function sourceLabel(source: IngestSource) {
   return isAvailable(source) ? 'Available' : 'Data unavailable'
 }
 
-function buildWhatChanged(metrics: MetricsOutput, trends: TrendsOutput) {
-  const items: string[] = []
-
-  if (isNumber(metrics.week.revenue_wow_pct)) {
-    if (metrics.week.revenue_wow_pct >= 0) {
-      items.push(`Revenue increased ${asPct(metrics.week.revenue_wow_pct)} week-over-week.`)
-    } else {
-      items.push(`Revenue declined ${asPct(metrics.week.revenue_wow_pct)} week-over-week.`)
-    }
-  } else {
-    items.push('Revenue trend is unavailable because revenue data is missing.')
-  }
-
-  if (isNumber(metrics.week.net_members)) {
-    if (metrics.week.net_members > 0) {
-      items.push(`Membership growth was net +${metrics.week.net_members} this week.`)
-    } else if (metrics.week.net_members < 0) {
-      items.push(`Memberships net changed by ${metrics.week.net_members} this week.`)
-    } else {
-      items.push('Membership count was flat week-over-week.')
-    }
-  } else {
-    items.push('Membership growth trend is unavailable because membership data is missing.')
-  }
-
-  const utilizationSeries = trends.utilization_by_week
-  if (utilizationSeries.length >= 2) {
-    const latest = utilizationSeries[utilizationSeries.length - 1]?.value ?? 0
-    const prior = utilizationSeries[utilizationSeries.length - 2]?.value ?? 0
-    if (latest >= prior) {
-      items.push('Studio utilization trend improved versus the previous week.')
-    } else {
-      items.push('Studio utilization softened versus the previous week.')
-    }
-  } else if (!isAvailable(metrics.data_availability.bookings)) {
-    items.push('Utilization trend is unavailable because booking data is missing.')
-  }
-
-  return items.slice(0, 3)
-}
-
-function buildRecommendedActions(metrics: MetricsOutput, alerts: AlertsOutputItem[]) {
-  const actions: string[] = []
-
-  if (!isAvailable(metrics.data_availability.ads)) {
-    actions.push('Connect Google Ads and Meta Ads data ingestion so paid-channel performance can be measured accurately.')
-  }
-
-  const metaCpa = metrics.ads.meta?.cost_per_conversion
-  const googleCpa = metrics.ads.google?.cost_per_conversion
-  if (isNumber(metaCpa) && isNumber(googleCpa) && metaCpa > 0 && googleCpa > 0) {
-    if (metaCpa > googleCpa * 1.5) {
-      actions.push('Shift 20-30% of Meta budget to high-intent Google Search campaigns.')
-    }
-  }
-
-  if (alerts.some(alert => alert.type === 'bookings' || alert.title.toLowerCase().includes('wednesday'))) {
-    actions.push('Run a Wednesday fill-rate promotion with a booking deadline and reminder email.')
-  }
-
-  if (isNumber(metrics.week.new_members) && isNumber(metrics.week.bookings_total) && (metrics.week.new_members > 0 || metrics.week.bookings_total > 0)) {
-    actions.push('Promote first-booker membership upgrade offer in follow-up email and Instagram stories.')
-  }
-
-  if (!isAvailable(metrics.data_availability.memberships)) {
-    actions.push('Verify membership sync health in Supabase so retention and growth recommendations are based on live data.')
-  }
-
-  if (actions.length < 3) {
-    actions.push('Send a targeted Creator-tier nurture campaign focused on underused credits and session planning.')
-  }
-
-  return [...new Set(actions)].slice(0, 3)
-}
-
-function buildEmailRecommendations(metrics: MetricsOutput) {
-  const activeMembersLabel = isNumber(metrics.week.active_members)
-    ? String(metrics.week.active_members)
-    : 'Data unavailable'
-
-  return [
-    {
-      campaign_name: 'First-Time Booker to Member Upgrade',
-      objective: 'Convert recent guest or first-time bookings into membership signups.',
-      audience: 'Guests and first-time bookers from the last 30 days.',
-      subject_options: [
-        'Ready to make FO Studio your weekly home?',
-        'Your next session can cost less with membership',
-        'Keep your momentum: member pricing inside'
-      ],
-      key_points: [
-        'Highlight membership value against one-off booking costs.',
-        'Include the active seasonal promo code and expiration date.',
-        'Show one clear path to compare Creator, Pro, and Studio+ tiers.'
-      ],
-      cta: 'Compare memberships',
-      send_window: 'Tuesday 10:00 AM America/Los_Angeles'
-    },
-    {
-      campaign_name: 'Low-Usage Creator Re-engagement',
-      objective: 'Increase booked sessions among active Creator members with low recent utilization.',
-      audience: 'Active Creator members with less than 25% usage in the last 30 days.',
-      subject_options: [
-        'Use your studio access before this month closes',
-        'A quick plan to use your Creator hours this week',
-        'Book a focused session this Wednesday'
-      ],
-      key_points: [
-        'Remind members of included access and current booking availability.',
-        'Offer a Wednesday-focused nudge to improve weak-day fill rate.',
-        'Use a direct booking CTA with calendar link.'
-      ],
-      cta: 'Book your next session',
-      send_window: 'Monday 4:00 PM America/Los_Angeles'
-    }
-  ].map(recommendation => ({
-    ...recommendation,
-    note: `Weekly active members: ${activeMembersLabel}`
-  }))
-}
-
 function safeAvailability(input: DataAvailability | undefined): DataAvailability {
   return input ?? {
     memberships: 'unavailable',
@@ -188,6 +76,252 @@ function safeAvailability(input: DataAvailability | undefined): DataAvailability
       ads: []
     }
   }
+}
+
+function safeDataQuality(
+  metricsQuality: DataQualityMetadata | undefined,
+  trendsQuality: DataQualityMetadata | undefined
+): DataQualityMetadata {
+  if (metricsQuality) return metricsQuality
+  if (trendsQuality) return trendsQuality
+  return {
+    source_completeness: {
+      memberships: 0,
+      bookings: 0,
+      revenue: 0,
+      ads: 0
+    },
+    row_counts: {
+      memberships: 0,
+      membership_state: 0,
+      bookings: 0,
+      revenue: 0,
+      ads: 0
+    },
+    exclusions_applied: {
+      memberships: 0,
+      membership_state: 0,
+      bookings: 0,
+      revenue: 0,
+      ads: 0,
+      accounts: 0
+    },
+    warnings: ['Data quality metadata unavailable.'],
+    confidence: {
+      score: 0,
+      label: 'low'
+    }
+  }
+}
+
+function deriveWeekdayFocus(weakestDay: TrendsWeekday) {
+  return {
+    weakest_day: weakestDay?.weekday ?? null,
+    weakest_day_bookings: isNumber(weakestDay?.bookings) ? weakestDay.bookings : null,
+    weakest_day_booked_hours: isNumber(weakestDay?.booked_hours) ? weakestDay.booked_hours : null
+  }
+}
+
+function buildWhatChanged(metrics: MetricsOutput, trends: TrendsOutput, dataQuality: DataQualityMetadata) {
+  const items: string[] = []
+
+  if (isNumber(metrics.week.active_members) && isNumber(metrics.week.net_members)) {
+    if (metrics.week.net_members > 0) {
+      items.push(`Membership base expanded to ${asInt(metrics.week.active_members)} active members (net +${asInt(metrics.week.net_members)} this week).`)
+    } else if (metrics.week.net_members < 0) {
+      items.push(`Membership base softened by ${asInt(Math.abs(metrics.week.net_members))} this week (${asInt(metrics.week.active_members)} active members now).`)
+    } else {
+      items.push(`Membership base remained stable at ${asInt(metrics.week.active_members)} active members.`)
+    }
+  }
+
+  const utilizationSeries = trends.utilization_by_week
+  if (utilizationSeries.length >= 2) {
+    const latest = utilizationSeries[utilizationSeries.length - 1]?.value
+    const prior = utilizationSeries[utilizationSeries.length - 2]?.value
+    if (isNumber(latest) && isNumber(prior)) {
+      const deltaPctPoints = (latest - prior) * 100
+      if (deltaPctPoints >= 1) {
+        items.push(`Utilization improved by ${deltaPctPoints.toFixed(1)} pts week-over-week (${(latest * 100).toFixed(1)}%).`)
+      } else if (deltaPctPoints <= -1) {
+        items.push(`Utilization softened by ${Math.abs(deltaPctPoints).toFixed(1)} pts week-over-week (${(latest * 100).toFixed(1)}%).`)
+      } else {
+        items.push(`Utilization remained flat week-over-week at ${(latest * 100).toFixed(1)}%.`)
+      }
+    }
+  } else if (!isAvailable(metrics.data_availability.bookings)) {
+    items.push('Utilization trend is unavailable because booking data is missing.')
+  }
+
+  if (
+    isNumber(metrics.member_usage.members_with_zero_bookings_14d)
+    && isNumber(metrics.week.active_members)
+    && metrics.week.active_members > 0
+  ) {
+    const ratio = metrics.member_usage.members_with_zero_bookings_14d / metrics.week.active_members
+    items.push(`${asInt(metrics.member_usage.members_with_zero_bookings_14d)} active members had zero bookings in the last 14 days (${(ratio * 100).toFixed(0)}%).`)
+  }
+
+  const weakestDay = trends.weekday_utilization.weakest_day
+  if (weakestDay) {
+    items.push(`${weakestDay.weekday} remains the weakest day (${asInt(weakestDay.bookings)} bookings, ${asHours(weakestDay.booked_hours)} hours in lookback window).`)
+  }
+
+  if (!isAvailable(metrics.data_availability.ads)) {
+    items.push('Paid-channel insights are incomplete because ads data is currently unavailable.')
+  }
+
+  if (dataQuality.confidence.score < 0.75) {
+    items.push(`Analytics confidence is ${QUALITY_LABEL[dataQuality.confidence.label].toLowerCase()} (${(dataQuality.confidence.score * 100).toFixed(0)}%), so conclusions are directional.`)
+  }
+
+  if (
+    isNumber(metrics.week.cash_received)
+    && isNumber(metrics.week.recognized_revenue_total)
+    && Math.abs(metrics.week.cash_received - metrics.week.recognized_revenue_total) > 0
+  ) {
+    const gap = Math.abs(metrics.week.cash_received - metrics.week.recognized_revenue_total)
+    if (gap >= Math.max(200, Math.abs(metrics.week.recognized_revenue_total) * 0.25)) {
+      items.push('Cash timing differed from recognized revenue this week, so operational utilization and member activity were weighted more heavily than cash swings.')
+    }
+  }
+
+  if (items.length === 0) {
+    items.push('Core operational metrics were stable this week with no major directional change detected.')
+  }
+
+  return items.slice(0, 5)
+}
+
+function buildRecommendedActions(
+  metrics: MetricsOutput,
+  trends: TrendsOutput,
+  alerts: AlertsOutputItem[],
+  dataQuality: DataQualityMetadata
+) {
+  const actions: string[] = []
+
+  const weakest = trends.weekday_utilization.weakest_day
+  if (weakest?.weekday) {
+    actions.push(`Run a ${weakest.weekday} fill-rate push with a 48-hour booking incentive and one reminder email.`)
+  }
+
+  if (
+    isNumber(metrics.member_usage.members_with_zero_bookings_14d)
+    && isNumber(metrics.week.active_members)
+    && metrics.week.active_members > 0
+  ) {
+    const ratio = metrics.member_usage.members_with_zero_bookings_14d / metrics.week.active_members
+    if (ratio >= 0.3) {
+      actions.push('Launch a low-usage member reactivation sequence with one-click booking links and tier-specific usage reminders.')
+    }
+  }
+
+  if (isNumber(metrics.cohorts.repeat_guests_not_converted) && metrics.cohorts.repeat_guests_not_converted > 0) {
+    actions.push('Target repeat guests who have not converted with a first-month membership offer and conversion-focused follow-up.')
+  }
+
+  if (!isAvailable(metrics.data_availability.ads)) {
+    actions.push('Finish ads data integration so paid-channel spend and CPA recommendations are based on live platform data.')
+  } else {
+    const metaCpa = metrics.ads.meta?.cost_per_conversion
+    const googleCpa = metrics.ads.google?.cost_per_conversion
+    if (isNumber(metaCpa) && isNumber(googleCpa) && metaCpa > 0 && googleCpa > 0 && metaCpa > googleCpa * 1.5) {
+      actions.push('Shift 20-30% of Meta budget toward Google Search until CPA converges across channels.')
+    }
+  }
+
+  if (alerts.some(alert => alert.type === 'bookings' && alert.severity !== 'low')) {
+    actions.push('Publish a short weekly inventory calendar across Instagram and email to stabilize booking volume.')
+  }
+
+  if (dataQuality.confidence.score < 0.7) {
+    actions.push('Resolve missing data sources and account classification gaps before making major budget changes.')
+  }
+
+  if (actions.length < 3) {
+    actions.push('Promote a member-only midweek offer and track incremental booked hours week-over-week.')
+  }
+
+  return [...new Set(actions)].slice(0, 3)
+}
+
+function buildEmailRecommendations(
+  metrics: MetricsOutput,
+  trends: TrendsOutput,
+  dataQuality: DataQualityMetadata
+): WeeklyReportJson['email_recommendations'] {
+  const weakest = trends.weekday_utilization.weakest_day?.weekday ?? 'Wednesday'
+  const activeMembersLabel = isNumber(metrics.week.active_members)
+    ? String(metrics.week.active_members)
+    : 'Data unavailable'
+
+  const recommendations: WeeklyReportJson['email_recommendations'] = [
+    {
+      campaign_name: 'Low-Usage Member Reactivation',
+      objective: 'Increase near-term bookings among active members with recent inactivity.',
+      audience: 'Active members with zero bookings in the last 14 days.',
+      subject_options: [
+        'Use your studio access this week',
+        'A quick way to book your next FO session',
+        'Your included studio hours are waiting'
+      ],
+      key_points: [
+        'Highlight remaining included value this month.',
+        `Prioritize ${weakest} slots to improve fill rate.`,
+        'Use a direct calendar deep-link CTA.'
+      ],
+      cta: 'Book your next session',
+      send_window: 'Monday 4:00 PM America/Los_Angeles'
+    },
+    {
+      campaign_name: 'Repeat Guest Conversion',
+      objective: 'Convert repeat non-member guests into paid memberships.',
+      audience: 'Guests with 2+ bookings who are not currently converted to membership.',
+      subject_options: [
+        'You are booking often. Membership now saves you more.',
+        'Make your next session member-priced',
+        'Your FO routine deserves member rates'
+      ],
+      key_points: [
+        'Compare one-time spend vs membership value.',
+        'Include Creator, Pro, and Studio+ ladder with clear differences.',
+        'Show a one-week conversion incentive window.'
+      ],
+      cta: 'Compare membership options',
+      send_window: 'Tuesday 10:00 AM America/Los_Angeles'
+    },
+    {
+      campaign_name: `${weakest} Fill-Rate Boost`,
+      objective: `Increase booked hours on ${weakest}, currently the lowest-demand day.`,
+      audience: `Recent bookers and active members who can schedule on ${weakest}.`,
+      subject_options: [
+        `${weakest} studio slots are open this week`,
+        `Claim a ${weakest} session before spots close`,
+        `Best availability is ${weakest} this week`
+      ],
+      key_points: [
+        'Lead with strongest available time windows.',
+        'Offer a limited-time incentive tied to that day.',
+        'Follow with a final reminder 24 hours before close.'
+      ],
+      cta: `Book a ${weakest} session`,
+      send_window: 'Sunday 6:00 PM America/Los_Angeles'
+    }
+  ]
+
+  const note = `Weekly active members: ${activeMembersLabel}. Analytics confidence: ${QUALITY_LABEL[dataQuality.confidence.label]} (${(dataQuality.confidence.score * 100).toFixed(0)}%).`
+  return recommendations.map(item => ({ ...item, note }))
+}
+
+function availabilityNotes(availability: DataAvailability) {
+  const lines: string[] = []
+  for (const key of ['memberships', 'bookings', 'revenue', 'ads'] as const) {
+    for (const note of availability.notes[key] ?? []) {
+      lines.push(`${key}: ${note}`)
+    }
+  }
+  return lines
 }
 
 async function run() {
@@ -205,25 +339,51 @@ async function run() {
     generated_at: new Date().toISOString(),
     week_of: metrics.week_of,
     data_availability: metrics.data_availability,
+    data_quality: metrics.data_quality,
     revenue_by_week: [],
+    cash_received_by_week: [],
+    recognized_revenue_by_week: [],
+    one_time_booking_revenue_by_week: [],
     members_by_week: [],
-    utilization_by_week: []
+    utilization_by_week: [],
+    booking_mix_by_week: [],
+    weekday_utilization: {
+      lookback_weeks: analyticsMetricDefinitions.weekdayLookbackWeeks,
+      bookings_by_weekday: [],
+      booked_hours_by_weekday: [],
+      weakest_day: null
+    },
+    cohort_conversion: {
+      repeat_guests_not_converted: 0,
+      converted_guest_members: 0,
+      avg_guest_to_member_lag_days: null,
+      median_guest_to_member_lag_days: null,
+      records: []
+    }
   }
 
   const safeAlerts = alerts ?? []
   const availability = safeAvailability(metrics.data_availability)
+  const dataQuality = safeDataQuality(metrics.data_quality, safeTrends.data_quality)
 
-  const whatChanged = buildWhatChanged(metrics, safeTrends)
-  const recommendedActions = buildRecommendedActions(metrics, safeAlerts)
-  const emailRecommendations = buildEmailRecommendations(metrics)
+  const whatChanged = buildWhatChanged(metrics, safeTrends, dataQuality)
+  const recommendedActions = buildRecommendedActions(metrics, safeTrends, safeAlerts, dataQuality)
+  const emailRecommendations = buildEmailRecommendations(metrics, safeTrends, dataQuality)
+  const weekdayFocus = deriveWeekdayFocus(safeTrends.weekday_utilization.weakest_day)
 
   const jsonReport: WeeklyReportJson = {
     generated_at: new Date().toISOString(),
     week_of: metrics.week_of,
     data_availability: availability,
+    data_quality: dataQuality,
     snapshot: {
       revenue: metrics.week.revenue_total,
       revenue_wow_pct: metrics.week.revenue_wow_pct,
+      cash_received: metrics.week.cash_received,
+      cash_received_wow_pct: metrics.week.cash_received_wow_pct,
+      recognized_revenue: metrics.week.recognized_revenue_total,
+      recognized_revenue_wow_pct: metrics.week.recognized_revenue_wow_pct,
+      one_time_booking_revenue: metrics.week.one_time_booking_revenue,
       bookings: metrics.week.bookings_total,
       booked_hours: metrics.week.booked_hours,
       utilization_rate: metrics.week.utilization_rate,
@@ -231,6 +391,10 @@ async function run() {
       new_members: metrics.week.new_members,
       cancellations: metrics.week.canceled_members
     },
+    member_usage: metrics.member_usage,
+    booking_segmentation: metrics.booking_segmentation,
+    cohorts: metrics.cohorts,
+    weekday_focus: weekdayFocus,
     memberships: {
       creator: metrics.tiers.creator,
       pro: metrics.tiers.pro,
@@ -242,7 +406,7 @@ async function run() {
       meta_ads: metrics.ads.meta
     },
     what_changed: whatChanged,
-    alerts: safeAlerts.map(alert => alert.title),
+    alerts: safeAlerts.map(alert => `${alert.title}: ${alert.detail}`),
     recommended_next_actions: recommendedActions,
     email_recommendations: emailRecommendations
   }
@@ -255,12 +419,19 @@ async function run() {
     ? `${asCurrency(metrics.ads.meta.spend)} spend, ${asInt(metrics.ads.meta.conversions)} conversions, ${asCurrency(metrics.ads.meta.cost_per_conversion)} CPA`
     : 'Data unavailable.'
 
+  const qualityWarnings = [
+    ...dataQuality.warnings,
+    ...availabilityNotes(availability)
+  ]
+
   const markdown = [
     '# FO Studio Weekly Report',
     `Week of: ${metrics.week_of}`,
     '',
     '## Snapshot',
-    `- Revenue: ${asCurrency(metrics.week.revenue_total)} (${asPct(metrics.week.revenue_wow_pct)} WoW)`,
+    `- Recognized revenue: ${asCurrency(metrics.week.recognized_revenue_total)} (${asPct(metrics.week.recognized_revenue_wow_pct)} WoW)`,
+    `- Cash received: ${asCurrency(metrics.week.cash_received)} (${asPct(metrics.week.cash_received_wow_pct)} WoW)`,
+    `- One-time booking revenue: ${asCurrency(metrics.week.one_time_booking_revenue)}`,
     `- Bookings: ${asInt(metrics.week.bookings_total)}`,
     `- Booked hours: ${asHours(metrics.week.booked_hours)}`,
     `- Utilization: ${asUtilization(metrics.week.utilization_rate)}`,
@@ -274,9 +445,33 @@ async function run() {
     `- ${analyticsMetricDefinitions.tierLabels.studio_plus}: ${asInt(metrics.tiers.studio_plus)}`,
     `- Net growth: ${isNumber(metrics.week.net_members) ? `${metrics.week.net_members >= 0 ? '+' : ''}${asInt(metrics.week.net_members)}` : 'Data unavailable'}`,
     '',
+    '## Usage and Conversion',
+    `- Bookings/member (7d): ${asHours(metrics.member_usage.bookings_per_member_7d)}`,
+    `- Bookings/member (30d): ${asHours(metrics.member_usage.bookings_per_member_30d)}`,
+    `- Booked hours/member (30d): ${asHours(metrics.member_usage.booked_hours_per_member_30d)}`,
+    `- Members with 0 bookings (14d): ${asInt(metrics.member_usage.members_with_zero_bookings_14d)}`,
+    `- Members with 0 bookings (30d): ${asInt(metrics.member_usage.members_with_zero_bookings_30d)}`,
+    `- Repeat guests not converted: ${asInt(metrics.cohorts.repeat_guests_not_converted)}`,
+    `- Avg guest-to-member lag: ${isNumber(metrics.cohorts.avg_guest_to_member_lag_days) ? `${metrics.cohorts.avg_guest_to_member_lag_days.toFixed(1)} days` : 'Data unavailable'}`,
+    '',
+    '## Booking Mix',
+    `- Member bookings: ${asInt(metrics.booking_segmentation.member.bookings)} (${asHours(metrics.booking_segmentation.member.booked_hours)} hrs, ${asCurrency(metrics.booking_segmentation.member.revenue)})`,
+    `- Non-member bookings: ${asInt(metrics.booking_segmentation.non_member.bookings)} (${asHours(metrics.booking_segmentation.non_member.booked_hours)} hrs, ${asCurrency(metrics.booking_segmentation.non_member.revenue)})`,
+    `- Weakest day: ${weekdayFocus.weakest_day ?? 'Data unavailable'}${isNumber(weekdayFocus.weakest_day_bookings) ? ` (${asInt(weekdayFocus.weakest_day_bookings)} bookings)` : ''}`,
+    '',
     '## Marketing',
     `- Google Ads: ${googleAdsLine}`,
     `- Meta Ads: ${metaAdsLine}`,
+    '',
+    '## Data Quality',
+    `- Confidence: ${QUALITY_LABEL[dataQuality.confidence.label]} (${(dataQuality.confidence.score * 100).toFixed(0)}%)`,
+    `- Source completeness: memberships ${Math.round(dataQuality.source_completeness.memberships * 100)}%, bookings ${Math.round(dataQuality.source_completeness.bookings * 100)}%, revenue ${Math.round(dataQuality.source_completeness.revenue * 100)}%, ads ${Math.round(dataQuality.source_completeness.ads * 100)}%`,
+    `- Exclusions applied: memberships ${asInt(dataQuality.exclusions_applied.memberships)}, bookings ${asInt(dataQuality.exclusions_applied.bookings)}, revenue ${asInt(dataQuality.exclusions_applied.revenue)}, accounts ${asInt(dataQuality.exclusions_applied.accounts)}`,
+    ...(
+      qualityWarnings.length
+        ? qualityWarnings.map(item => `- Warning: ${item}`)
+        : ['- Warning: none']
+    ),
     '',
     '## Data availability',
     `- Memberships: ${sourceLabel(availability.memberships)}`,
@@ -288,7 +483,7 @@ async function run() {
     ...whatChanged.map(item => `- ${item}`),
     '',
     '## Alerts',
-    ...(safeAlerts.length > 0 ? safeAlerts.map(item => `- ${item.title}: ${item.detail}`) : ['- No major alerts this week.']),
+    ...(safeAlerts.length > 0 ? safeAlerts.map(item => `- [${item.severity.toUpperCase()}] ${item.title}: ${item.detail}`) : ['- No major alerts this week.']),
     '',
     '## Recommended next actions',
     ...recommendedActions.map((item, idx) => `${idx + 1}. ${item}`),
@@ -299,8 +494,9 @@ async function run() {
       `- Objective: ${recommendation.objective}`,
       `- Audience: ${recommendation.audience}`,
       `- CTA: ${recommendation.cta}`,
-      `- Send window: ${recommendation.send_window}`
-    ])
+      `- Send window: ${recommendation.send_window}`,
+      recommendation.note ? `- Note: ${recommendation.note}` : null
+    ].filter(Boolean) as string[])
   ].join('\n') + '\n'
 
   await Promise.all([
@@ -311,6 +507,7 @@ async function run() {
   console.log('[analytics] weekly report generated', {
     week_of: jsonReport.week_of,
     alerts: safeAlerts.length,
+    confidence: dataQuality.confidence.score,
     ads_available: availability.ads === 'supabase'
   })
 }

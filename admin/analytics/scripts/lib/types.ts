@@ -24,10 +24,47 @@ export type IngestManifest = {
   notes: string[]
 }
 
+export type AccountClassification = {
+  is_test_account: boolean
+  is_internal_account: boolean
+  exclude_from_kpis: boolean
+  expires_at: string | null
+}
+
+export type DataQualityMetadata = {
+  source_completeness: {
+    memberships: number
+    bookings: number
+    revenue: number
+    ads: number
+  }
+  row_counts: {
+    memberships: number
+    membership_state: number
+    bookings: number
+    revenue: number
+    ads: number
+  }
+  exclusions_applied: {
+    memberships: number
+    membership_state: number
+    bookings: number
+    revenue: number
+    ads: number
+    accounts: number
+  }
+  warnings: string[]
+  confidence: {
+    score: number
+    label: 'high' | 'medium' | 'low'
+  }
+}
+
 export type RawMembershipRecord = {
   membership_id: string
   user_id: string
   customer_id: string | null
+  account_email: string | null
   tier: string
   cadence: string | null
   status: string
@@ -37,12 +74,17 @@ export type RawMembershipRecord = {
   current_period_start: string | null
   current_period_end: string | null
   last_paid_at: string | null
+  is_test_account: boolean
+  is_internal_account: boolean
+  exclude_from_kpis: boolean
+  expires_at: string | null
 }
 
 export type RawBookingRecord = {
   booking_id: string
   customer_id: string
   user_id: string | null
+  guest_email: string | null
   start_time: string
   end_time: string
   status: string
@@ -50,17 +92,26 @@ export type RawBookingRecord = {
   revenue: number
   booking_type: 'member' | 'guest' | 'hourly' | 'other'
   channel: string
+  is_test_account: boolean
+  is_internal_account: boolean
+  exclude_from_kpis: boolean
+  expires_at: string | null
 }
 
 export type RawRevenueEventRecord = {
   date: string
   user_id: string | null
   customer_id: string | null
+  account_email: string | null
   source: 'membership' | 'credit_topup' | 'hold_topup' | 'guest_booking' | 'other'
   amount: number
   order_id: string | null
   tier: string | null
   cadence: string | null
+  is_test_account: boolean
+  is_internal_account: boolean
+  exclude_from_kpis: boolean
+  expires_at: string | null
 }
 
 export type RawAdRecord = {
@@ -83,17 +134,23 @@ export type NormalizedMembershipRecord = NormalizedDateDims & {
   customer_id: string
   user_id: string | null
   membership_id: string | null
+  account_email: string | null
   tier: TierKey
   status: string
   amount: number
   is_new: boolean
   is_canceled: boolean
+  is_test_account: boolean
+  is_internal_account: boolean
+  exclude_from_kpis: boolean
+  expires_at: string | null
 }
 
 export type MembershipStateRecord = {
   membership_id: string
   user_id: string
   customer_id: string
+  account_email: string | null
   tier: TierKey
   cadence: string | null
   status: string
@@ -103,27 +160,41 @@ export type MembershipStateRecord = {
   current_period_start: string | null
   current_period_end: string | null
   last_paid_at: string | null
+  is_test_account: boolean
+  is_internal_account: boolean
+  exclude_from_kpis: boolean
+  expires_at: string | null
 }
 
 export type NormalizedBookingRecord = NormalizedDateDims & {
   booking_id: string
   customer_id: string
   user_id: string | null
+  guest_email: string | null
   hours: number
   revenue: number
   booking_type: string
   channel: string
   status: string
+  is_test_account: boolean
+  is_internal_account: boolean
+  exclude_from_kpis: boolean
+  expires_at: string | null
 }
 
 export type NormalizedRevenueEventRecord = NormalizedDateDims & {
   user_id: string | null
   customer_id: string | null
+  account_email: string | null
   source: string
   amount: number
   order_id: string | null
   tier: TierKey | null
   cadence: string | null
+  is_test_account: boolean
+  is_internal_account: boolean
+  exclude_from_kpis: boolean
+  expires_at: string | null
 }
 
 export type NormalizedAdRecord = NormalizedDateDims & {
@@ -138,6 +209,13 @@ export type NormalizedAdRecord = NormalizedDateDims & {
 export type WeeklyMetrics = {
   revenue_total: number | null
   revenue_wow_pct: number | null
+  cash_received: number | null
+  cash_received_wow_pct: number | null
+  recognized_revenue_total: number | null
+  recognized_revenue_wow_pct: number | null
+  recognized_membership_revenue: number | null
+  one_time_booking_revenue: number | null
+  other_revenue: number | null
   bookings_total: number | null
   booked_hours: number | null
   utilization_rate: number | null
@@ -145,6 +223,37 @@ export type WeeklyMetrics = {
   new_members: number | null
   canceled_members: number | null
   net_members: number | null
+}
+
+export type MemberUsageMetrics = {
+  bookings_per_member_7d: number | null
+  bookings_per_member_30d: number | null
+  booked_hours_per_member_30d: number | null
+  members_with_zero_bookings_14d: number | null
+  members_with_zero_bookings_30d: number | null
+  tier_usage_pct: {
+    creator: number | null
+    pro: number | null
+    studio_plus: number | null
+  }
+}
+
+export type BookingSegmentationBucket = {
+  bookings: number | null
+  booked_hours: number | null
+  revenue: number | null
+}
+
+export type BookingSegmentation = {
+  member: BookingSegmentationBucket
+  non_member: BookingSegmentationBucket
+}
+
+export type CohortMetrics = {
+  repeat_guests_not_converted: number | null
+  converted_guest_members: number | null
+  avg_guest_to_member_lag_days: number | null
+  median_guest_to_member_lag_days: number | null
 }
 
 export type PlatformSummary = {
@@ -157,7 +266,11 @@ export type MetricsOutput = {
   generated_at: string
   week_of: string
   data_availability: DataAvailability
+  data_quality: DataQualityMetadata
   week: WeeklyMetrics
+  member_usage: MemberUsageMetrics
+  booking_segmentation: BookingSegmentation
+  cohorts: CohortMetrics
   tiers: {
     creator: number | null
     pro: number | null
@@ -180,24 +293,75 @@ export type TrendsOutput = {
   generated_at: string
   week_of: string
   data_availability: DataAvailability
+  data_quality: DataQualityMetadata
   revenue_by_week: Array<{ week: string, value: number }>
+  cash_received_by_week: Array<{ week: string, value: number }>
+  recognized_revenue_by_week: Array<{ week: string, value: number }>
+  one_time_booking_revenue_by_week: Array<{ week: string, value: number }>
   members_by_week: Array<{ week: string, active: number, new_members: number, canceled_members: number }>
   utilization_by_week: Array<{ week: string, value: number, booked_hours: number }>
+  booking_mix_by_week: Array<{
+    week: string
+    member_bookings: number
+    non_member_bookings: number
+    member_booked_hours: number
+    non_member_booked_hours: number
+    member_revenue: number
+    non_member_revenue: number
+  }>
+  weekday_utilization: {
+    lookback_weeks: number
+    bookings_by_weekday: Array<{ weekday: string, value: number }>
+    booked_hours_by_weekday: Array<{ weekday: string, value: number }>
+    weakest_day: {
+      weekday: string
+      bookings: number
+      booked_hours: number
+    } | null
+  }
+  cohort_conversion: {
+    repeat_guests_not_converted: number
+    converted_guest_members: number
+    avg_guest_to_member_lag_days: number | null
+    median_guest_to_member_lag_days: number | null
+    records: Array<{
+      customer_id: string
+      first_booking_date: string | null
+      member_start_date: string | null
+      guest_bookings: number
+      converted: boolean
+      conversion_lag_days: number | null
+    }>
+  }
 }
 
 export type WeeklyReportJson = {
   generated_at: string
   week_of: string
   data_availability: DataAvailability
+  data_quality: DataQualityMetadata
   snapshot: {
     revenue: number | null
     revenue_wow_pct: number | null
+    cash_received: number | null
+    cash_received_wow_pct: number | null
+    recognized_revenue: number | null
+    recognized_revenue_wow_pct: number | null
+    one_time_booking_revenue: number | null
     bookings: number | null
     booked_hours: number | null
     utilization_rate: number | null
     active_members: number | null
     new_members: number | null
     cancellations: number | null
+  }
+  member_usage: MemberUsageMetrics
+  booking_segmentation: BookingSegmentation
+  cohorts: CohortMetrics
+  weekday_focus: {
+    weakest_day: string | null
+    weakest_day_bookings: number | null
+    weakest_day_booked_hours: number | null
   }
   memberships: {
     creator: number | null

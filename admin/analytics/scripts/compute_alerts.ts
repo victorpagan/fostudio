@@ -1,37 +1,33 @@
-import { DateTime } from 'luxon'
 import { analyticsAlertThresholds } from '../config/alert-thresholds'
-import { analyticsMetricDefinitions } from '../config/metric-definitions'
-import { ALERTS_OUTPUT_PATH, METRICS_OUTPUT_PATH } from './lib/constants'
-import { writeJsonFile, readJsonFile } from './lib/fs'
 import {
-  activeMembershipStateAt,
+  ALERTS_OUTPUT_PATH,
+  METRICS_OUTPUT_PATH,
+  TRENDS_OUTPUT_PATH
+} from './lib/constants'
+import { readJsonFile, writeJsonFile } from './lib/fs'
+import {
   adsInRange,
   aggregateAds,
   bookingsInRange,
   getWeekContext,
+  kpiEligibleRows,
   loadAnalyticsData,
-  membershipEventsInRange,
   parseWeekOfArg
 } from './lib/analytics'
-import type { AlertsOutputItem, DataAvailability, IngestSource, MetricsOutput } from './lib/types'
+import type {
+  AlertsOutputItem,
+  DataAvailability,
+  IngestSource,
+  MetricsOutput,
+  TrendsOutput
+} from './lib/types'
 
 type AvailabilityKey = 'memberships' | 'bookings' | 'revenue' | 'ads'
 
-function toWeekdayLabel(value: number) {
-  const labels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-  return labels[value - 1] ?? 'Unknown'
-}
-
-function weekdayNameToIsoNumber(value: string) {
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'monday') return 1
-  if (normalized === 'tuesday') return 2
-  if (normalized === 'wednesday') return 3
-  if (normalized === 'thursday') return 4
-  if (normalized === 'friday') return 5
-  if (normalized === 'saturday') return 6
-  if (normalized === 'sunday') return 7
-  return 3
+const severityOrder: Record<AlertsOutputItem['severity'], number> = {
+  low: 1,
+  medium: 2,
+  high: 3
 }
 
 function isAvailable(source: IngestSource) {
@@ -42,16 +38,47 @@ function isNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
-function addUnavailableAlert(alerts: AlertsOutputItem[], availability: DataAvailability, key: AvailabilityKey, title: string, detailPrefix: string) {
+function downgradeSeverity(
+  severity: AlertsOutputItem['severity'],
+  level: 'none' | 'light' | 'strong'
+): AlertsOutputItem['severity'] {
+  if (level === 'none') return severity
+  if (level === 'strong') return 'low'
+  if (severity === 'high') return 'medium'
+  if (severity === 'medium') return 'low'
+  return 'low'
+}
+
+function addUnavailableAlert(
+  alerts: AlertsOutputItem[],
+  availability: DataAvailability,
+  key: AvailabilityKey,
+  title: string,
+  detailPrefix: string
+) {
   const source = availability[key] as IngestSource
   if (isAvailable(source)) return
 
   const note = availability.notes[key]?.[0]
   alerts.push({
-    severity: 'medium',
+    severity: key === 'ads' ? 'low' : 'medium',
     type: 'data',
     title,
     detail: note ? `${detailPrefix} ${note}` : detailPrefix
+  })
+}
+
+function withSeverityAdjustments(
+  alerts: AlertsOutputItem[],
+  level: 'none' | 'light' | 'strong'
+) {
+  if (level === 'none') return alerts
+  return alerts.map((alert) => {
+    if (alert.type === 'data') return alert
+    return {
+      ...alert,
+      severity: downgradeSeverity(alert.severity, level)
+    }
   })
 }
 
@@ -59,10 +86,32 @@ async function run() {
   const weekOf = parseWeekOfArg()
   const context = getWeekContext(weekOf)
   const data = await loadAnalyticsData()
+  const kpiBookings = kpiEligibleRows(data.bookings)
+
+  const [metrics, trends] = await Promise.all([
+    readJsonFile<MetricsOutput>(METRICS_OUTPUT_PATH),
+    readJsonFile<TrendsOutput>(TRENDS_OUTPUT_PATH)
+  ])
+
+  const availability = metrics?.data_availability ?? data.availability
+  const confidenceScore = Number(metrics?.data_quality?.confidence?.score ?? data.data_quality.confidence.score ?? 0)
+  const exclusionTotals = metrics?.data_quality?.exclusions_applied ?? data.data_quality.exclusions_applied
+  const rowCounts = metrics?.data_quality?.row_counts ?? data.data_quality.row_counts
+
+  const excludedRows = Number(exclusionTotals.memberships ?? 0) + Number(exclusionTotals.bookings ?? 0) + Number(exclusionTotals.revenue ?? 0)
+  const totalRows = Math.max(1, Number(rowCounts.memberships ?? 0) + Number(rowCounts.bookings ?? 0) + Number(rowCounts.revenue ?? 0))
+  const noisyRatio = excludedRows / totalRows
+  const isNoisyPeriod = noisyRatio >= analyticsAlertThresholds.dataQuality.noisyExclusionRatio
+
+  let downgradeLevel: 'none' | 'light' | 'strong' = 'none'
+  if (confidenceScore < analyticsAlertThresholds.dataQuality.minConfidenceForRevenueAlerts || isNoisyPeriod) {
+    downgradeLevel = 'light'
+  }
+  if (confidenceScore < 0.45) {
+    downgradeLevel = 'strong'
+  }
 
   const alerts: AlertsOutputItem[] = []
-  const metrics = await readJsonFile<MetricsOutput>(METRICS_OUTPUT_PATH)
-  const availability = metrics?.data_availability ?? data.availability
 
   addUnavailableAlert(
     alerts,
@@ -83,15 +132,111 @@ async function run() {
     availability,
     'memberships',
     'Membership data unavailable',
-    'Membership data is unavailable, so retention/churn alerts may be incomplete.'
+    'Membership data is unavailable, so retention/churn activity alerts may be incomplete.'
   )
   addUnavailableAlert(
     alerts,
     availability,
     'revenue',
     'Revenue data unavailable',
-    'Revenue data is unavailable, so revenue trend alerts may be incomplete.'
+    'Revenue model data is unavailable, so revenue alerts are suppressed.'
   )
+
+  if (confidenceScore < 0.6) {
+    alerts.push({
+      severity: 'low',
+      type: 'data',
+      title: 'Analytics confidence is reduced',
+      detail: `Current confidence score is ${(confidenceScore * 100).toFixed(0)}%, so non-critical alerts are downgraded.`
+    })
+  }
+
+  if (isNoisyPeriod) {
+    alerts.push({
+      severity: 'low',
+      type: 'data',
+      title: 'Noisy migration/exclusion period detected',
+      detail: `${(noisyRatio * 100).toFixed(1)}% of KPI candidate rows were excluded; trend alerts are partially suppressed to avoid false positives.`
+    })
+  }
+
+  if (isAvailable(availability.bookings)) {
+    const currentBookings = bookingsInRange(kpiBookings, context.start, context.end).filter(item => item.status !== 'canceled')
+    const previousBookings = bookingsInRange(kpiBookings, context.previous_start, context.previous_end).filter(item => item.status !== 'canceled')
+    const currentHours = currentBookings.reduce((sum, row) => sum + Number(row.hours ?? 0), 0)
+    const previousHours = previousBookings.reduce((sum, row) => sum + Number(row.hours ?? 0), 0)
+
+    if (previousBookings.length > 0) {
+      const dropRatio = (previousBookings.length - currentBookings.length) / previousBookings.length
+      if (dropRatio >= analyticsAlertThresholds.bookings.wowDropPct) {
+        alerts.push({
+          severity: dropRatio > 0.35 ? 'high' : 'medium',
+          type: 'bookings',
+          title: 'Bookings down week-over-week',
+          detail: `Bookings fell by ${(dropRatio * 100).toFixed(1)}% compared with last week (${currentBookings.length} vs ${previousBookings.length}).`
+        })
+      }
+    }
+
+    if (previousHours > 0) {
+      const hoursDropRatio = (previousHours - currentHours) / previousHours
+      if (hoursDropRatio >= analyticsAlertThresholds.utilization.wowDropPct) {
+        alerts.push({
+          severity: 'medium',
+          type: 'bookings',
+          title: 'Booked hours softened week-over-week',
+          detail: `Booked hours are down ${(hoursDropRatio * 100).toFixed(1)}% week-over-week (${currentHours.toFixed(1)}h vs ${previousHours.toFixed(1)}h).`
+        })
+      }
+    }
+  }
+
+  const utilizationRate = metrics?.week?.utilization_rate
+  if (isNumber(utilizationRate) && utilizationRate < analyticsAlertThresholds.utilization.lowWeeklyUtilizationRatio) {
+    alerts.push({
+      severity: 'medium',
+      type: 'bookings',
+      title: 'Utilization is running below target',
+      detail: `Weekly utilization is ${(utilizationRate * 100).toFixed(1)}%, below the ${(analyticsAlertThresholds.utilization.lowWeeklyUtilizationRatio * 100).toFixed(0)}% threshold.`
+    })
+  }
+
+  if (isAvailable(availability.memberships) && metrics?.member_usage) {
+    const activeMembers = Number(metrics.week?.active_members ?? 0)
+    const zero14 = Number(metrics.member_usage.members_with_zero_bookings_14d ?? 0)
+    const zero30 = Number(metrics.member_usage.members_with_zero_bookings_30d ?? 0)
+
+    if (activeMembers >= analyticsAlertThresholds.memberActivity.minActiveMembers) {
+      const zero14Ratio = activeMembers > 0 ? zero14 / activeMembers : 0
+      const zero30Ratio = activeMembers > 0 ? zero30 / activeMembers : 0
+
+      if (zero14Ratio >= analyticsAlertThresholds.memberActivity.zeroBooking14dWarnRatio) {
+        alerts.push({
+          severity: 'high',
+          type: 'retention',
+          title: 'Member activity dropped in the last 14 days',
+          detail: `${zero14} of ${activeMembers} active members recorded zero bookings in the last 14 days.`
+        })
+      } else if (zero30Ratio >= analyticsAlertThresholds.memberActivity.zeroBooking30dWarnRatio) {
+        alerts.push({
+          severity: 'medium',
+          type: 'retention',
+          title: 'Member activity is soft over 30 days',
+          detail: `${zero30} of ${activeMembers} active members recorded zero bookings in the last 30 days.`
+        })
+      }
+    }
+  }
+
+  const weakestDay = trends?.weekday_utilization?.weakest_day
+  if (weakestDay && weakestDay.bookings >= 0 && weakestDay.booked_hours >= 0) {
+    alerts.push({
+      severity: 'low',
+      type: 'channel',
+      title: `${weakestDay.weekday} remains the weakest booking day`,
+      detail: `${weakestDay.weekday} logged ${weakestDay.bookings} bookings and ${Number(weakestDay.booked_hours).toFixed(1)} booked hours in the recent weekday lookback window.`
+    })
+  }
 
   if (isAvailable(availability.ads)) {
     const adWindowStart = context.end.minus({ days: analyticsAlertThresholds.adPerformance.cpaComparisonWindowDays - 1 }).startOf('day')
@@ -103,7 +248,7 @@ async function run() {
       && adSummary.meta.conversions <= analyticsAlertThresholds.adPerformance.weakChannelMinConversions
     ) {
       alerts.push({
-        severity: 'high',
+        severity: 'medium',
         type: 'ads',
         title: 'Meta weak conversion efficiency',
         detail: `Meta spent $${adSummary.meta.spend.toFixed(2)} with ${adSummary.meta.conversions} conversions in the last ${analyticsAlertThresholds.adPerformance.cpaComparisonWindowDays} days.`
@@ -123,105 +268,43 @@ async function run() {
     }
   }
 
-  if (isAvailable(availability.memberships) && isAvailable(availability.bookings)) {
-    const activeMembers = activeMembershipStateAt(data.membershipState, context.end)
-    const creatorMembers = activeMembers.filter(member => member.tier === 'creator')
+  if (isAvailable(availability.revenue) && metrics?.week) {
+    const recognizedWow = metrics.week.recognized_revenue_wow_pct
+    const cash = Number(metrics.week.cash_received ?? 0)
+    const recognized = Number(metrics.week.recognized_revenue_total ?? 0)
+    const lumpyGap = Math.abs(cash - recognized) / Math.max(1, Math.abs(recognized))
 
-    const lowUsageWindowStart = context.end.minus({ days: analyticsAlertThresholds.retention.lowUsageLookbackDays - 1 }).startOf('day')
-    const creatorByUser = new Set(creatorMembers.map(member => member.user_id))
-
-    const usageByUser = new Map<string, number>()
-    const recentBookings = bookingsInRange(data.bookings, lowUsageWindowStart, context.end)
-      .filter(booking => booking.status !== 'canceled' && booking.user_id && creatorByUser.has(booking.user_id))
-
-    for (const booking of recentBookings) {
-      const userId = String(booking.user_id)
-      usageByUser.set(userId, (usageByUser.get(userId) ?? 0) + Number(booking.hours ?? 0))
-    }
-
-    const creatorIncludedHours = analyticsMetricDefinitions.tierIncludedHoursPerMonth.creator
-    const lowUsageMembers = creatorMembers.filter((member) => {
-      const usageHours = usageByUser.get(member.user_id) ?? 0
-      const usageRatio = creatorIncludedHours > 0 ? usageHours / creatorIncludedHours : 0
-      return usageRatio < analyticsAlertThresholds.retention.lowUsageThreshold
-    })
-
-    if (lowUsageMembers.length >= analyticsAlertThresholds.retention.lowUsageMinMembers) {
+    if (lumpyGap >= analyticsAlertThresholds.revenue.lumpyGapRatio) {
       alerts.push({
-        severity: 'medium',
-        type: 'retention',
-        title: 'Low usage in Creator tier',
-        detail: `${lowUsageMembers.length} Creator members used less than ${(analyticsAlertThresholds.retention.lowUsageThreshold * 100).toFixed(0)}% of included hours in the last ${analyticsAlertThresholds.retention.lowUsageLookbackDays} days.`
+        severity: 'low',
+        type: 'data',
+        title: 'Revenue timing variance detected',
+        detail: `Cash and recognized revenue differ by ${(lumpyGap * 100).toFixed(1)}% this week; revenue swing alerts are softened to avoid timing noise.`
       })
-    }
-
-    const membershipsThisWeek = membershipEventsInRange(data.memberships, context.start, context.end)
-    const canceledCount = membershipsThisWeek.filter(item => item.is_canceled).length
-    if (canceledCount >= analyticsAlertThresholds.memberships.churnWarningCount) {
+    } else if (
+      isNumber(recognizedWow)
+      && recognizedWow <= -(analyticsAlertThresholds.revenue.wowDropPct * 100)
+      && confidenceScore >= analyticsAlertThresholds.dataQuality.minConfidenceForRevenueAlerts
+    ) {
       alerts.push({
-        severity: 'medium',
-        type: 'memberships',
-        title: 'Weekly churn pressure increased',
-        detail: `${canceledCount} membership cancellations were recorded this week.`
+        severity: 'low',
+        type: 'revenue',
+        title: 'Recognized revenue softened week-over-week',
+        detail: `Recognized revenue is down ${Math.abs(recognizedWow).toFixed(1)}% week-over-week.`
       })
     }
   }
 
-  if (isAvailable(availability.bookings)) {
-    const currentBookings = bookingsInRange(data.bookings, context.start, context.end).filter(item => item.status !== 'canceled')
-    const previousBookings = bookingsInRange(data.bookings, context.previous_start, context.previous_end).filter(item => item.status !== 'canceled')
+  const adjustedAlerts = withSeverityAdjustments(alerts, downgradeLevel)
+    .sort((left, right) => severityOrder[right.severity] - severityOrder[left.severity])
 
-    if (previousBookings.length > 0) {
-      const dropRatio = (previousBookings.length - currentBookings.length) / previousBookings.length
-      if (dropRatio >= analyticsAlertThresholds.bookings.wowDropPct) {
-        alerts.push({
-          severity: 'medium',
-          type: 'bookings',
-          title: 'Bookings down week-over-week',
-          detail: `Bookings fell by ${(dropRatio * 100).toFixed(1)}% compared with last week (${currentBookings.length} vs ${previousBookings.length}).`
-        })
-      }
-    }
-
-    const weekdayLookbackStart = context.start.minus({ weeks: 8 }).startOf('week')
-    const weekdayRows = bookingsInRange(data.bookings, weekdayLookbackStart, context.end)
-      .filter(item => item.status !== 'canceled')
-
-    const weekdayCounts = new Map<number, number>()
-    for (const row of weekdayRows) {
-      const dt = DateTime.fromISO(row.date, { zone: analyticsMetricDefinitions.timezone })
-      if (!dt.isValid) continue
-      const day = dt.weekday
-      weekdayCounts.set(day, (weekdayCounts.get(day) ?? 0) + 1)
-    }
-
-    const totalBookings = [...weekdayCounts.values()].reduce((sum, value) => sum + value, 0)
-    const avgPerDay = totalBookings / 7
-    const weakWeekdayNumber = weekdayNameToIsoNumber(analyticsAlertThresholds.bookings.weakWeekdayName)
-    const weakDayValue = weekdayCounts.get(weakWeekdayNumber) ?? 0
-
-    if (avgPerDay > 0 && weakDayValue < (avgPerDay * analyticsAlertThresholds.bookings.weakWeekdayRatio)) {
-      alerts.push({
-        severity: 'medium',
-        type: 'channel',
-        title: `${analyticsAlertThresholds.bookings.weakWeekdayName} bookings remain weak`,
-        detail: `${toWeekdayLabel(weakWeekdayNumber)} bookings are ${((1 - (weakDayValue / avgPerDay)) * 100).toFixed(0)}% below the 8-week weekday average.`
-      })
-    }
-  }
-
-  const revenueWowPct = metrics?.week?.revenue_wow_pct
-  if (isNumber(revenueWowPct) && revenueWowPct < -10) {
-    alerts.push({
-      severity: 'medium',
-      type: 'revenue',
-      title: 'Revenue trend softened week-over-week',
-      detail: `Revenue is down ${Math.abs(revenueWowPct).toFixed(1)}% week-over-week.`
-    })
-  }
-
-  await writeJsonFile(ALERTS_OUTPUT_PATH, alerts)
-  console.log('[analytics] alerts computed', { count: alerts.length })
+  await writeJsonFile(ALERTS_OUTPUT_PATH, adjustedAlerts)
+  console.log('[analytics] alerts computed', {
+    count: adjustedAlerts.length,
+    confidence: confidenceScore,
+    noisy_period: isNoisyPeriod,
+    downgraded: downgradeLevel !== 'none'
+  })
 }
 
 run().catch((error: unknown) => {

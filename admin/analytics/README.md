@@ -18,6 +18,7 @@ This workspace generates analytics artifacts for the admin dashboard and weekly 
 - Weekly utilization denominator: `168` hours (`config/metric-definitions.ts`)
 - Revenue includes membership payments, guest booking-linked revenue, credit topups, and hold topups
 - Email integration is advisory only (recommendations generated, nothing auto-sent)
+- KPI totals exclude test/internal/excluded accounts by default
 
 ## Data Truth Policy
 
@@ -30,6 +31,30 @@ This workspace generates analytics artifacts for the admin dashboard and weekly 
   - `revenue`
   - `ads`
 - Alerts and weekly report sections include explicit “data unavailable” messaging when applicable.
+
+## Account classification and KPI exclusions
+
+Ingest supports these account-level fields when present on `customers`:
+
+- `is_test_account`
+- `is_internal_account`
+- `exclude_from_kpis`
+- `expires_at`
+
+Classification behavior:
+
+- If these columns exist, they are honored directly.
+- If they do not exist yet, analytics falls back to email-domain/marker heuristics in `config/account-classification.ts`.
+- Excluded rows remain in normalized datasets but are removed from KPI/trend/alert aggregates.
+- `expires_at` is treated as an exclusion TTL.
+
+`metrics.json` and `trends.json` include a `data_quality` block with:
+
+- `source_completeness`
+- `row_counts`
+- `exclusions_applied`
+- `warnings`
+- `confidence` score/label
 
 ### Excluding bad membership session revenue
 
@@ -204,11 +229,16 @@ cat admin/analytics/outputs/metrics.json | jq '.data_availability'
   "customer_id": "cust_123",
   "user_id": "user_123",
   "membership_id": "mbr_123",
+  "account_email": "member@example.com",
   "tier": "creator",
   "status": "active",
   "amount": 285,
   "is_new": true,
-  "is_canceled": false
+  "is_canceled": false,
+  "is_test_account": false,
+  "is_internal_account": false,
+  "exclude_from_kpis": false,
+  "expires_at": null
 }
 ```
 
@@ -222,11 +252,16 @@ cat admin/analytics/outputs/metrics.json | jq '.data_availability'
   "booking_id": "bk_123",
   "customer_id": "cust_123",
   "user_id": "user_123",
+  "guest_email": null,
   "hours": 2,
   "revenue": 160,
   "booking_type": "hourly",
   "channel": "website",
-  "status": "confirmed"
+  "status": "confirmed",
+  "is_test_account": false,
+  "is_internal_account": false,
+  "exclude_from_kpis": false,
+  "expires_at": null
 }
 ```
 
@@ -245,3 +280,40 @@ cat admin/analytics/outputs/metrics.json | jq '.data_availability'
   "conversions": 2
 }
 ```
+
+### `normalized/revenue_events.json`
+
+```json
+{
+  "date": "2026-04-05",
+  "week": "2026-W14",
+  "month": "2026-04",
+  "user_id": "user_123",
+  "customer_id": "cust_123",
+  "account_email": "member@example.com",
+  "source": "membership",
+  "amount": 285,
+  "order_id": "checkout_123",
+  "tier": "creator",
+  "cadence": "monthly",
+  "is_test_account": false,
+  "is_internal_account": false,
+  "exclude_from_kpis": false,
+  "expires_at": null
+}
+```
+
+## Output contracts
+
+- `outputs/metrics.json`
+  - `week` includes `cash_received`, `recognized_revenue_total`, `recognized_membership_revenue`, `one_time_booking_revenue`, and `other_revenue`.
+  - `member_usage` includes bookings/member 7d/30d, booked hours/member 30d, zero-booking member counts, tier usage percentages.
+  - `booking_segmentation` includes member vs non-member bookings/hours/revenue.
+  - `cohorts` includes repeat guest conversion summary.
+- `outputs/trends.json`
+  - Adds `cash_received_by_week`, `recognized_revenue_by_week`, `one_time_booking_revenue_by_week`.
+  - Adds `booking_mix_by_week`, `weekday_utilization` (with weakest day), and `cohort_conversion` records.
+- `outputs/alerts.json`
+  - Severity-adjusted alerts with data-quality-aware suppression/downgrade behavior.
+- `outputs/weekly-report.json` / `outputs/weekly-report.md`
+  - Business-aware summary with `data_quality`, usage behavior, segmentation, cohort, weekday focus, and advisory `email_recommendations`.

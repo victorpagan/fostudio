@@ -9,6 +9,11 @@ import { toStringOrNull } from './lib/parse'
 import { createSupabaseClient } from './lib/supabase'
 import type { IngestManifest, IngestSource, RawBookingRecord, RawRevenueEventRecord } from './lib/types'
 import {
+  buildCustomerLookup,
+  fetchCustomerClassificationRows,
+  resolveAccountClassification
+} from './lib/accountFlags'
+import {
   resolveMembershipCheckoutRevenue,
   type MembershipCheckoutRevenueSession,
   type MembershipVariationPriceRow
@@ -74,7 +79,8 @@ async function loadFromSupabase() {
     sessionsRes,
     variationsRes,
     creditTopupRes,
-    holdTopupRes
+    holdTopupRes,
+    customerRows
   ] = await Promise.all([
     supabase
       .from('bookings')
@@ -104,7 +110,8 @@ async function loadFromSupabase() {
       .select('paid_at,user_id,amount_cents')
       .eq('status', 'processed')
       .not('paid_at', 'is', null)
-      .limit(10000)
+      .limit(10000),
+    fetchCustomerClassificationRows(supabase).catch(() => [])
   ])
 
   const failed = [
@@ -133,6 +140,8 @@ async function loadFromSupabase() {
     ordersBySquareId.set(key, Math.max(0, Number(order.total ?? 0)))
   }
 
+  const customerLookup = buildCustomerLookup(customerRows)
+
   const bookings = ((bookingsRes.data ?? []) as BookingRow[])
     .map((booking) => {
       const userId = toStringOrNull(booking.user_id)
@@ -140,18 +149,28 @@ async function loadFromSupabase() {
       const revenue = bookingType === 'guest'
         ? Math.max(0, Number(ordersBySquareId.get(String(booking.square_order_id ?? '').trim()) ?? 0))
         : 0
+      const account = resolveAccountClassification({
+        customerId: booking.customer_id,
+        userId: booking.user_id,
+        email: booking.guest_email
+      }, customerLookup)
 
       return {
         booking_id: String(booking.id),
         customer_id: String(booking.customer_id ?? booking.user_id ?? booking.guest_email ?? booking.id),
         user_id: userId,
+        guest_email: toStringOrNull(booking.guest_email),
         start_time: String(booking.start_time),
         end_time: String(booking.end_time),
         status: String(booking.status ?? '').trim().toLowerCase() || 'confirmed',
         hours: hoursBetween(String(booking.start_time), String(booking.end_time)),
         revenue,
         booking_type: bookingType,
-        channel: 'website'
+        channel: 'website',
+        is_test_account: account.is_test_account,
+        is_internal_account: account.is_internal_account,
+        exclude_from_kpis: account.exclude_from_kpis,
+        expires_at: account.expires_at
       }
     })
 
@@ -164,11 +183,16 @@ async function loadFromSupabase() {
       date: dims.date,
       user_id: booking.user_id,
       customer_id: booking.customer_id,
+      account_email: booking.guest_email,
       source: 'guest_booking',
       amount: booking.revenue,
       order_id: null,
       tier: null,
-      cadence: null
+      cadence: null,
+      is_test_account: booking.is_test_account,
+      is_internal_account: booking.is_internal_account,
+      exclude_from_kpis: booking.exclude_from_kpis,
+      expires_at: booking.expires_at
     })
   }
 
@@ -192,48 +216,76 @@ async function loadFromSupabase() {
   for (const row of membershipRevenue.rows) {
     const amount = Number((row.amountCents / 100).toFixed(2))
     if (amount <= 0) continue
+    const account = resolveAccountClassification({
+      customerId: row.customerId,
+      userId: row.userId
+    }, customerLookup)
 
     revenue.push({
       date: String(row.paidAt),
       user_id: toStringOrNull(row.userId),
       customer_id: toStringOrNull(row.customerId),
+      account_email: account.account_email,
       source: 'membership',
       amount,
       order_id: row.sessionId || null,
       tier: row.tier,
-      cadence: row.cadence
+      cadence: row.cadence,
+      is_test_account: account.is_test_account,
+      is_internal_account: account.is_internal_account,
+      exclude_from_kpis: account.exclude_from_kpis,
+      expires_at: account.expires_at
     })
   }
 
   for (const row of ((creditTopupRes.data ?? []) as TopupRow[])) {
     const amount = Math.max(0, Number(row.amount_cents ?? 0) / 100)
     if (!row.paid_at || amount <= 0) continue
+    const account = resolveAccountClassification({
+      userId: row.user_id
+    }, customerLookup)
     revenue.push({
       date: String(row.paid_at),
       user_id: toStringOrNull(row.user_id),
       customer_id: null,
+      account_email: account.account_email,
       source: 'credit_topup',
       amount,
       order_id: null,
       tier: null,
-      cadence: null
+      cadence: null,
+      is_test_account: account.is_test_account,
+      is_internal_account: account.is_internal_account,
+      exclude_from_kpis: account.exclude_from_kpis,
+      expires_at: account.expires_at
     })
   }
 
   for (const row of ((holdTopupRes.data ?? []) as TopupRow[])) {
     const amount = Math.max(0, Number(row.amount_cents ?? 0) / 100)
     if (!row.paid_at || amount <= 0) continue
+    const account = resolveAccountClassification({
+      userId: row.user_id
+    }, customerLookup)
     revenue.push({
       date: String(row.paid_at),
       user_id: toStringOrNull(row.user_id),
       customer_id: null,
+      account_email: account.account_email,
       source: 'hold_topup',
       amount,
       order_id: null,
       tier: null,
-      cadence: null
+      cadence: null,
+      is_test_account: account.is_test_account,
+      is_internal_account: account.is_internal_account,
+      exclude_from_kpis: account.exclude_from_kpis,
+      expires_at: account.expires_at
     })
   }
+
+  const excludedBookings = bookings.filter(row => row.exclude_from_kpis).length
+  const excludedRevenue = revenue.filter(row => row.exclude_from_kpis).length
 
   return {
     source: 'supabase' as IngestSource,
@@ -242,6 +294,8 @@ async function loadFromSupabase() {
     notes: [
       `Loaded ${bookings.length} booking rows from Supabase.`,
       `Loaded ${revenue.length} revenue events from Supabase.`,
+      `Loaded ${customerRows.length} customer classification rows from Supabase.`,
+      `Excluded ${excludedBookings} bookings and ${excludedRevenue} revenue events from KPI computations due to account classification.`,
       `Membership revenue sessions included: ${membershipRevenue.stats.includedSessions} / ${membershipRevenue.stats.inputSessions}.`,
       `Membership session drops: status=${membershipRevenue.stats.droppedByStatus}, metadata_exclude=${membershipRevenue.stats.droppedByMetadataExclude}, dedupe=${membershipRevenue.stats.droppedByDeduplication}, missing_amount=${membershipRevenue.stats.droppedByMissingAmount}.`
     ]

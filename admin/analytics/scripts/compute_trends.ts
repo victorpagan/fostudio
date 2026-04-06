@@ -5,13 +5,17 @@ import {
   activeMembershipStateAt,
   bookingsHours,
   bookingsInRange,
+  computeCohortConversion,
+  computeRevenueModelInRange,
+  findWeakestWeekday,
   getWeekContext,
+  kpiEligibleRows,
   listRecentWeekStarts,
   loadAnalyticsData,
   membershipEventsInRange,
   parseWeekOfArg,
-  sumRevenueInRange,
-  toIsoWeekFromDate
+  toIsoWeekFromDate,
+  weekdayBreakdownInRange
 } from './lib/analytics'
 import type { IngestSource, TrendsOutput } from './lib/types'
 
@@ -24,11 +28,20 @@ async function run() {
   const context = getWeekContext(weekOf)
   const data = await loadAnalyticsData()
 
+  const kpiBookings = kpiEligibleRows(data.bookings)
+  const kpiRevenue = kpiEligibleRows(data.revenue)
+  const kpiMembershipEvents = kpiEligibleRows(data.memberships)
+  const kpiMembershipState = kpiEligibleRows(data.membershipState)
+
   const weekStarts = listRecentWeekStarts(context.start, analyticsMetricDefinitions.trendsLookbackWeeks)
 
   const revenueByWeek: TrendsOutput['revenue_by_week'] = []
+  const cashByWeek: TrendsOutput['cash_received_by_week'] = []
+  const recognizedByWeek: TrendsOutput['recognized_revenue_by_week'] = []
+  const oneTimeByWeek: TrendsOutput['one_time_booking_revenue_by_week'] = []
   const membersByWeek: TrendsOutput['members_by_week'] = []
   const utilizationByWeek: TrendsOutput['utilization_by_week'] = []
+  const bookingMixByWeek: TrendsOutput['booking_mix_by_week'] = []
 
   const revenueAvailable = isAvailable(data.availability.revenue)
   const membershipsAvailable = isAvailable(data.availability.memberships)
@@ -39,16 +52,28 @@ async function run() {
     const weekKey = toIsoWeekFromDate(weekStart)
 
     if (revenueAvailable) {
-      const revenue = sumRevenueInRange(data.revenue, weekStart, weekEnd)
+      const model = computeRevenueModelInRange(kpiRevenue, weekStart, weekEnd)
       revenueByWeek.push({
         week: weekKey,
-        value: Number(revenue.toFixed(2))
+        value: Number(model.recognized_total.toFixed(2))
+      })
+      cashByWeek.push({
+        week: weekKey,
+        value: Number(model.cash_received.toFixed(2))
+      })
+      recognizedByWeek.push({
+        week: weekKey,
+        value: Number(model.recognized_total.toFixed(2))
+      })
+      oneTimeByWeek.push({
+        week: weekKey,
+        value: Number(model.one_time_booking_revenue.toFixed(2))
       })
     }
 
     if (membershipsAvailable) {
-      const activeMembers = activeMembershipStateAt(data.membershipState, weekEnd)
-      const membershipEvents = membershipEventsInRange(data.memberships, weekStart, weekEnd)
+      const activeMembers = activeMembershipStateAt(kpiMembershipState, weekEnd)
+      const membershipEvents = membershipEventsInRange(kpiMembershipEvents, weekStart, weekEnd)
 
       membersByWeek.push({
         week: weekKey,
@@ -59,8 +84,10 @@ async function run() {
     }
 
     if (bookingsAvailable) {
-      const bookings = bookingsInRange(data.bookings, weekStart, weekEnd)
+      const bookings = bookingsInRange(kpiBookings, weekStart, weekEnd)
         .filter(item => item.status !== 'canceled')
+      const memberRows = bookings.filter(item => item.booking_type === 'member')
+      const nonMemberRows = bookings.filter(item => item.booking_type !== 'member')
       const bookedHours = bookingsHours(bookings)
 
       utilizationByWeek.push({
@@ -70,24 +97,71 @@ async function run() {
           : 0,
         booked_hours: Number(bookedHours.toFixed(2))
       })
+
+      bookingMixByWeek.push({
+        week: weekKey,
+        member_bookings: memberRows.length,
+        non_member_bookings: nonMemberRows.length,
+        member_booked_hours: Number(bookingsHours(memberRows).toFixed(2)),
+        non_member_booked_hours: Number(bookingsHours(nonMemberRows).toFixed(2)),
+        member_revenue: Number(memberRows.reduce((sum, row) => sum + Number(row.revenue ?? 0), 0).toFixed(2)),
+        non_member_revenue: Number(nonMemberRows.reduce((sum, row) => sum + Number(row.revenue ?? 0), 0).toFixed(2))
+      })
     }
   }
+
+  const weekdayLookbackStart = context.start
+    .minus({ weeks: Math.max(1, analyticsMetricDefinitions.weekdayLookbackWeeks) - 1 })
+    .startOf('week')
+  const weekdayRows = bookingsAvailable
+    ? weekdayBreakdownInRange(kpiBookings, weekdayLookbackStart, context.end)
+    : []
+  const weakestWeekday = findWeakestWeekday(weekdayRows)
+
+  const cohort = (bookingsAvailable && membershipsAvailable)
+    ? computeCohortConversion(kpiBookings, kpiMembershipState)
+    : { summary: { repeat_guests_not_converted: 0, converted_guest_members: 0, avg_guest_to_member_lag_days: null, median_guest_to_member_lag_days: null }, records: [] }
 
   const output: TrendsOutput = {
     generated_at: new Date().toISOString(),
     week_of: context.week_of,
     data_availability: data.availability,
+    data_quality: data.data_quality,
     revenue_by_week: revenueByWeek,
+    cash_received_by_week: cashByWeek,
+    recognized_revenue_by_week: recognizedByWeek,
+    one_time_booking_revenue_by_week: oneTimeByWeek,
     members_by_week: membersByWeek,
-    utilization_by_week: utilizationByWeek
+    utilization_by_week: utilizationByWeek,
+    booking_mix_by_week: bookingMixByWeek,
+    weekday_utilization: {
+      lookback_weeks: analyticsMetricDefinitions.weekdayLookbackWeeks,
+      bookings_by_weekday: weekdayRows.map(row => ({ weekday: row.weekday, value: row.bookings })),
+      booked_hours_by_weekday: weekdayRows.map(row => ({ weekday: row.weekday, value: Number(row.booked_hours.toFixed(2)) })),
+      weakest_day: weakestWeekday
+        ? {
+            weekday: weakestWeekday.weekday,
+            bookings: weakestWeekday.bookings,
+            booked_hours: Number(weakestWeekday.booked_hours.toFixed(2))
+          }
+        : null
+    },
+    cohort_conversion: {
+      repeat_guests_not_converted: cohort.summary.repeat_guests_not_converted ?? 0,
+      converted_guest_members: cohort.summary.converted_guest_members ?? 0,
+      avg_guest_to_member_lag_days: cohort.summary.avg_guest_to_member_lag_days,
+      median_guest_to_member_lag_days: cohort.summary.median_guest_to_member_lag_days,
+      records: cohort.records
+    }
   }
 
   await writeJsonFile(TRENDS_OUTPUT_PATH, output)
   console.log('[analytics] trends computed', {
     week_of: output.week_of,
-    revenue_points: output.revenue_by_week.length,
+    recognized_revenue_points: output.recognized_revenue_by_week.length,
     member_points: output.members_by_week.length,
-    utilization_points: output.utilization_by_week.length
+    utilization_points: output.utilization_by_week.length,
+    cohort_records: output.cohort_conversion.records.length
   })
 }
 

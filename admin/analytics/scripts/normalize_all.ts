@@ -49,11 +49,16 @@ function toMembershipEvents(rows: RawMembershipRecord[]): NormalizedMembershipRe
       customer_id: customerId,
       user_id: toStringOrNull(row.user_id),
       membership_id: row.membership_id,
+      account_email: toStringOrNull(row.account_email),
       tier,
       status,
       amount: Number(row.amount ?? 0),
       is_new: true,
-      is_canceled: false
+      is_canceled: false,
+      is_test_account: Boolean(row.is_test_account),
+      is_internal_account: Boolean(row.is_internal_account),
+      exclude_from_kpis: Boolean(row.exclude_from_kpis),
+      expires_at: toStringOrNull(row.expires_at)
     })
 
     if (row.canceled_at) {
@@ -63,11 +68,16 @@ function toMembershipEvents(rows: RawMembershipRecord[]): NormalizedMembershipRe
         customer_id: customerId,
         user_id: toStringOrNull(row.user_id),
         membership_id: row.membership_id,
+        account_email: toStringOrNull(row.account_email),
         tier,
         status: 'canceled',
         amount: 0,
         is_new: false,
-        is_canceled: true
+        is_canceled: true,
+        is_test_account: Boolean(row.is_test_account),
+        is_internal_account: Boolean(row.is_internal_account),
+        exclude_from_kpis: Boolean(row.exclude_from_kpis),
+        expires_at: toStringOrNull(row.expires_at)
       })
     }
   }
@@ -80,6 +90,7 @@ function toMembershipState(rows: RawMembershipRecord[]): MembershipStateRecord[]
     membership_id: row.membership_id,
     user_id: row.user_id,
     customer_id: String(row.customer_id ?? row.user_id),
+    account_email: toStringOrNull(row.account_email),
     tier: normalizeTier(row.tier),
     cadence: row.cadence,
     status: String(row.status ?? '').trim().toLowerCase(),
@@ -88,7 +99,11 @@ function toMembershipState(rows: RawMembershipRecord[]): MembershipStateRecord[]
     canceled_at: row.canceled_at,
     current_period_start: row.current_period_start,
     current_period_end: row.current_period_end,
-    last_paid_at: row.last_paid_at
+    last_paid_at: row.last_paid_at,
+    is_test_account: Boolean(row.is_test_account),
+    is_internal_account: Boolean(row.is_internal_account),
+    exclude_from_kpis: Boolean(row.exclude_from_kpis),
+    expires_at: toStringOrNull(row.expires_at)
   }))
 }
 
@@ -99,11 +114,16 @@ function toNormalizedBookings(rows: RawBookingRecord[]): NormalizedBookingRecord
       booking_id: String(row.booking_id),
       customer_id: String(row.customer_id),
       user_id: toStringOrNull(row.user_id),
+      guest_email: toStringOrNull(row.guest_email),
       hours: Number(row.hours ?? 0),
       revenue: Number(row.revenue ?? 0),
       booking_type: String(row.booking_type ?? 'other').toLowerCase(),
       channel: String(row.channel ?? 'website').toLowerCase(),
-      status: String(row.status ?? 'confirmed').toLowerCase()
+      status: String(row.status ?? 'confirmed').toLowerCase(),
+      is_test_account: Boolean(row.is_test_account),
+      is_internal_account: Boolean(row.is_internal_account),
+      exclude_from_kpis: Boolean(row.exclude_from_kpis),
+      expires_at: toStringOrNull(row.expires_at)
     }))
     .sort((a, b) => a.date.localeCompare(b.date))
 }
@@ -114,11 +134,16 @@ function toNormalizedRevenue(rows: RawRevenueEventRecord[]): NormalizedRevenueEv
       ...toDateDims(row.date),
       user_id: toStringOrNull(row.user_id),
       customer_id: toStringOrNull(row.customer_id),
+      account_email: toStringOrNull(row.account_email),
       source: String(row.source ?? 'other').toLowerCase(),
       amount: Number(row.amount ?? 0),
       order_id: toStringOrNull(row.order_id),
       tier: row.tier ? normalizeTier(row.tier) : null,
-      cadence: toStringOrNull(row.cadence)
+      cadence: toStringOrNull(row.cadence),
+      is_test_account: Boolean(row.is_test_account),
+      is_internal_account: Boolean(row.is_internal_account),
+      exclude_from_kpis: Boolean(row.exclude_from_kpis),
+      expires_at: toStringOrNull(row.expires_at)
     }))
     .sort((a, b) => a.date.localeCompare(b.date))
 }
