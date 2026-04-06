@@ -1,8 +1,8 @@
 [
   {
     "severity": "medium",
-    "type": "retention",
-    "title": "Low usage in Creator tier",
-    "detail": "3 Creator members used less than 25% of included hours in the last 30 days."
+    "type": "revenue",
+    "title": "Revenue trend softened week-over-week",
+    "detail": "Revenue is down 28.9% week-over-week."
   }
 ]

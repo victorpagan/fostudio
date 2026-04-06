@@ -2,31 +2,31 @@
 Week of: 2026-03-30
 
 ## Snapshot
-- Revenue: $1,430 (+121.7% WoW)
-- Bookings: 7
-- Booked hours: 17.0
-- Utilization: 10.1%
-- Active members: 7
-- New members: 2
-- Cancellations: 1
+- Revenue: $1,350 (-28.9% WoW)
+- Bookings: 5
+- Booked hours: 10.0
+- Utilization: 5.9%
+- Active members: 6
+- New members: 3
+- Cancellations: 0
 
 ## Memberships
-- Creator: 3
-- Pro: 3
-- Studio+: 1
-- Net growth: +1
+- Creator: 2
+- Pro: 1
+- Studio+: 2
+- Net growth: +3
 
 ## Marketing
 - Google Ads: $210 spend, 4 conversions, $52.5 CPA
 - Meta Ads: $180 spend, 1 conversions, $180 CPA
 
 ## What changed
-- Revenue increased +121.7% week-over-week.
-- Membership growth was net +1 this week.
+- Revenue declined -28.9% week-over-week.
+- Membership growth was net +3 this week.
 - Studio utilization trend improved versus the previous week.
 
 ## Alerts
-- Low usage in Creator tier: 3 Creator members used less than 25% of included hours in the last 30 days.
+- Revenue trend softened week-over-week: Revenue is down 28.9% week-over-week.
 
 ## Recommended next actions
 1. Shift 20-30% of Meta budget to high-intent Google Search campaigns.

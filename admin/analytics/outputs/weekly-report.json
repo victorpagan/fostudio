@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-04-06T01:20:28.114Z",
+  "generated_at": "2026-04-06T01:48:02.943Z",
   "week_of": "2026-03-30",
   "snapshot": {
-    "revenue": 1430,
-    "revenue_wow_pct": 121.71,
-    "bookings": 7,
-    "booked_hours": 17,
-    "utilization_rate": 0.1012,
-    "active_members": 7,
-    "new_members": 2,
-    "cancellations": 1
+    "revenue": 1350,
+    "revenue_wow_pct": -28.95,
+    "bookings": 5,
+    "booked_hours": 10,
+    "utilization_rate": 0.0595,
+    "active_members": 6,
+    "new_members": 3,
+    "cancellations": 0
   },
   "memberships": {
-    "creator": 3,
-    "pro": 3,
-    "studio_plus": 1,
-    "net_growth": 1
+    "creator": 2,
+    "pro": 1,
+    "studio_plus": 2,
+    "net_growth": 3
   },
   "marketing": {
     "google_ads": {
@@ -30,12 +30,12 @@
     }
   },
   "what_changed": [
-    "Revenue increased +121.7% week-over-week.",
-    "Membership growth was net +1 this week.",
+    "Revenue declined -28.9% week-over-week.",
+    "Membership growth was net +3 this week.",
     "Studio utilization trend improved versus the previous week."
   ],
   "alerts": [
-    "Low usage in Creator tier"
+    "Revenue trend softened week-over-week"
   ],
   "recommended_next_actions": [
     "Shift 20-30% of Meta budget to high-intent Google Search campaigns.",
@@ -59,7 +59,7 @@
       ],
       "cta": "Compare memberships",
       "send_window": "Tuesday 10:00 AM America/Los_Angeles",
-      "note": "Weekly active members: 7"
+      "note": "Weekly active members: 6"
     },
     {
       "campaign_name": "Low-Usage Creator Re-engagement",
@@ -77,7 +77,7 @@
       ],
       "cta": "Book your next session",
       "send_window": "Monday 4:00 PM America/Los_Angeles",
-      "note": "Weekly active members: 7"
+      "note": "Weekly active members: 6"
     }
   ]
 }

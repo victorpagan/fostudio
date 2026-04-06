@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-04-06T01:20:27.024Z",
+  "generated_at": "2026-04-06T01:48:02.000Z",
   "week_of": "2026-03-30",
   "week": {
-    "revenue_total": 1430,
-    "revenue_wow_pct": 121.71,
-    "bookings_total": 7,
-    "booked_hours": 17,
-    "utilization_rate": 0.1012,
-    "new_members": 2,
-    "canceled_members": 1,
-    "net_members": 1,
-    "active_members": 7
+    "revenue_total": 1350,
+    "revenue_wow_pct": -28.95,
+    "bookings_total": 5,
+    "booked_hours": 10,
+    "utilization_rate": 0.0595,
+    "new_members": 3,
+    "canceled_members": 0,
+    "net_members": 3,
+    "active_members": 6
   },
   "tiers": {
-    "creator": 3,
-    "pro": 3,
-    "studio_plus": 1
+    "creator": 2,
+    "pro": 1,
+    "studio_plus": 2
   },
   "ads": {
     "google": {

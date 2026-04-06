@@ -1,103 +1,172 @@
 {
   "manifest": {
-    "generated_at": "2026-04-06T01:20:25.974Z",
-    "source": "csv",
+    "generated_at": "2026-04-06T01:48:01.075Z",
+    "source": "supabase",
     "notes": [
-      "Supabase credentials were not found; CSV fallback will be used.",
-      "Loaded 10 booking rows from CSV (/Users/vic/Documents/Github/fostudio/admin/analytics/inputs/bookings.csv).",
-      "Loaded 9 revenue rows from CSV (/Users/vic/Documents/Github/fostudio/admin/analytics/inputs/revenue.csv)."
+      "Loaded 37 booking rows from Supabase.",
+      "Loaded 16 revenue events from Supabase."
     ]
   },
   "records": [
     {
-      "date": "2026-03-30T09:45:00-07:00",
-      "user_id": "user_007",
-      "customer_id": "cust_007",
+      "date": "2026-03-09T19:59:12.188+00:00",
+      "user_id": "39efa596-dc41-43d1-a858-ff0c6edc7644",
+      "customer_id": null,
       "source": "membership",
-      "amount": 285,
+      "amount": 3,
+      "order_id": null,
+      "tier": "nano",
+      "cadence": "daily"
+    },
+    {
+      "date": "2026-03-08T22:56:50.532+00:00",
+      "user_id": "e98017f6-420c-4f43-aedc-c6bf151abbf9",
+      "customer_id": null,
+      "source": "membership",
+      "amount": 3,
+      "order_id": null,
+      "tier": "nano",
+      "cadence": "daily"
+    },
+    {
+      "date": "2026-03-11T12:47:10.544+00:00",
+      "user_id": "39efa596-dc41-43d1-a858-ff0c6edc7644",
+      "customer_id": null,
+      "source": "membership",
+      "amount": 3,
+      "order_id": null,
+      "tier": "nano",
+      "cadence": "daily"
+    },
+    {
+      "date": "2026-03-13T18:09:10.381+00:00",
+      "user_id": "e98017f6-420c-4f43-aedc-c6bf151abbf9",
+      "customer_id": "6e91398f-9e6e-487d-adf3-1a5f4d4e964a",
+      "source": "membership",
+      "amount": 3,
+      "order_id": null,
+      "tier": "nano",
+      "cadence": "daily"
+    },
+    {
+      "date": "2026-03-18T20:00:45.115+00:00",
+      "user_id": "e98017f6-420c-4f43-aedc-c6bf151abbf9",
+      "customer_id": "6e91398f-9e6e-487d-adf3-1a5f4d4e964a",
+      "source": "membership",
+      "amount": 3,
+      "order_id": null,
+      "tier": "nano",
+      "cadence": "daily"
+    },
+    {
+      "date": "2026-03-30T03:46:22.212+00:00",
+      "user_id": "daa3e445-f7e8-439d-9f70-ae241162c139",
+      "customer_id": "5d182827-5596-4c60-875f-ca6571ee40a6",
+      "source": "membership",
+      "amount": 950,
+      "order_id": null,
+      "tier": "studio_plus",
+      "cadence": "quarterly"
+    },
+    {
+      "date": "2026-03-30T03:36:14.891+00:00",
+      "user_id": "daa3e445-f7e8-439d-9f70-ae241162c139",
+      "customer_id": "5d182827-5596-4c60-875f-ca6571ee40a6",
+      "source": "membership",
+      "amount": 950,
+      "order_id": null,
+      "tier": "studio_plus",
+      "cadence": "monthly"
+    },
+    {
+      "date": "2026-04-01T05:24:59.431+00:00",
+      "user_id": "17ce8aeb-5020-4446-afa5-c83d6a6e68db",
+      "customer_id": "59e3dcd2-9e53-418a-a27c-0f63425f29c3",
+      "source": "membership",
+      "amount": 350,
       "order_id": null,
       "tier": "creator",
       "cadence": "monthly"
     },
     {
-      "date": "2026-04-03T15:10:00-07:00",
-      "user_id": "user_005",
-      "customer_id": "cust_005",
+      "date": "2026-04-02T23:46:50.231+00:00",
+      "user_id": "77ba400d-ae48-40ba-9ea1-c3dadcabb3a5",
+      "customer_id": "e68fe211-b9ac-4749-b779-8242a5ac8363",
       "source": "membership",
-      "amount": 425,
+      "amount": 350,
+      "order_id": null,
+      "tier": "creator",
+      "cadence": "monthly"
+    },
+    {
+      "date": "2026-04-04T16:14:29.4+00:00",
+      "user_id": "376720e5-dfd6-4b7d-af08-15194f05691a",
+      "customer_id": "5f72895e-6280-401f-a220-c65dd56471bb",
+      "source": "membership",
+      "amount": 650,
       "order_id": null,
       "tier": "pro",
       "cadence": "monthly"
     },
     {
-      "date": "2026-04-01T12:00:00-07:00",
-      "user_id": "user_001",
-      "customer_id": "cust_001",
+      "date": "2026-03-06T18:47:20.66+00:00",
+      "user_id": "e98017f6-420c-4f43-aedc-c6bf151abbf9",
+      "customer_id": null,
       "source": "credit_topup",
-      "amount": 90,
+      "amount": 0.1,
       "order_id": null,
-      "tier": "creator",
-      "cadence": null
-    },
-    {
-      "date": "2026-04-02T17:30:00-07:00",
-      "user_id": "user_003",
-      "customer_id": "cust_003",
-      "source": "hold_topup",
-      "amount": 60,
-      "order_id": null,
-      "tier": "studio_plus",
-      "cadence": null
-    },
-    {
-      "date": "2026-04-02T13:00:00-07:00",
-      "user_id": null,
-      "customer_id": "cust_guest_01",
-      "source": "guest_booking",
-      "amount": 260,
-      "order_id": "ord_1001",
       "tier": null,
       "cadence": null
     },
     {
-      "date": "2026-04-03T10:00:00-07:00",
-      "user_id": null,
-      "customer_id": "cust_guest_02",
-      "source": "guest_booking",
-      "amount": 310,
-      "order_id": "ord_1002",
+      "date": "2026-03-05T22:07:08.270658+00:00",
+      "user_id": "e98017f6-420c-4f43-aedc-c6bf151abbf9",
+      "customer_id": null,
+      "source": "credit_topup",
+      "amount": 0.1,
+      "order_id": null,
       "tier": null,
       "cadence": null
     },
     {
-      "date": "2026-03-28T12:00:00-07:00",
-      "user_id": null,
-      "customer_id": "cust_guest_03",
-      "source": "guest_booking",
-      "amount": 220,
-      "order_id": "ord_1003",
+      "date": "2026-03-06T18:48:57.079+00:00",
+      "user_id": "e98017f6-420c-4f43-aedc-c6bf151abbf9",
+      "customer_id": null,
+      "source": "credit_topup",
+      "amount": 0.1,
+      "order_id": null,
       "tier": null,
       "cadence": null
     },
     {
-      "date": "2026-03-27T10:00:00-07:00",
-      "user_id": "user_002",
-      "customer_id": "cust_002",
-      "source": "membership",
-      "amount": 425,
+      "date": "2026-03-06T18:49:14.698+00:00",
+      "user_id": "e98017f6-420c-4f43-aedc-c6bf151abbf9",
+      "customer_id": null,
+      "source": "credit_topup",
+      "amount": 0.1,
       "order_id": null,
-      "tier": "pro",
-      "cadence": "monthly"
+      "tier": null,
+      "cadence": null
     },
     {
-      "date": "2026-03-20T11:00:00-07:00",
-      "user_id": "user_003",
-      "customer_id": "cust_003",
-      "source": "membership",
-      "amount": 625,
+      "date": "2026-03-06T18:49:26.969+00:00",
+      "user_id": "e98017f6-420c-4f43-aedc-c6bf151abbf9",
+      "customer_id": null,
+      "source": "credit_topup",
+      "amount": 0.1,
       "order_id": null,
-      "tier": "studio_plus",
-      "cadence": "monthly"
+      "tier": null,
+      "cadence": null
+    },
+    {
+      "date": "2026-03-06T19:04:41.298+00:00",
+      "user_id": "e98017f6-420c-4f43-aedc-c6bf151abbf9",
+      "customer_id": null,
+      "source": "credit_topup",
+      "amount": 0.1,
+      "order_id": null,
+      "tier": null,
+      "cadence": null
     }
   ]
 }
