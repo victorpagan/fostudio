@@ -33,7 +33,7 @@ If these are missing or live queries fail, scripts use CSV files in `inputs/`.
 Use the analytics export endpoint:
 
 - `GET /api/internal/analytics/outputs`
-- `POST /api/internal/analytics/run` (runs pipeline, then returns latest outputs metadata)
+- `POST /api/internal/analytics/run?scope=weekly|monthly|refresh` (runs scoped pipeline, then returns latest outputs metadata)
 
 Auth options:
 
@@ -60,6 +60,13 @@ curl -sS -X POST "$APP_URL/api/internal/analytics/run" \
   -d '{"requireSupabase": true}'
 ```
 
+```bash
+curl -sS -X POST "$APP_URL/api/internal/analytics/run?scope=weekly" \
+  -H "Authorization: Bearer $ANALYTICS_EXPORT_SHARED_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"requireSupabase": true}'
+```
+
 ## Remote run/fetch via fo.studio
 
 Use these commands when running analytics through deployed endpoints (instead of local pipeline execution):
@@ -73,12 +80,14 @@ Defaults:
 
 - Base URL: `https://fo.studio`
 - Auth: values loaded from repo `.env` (`ANALYTICS_RUN_SHARED_KEY` and/or `ANALYTICS_EXPORT_SHARED_KEY`)
+- Scope: `weekly` (default)
 - Run mode sends `{ "requireSupabase": true }` so ingest fails rather than falling back to CSV.
 
 Options:
 
 ```bash
 pnpm analytics:remote:run -- --allow-fallback      # send requireSupabase=false
+pnpm analytics:remote:run -- --scope=monthly
 pnpm analytics:remote:run -- --url=https://fo.studio --json
 pnpm analytics:remote:outputs -- --url=https://fo.studio --json
 ```

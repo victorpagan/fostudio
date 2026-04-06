@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
 
+export type AnalyticsRunScope = 'weekly' | 'monthly' | 'refresh'
+
 export type AnalyticsRunResult = {
   ok: boolean
   command: string
@@ -15,9 +17,15 @@ function trimOutput(value: string, maxChars = 12000) {
   return value.slice(value.length - maxChars)
 }
 
-export async function runAnalyticsPipeline(options?: { requireSupabase?: boolean }): Promise<AnalyticsRunResult> {
+function resolveScriptForScope(scope: AnalyticsRunScope) {
+  if (scope === 'refresh') return 'analytics:refresh'
+  return 'analytics:all'
+}
+
+export async function runAnalyticsPipeline(options?: { requireSupabase?: boolean, scope?: AnalyticsRunScope }): Promise<AnalyticsRunResult> {
   const startedAt = Date.now()
-  const args = ['analytics:all']
+  const scope = options?.scope ?? 'weekly'
+  const args = [resolveScriptForScope(scope)]
   const command = 'pnpm'
   const requireSupabase = options?.requireSupabase ?? true
 
@@ -26,7 +34,8 @@ export async function runAnalyticsPipeline(options?: { requireSupabase?: boolean
       cwd: process.cwd(),
       env: {
         ...process.env,
-        ANALYTICS_REQUIRE_SUPABASE: requireSupabase ? '1' : (process.env.ANALYTICS_REQUIRE_SUPABASE ?? '')
+        ANALYTICS_REQUIRE_SUPABASE: requireSupabase ? '1' : (process.env.ANALYTICS_REQUIRE_SUPABASE ?? ''),
+        ANALYTICS_SCOPE: scope
       },
       stdio: ['ignore', 'pipe', 'pipe']
     })

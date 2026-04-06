@@ -1,6 +1,14 @@
 <script setup lang="ts">
 type RunResponse = {
   ok: boolean
+  scope?: 'weekly' | 'monthly' | 'refresh'
+  generatedAt?: string | null
+  artifacts?: string[]
+  summary?: {
+    revenue_total: number
+    new_members: number
+    active_members: number
+  }
   run: {
     durationMs: number
   }
@@ -16,9 +24,11 @@ type RunResponse = {
 const props = withDefaults(defineProps<{
   size?: 'xs' | 'sm' | 'md'
   requireSupabase?: boolean
+  scope?: 'weekly' | 'monthly' | 'refresh'
 }>(), {
   size: 'sm',
-  requireSupabase: true
+  requireSupabase: true,
+  scope: 'weekly'
 })
 
 const emit = defineEmits<{
@@ -41,6 +51,9 @@ async function runAnalytics() {
   try {
     const payload = await $fetch<RunResponse>('/api/admin/analytics/run', {
       method: 'POST',
+      query: {
+        scope: props.scope
+      },
       body: {
         requireSupabase: props.requireSupabase
       }
@@ -48,7 +61,7 @@ async function runAnalytics() {
 
     toast.add({
       title: 'Analytics pipeline completed',
-      description: `${payload.outputs.storage} (${payload.outputs.source ?? 'n/a'}) in ${(payload.run.durationMs / 1000).toFixed(1)}s`,
+      description: `${payload.scope ?? props.scope} • ${payload.outputs.storage} (${payload.outputs.source ?? 'n/a'}) in ${(payload.run.durationMs / 1000).toFixed(1)}s`,
       color: 'success'
     })
 

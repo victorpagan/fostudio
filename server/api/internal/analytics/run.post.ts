@@ -1,15 +1,18 @@
 import { z } from 'zod'
-import { getHeader, createError } from 'h3'
+import { getHeader, createError, getQuery } from 'h3'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { getKey } from '~~/server/utils/config/secret'
-import { runAnalyticsPipeline } from '~~/server/utils/analytics/run'
+import { runAnalyticsPipeline, type AnalyticsRunScope } from '~~/server/utils/analytics/run'
 import { readAnalyticsOutputsForEvent } from '~~/server/utils/analytics/outputs'
+import { buildAnalyticsRunEnvelope } from '~~/server/utils/analytics/response'
 
 type AnalyticsRunAuthMode = 'shared_key' | 'admin'
 
 const bodySchema = z.object({
   requireSupabase: z.boolean().optional().default(true)
 })
+
+const scopeSchema = z.enum(['weekly', 'monthly', 'refresh'])
 
 function readBearerOrHeaderKey(event: Parameters<typeof getHeader>[0]) {
   const explicit = getHeader(event, 'x-analytics-key') ?? getHeader(event, 'x-access-key')
@@ -42,11 +45,26 @@ async function requireAnalyticsRunAuth(event: Parameters<typeof getHeader>[0]): 
   return 'admin'
 }
 
+function resolveScope(event: Parameters<typeof getQuery>[0]): AnalyticsRunScope {
+  const rawScope = getQuery(event).scope
+  const value = Array.isArray(rawScope) ? rawScope[0] : rawScope
+  const parsed = scopeSchema.safeParse(value ?? 'weekly')
+
+  if (parsed.success) return parsed.data
+
+  throw createError({
+    statusCode: 400,
+    statusMessage: 'Invalid analytics scope. Expected weekly, monthly, or refresh.'
+  })
+}
+
 export default defineEventHandler(async (event) => {
   const authMode = await requireAnalyticsRunAuth(event)
   const body = bodySchema.parse((await readBody(event).catch(() => ({}))) ?? {})
+  const scope = resolveScope(event)
   const run = await runAnalyticsPipeline({
-    requireSupabase: body.requireSupabase
+    requireSupabase: body.requireSupabase,
+    scope
   })
 
   if (!run.ok) {
@@ -58,10 +76,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const outputs = await readAnalyticsOutputsForEvent(event)
+  const scoped = buildAnalyticsRunEnvelope(scope, outputs)
 
   return {
     ok: true,
     authMode,
+    ...scoped,
     run,
     outputs: {
       generatedAt: outputs.generatedAt,

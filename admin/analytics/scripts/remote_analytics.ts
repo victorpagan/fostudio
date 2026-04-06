@@ -2,10 +2,12 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
 type Mode = 'run' | 'outputs'
+type Scope = 'weekly' | 'monthly' | 'refresh'
 
 type ParsedArgs = {
   mode: Mode
   url: string
+  scope: Scope
   requireSupabase: boolean
   json: boolean
 }
@@ -14,11 +16,12 @@ function printUsage() {
   console.log(
     [
       'Usage:',
-      '  pnpm analytics:remote:run [--url=https://fo.studio] [--allow-fallback] [--json]',
+      '  pnpm analytics:remote:run [--url=https://fo.studio] [--scope=weekly|monthly|refresh] [--allow-fallback] [--json]',
       '  pnpm analytics:remote:outputs [--url=https://fo.studio] [--json]',
       '',
       'Flags:',
       '  --url=<url>          Analytics app base URL (default: https://fo.studio)',
+      '  --scope=<scope>      Scope for run mode (weekly, monthly, refresh)',
       '  --allow-fallback     For run mode, allow CSV fallback when Supabase ingest fails',
       '  --json               Print full endpoint JSON response'
     ].join('\n')
@@ -95,12 +98,17 @@ function parseArgs(argv: string[]): ParsedArgs | null {
 
   const mode: Mode = modeArg
   const url = normalizeBaseUrl(readOption(argv, 'url') || process.env.ANALYTICS_APP_URL || 'https://fo.studio')
+  const scopeRaw = readOption(argv, 'scope') || 'weekly'
+  const scope = (scopeRaw === 'weekly' || scopeRaw === 'monthly' || scopeRaw === 'refresh')
+    ? scopeRaw
+    : (() => { throw new Error(`Invalid --scope value "${scopeRaw}". Expected weekly, monthly, or refresh.`) })()
   const requireSupabase = mode === 'run' ? !hasFlag(argv, 'allow-fallback') : true
   const json = hasFlag(argv, 'json')
 
   return {
     mode,
     url,
+    scope,
     requireSupabase,
     json
   }
@@ -126,12 +134,15 @@ function printSummary(mode: Mode, payload: Record<string, unknown>) {
     console.log('[analytics:remote] run complete')
     console.log(JSON.stringify({
       authMode: payload.authMode ?? null,
+      scope: payload.scope ?? null,
       exitCode: run.exitCode ?? null,
       durationMs: run.durationMs ?? null,
       generatedAt: outputs.generatedAt ?? null,
       freshness: outputs.freshness ?? null,
       storage: outputs.storage ?? null,
       source: outputs.source ?? null,
+      artifacts: payload.artifacts ?? [],
+      summary: payload.summary ?? null,
       missingFiles: outputs.missingFiles ?? []
     }, null, 2))
     return
@@ -168,7 +179,7 @@ async function main() {
   }
 
   const endpoint = args.mode === 'run'
-    ? '/api/internal/analytics/run'
+    ? `/api/internal/analytics/run?scope=${encodeURIComponent(args.scope)}`
     : '/api/internal/analytics/outputs'
 
   const url = `${args.url}${endpoint}`
