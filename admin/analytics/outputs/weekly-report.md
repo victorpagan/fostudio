@@ -1,20 +1,20 @@
 # FO Studio Weekly Report
-Week of: 2026-03-30
+Week of: 2026-04-06
 
 ## Snapshot
-- Revenue: $1,350 (-28.9% WoW)
-- Bookings: 5
-- Booked hours: 10.0
-- Utilization: 5.9%
+- Revenue: $0 (-100.0% WoW)
+- Bookings: 4
+- Booked hours: 6.5
+- Utilization: 3.9%
 - Active members: 5
-- New members: 3
-- Cancellations: 1
+- New members: 0
+- Cancellations: 0
 
 ## Memberships
 - Creator: 2
 - Pro: 1
 - Studio+: 1
-- Net growth: +2
+- Net growth: +0
 
 ## Marketing
 - Google Ads: Data unavailable.
@@ -27,18 +27,19 @@ Week of: 2026-03-30
 - Ads: Data unavailable
 
 ## What changed
-- Revenue declined -28.9% week-over-week.
-- Membership growth was net +2 this week.
-- Studio utilization trend improved versus the previous week.
+- Revenue declined -100.0% week-over-week.
+- Membership count was flat week-over-week.
+- Studio utilization softened versus the previous week.
 
 ## Alerts
-- Ads data unavailable: Google/Meta ad performance is unavailable, so paid-channel metrics and CPA alerts may be incomplete. Table analytics_ad_daily unavailable: relation "public.analytics_ad_daily" does not exist
-- Revenue trend softened week-over-week: Revenue is down 28.9% week-over-week.
+- Ads data unavailable: Google/Meta ad performance is unavailable, so paid-channel metrics and CPA alerts may be incomplete. Ads source is unavailable because analytics ads sync is disabled or no ad platform is enabled.
+- Bookings down week-over-week: Bookings fell by 20.0% compared with last week (4 vs 5).
+- Revenue trend softened week-over-week: Revenue is down 100.0% week-over-week.
 
 ## Recommended next actions
 1. Connect Google Ads and Meta Ads data ingestion so paid-channel performance can be measured accurately.
-2. Promote first-booker membership upgrade offer in follow-up email and Instagram stories.
-3. Send a targeted Creator-tier nurture campaign focused on underused credits and session planning.
+2. Run a Wednesday fill-rate promotion with a booking deadline and reminder email.
+3. Promote first-booker membership upgrade offer in follow-up email and Instagram stories.
 
 ## Email campaign recommendations
 1. First-Time Booker to Member Upgrade

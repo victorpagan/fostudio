@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-06T02:35:09.539Z",
-  "week_of": "2026-03-30",
+  "generated_at": "2026-04-06T07:42:46.816Z",
+  "week_of": "2026-04-06",
   "data_availability": {
     "memberships": "supabase",
     "bookings": "supabase",
@@ -12,53 +12,55 @@
       ],
       "bookings": [
         "Loaded 37 booking rows from Supabase.",
-        "Loaded 16 revenue events from Supabase."
+        "Loaded 15 revenue events from Supabase.",
+        "Membership revenue sessions included: 9 / 10.",
+        "Membership session drops: status=0, metadata_exclude=0, dedupe=1, missing_amount=0."
       ],
       "revenue": [
         "Loaded 37 booking rows from Supabase.",
-        "Loaded 16 revenue events from Supabase."
+        "Loaded 15 revenue events from Supabase.",
+        "Membership revenue sessions included: 9 / 10.",
+        "Membership session drops: status=0, metadata_exclude=0, dedupe=1, missing_amount=0."
       ],
       "ads": [
-        "Table analytics_ad_daily unavailable: relation \"public.analytics_ad_daily\" does not exist",
-        "Table analytics_ads_daily unavailable: relation \"public.analytics_ads_daily\" does not exist",
-        "Table ad_performance_daily unavailable: relation \"public.ad_performance_daily\" does not exist",
-        "No supported Supabase ads table found. Expected one of: analytics_ad_daily, analytics_ads_daily, ad_performance_daily."
+        "Ads source is unavailable because analytics ads sync is disabled or no ad platform is enabled."
       ]
     }
   },
   "snapshot": {
-    "revenue": 1350,
-    "revenue_wow_pct": -28.95,
-    "bookings": 5,
-    "booked_hours": 10,
-    "utilization_rate": 0.0595,
+    "revenue": 0,
+    "revenue_wow_pct": -100,
+    "bookings": 4,
+    "booked_hours": 6.5,
+    "utilization_rate": 0.0387,
     "active_members": 5,
-    "new_members": 3,
-    "cancellations": 1
+    "new_members": 0,
+    "cancellations": 0
   },
   "memberships": {
     "creator": 2,
     "pro": 1,
     "studio_plus": 1,
-    "net_growth": 2
+    "net_growth": 0
   },
   "marketing": {
     "google_ads": null,
     "meta_ads": null
   },
   "what_changed": [
-    "Revenue declined -28.9% week-over-week.",
-    "Membership growth was net +2 this week.",
-    "Studio utilization trend improved versus the previous week."
+    "Revenue declined -100.0% week-over-week.",
+    "Membership count was flat week-over-week.",
+    "Studio utilization softened versus the previous week."
   ],
   "alerts": [
     "Ads data unavailable",
+    "Bookings down week-over-week",
     "Revenue trend softened week-over-week"
   ],
   "recommended_next_actions": [
     "Connect Google Ads and Meta Ads data ingestion so paid-channel performance can be measured accurately.",
-    "Promote first-booker membership upgrade offer in follow-up email and Instagram stories.",
-    "Send a targeted Creator-tier nurture campaign focused on underused credits and session planning."
+    "Run a Wednesday fill-rate promotion with a booking deadline and reminder email.",
+    "Promote first-booker membership upgrade offer in follow-up email and Instagram stories."
   ],
   "email_recommendations": [
     {

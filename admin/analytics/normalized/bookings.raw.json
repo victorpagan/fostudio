@@ -1,10 +1,12 @@
 {
   "manifest": {
-    "generated_at": "2026-04-06T02:35:06.707Z",
+    "generated_at": "2026-04-06T07:42:43.745Z",
     "source": "supabase",
     "notes": [
       "Loaded 37 booking rows from Supabase.",
-      "Loaded 16 revenue events from Supabase."
+      "Loaded 15 revenue events from Supabase.",
+      "Membership revenue sessions included: 9 / 10.",
+      "Membership session drops: status=0, metadata_exclude=0, dedupe=1, missing_amount=0."
     ]
   },
   "records": [
