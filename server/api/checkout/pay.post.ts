@@ -215,10 +215,17 @@ function todayIsoDateInPacific() {
 }
 
 function readMetadataPriceCents(metadata: Record<string, unknown> | null | undefined) {
-  const value = metadata?.effective_price_cents
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.floor(value)
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value)
+  const paymentAmount = metadata?.payment_amount_cents
+  if (typeof paymentAmount === 'number' && Number.isFinite(paymentAmount)) return Math.floor(paymentAmount)
+  if (typeof paymentAmount === 'string' && paymentAmount.trim()) {
+    const parsed = Number(paymentAmount)
+    if (Number.isFinite(parsed)) return Math.floor(parsed)
+  }
+
+  const effectiveAmount = metadata?.effective_price_cents
+  if (typeof effectiveAmount === 'number' && Number.isFinite(effectiveAmount)) return Math.floor(effectiveAmount)
+  if (typeof effectiveAmount === 'string' && effectiveAmount.trim()) {
+    const parsed = Number(effectiveAmount)
     if (Number.isFinite(parsed)) return Math.floor(parsed)
   }
   return null

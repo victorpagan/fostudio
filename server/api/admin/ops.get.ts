@@ -1,5 +1,10 @@
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { DateTime } from 'luxon'
+import {
+  resolveMembershipCheckoutRevenue,
+  type MembershipCheckoutRevenueSession,
+  type MembershipVariationPriceRow
+} from '~~/server/utils/revenue/membershipCheckout'
 
 type RevenueBucket = 'day' | 'week' | 'month'
 
@@ -210,13 +215,13 @@ export default defineEventHandler(async (event) => {
       .limit(8),
     supabase
       .from('membership_checkout_sessions')
-      .select('id,paid_at,plan_variation_id,tier,cadence,claimed_by_user_id,guest_email,status')
+      .select('id,paid_at,plan_variation_id,tier,cadence,claimed_by_user_id,customer_id,claimed_membership_id,metadata,status')
       .not('paid_at', 'is', null)
       .gte('paid_at', rangeStartIso)
       .lte('paid_at', rangeEndIso),
     supabase
       .from('membership_plan_variations')
-      .select('id,tier_id,cadence,price_cents,sort_order')
+      .select('id,tier_id,cadence,provider_plan_variation_id,price_cents,sort_order')
       .order('sort_order', { ascending: true }),
     supabase
       .from('credit_topup_sessions')
@@ -289,20 +294,22 @@ export default defineEventHandler(async (event) => {
     membership => !futureGrantMembershipIds.has(membership.id)
   )
 
-  const variationById = new Map<string, { priceCents: number, tierId: string | null, cadence: string | null }>()
-  const variationByTierCadence = new Map<string, { priceCents: number }>()
-  for (const row of (variationsRes.data ?? [])) {
-    const priceCents = Math.max(0, Number(row.price_cents ?? 0))
-    variationById.set(row.id, {
-      priceCents,
-      tierId: row.tier_id ?? null,
-      cadence: row.cadence ?? null
-    })
-    const pairKey = `${String(row.tier_id ?? '')}:${String(row.cadence ?? '')}`
-    if (!variationByTierCadence.has(pairKey)) {
-      variationByTierCadence.set(pairKey, { priceCents })
-    }
-  }
+  const membershipRevenue = resolveMembershipCheckoutRevenue(
+    ((membershipSessionsRes.data ?? []) as Array<Record<string, unknown>>).map((row): MembershipCheckoutRevenueSession => ({
+      id: String(row.id ?? ''),
+      paid_at: typeof row.paid_at === 'string' ? row.paid_at : null,
+      plan_variation_id: typeof row.plan_variation_id === 'string' ? row.plan_variation_id : null,
+      tier: typeof row.tier === 'string' ? row.tier : null,
+      cadence: typeof row.cadence === 'string' ? row.cadence : null,
+      claimed_by_user_id: typeof row.claimed_by_user_id === 'string' ? row.claimed_by_user_id : null,
+      customer_id: typeof row.customer_id === 'string' ? row.customer_id : null,
+      claimed_membership_id: typeof row.claimed_membership_id === 'string' ? row.claimed_membership_id : null,
+      status: typeof row.status === 'string' ? row.status : null,
+      metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata as Record<string, unknown> : null
+    })),
+    (variationsRes.data ?? []) as MembershipVariationPriceRow[],
+    { dedupeWindowHours: 36 }
+  )
 
   const bucketMap = new Map<string, RevenuePoint>()
   let bucketCursor = alignBucketStart(rangeStart, effectiveBucket)
@@ -341,11 +348,8 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  for (const session of (membershipSessionsRes.data ?? [])) {
-    const byVariationId = session.plan_variation_id ? variationById.get(session.plan_variation_id) : null
-    const byPair = variationByTierCadence.get(`${String(session.tier ?? '')}:${String(session.cadence ?? '')}`)
-    const priceCents = byVariationId?.priceCents ?? byPair?.priceCents ?? 0
-    addRevenuePoint(session.paid_at, 'membershipCents', priceCents, session.claimed_by_user_id)
+  for (const session of membershipRevenue.rows) {
+    addRevenuePoint(session.paidAt, 'membershipCents', session.amountCents, session.userId)
   }
 
   for (const row of (creditTopupsRes.data ?? [])) {
@@ -512,6 +516,9 @@ export default defineEventHandler(async (event) => {
       creditTopupRevenueCents,
       holdTopupRevenueCents,
       totalOrders
+    },
+    revenueDebug: {
+      membershipSessionStats: membershipRevenue.stats
     },
     range: {
       start: rangeStartIso,

@@ -49,6 +49,30 @@ function addCadenceInterval(startIso: string, cadence: 'daily' | 'weekly' | 'mon
   return value.toISOString()
 }
 
+function buildCheckoutSessionMetadata(input: {
+  basePriceCents: number
+  effectivePriceCents: number
+  promoCode: string | null
+  promoId: string | null
+  promoDiscountCents: number
+  promoSquareDiscountId: string | null
+  guestFirstName: string | null
+  guestLastName: string | null
+  guestPhone: string | null
+}) {
+  return {
+    base_price_cents: input.basePriceCents,
+    effective_price_cents: input.effectivePriceCents,
+    ...(input.promoCode ? { promo_code: input.promoCode } : {}),
+    ...(input.promoId ? { promo_id: input.promoId } : {}),
+    ...(input.promoDiscountCents > 0 ? { promo_discount_cents: input.promoDiscountCents } : {}),
+    ...(input.promoSquareDiscountId ? { promo_square_discount_id: input.promoSquareDiscountId } : {}),
+    ...(input.guestFirstName ? { guest_first_name: input.guestFirstName } : {}),
+    ...(input.guestLastName ? { guest_last_name: input.guestLastName } : {}),
+    ...(input.guestPhone ? { guest_phone: input.guestPhone } : {})
+  }
+}
+
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
   const userId = user?.sub && UUID_RE.test(user.sub) ? user.sub : null
@@ -91,10 +115,10 @@ export default defineEventHandler(async (event) => {
 
   let isPriorityMember = false
   if (userId) {
-    isPriorityMember = await isPriorityMemberForWaitlist(supabase as any, userId)
+    isPriorityMember = await isPriorityMemberForWaitlist(supabase, userId)
   }
 
-  const capacity = await getSingleTierCapacity(supabase as any, tierId)
+  const capacity = await getSingleTierCapacity(supabase, tierId)
   if (capacity.isFull && !isPriorityMember && !isAdmin) {
     throw createError({
       statusCode: 409,
@@ -215,11 +239,17 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    const guestContactMeta = {
-      ...(guestFirstName ? { guest_first_name: guestFirstName } : {}),
-      ...(guestLastName ? { guest_last_name: guestLastName } : {}),
-      ...(guestPhone ? { guest_phone: guestPhone } : {})
-    }
+    const sessionMetadata = buildCheckoutSessionMetadata({
+      basePriceCents: planPriceCents,
+      effectivePriceCents: effectivePlanPriceCents,
+      promoCode: promoPricing?.code ?? null,
+      promoId: promoPricing?.promoId ?? null,
+      promoDiscountCents: promoPricing?.discountCents ?? 0,
+      promoSquareDiscountId: promoPricing?.squareDiscountId ?? null,
+      guestFirstName,
+      guestLastName,
+      guestPhone
+    })
 
     const checkoutToken = randomUUID()
     const { data: checkoutSession, error: sessionErr } = await supabase
@@ -233,17 +263,7 @@ export default defineEventHandler(async (event) => {
         guest_email: guestEmail,
         payment_provider: 'square',
         plan_variation_id: resolvedPlanVariationId,
-        metadata: promoPricing
-          ? {
-              promo_code: promoPricing.code,
-              promo_id: promoPricing.promoId,
-              promo_discount_cents: promoPricing.discountCents,
-              promo_square_discount_id: promoPricing.squareDiscountId,
-              base_price_cents: planPriceCents,
-              effective_price_cents: effectivePlanPriceCents,
-              ...guestContactMeta
-            }
-          : Object.keys(guestContactMeta).length ? guestContactMeta : null
+        metadata: sessionMetadata
       })
       .select('id,token')
       .single()
@@ -316,11 +336,17 @@ export default defineEventHandler(async (event) => {
 
   let authCheckoutSession: GuestCheckoutSessionInsertResult | null = null
   if (!isTestTier) {
-    const authContactMeta = {
-      ...(guestFirstName ? { guest_first_name: guestFirstName } : {}),
-      ...(guestLastName ? { guest_last_name: guestLastName } : {}),
-      ...(guestPhone ? { guest_phone: guestPhone } : {})
-    }
+    const sessionMetadata = buildCheckoutSessionMetadata({
+      basePriceCents: planPriceCents,
+      effectivePriceCents: effectivePlanPriceCents,
+      promoCode: promoPricing?.code ?? null,
+      promoId: promoPricing?.promoId ?? null,
+      promoDiscountCents: promoPricing?.discountCents ?? 0,
+      promoSquareDiscountId: promoPricing?.squareDiscountId ?? null,
+      guestFirstName,
+      guestLastName,
+      guestPhone
+    })
 
     const checkoutToken = randomUUID()
     const { data: checkoutSession, error: checkoutSessionErr } = await supabase
@@ -334,17 +360,7 @@ export default defineEventHandler(async (event) => {
         guest_email: user?.email ?? null,
         payment_provider: 'square',
         plan_variation_id: resolvedPlanVariationId,
-        metadata: promoPricing
-          ? {
-              promo_code: promoPricing.code,
-              promo_id: promoPricing.promoId,
-              promo_discount_cents: promoPricing.discountCents,
-              promo_square_discount_id: promoPricing.squareDiscountId,
-              base_price_cents: planPriceCents,
-              effective_price_cents: effectivePlanPriceCents,
-              ...authContactMeta
-            }
-          : Object.keys(authContactMeta).length ? authContactMeta : null
+        metadata: sessionMetadata
       })
       .select('id,token')
       .single()

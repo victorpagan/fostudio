@@ -22,12 +22,22 @@ This workspace generates analytics artifacts for the admin dashboard and weekly 
 ## Data Truth Policy
 
 - If a source is unavailable in Supabase, outputs mark it as unavailable instead of backfilling with mock CSV values.
+- Membership checkout revenue uses immutable session snapshots (`metadata.payment_amount_cents` / `metadata.effective_price_cents`) before any current plan pricing fallback.
+- Membership checkout duplicates that claim the same membership in a short window are deduplicated to the latest paid session for reporting.
 - Outputs include `data_availability` to indicate source health for:
   - `memberships`
   - `bookings`
   - `revenue`
   - `ads`
 - Alerts and weekly report sections include explicit “data unavailable” messaging when applicable.
+
+### Excluding bad membership session revenue
+
+If a paid checkout session should not count in analytics/ops revenue, set one of these metadata flags on that session:
+
+- `analytics_exclude: true`
+- `revenue_excluded: true`
+- `exclude_from_revenue: true`
 
 ## Required Environment
 

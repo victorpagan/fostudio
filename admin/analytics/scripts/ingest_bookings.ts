@@ -8,6 +8,11 @@ import { writeJsonFile } from './lib/fs'
 import { toStringOrNull } from './lib/parse'
 import { createSupabaseClient } from './lib/supabase'
 import type { IngestManifest, IngestSource, RawBookingRecord, RawRevenueEventRecord } from './lib/types'
+import {
+  resolveMembershipCheckoutRevenue,
+  type MembershipCheckoutRevenueSession,
+  type MembershipVariationPriceRow
+} from '../../../server/utils/revenue/membershipCheckout'
 
 type BookingRow = {
   id: string
@@ -26,20 +31,17 @@ type OrderRow = {
   state: string | null
 }
 
-type VariationRow = {
-  id: string
-  tier_id: string
-  cadence: string | null
-  price_cents: number
-}
-
 type MembershipSessionRow = {
+  id: string
   paid_at: string | null
   plan_variation_id: string | null
   tier: string | null
   cadence: string | null
   claimed_by_user_id: string | null
   customer_id: string | null
+  claimed_membership_id: string | null
+  status: string | null
+  metadata: Record<string, unknown> | null
 }
 
 type TopupRow = {
@@ -53,33 +55,6 @@ function hoursBetween(startIso: string, endIso: string) {
   const end = DateTime.fromISO(endIso)
   if (!start.isValid || !end.isValid || end <= start) return 0
   return Number(end.diff(start, 'hours').hours.toFixed(2))
-}
-
-function toPricingMap(rows: VariationRow[]) {
-  const byVariation = new Map<string, { amount: number, tier: string, cadence: string | null }>()
-  const byTierCadence = new Map<string, { amount: number, tier: string, cadence: string | null }>()
-
-  for (const row of rows) {
-    const amount = Math.max(0, Number(row.price_cents ?? 0) / 100)
-    byVariation.set(String(row.id), {
-      amount,
-      tier: String(row.tier_id ?? '').trim().toLowerCase() || 'other',
-      cadence: toStringOrNull(row.cadence)?.toLowerCase() ?? null
-    })
-
-    const tier = String(row.tier_id ?? '').trim().toLowerCase() || 'other'
-    const cadence = toStringOrNull(row.cadence)?.toLowerCase() ?? ''
-    const key = `${tier}:${cadence}`
-    if (!byTierCadence.has(key)) {
-      byTierCadence.set(key, {
-        amount,
-        tier,
-        cadence: cadence || null
-      })
-    }
-  }
-
-  return { byVariation, byTierCadence }
 }
 
 async function loadFromSupabase() {
@@ -111,12 +86,12 @@ async function loadFromSupabase() {
       .limit(10000),
     supabase
       .from('membership_checkout_sessions')
-      .select('paid_at,plan_variation_id,tier,cadence,claimed_by_user_id,customer_id')
+      .select('id,paid_at,plan_variation_id,tier,cadence,claimed_by_user_id,customer_id,claimed_membership_id,status,metadata')
       .not('paid_at', 'is', null)
       .limit(8000),
     supabase
       .from('membership_plan_variations')
-      .select('id,tier_id,cadence,price_cents')
+      .select('id,tier_id,cadence,provider_plan_variation_id,price_cents')
       .limit(200),
     supabase
       .from('credit_topup_sessions')
@@ -197,31 +172,36 @@ async function loadFromSupabase() {
     })
   }
 
-  const pricing = toPricingMap((variationsRes.data ?? []) as VariationRow[])
+  const membershipRevenue = resolveMembershipCheckoutRevenue(
+    ((sessionsRes.data ?? []) as MembershipSessionRow[]).map((row): MembershipCheckoutRevenueSession => ({
+      id: String(row.id),
+      paid_at: row.paid_at,
+      plan_variation_id: row.plan_variation_id,
+      tier: row.tier,
+      cadence: row.cadence,
+      claimed_by_user_id: row.claimed_by_user_id,
+      customer_id: row.customer_id,
+      claimed_membership_id: row.claimed_membership_id,
+      status: row.status,
+      metadata: row.metadata
+    })),
+    (variationsRes.data ?? []) as MembershipVariationPriceRow[],
+    { dedupeWindowHours: 36 }
+  )
 
-  for (const row of ((sessionsRes.data ?? []) as MembershipSessionRow[])) {
-    if (!row.paid_at) continue
-
-    const byVariation = row.plan_variation_id
-      ? pricing.byVariation.get(String(row.plan_variation_id))
-      : null
-
-    const tier = String(row.tier ?? '').trim().toLowerCase() || 'other'
-    const cadence = toStringOrNull(row.cadence)?.toLowerCase() ?? null
-    const byPair = pricing.byTierCadence.get(`${tier}:${cadence ?? ''}`)
-    const amount = byVariation?.amount ?? byPair?.amount ?? 0
-
+  for (const row of membershipRevenue.rows) {
+    const amount = Number((row.amountCents / 100).toFixed(2))
     if (amount <= 0) continue
 
     revenue.push({
-      date: String(row.paid_at),
-      user_id: toStringOrNull(row.claimed_by_user_id),
-      customer_id: toStringOrNull(row.customer_id),
+      date: String(row.paidAt),
+      user_id: toStringOrNull(row.userId),
+      customer_id: toStringOrNull(row.customerId),
       source: 'membership',
       amount,
-      order_id: null,
-      tier: tier || null,
-      cadence
+      order_id: row.sessionId || null,
+      tier: row.tier,
+      cadence: row.cadence
     })
   }
 
@@ -261,7 +241,9 @@ async function loadFromSupabase() {
     revenue,
     notes: [
       `Loaded ${bookings.length} booking rows from Supabase.`,
-      `Loaded ${revenue.length} revenue events from Supabase.`
+      `Loaded ${revenue.length} revenue events from Supabase.`,
+      `Membership revenue sessions included: ${membershipRevenue.stats.includedSessions} / ${membershipRevenue.stats.inputSessions}.`,
+      `Membership session drops: status=${membershipRevenue.stats.droppedByStatus}, metadata_exclude=${membershipRevenue.stats.droppedByMetadataExclude}, dedupe=${membershipRevenue.stats.droppedByDeduplication}, missing_amount=${membershipRevenue.stats.droppedByMissingAmount}.`
     ]
   }
 }
