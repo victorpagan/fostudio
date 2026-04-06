@@ -97,15 +97,15 @@ export function useAdminBookingReschedule(options: UseAdminBookingRescheduleOpti
   function toLocalInputValue(value: string | null | undefined) {
     if (!value) return ''
     const parsedIso = DateTime.fromISO(value, { setZone: true })
-    if (parsedIso.isValid) return parsedIso.setZone(STUDIO_TZ).toFormat("yyyy-LL-dd'T'HH:mm")
+    if (parsedIso.isValid) return parsedIso.setZone(STUDIO_TZ).toFormat('yyyy-LL-dd\'T\'HH:mm')
     const parsedSql = DateTime.fromSQL(value, { zone: 'utc' })
-    if (parsedSql.isValid) return parsedSql.setZone(STUDIO_TZ).toFormat("yyyy-LL-dd'T'HH:mm")
+    if (parsedSql.isValid) return parsedSql.setZone(STUDIO_TZ).toFormat('yyyy-LL-dd\'T\'HH:mm')
     return ''
   }
 
   function localInputToDateTime(value: string | null | undefined) {
     if (!value) return null
-    const parsed = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm", { zone: STUDIO_TZ })
+    const parsed = DateTime.fromFormat(value, 'yyyy-LL-dd\'T\'HH:mm', { zone: STUDIO_TZ })
     if (parsed.isValid) return parsed
     const fallback = DateTime.fromISO(value, { zone: STUDIO_TZ })
     return fallback.isValid ? fallback : null
@@ -113,7 +113,7 @@ export function useAdminBookingReschedule(options: UseAdminBookingRescheduleOpti
 
   function fromLocalInputValue(value: string) {
     if (!value.trim()) return null
-    const dt = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm", { zone: STUDIO_TZ })
+    const dt = DateTime.fromFormat(value, 'yyyy-LL-dd\'T\'HH:mm', { zone: STUDIO_TZ })
     if (!dt.isValid) return null
     return dt.toUTC().toISO()
   }
@@ -128,7 +128,10 @@ export function useAdminBookingReschedule(options: UseAdminBookingRescheduleOpti
     return maybe.data?.statusMessage ?? maybe.message ?? 'Unknown error'
   }
 
-  function openReschedule(booking: AdminBookingForReschedule) {
+  function openReschedule(
+    booking: AdminBookingForReschedule,
+    options?: { openModal?: boolean }
+  ) {
     rescheduleForm.bookingId = booking.id
     rescheduleForm.startTime = toLocalInputValue(booking.start_time)
     rescheduleForm.endTime = toLocalInputValue(booking.end_time)
@@ -146,7 +149,9 @@ export function useAdminBookingReschedule(options: UseAdminBookingRescheduleOpti
     const cursor = localInputToDateTime(rescheduleForm.startTime)?.setZone(STUDIO_TZ) ?? DateTime.now().setZone(STUDIO_TZ)
     rescheduleMonthCursor.value = cursor.startOf('month')
     void loadRescheduleMonthHints(rescheduleForm.startTime)
-    rescheduleOpen.value = true
+    if (options?.openModal !== false) {
+      rescheduleOpen.value = true
+    }
   }
 
   function closeReschedule() {
@@ -279,13 +284,13 @@ export function useAdminBookingReschedule(options: UseAdminBookingRescheduleOpti
     }
 
     const unique = Array.from(new Set(starts)).sort((a, b) => a - b)
-    return unique.filter((minute) => canFitHoldWindowForStart(key, minute, duration))
+    return unique.filter(minute => canFitHoldWindowForStart(key, minute, duration))
   }
 
   function toLocalInputForDayMinute(key: string, minute: number) {
     const day = dayKeyToDateTime(key)
     if (!day) return ''
-    return day.plus({ minutes: minute }).toFormat("yyyy-LL-dd'T'HH:mm")
+    return day.plus({ minutes: minute }).toFormat('yyyy-LL-dd\'T\'HH:mm')
   }
 
   async function loadRescheduleMonthHints(anchorInput: string) {
@@ -431,7 +436,7 @@ export function useAdminBookingReschedule(options: UseAdminBookingRescheduleOpti
       .map((minute) => {
         const value = toLocalInputForDayMinute(key, minute)
         if (!value) return null
-        const labelDate = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm", { zone: STUDIO_TZ })
+        const labelDate = DateTime.fromFormat(value, 'yyyy-LL-dd\'T\'HH:mm', { zone: STUDIO_TZ })
         return {
           value,
           label: labelDate.isValid ? labelDate.toFormat('EEE, LLL d · h:mm a') : value
@@ -468,7 +473,7 @@ export function useAdminBookingReschedule(options: UseAdminBookingRescheduleOpti
       .map((endMinute) => {
         const value = toLocalInputForDayMinute(key, endMinute)
         if (!value) return null
-        const labelDate = DateTime.fromFormat(value, "yyyy-LL-dd'T'HH:mm", { zone: STUDIO_TZ })
+        const labelDate = DateTime.fromFormat(value, 'yyyy-LL-dd\'T\'HH:mm', { zone: STUDIO_TZ })
         return {
           value,
           label: labelDate.isValid ? labelDate.toFormat('EEE, LLL d · h:mm a') : value
@@ -518,7 +523,7 @@ export function useAdminBookingReschedule(options: UseAdminBookingRescheduleOpti
     const nextStart = localInputToDateTime(value)?.setZone(STUDIO_TZ)
     if (rescheduleAutoSyncEnd.value && nextStart) {
       const alignedEnd = nextStart.plus({ minutes: rescheduleDurationMinutes.value > 0 ? rescheduleDurationMinutes.value : 60 })
-      rescheduleForm.endTime = alignedEnd.toFormat("yyyy-LL-dd'T'HH:mm")
+      rescheduleForm.endTime = alignedEnd.toFormat('yyyy-LL-dd\'T\'HH:mm')
     }
     if (nextStart) {
       const monthCursor = nextStart.startOf('month')
@@ -566,7 +571,7 @@ export function useAdminBookingReschedule(options: UseAdminBookingRescheduleOpti
     const next = dayBase.plus({ minutes: minute })
     if (!next.isValid) return
     rescheduleAutoSyncEnd.value = true
-    onRescheduleStartChange(next.toFormat("yyyy-LL-dd'T'HH:mm"))
+    onRescheduleStartChange(next.toFormat('yyyy-LL-dd\'T\'HH:mm'))
   }
 
   const rescheduleSummaryLabel = computed(() => {

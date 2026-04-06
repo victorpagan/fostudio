@@ -3,6 +3,7 @@ import { DateTime } from 'luxon'
 import type { AdminBookingForReschedule } from '~~/app/composables/booking/reschedule/useAdminBookingReschedule'
 import { useAdminBookingReschedule } from '~~/app/composables/booking/reschedule/useAdminBookingReschedule'
 import AdminRescheduleModal from '~~/app/components/booking/reschedule/modal/AdminRescheduleModal.vue'
+import AvailabilityCalendar from '~~/app/components/AvailabilityCalendar.vue'
 
 definePageMeta({ middleware: ['admin'] })
 
@@ -46,6 +47,12 @@ type AdminCreateBookingResponse = {
   holdId: string | null
   burned: number | null
   newBalance: number | null
+}
+
+type BookingGroup = {
+  key: string
+  label: string
+  items: AdminBooking[]
 }
 
 const PAST_BOOKINGS_PAGE_SIZE = 10
@@ -218,11 +225,13 @@ const activeHoldBookings = computed(() =>
   activeBookings.value.filter(booking => hasHold(booking))
 )
 const pastBookings = computed(() =>
-  bookings.value.filter((booking) => {
-    if (booking.status === 'canceled') return true
-    const endMillis = bookingEndsAtMillis(booking)
-    return Number.isFinite(endMillis) ? endMillis < Date.now() : false
-  })
+  bookings.value
+    .filter((booking) => {
+      if (booking.status === 'canceled') return true
+      const endMillis = bookingEndsAtMillis(booking)
+      return Number.isFinite(endMillis) ? endMillis < Date.now() : false
+    })
+    .sort((a, b) => bookingStartsAtMillis(b) - bookingStartsAtMillis(a))
 )
 const pastTotalPages = computed(() => Math.max(1, Math.ceil(pastBookings.value.length / PAST_BOOKINGS_PAGE_SIZE)))
 const paginatedPastBookings = computed(() => {
@@ -249,6 +258,59 @@ function bookingLabel(booking: AdminBooking) {
   if (booking.is_guest) return booking.guest_name || booking.guest_email || 'Guest booking'
   return booking.member_name || booking.member_email || booking.user_id || 'Member booking'
 }
+
+function bookingDateKey(booking: AdminBooking) {
+  const parsed = parseBookingTime(booking.start_time)
+  if (!parsed?.isValid) return 'unknown'
+  return parsed.setZone('America/Los_Angeles').toFormat('yyyy-LL-dd')
+}
+
+function formatBookingDateHeading(key: string) {
+  if (key === 'unknown') return 'Unknown date'
+  const parsed = DateTime.fromFormat(key, 'yyyy-LL-dd', { zone: 'America/Los_Angeles' })
+  if (!parsed.isValid) return key
+  return parsed.toFormat('cccc, LLL d, yyyy')
+}
+
+function groupBookingsByDate(source: AdminBooking[], order: 'asc' | 'desc'): BookingGroup[] {
+  const byDate = new Map<string, AdminBooking[]>()
+  for (const booking of source) {
+    const key = bookingDateKey(booking)
+    const list = byDate.get(key)
+    if (list) list.push(booking)
+    else byDate.set(key, [booking])
+  }
+
+  const groups = Array.from(byDate.entries()).map(([key, items]) => ({
+    key,
+    label: formatBookingDateHeading(key),
+    items: [...items].sort((a, b) => bookingStartsAtMillis(a) - bookingStartsAtMillis(b))
+  }))
+
+  groups.sort((left, right) => {
+    if (left.key === 'unknown') return 1
+    if (right.key === 'unknown') return -1
+
+    const leftDay = DateTime.fromFormat(left.key, 'yyyy-LL-dd', { zone: 'America/Los_Angeles' })
+    const rightDay = DateTime.fromFormat(right.key, 'yyyy-LL-dd', { zone: 'America/Los_Angeles' })
+    if (!leftDay.isValid || !rightDay.isValid) return left.key.localeCompare(right.key)
+
+    return order === 'asc'
+      ? leftDay.toMillis() - rightDay.toMillis()
+      : rightDay.toMillis() - leftDay.toMillis()
+  })
+
+  return groups
+}
+
+const activeBookingGroups = computed(() => groupBookingsByDate(activeBookings.value, 'asc'))
+const activeHoldBookingGroups = computed(() => groupBookingsByDate(activeHoldBookings.value, 'asc'))
+const pastBookingGroups = computed(() => groupBookingsByDate(paginatedPastBookings.value, 'desc'))
+const visibleBookingGroups = computed(() => {
+  if (bookingTab.value === 'active') return activeBookingGroups.value
+  if (bookingTab.value === 'holds') return activeHoldBookingGroups.value
+  return pastBookingGroups.value
+})
 
 function formatDate(value: string) {
   const parsed = parseBookingTime(value)
@@ -302,6 +364,10 @@ const {
     await refresh()
   }
 })
+
+function openRescheduleModal(booking: AdminBookingForReschedule) {
+  openReschedule(booking)
+}
 
 async function cancelBooking(bookingId: string) {
   cancelingId.value = bookingId
@@ -392,6 +458,7 @@ async function createBookingOnBehalf() {
       description: `${burnMessage}${holdMessage}`
     })
 
+    createBookingOpen.value = false
     resetCreateForm({ keepMember: true })
     await Promise.allSettled([refresh(), refreshMembers()])
   } catch (error: unknown) {
@@ -507,6 +574,29 @@ async function createBookingOnBehalf() {
               </UButton>
             </div>
 
+            <UCard class="admin-panel-card border-0">
+              <div class="space-y-3">
+                <div>
+                  <p class="text-sm font-medium">
+                    Live calendar reference
+                  </p>
+                  <p class="text-xs text-dimmed">
+                    Full schedule view for context while reviewing, editing, and creating bookings.
+                  </p>
+                </div>
+                <AvailabilityCalendar
+                  endpoint="/api/calendar/public"
+                  :full-day="true"
+                />
+              </div>
+            </UCard>
+
+            <UCard>
+              <div class="text-sm font-medium">
+                Bookings by date
+              </div>
+            </UCard>
+
             <div
               v-if="bookingTab === 'active' && !activeBookings.length"
               class="rounded-lg border border-default p-3 text-sm text-dimmed"
@@ -532,83 +622,93 @@ async function createBookingOnBehalf() {
               v-else
               class="space-y-3"
             >
-              <UCard
-                v-for="booking in bookingTab === 'active' ? activeBookings : bookingTab === 'holds' ? activeHoldBookings : paginatedPastBookings"
-                :key="`${booking.id}-${bookingTab}`"
+              <div
+                v-for="group in visibleBookingGroups"
+                :key="`${bookingTab}-${group.key}`"
+                class="space-y-3"
               >
-                <div class="flex flex-wrap items-start justify-between gap-3">
-                  <div class="min-w-0">
-                    <div class="flex items-center gap-2">
-                      <div class="font-medium truncate">
-                        {{ bookingLabel(booking) }}
-                      </div>
-                      <UBadge
-                        :color="booking.status === 'confirmed' ? 'success' : booking.status === 'requested' ? 'warning' : 'neutral'"
-                        size="xs"
-                        variant="soft"
-                      >
-                        {{ booking.status }}
-                      </UBadge>
-                      <UBadge
-                        :color="booking.is_guest ? 'neutral' : 'primary'"
-                        size="xs"
-                        variant="soft"
-                      >
-                        {{ booking.is_guest ? 'guest' : 'member' }}
-                      </UBadge>
-                      <UBadge
-                        v-if="bookingTab === 'holds' || hasHold(booking)"
-                        color="warning"
-                        size="xs"
-                        variant="soft"
-                      >
-                        hold
-                      </UBadge>
-                    </div>
-                    <div class="mt-1 text-sm text-dimmed">
-                      {{ formatDate(booking.start_time) }} → {{ formatDate(booking.end_time) }} (LA)
-                    </div>
-                    <div
-                      v-if="hasHold(booking)"
-                      class="mt-1 text-xs text-dimmed"
-                    >
-                      Hold: {{ holdRangeLabel(booking) }}
-                    </div>
-                    <div class="mt-1 text-xs text-dimmed">
-                      Credits burned: {{ booking.credits_burned ?? 0 }} · Created {{ formatDate(booking.created_at) }}
-                    </div>
-                    <div
-                      v-if="booking.notes"
-                      class="mt-2 text-xs text-dimmed"
-                    >
-                      {{ booking.notes }}
-                    </div>
-                  </div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+                  {{ group.label }}
+                </p>
 
-                  <div class="flex flex-wrap items-center gap-2">
-                    <UButton
-                      v-if="bookingTab !== 'past'"
-                      color="neutral"
-                      variant="soft"
-                      size="sm"
-                      @click="openReschedule(booking as AdminBookingForReschedule)"
-                    >
-                      Edit time
-                    </UButton>
-                    <UButton
-                      v-if="bookingTab !== 'past'"
-                      color="error"
-                      variant="soft"
-                      size="sm"
-                      :loading="cancelingId === booking.id"
-                      :disabled="booking.status === 'canceled'"
-                      @click="cancelBooking(booking.id)"
-                    >
-                      Cancel booking
-                    </UButton>
+                <UCard
+                  v-for="booking in group.items"
+                  :key="`${booking.id}-${bookingTab}`"
+                >
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <div class="flex items-center gap-2">
+                        <div class="font-medium truncate">
+                          {{ bookingLabel(booking) }}
+                        </div>
+                        <UBadge
+                          :color="booking.status === 'confirmed' ? 'success' : booking.status === 'requested' ? 'warning' : 'neutral'"
+                          size="xs"
+                          variant="soft"
+                        >
+                          {{ booking.status }}
+                        </UBadge>
+                        <UBadge
+                          :color="booking.is_guest ? 'neutral' : 'primary'"
+                          size="xs"
+                          variant="soft"
+                        >
+                          {{ booking.is_guest ? 'guest' : 'member' }}
+                        </UBadge>
+                        <UBadge
+                          v-if="bookingTab === 'holds' || hasHold(booking)"
+                          color="warning"
+                          size="xs"
+                          variant="soft"
+                        >
+                          hold
+                        </UBadge>
+                      </div>
+                      <div class="mt-1 text-sm text-dimmed">
+                        {{ formatDate(booking.start_time) }} → {{ formatDate(booking.end_time) }} (LA)
+                      </div>
+                      <div
+                        v-if="hasHold(booking)"
+                        class="mt-1 text-xs text-dimmed"
+                      >
+                        Hold: {{ holdRangeLabel(booking) }}
+                      </div>
+                      <div class="mt-1 text-xs text-dimmed">
+                        Credits burned: {{ booking.credits_burned ?? 0 }} · Created {{ formatDate(booking.created_at) }}
+                      </div>
+                      <div
+                        v-if="booking.notes"
+                        class="mt-2 text-xs text-dimmed"
+                      >
+                        {{ booking.notes }}
+                      </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2">
+                      <UButton
+                        v-if="bookingTab !== 'past'"
+                        color="neutral"
+                        variant="soft"
+                        size="sm"
+                        @click="openRescheduleModal(booking as AdminBookingForReschedule)"
+                      >
+                        Edit time
+                      </UButton>
+                      <UButton
+                        v-if="bookingTab !== 'past'"
+                        color="error"
+                        variant="soft"
+                        size="sm"
+                        :loading="cancelingId === booking.id"
+                        :disabled="booking.status === 'canceled'"
+                        @click="cancelBooking(booking.id)"
+                      >
+                        Cancel booking
+                      </UButton>
+                    </div>
                   </div>
-                </div>
-              </UCard>
+                </UCard>
+              </div>
             </div>
 
             <div
@@ -644,102 +744,102 @@ async function createBookingOnBehalf() {
       </template>
     </UDashboardPanel>
 
-    <USlideover
-      v-model:open="createBookingOpen"
-      side="right"
-      title="Create booking"
-      description="Create a booking on behalf of a member, with optional credit burn and hold request."
-    >
-      <template #body>
-        <div class="space-y-4">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <h3 class="text-sm font-semibold">
-                Booking details
-              </h3>
-              <p class="mt-1 text-xs text-dimmed">
-                Use 30-minute increments for all start and end times.
-              </p>
+    <UModal v-model:open="createBookingOpen">
+      <template #content>
+        <UCard
+          class="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-h-[calc(100dvh-4rem)]"
+          :ui="{ body: 'min-h-0 overflow-y-scroll' }"
+        >
+          <template #header>
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold">
+                  Create booking
+                </h3>
+                <p class="mt-1 text-xs text-dimmed">
+                  Create a booking on behalf of a member using 30-minute increments.
+                </p>
+              </div>
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="soft"
+                icon="i-lucide-refresh-cw"
+                :loading="membersPending"
+                @click="() => refreshMembers()"
+              />
             </div>
-            <UButton
-              size="xs"
-              color="neutral"
-              variant="soft"
-              icon="i-lucide-refresh-cw"
-              :loading="membersPending"
-              @click="() => refreshMembers()"
-            />
-          </div>
+          </template>
 
-          <div class="grid gap-3 md:grid-cols-2">
-            <UFormField label="Find member">
-              <UInput
-                v-model="memberSearch"
-                placeholder="Search by name or email"
-              />
-            </UFormField>
+          <div class="space-y-4 pr-1">
+            <div class="grid gap-3 md:grid-cols-2">
+              <UFormField label="Find member">
+                <UInput
+                  v-model="memberSearch"
+                  placeholder="Search by name or email"
+                />
+              </UFormField>
 
-            <UFormField label="Member">
-              <USelect
-                v-model="createForm.userId"
-                class="w-full"
-                :items="memberItems"
-                placeholder="Select a member"
-              />
-            </UFormField>
+              <UFormField label="Member">
+                <USelect
+                  v-model="createForm.userId"
+                  class="w-full"
+                  :items="memberItems"
+                  placeholder="Select a member"
+                />
+              </UFormField>
 
-            <UFormField label="Date (local)">
-              <UInput
-                v-model="createForm.date"
-                type="date"
-              />
-            </UFormField>
+              <UFormField label="Date (local)">
+                <UInput
+                  v-model="createForm.date"
+                  type="date"
+                />
+              </UFormField>
 
-            <UFormField label="Start time (30-min)">
-              <USelect
-                v-model="createForm.startSlot"
-                :items="startSlotItems"
-                placeholder="Select start time"
-              />
-            </UFormField>
+              <UFormField label="Start time (30-min)">
+                <USelect
+                  v-model="createForm.startSlot"
+                  :items="startSlotItems"
+                  placeholder="Select start time"
+                />
+              </UFormField>
 
-            <UFormField label="End time (30-min)">
-              <USelect
-                v-model="createForm.endSlot"
-                :items="endSlotItems"
-                :disabled="!createForm.startSlot || !endSlotItems.length"
-                placeholder="Select end time"
-              />
-            </UFormField>
-          </div>
+              <UFormField label="End time (30-min)">
+                <USelect
+                  v-model="createForm.endSlot"
+                  :items="endSlotItems"
+                  :disabled="!createForm.startSlot || !endSlotItems.length"
+                  placeholder="Select end time"
+                />
+              </UFormField>
+            </div>
 
-          <div
-            v-if="selectedMember"
-            class="flex flex-wrap items-center gap-2 text-xs text-dimmed"
-          >
-            <UBadge
-              size="xs"
-              variant="soft"
-              :color="selectedMember.effective_status === 'active' ? 'success' : 'warning'"
+            <div
+              v-if="selectedMember"
+              class="flex flex-wrap items-center gap-2 text-xs text-dimmed"
             >
-              {{ selectedMember.effective_status }}
-            </UBadge>
-            <span>{{ selectedMember.customer_email || selectedMember.user_id }}</span>
-            <span>·</span>
-            <span>{{ selectedMemberCredits }} credits available</span>
-            <span v-if="selectedMember.tier">· {{ selectedMember.tier }}</span>
-          </div>
+              <UBadge
+                size="xs"
+                variant="soft"
+                :color="selectedMember.effective_status === 'active' ? 'success' : 'warning'"
+              >
+                {{ selectedMember.effective_status }}
+              </UBadge>
+              <span>{{ selectedMember.customer_email || selectedMember.user_id }}</span>
+              <span>·</span>
+              <span>{{ selectedMemberCredits }} credits available</span>
+              <span v-if="selectedMember.tier">· {{ selectedMember.tier }}</span>
+            </div>
 
-          <UAlert
-            v-if="memberCreditWarning"
-            color="warning"
-            variant="soft"
-            icon="i-lucide-wallet-cards"
-            title="No credits available"
-            description="This member has no available credits to burn. Disable credit burn or add credits first."
-          />
+            <UAlert
+              v-if="memberCreditWarning"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-wallet-cards"
+              title="No credits available"
+              description="This member has no available credits to burn. Disable credit burn or add credits first."
+            />
 
-          <div class="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
             <UFormField label="Notes">
               <UTextarea
                 v-model="createForm.notes"
@@ -757,6 +857,19 @@ async function createBookingOnBehalf() {
                 v-model="createForm.requestHold"
                 label="Request overnight hold"
               />
+            </div>
+          </div>
+
+          <template #footer>
+            <div class="flex items-center justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="creatingBooking"
+                @click="createBookingOpen = false"
+              >
+                Cancel
+              </UButton>
               <UButton
                 color="primary"
                 :loading="creatingBooking"
@@ -766,10 +879,10 @@ async function createBookingOnBehalf() {
                 Create booking
               </UButton>
             </div>
-          </div>
-        </div>
+          </template>
+        </UCard>
       </template>
-    </USlideover>
+    </UModal>
 
     <AdminRescheduleModal
       v-model:open="rescheduleOpen"

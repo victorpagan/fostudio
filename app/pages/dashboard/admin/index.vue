@@ -510,7 +510,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
             </div>
           </section>
 
-          <section class="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <section class="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
             <OpsKpiCard card-class="admin-kpi-card admin-kpi-card--revenue">
               <div class="text-[11px] uppercase tracking-[0.2em] text-inverted/85">
                 Revenue
@@ -562,6 +562,27 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                 Open campaigns
               </UButton>
             </OpsKpiCard>
+
+            <OpsKpiCard card-class="admin-kpi-card">
+              <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                Analytics workspace
+              </div>
+              <div class="mt-2 text-2xl font-[var(--font-display)] font-light">
+                KPI + trends
+              </div>
+              <p class="mt-2 text-xs text-dimmed">
+                Review generated metrics, alerts, and weekly report outputs.
+              </p>
+              <UButton
+                class="mt-3 w-fit"
+                size="xs"
+                color="primary"
+                variant="soft"
+                to="/dashboard/admin/analytics"
+              >
+                Open analytics
+              </UButton>
+            </OpsKpiCard>
           </section>
 
           <section class="grid gap-3 sm:gap-4 xl:grid-cols-[1.6fr_1fr]">
@@ -589,11 +610,9 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 
               <div class="admin-revenue-body mt-4">
                 <div
-                  class="admin-revenue-shadow admin-revenue-shadow--left"
                   :class="{ 'is-visible': revenueHasUserScrolled && revenueCanScrollLeft }"
                 />
                 <div
-                  class="admin-revenue-shadow admin-revenue-shadow--right"
                   :class="{ 'is-visible': revenueHasUserScrolled && revenueCanScrollRight }"
                 />
                 <div
@@ -856,6 +875,25 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                 </div>
               </UCard>
             </div>
+          </section>
+
+          <section>
+            <UCard class="admin-panel-card border-0">
+              <div class="space-y-3">
+                <div>
+                  <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                    Live calendar
+                  </div>
+                  <p class="mt-1 text-xs text-dimmed">
+                    Always-on schedule reference for current bookings, holds, and external blocks.
+                  </p>
+                </div>
+                <AvailabilityCalendar
+                  endpoint="/api/calendar/public"
+                  :full-day="true"
+                />
+              </div>
+            </UCard>
           </section>
         </div>
       </div>
