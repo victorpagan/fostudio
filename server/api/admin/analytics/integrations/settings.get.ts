@@ -124,7 +124,7 @@ export default defineEventHandler(async (event) => {
       meta: {
         enabled: asBoolean(configMap.get('analytics_ads_meta_enabled'), false),
         adAccountId: asTrimmedString(configMap.get('analytics_ads_meta_ad_account_id')),
-        apiVersion: asTrimmedString(configMap.get('analytics_ads_meta_api_version'), 'v22.0'),
+        apiVersion: asTrimmedString(configMap.get('analytics_ads_meta_api_version'), 'v25.0'),
         accessTokenSecretName: asTrimmedString(
           configMap.get('analytics_ads_meta_access_token_secret_name'),
           'META_MARKETING_ACCESS_TOKEN'

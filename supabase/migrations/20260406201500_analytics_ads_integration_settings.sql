@@ -11,7 +11,7 @@ INSERT INTO public.system_config (key, value) VALUES
   ('analytics_ads_google_refresh_token_secret_name', '"GOOGLE_ADS_REFRESH_TOKEN"'::jsonb),
   ('analytics_ads_meta_enabled', 'false'::jsonb),
   ('analytics_ads_meta_ad_account_id', '""'::jsonb),
-  ('analytics_ads_meta_api_version', '"v22.0"'::jsonb),
+  ('analytics_ads_meta_api_version', '"v25.0"'::jsonb),
   ('analytics_ads_meta_access_token_secret_name', '"META_MARKETING_ACCESS_TOKEN"'::jsonb),
   ('analytics_ads_meta_conversion_action_types', '["lead","onsite_conversion.lead_grouped","purchase","onsite_conversion.purchase","offsite_conversion.purchase","offsite_conversion.fb_pixel_purchase"]'::jsonb),
   ('analytics_ads_last_sync_at', 'null'::jsonb),

@@ -70,7 +70,7 @@ const form = reactive<AdsIntegrationSettings>({
   meta: {
     enabled: false,
     adAccountId: '',
-    apiVersion: 'v22.0',
+    apiVersion: 'v25.0',
     accessTokenSecretName: 'META_MARKETING_ACCESS_TOKEN',
     conversionActionTypes: ['lead', 'onsite_conversion.lead_grouped', 'purchase']
   },
@@ -96,7 +96,7 @@ const { pending, refresh } = await useAsyncData('admin:analytics:integrations:se
   form.google.refreshTokenSecretName = String(settings.google.refreshTokenSecretName ?? 'GOOGLE_ADS_REFRESH_TOKEN')
   form.meta.enabled = Boolean(settings.meta.enabled)
   form.meta.adAccountId = String(settings.meta.adAccountId ?? '')
-  form.meta.apiVersion = String(settings.meta.apiVersion ?? 'v22.0')
+  form.meta.apiVersion = String(settings.meta.apiVersion ?? 'v25.0')
   form.meta.accessTokenSecretName = String(settings.meta.accessTokenSecretName ?? 'META_MARKETING_ACCESS_TOKEN')
   form.meta.conversionActionTypes = Array.isArray(settings.meta.conversionActionTypes)
     ? settings.meta.conversionActionTypes.filter(item => typeof item === 'string' && item.trim().length > 0)
@@ -370,7 +370,7 @@ async function syncNow(dryRun = false) {
               <UFormField label="API version">
                 <UInput
                   v-model="form.meta.apiVersion"
-                  placeholder="v22.0"
+                  placeholder="v25.0"
                 />
               </UFormField>
               <UFormField label="Ad account ID">

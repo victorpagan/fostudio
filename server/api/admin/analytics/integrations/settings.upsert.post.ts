@@ -18,7 +18,7 @@ const bodySchema = z.object({
   meta: z.object({
     enabled: z.coerce.boolean().default(false),
     adAccountId: z.string().max(80).optional().default(''),
-    apiVersion: z.string().max(20).optional().default('v22.0'),
+    apiVersion: z.string().max(20).optional().default('v25.0'),
     accessTokenSecretName: z.string().min(1).max(180).optional().default('META_MARKETING_ACCESS_TOKEN'),
     conversionActionTypes: z.array(z.string().trim().min(1).max(160)).max(60).optional().default([])
   })
@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
     { key: 'analytics_ads_google_refresh_token_secret_name', value: body.google.refreshTokenSecretName.trim() || 'GOOGLE_ADS_REFRESH_TOKEN' },
     { key: 'analytics_ads_meta_enabled', value: body.meta.enabled },
     { key: 'analytics_ads_meta_ad_account_id', value: normalizeMetaAccountId(body.meta.adAccountId) },
-    { key: 'analytics_ads_meta_api_version', value: body.meta.apiVersion.trim() || 'v22.0' },
+    { key: 'analytics_ads_meta_api_version', value: body.meta.apiVersion.trim() || 'v25.0' },
     { key: 'analytics_ads_meta_access_token_secret_name', value: body.meta.accessTokenSecretName.trim() || 'META_MARKETING_ACCESS_TOKEN' },
     {
       key: 'analytics_ads_meta_conversion_action_types',
