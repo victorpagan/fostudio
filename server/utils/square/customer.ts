@@ -30,6 +30,14 @@ function normName(name?: string | null) {
   return value || null
 }
 
+function sanitizeName(name?: string | null, email?: string | null) {
+  const value = normName(name)
+  if (!value) return null
+  if (value.includes('@')) return null
+  if (email && value.toLowerCase() === email.toLowerCase()) return null
+  return value
+}
+
 async function searchSquareCustomerId(event: H3Event, email: string | null, phone: string | null) {
   const square = await useSquareClient(event)
 
@@ -93,14 +101,21 @@ async function updateSquareCustomerIfNeeded(event: H3Event, squareCustomerId: st
   firstName: string | null
   lastName: string | null
   phone: string | null
+  email: string | null
 }) {
   if (!input.firstName && !input.lastName && !input.phone) return
   try {
     const existing = await fetchSquareCustomer(event, squareCustomerId)
     if (!existing) return
 
-    const givenName = typeof existing.givenName === 'string' ? existing.givenName.trim() : (typeof existing.given_name === 'string' ? existing.given_name.trim() : '')
-    const familyName = typeof existing.familyName === 'string' ? existing.familyName.trim() : (typeof existing.family_name === 'string' ? existing.family_name.trim() : '')
+    const givenName = sanitizeName(
+      typeof existing.givenName === 'string' ? existing.givenName : (typeof existing.given_name === 'string' ? existing.given_name : null),
+      input.email
+    )
+    const familyName = sanitizeName(
+      typeof existing.familyName === 'string' ? existing.familyName : (typeof existing.family_name === 'string' ? existing.family_name : null),
+      input.email
+    )
     const phoneNumber = typeof existing.phoneNumber === 'string' ? existing.phoneNumber.trim() : (typeof existing.phone_number === 'string' ? existing.phone_number.trim() : '')
     const version = existing.version
 
@@ -134,8 +149,8 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
 }) {
   const supabase = serverSupabaseServiceRole(event)
   const email = normEmail(params.email)
-  const firstName = normName(params.firstName)
-  const lastName = normName(params.lastName)
+  const firstName = sanitizeName(params.firstName, email)
+  const lastName = sanitizeName(params.lastName, email)
   const phone = normPhone(params.phone)
 
   // Multiple rows can exist for a single user due to legacy data/backfills.
@@ -185,9 +200,12 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
 
   // Backfill name/phone on existing customer rows that are missing them
   if (customerRow && (firstName || lastName || phone)) {
+    const customerRowEmail = normEmail(customerRow.email) ?? email
+    const customerRowFirstName = sanitizeName(customerRow.first_name, customerRowEmail)
+    const customerRowLastName = sanitizeName(customerRow.last_name, customerRowEmail)
     const patch: Record<string, string> = {}
-    if (!customerRow.first_name && firstName) patch.first_name = firstName
-    if (!customerRow.last_name && lastName) patch.last_name = lastName
+    if (!customerRowFirstName && firstName) patch.first_name = firstName
+    if (!customerRowLastName && lastName) patch.last_name = lastName
     if (!customerRow.phone && phone) patch.phone = phone
     if (Object.keys(patch).length) {
       await supabase.from('customers').update(patch).eq('id', customerRow.id)
@@ -198,11 +216,16 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
   }
 
   let squareCustomerId = (customerRow.square_customer_id ?? '').trim() || null
+  const customerRowEmail = normEmail(customerRow.email) ?? email
+  const customerRowFirstName = sanitizeName(customerRow.first_name, customerRowEmail)
+  const customerRowLastName = sanitizeName(customerRow.last_name, customerRowEmail)
+  const customerRowPhone = normPhone(customerRow.phone) ?? phone
+
   if (!squareCustomerId) {
     squareCustomerId = await searchSquareCustomerId(
       event,
-      normEmail(customerRow.email) ?? email,
-      normPhone(customerRow.phone)
+      customerRowEmail,
+      customerRowPhone
     )
   }
 
@@ -211,10 +234,10 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
     squareCustomerJson = await fetchSquareCustomer(event, squareCustomerId)
   } else {
     const created = await createSquareCustomer(event, {
-      email: normEmail(customerRow.email) ?? email,
-      phone: normPhone(customerRow.phone),
-      firstName: normName(customerRow.first_name),
-      lastName: normName(customerRow.last_name)
+      email: customerRowEmail,
+      phone: customerRowPhone,
+      firstName: customerRowFirstName ?? firstName,
+      lastName: customerRowLastName ?? lastName
     })
 
     squareCustomerId = typeof created?.id === 'string' ? created.id : null
@@ -227,7 +250,7 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
     .from('customers')
     .update({
       user_id: params.userId,
-      email: normEmail(customerRow.email) ?? email,
+      email: customerRowEmail,
       square_customer_id: squareCustomerId,
       square_customer_json: sanitizeForJSON(squareCustomerJson)
     })
@@ -235,9 +258,10 @@ export async function ensureSquareCustomerForUser(event: H3Event, params: {
 
   // Backfill name/phone on the Square customer if they were missing at creation time
   await updateSquareCustomerIfNeeded(event, squareCustomerId, {
-    firstName: normName(customerRow.first_name) ?? firstName,
-    lastName: normName(customerRow.last_name) ?? lastName,
-    phone: normPhone(customerRow.phone) ?? phone
+    firstName: customerRowFirstName ?? firstName,
+    lastName: customerRowLastName ?? lastName,
+    phone: customerRowPhone,
+    email: customerRowEmail
   })
 
   return squareCustomerId
@@ -252,6 +276,9 @@ export async function ensureSquareCustomerForGuest(event: H3Event, params: {
   const supabase = serverSupabaseServiceRole(event)
   const email = normEmail(params.email)
   if (!email) return null
+  const firstName = sanitizeName(params.firstName, email)
+  const lastName = sanitizeName(params.lastName, email)
+  const phone = normPhone(params.phone)
 
   const { data: existingByEmail } = await supabase
     .from('customers')
@@ -267,9 +294,9 @@ export async function ensureSquareCustomerForGuest(event: H3Event, params: {
       .from('customers')
       .insert({
         email,
-        phone: normPhone(params.phone),
-        first_name: normName(params.firstName),
-        last_name: normName(params.lastName)
+        phone,
+        first_name: firstName,
+        last_name: lastName
       })
       .select('id,email,phone,first_name,last_name,square_customer_id,square_customer_json')
       .single()
@@ -280,12 +307,32 @@ export async function ensureSquareCustomerForGuest(event: H3Event, params: {
     customerRow = inserted
   }
 
+  if (customerRow && (firstName || lastName || phone)) {
+    const customerRowFirstName = sanitizeName(customerRow.first_name, email)
+    const customerRowLastName = sanitizeName(customerRow.last_name, email)
+    const customerRowPhone = normPhone(customerRow.phone)
+    const patch: Record<string, string> = {}
+    if (!customerRowFirstName && firstName) patch.first_name = firstName
+    if (!customerRowLastName && lastName) patch.last_name = lastName
+    if (!customerRowPhone && phone) patch.phone = phone
+    if (Object.keys(patch).length) {
+      await supabase.from('customers').update(patch).eq('id', customerRow.id)
+      if (patch.first_name) customerRow.first_name = patch.first_name
+      if (patch.last_name) customerRow.last_name = patch.last_name
+      if (patch.phone) customerRow.phone = patch.phone
+    }
+  }
+
+  const customerRowFirstName = sanitizeName(customerRow.first_name, email)
+  const customerRowLastName = sanitizeName(customerRow.last_name, email)
+  const customerRowPhone = normPhone(customerRow.phone) ?? phone
+
   let squareCustomerId = (customerRow.square_customer_id ?? '').trim() || null
   if (!squareCustomerId) {
     squareCustomerId = await searchSquareCustomerId(
       event,
       normEmail(customerRow.email) ?? email,
-      normPhone(customerRow.phone) ?? normPhone(params.phone)
+      customerRowPhone
     )
   }
 
@@ -295,9 +342,9 @@ export async function ensureSquareCustomerForGuest(event: H3Event, params: {
   } else {
     const created = await createSquareCustomer(event, {
       email: normEmail(customerRow.email) ?? email,
-      phone: normPhone(customerRow.phone) ?? normPhone(params.phone),
-      firstName: normName(customerRow.first_name) ?? normName(params.firstName),
-      lastName: normName(customerRow.last_name) ?? normName(params.lastName)
+      phone: customerRowPhone,
+      firstName: customerRowFirstName ?? firstName,
+      lastName: customerRowLastName ?? lastName
     })
     squareCustomerId = typeof created?.id === 'string' ? created.id : null
     squareCustomerJson = created
@@ -309,13 +356,20 @@ export async function ensureSquareCustomerForGuest(event: H3Event, params: {
     .from('customers')
     .update({
       email: normEmail(customerRow.email) ?? email,
-      phone: normPhone(customerRow.phone) ?? normPhone(params.phone),
-      first_name: normName(customerRow.first_name) ?? normName(params.firstName),
-      last_name: normName(customerRow.last_name) ?? normName(params.lastName),
+      phone: customerRowPhone,
+      first_name: customerRowFirstName ?? firstName,
+      last_name: customerRowLastName ?? lastName,
       square_customer_id: squareCustomerId,
       square_customer_json: sanitizeForJSON(squareCustomerJson)
     })
     .eq('id', customerRow.id)
+
+  await updateSquareCustomerIfNeeded(event, squareCustomerId, {
+    firstName: customerRowFirstName ?? firstName,
+    lastName: customerRowLastName ?? lastName,
+    phone: customerRowPhone,
+    email
+  })
 
   return squareCustomerId
 }

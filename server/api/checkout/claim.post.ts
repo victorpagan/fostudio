@@ -67,6 +67,11 @@ function readString(source: Record<string, unknown> | null | undefined, ...keys:
   return null
 }
 
+function asRecord(value: unknown) {
+  if (!value || typeof value !== 'object') return null
+  return value as Record<string, unknown>
+}
+
 function toRecordArray(value: unknown) {
   if (!Array.isArray(value)) return []
   return value.filter(item => item && typeof item === 'object') as Record<string, unknown>[]
@@ -109,6 +114,109 @@ function todayIsoDateInPacific() {
 
   if (!year || !month || !day) return new Date().toISOString().slice(0, 10)
   return `${year}-${month}-${day}`
+}
+
+function cadenceQuantityForSubscription(cadence: CheckoutSessionRow['cadence']) {
+  if (cadence === 'quarterly') return 3
+  if (cadence === 'annual') return 12
+  return 1
+}
+
+async function createOrderTemplateIdForPlanVariation(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  square: any,
+  planVariationId: string,
+  locationId: string,
+  cadence: CheckoutSessionRow['cadence']
+) {
+  const variationRes = await square.catalog.object.get({
+    objectId: planVariationId,
+    includeRelatedObjects: false
+  } as never)
+  const variationObject = asRecord((variationRes as { object?: unknown, catalogObject?: unknown }).object ?? (variationRes as { catalogObject?: unknown }).catalogObject)
+  const variationData = asRecord(variationObject?.subscriptionPlanVariationData ?? variationObject?.subscription_plan_variation_data)
+  const subscriptionPlanId = readString(variationData, 'subscriptionPlanId', 'subscription_plan_id')
+  if (!subscriptionPlanId) throw new Error(`Square variation ${planVariationId} is missing subscription plan id`)
+
+  const planRes = await square.catalog.object.get({
+    objectId: subscriptionPlanId,
+    includeRelatedObjects: false
+  } as never)
+  const planObject = asRecord((planRes as { object?: unknown, catalogObject?: unknown }).object ?? (planRes as { catalogObject?: unknown }).catalogObject)
+  const planData = asRecord(planObject?.subscriptionPlanData ?? planObject?.subscription_plan_data)
+  const eligibleIdsRaw = planData?.eligibleItemIds ?? planData?.eligible_item_ids
+  const eligibleItemIds = Array.isArray(eligibleIdsRaw)
+    ? eligibleIdsRaw
+        .map(entry => typeof entry === 'string' ? entry.trim() : '')
+        .filter(Boolean)
+    : []
+  const eligibleItemId = eligibleItemIds[0] ?? null
+  if (!eligibleItemId) throw new Error(`Square plan ${subscriptionPlanId} has no eligible item id`)
+
+  const itemRes = await square.catalog.object.get({
+    objectId: eligibleItemId,
+    includeRelatedObjects: false
+  } as never)
+  const itemObject = asRecord((itemRes as { object?: unknown, catalogObject?: unknown }).object ?? (itemRes as { catalogObject?: unknown }).catalogObject)
+  const itemData = asRecord(itemObject?.itemData ?? itemObject?.item_data)
+  const itemVariations = Array.isArray(itemData?.variations) ? itemData.variations : []
+  const firstItemVariation = itemVariations
+    .map(entry => asRecord(entry))
+    .find(Boolean) ?? null
+  const itemVariationId = readString(firstItemVariation, 'id')
+  if (!itemVariationId) throw new Error(`Square item ${eligibleItemId} has no item variation id`)
+
+  const cadenceQuantity = cadenceQuantityForSubscription(cadence)
+
+  const orderRes = await square.orders.create({
+    idempotencyKey: randomUUID(),
+    order: {
+      locationId,
+      state: 'DRAFT',
+      lineItems: [
+        {
+          catalogObjectId: itemVariationId,
+          quantity: String(cadenceQuantity)
+        }
+      ]
+    }
+  } as never)
+
+  const order = asRecord((orderRes as { order?: unknown }).order)
+  const orderId = readString(order, 'id')
+  if (!orderId) throw new Error(`Could not create order template for variation ${planVariationId}`)
+  return orderId
+}
+
+async function orderTemplateHasExpectedQuantity(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  square: any,
+  orderTemplateId: string,
+  expectedQuantity: number
+) {
+  try {
+    const templateRes = await square.catalog.object.get({
+      objectId: orderTemplateId,
+      includeRelatedObjects: false
+    } as never)
+    const templateObject = asRecord(
+      (templateRes as { object?: unknown, catalogObject?: unknown }).object
+      ?? (templateRes as { catalogObject?: unknown }).catalogObject
+    )
+    const templateData = asRecord(templateObject?.orderTemplateData ?? templateObject?.order_template_data)
+    const lineItemsRaw = templateData?.lineItems ?? templateData?.line_items
+    const lineItems = Array.isArray(lineItemsRaw) ? lineItemsRaw : []
+    if (!lineItems.length) return false
+
+    return lineItems.every((entry) => {
+      const lineItem = asRecord(entry)
+      const quantityRaw = readString(lineItem, 'quantity')
+      const quantity = Number(quantityRaw ?? '')
+      return Number.isFinite(quantity) && Math.floor(quantity) === expectedQuantity
+    })
+  } catch {
+    return false
+  }
 }
 
 function readPromoId(metadata: Record<string, unknown> | null | undefined) {
@@ -551,8 +659,48 @@ export default defineEventHandler(async (event) => {
         createPayload.cardId = fallbackCardId
       }
 
-      const subscriptionPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, session.plan_variation_id)
+      let subscriptionPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, session.plan_variation_id)
       if (subscriptionPhases?.length) {
+        const relativePhases = subscriptionPhases
+          .map(phase => asRecord(phase))
+          .filter((phase): phase is Record<string, unknown> => Boolean(phase))
+          .filter((phase) => {
+            const pricing = asRecord(phase.pricing)
+            const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
+            return pricingType === 'RELATIVE'
+          })
+
+        if (relativePhases.length) {
+          const cadenceQuantity = cadenceQuantityForSubscription(session.cadence)
+          const existingRelativeOrderTemplateIds = Array.from(new Set(
+            relativePhases
+              .map(phase => readString(phase, 'orderTemplateId', 'order_template_id'))
+              .filter((value): value is string => Boolean(value))
+          ))
+          let requiresTemplateInjection = existingRelativeOrderTemplateIds.length === 0
+          if (!requiresTemplateInjection && cadenceQuantity > 1) {
+            const quantityChecks = await Promise.all(
+              existingRelativeOrderTemplateIds.map(orderTemplateId =>
+                orderTemplateHasExpectedQuantity(square, orderTemplateId, cadenceQuantity))
+            )
+            requiresTemplateInjection = quantityChecks.some(result => !result)
+          }
+
+          if (requiresTemplateInjection) {
+            const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, session.plan_variation_id, locationId, session.cadence)
+            subscriptionPhases = subscriptionPhases.map((phase) => {
+              const p = asRecord(phase) ?? {}
+              const pricing = asRecord(p.pricing)
+              const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
+              if (pricingType !== 'RELATIVE') return p
+              return {
+                ...p,
+                orderTemplateId
+              }
+            })
+          }
+        }
+
         createPayload.phases = subscriptionPhases
       }
 
@@ -755,7 +903,7 @@ export default defineEventHandler(async (event) => {
       square_subscription_id: subscriptionId ?? session.square_subscription_id,
       paid_at: session.paid_at ?? nowIso,
       order_template_id: orderId,
-      metadata: checkoutMetadata as any
+      metadata: checkoutMetadata as unknown as never
     })
     .eq('id', session.id)
 

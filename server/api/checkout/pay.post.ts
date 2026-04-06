@@ -5,6 +5,7 @@ import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { ensureSquareCustomerForGuest, ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
 import { buildSubscriptionCreatePhasesFromPlanVariation } from '~~/server/utils/square/subscriptionPhases'
+import { parseDiscountLabel } from '~~/app/utils/membershipDiscount'
 
 const bodySchema = z.object({
   token: z.string().uuid(),
@@ -81,6 +82,12 @@ function asRecord(value: unknown) {
   return value as Record<string, unknown>
 }
 
+function cadenceQuantityForSubscription(cadence: Cadence) {
+  if (cadence === 'quarterly') return 3
+  if (cadence === 'annual') return 12
+  return 1
+}
+
 async function createOrderTemplateIdForPlanVariation(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   square: any,
@@ -106,8 +113,8 @@ async function createOrderTemplateIdForPlanVariation(
   const eligibleIdsRaw = planData?.eligibleItemIds ?? planData?.eligible_item_ids
   const eligibleItemIds = Array.isArray(eligibleIdsRaw)
     ? eligibleIdsRaw
-      .map(entry => typeof entry === 'string' ? entry.trim() : '')
-      .filter(Boolean)
+        .map(entry => typeof entry === 'string' ? entry.trim() : '')
+        .filter(Boolean)
     : []
   const eligibleItemId = eligibleItemIds[0] ?? null
   if (!eligibleItemId) throw new Error(`Square plan ${subscriptionPlanId} has no eligible item id`)
@@ -126,10 +133,13 @@ async function createOrderTemplateIdForPlanVariation(
   if (!itemVariationId) throw new Error(`Square item ${eligibleItemId} has no item variation id`)
 
   // Use cadence multiplier for quantity: quarterly=3, annual=12, others=1
-  const cadenceQuantity = !cadence ? 1
-    : cadence === 'quarterly' ? 3
-    : cadence === 'annual' ? 12
-    : 1
+  const cadenceQuantity = !cadence
+    ? 1
+    : cadence === 'quarterly'
+      ? 3
+      : cadence === 'annual'
+        ? 12
+        : 1
 
   const orderRes = await square.orders.create({
     idempotencyKey: randomUUID(),
@@ -149,6 +159,37 @@ async function createOrderTemplateIdForPlanVariation(
   const orderId = readString(order, 'id')
   if (!orderId) throw new Error(`Could not create order template for variation ${planVariationId}`)
   return orderId
+}
+
+async function orderTemplateHasExpectedQuantity(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  square: any,
+  orderTemplateId: string,
+  expectedQuantity: number
+) {
+  try {
+    const templateRes = await square.catalog.object.get({
+      objectId: orderTemplateId,
+      includeRelatedObjects: false
+    } as never)
+    const templateObject = asRecord(
+      (templateRes as { object?: unknown, catalogObject?: unknown }).object
+      ?? (templateRes as { catalogObject?: unknown }).catalogObject
+    )
+    const templateData = asRecord(templateObject?.orderTemplateData ?? templateObject?.order_template_data)
+    const lineItemsRaw = templateData?.lineItems ?? templateData?.line_items
+    const lineItems = Array.isArray(lineItemsRaw) ? lineItemsRaw : []
+    if (!lineItems.length) return false
+
+    return lineItems.every((entry) => {
+      const lineItem = asRecord(entry)
+      const quantityRaw = readString(lineItem, 'quantity')
+      const quantity = Number(quantityRaw ?? '')
+      return Number.isFinite(quantity) && Math.floor(quantity) === expectedQuantity
+    })
+  } catch {
+    return false
+  }
 }
 
 function isSquareCardOnFileId(value: string | null | undefined) {
@@ -218,7 +259,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: variation, error: variationErr } = await supabase
     .from('membership_plan_variations')
-    .select('price_cents,currency,provider_plan_variation_id,active')
+    .select('price_cents,currency,provider_plan_variation_id,active,discount_label')
     .eq('tier_id', session.tier)
     .eq('cadence', session.cadence)
     .eq('provider', 'square')
@@ -251,31 +292,35 @@ export default defineEventHandler(async (event) => {
 
   // Extract name/phone from Supabase auth user_metadata if available
   const userMeta = (user as Record<string, unknown> | null)?.user_metadata as Record<string, unknown> | null | undefined
-  const authFirstName = readString(userMeta ?? null, 'first_name', 'firstName', 'given_name')
+  const authDisplayName = readString(userMeta ?? null, 'full_name', 'name')
+  const authDisplayNameParts = authDisplayName ? authDisplayName.split(/\s+/).filter(Boolean) : []
+  const authFirstName = readString(userMeta ?? null, 'first_name', 'firstName', 'given_name') ?? authDisplayNameParts[0] ?? null
   const authLastName = readString(userMeta ?? null, 'last_name', 'lastName', 'family_name')
+    ?? (authDisplayNameParts.length > 1 ? authDisplayNameParts.slice(1).join(' ') : null)
   const authPhone = readString(userMeta ?? null, 'phone', 'phoneNumber', 'phone_number')
+    ?? readString((user as Record<string, unknown> | null), 'phone')
 
-  let squareCustomerId = session.square_customer_id?.trim() || null
-  if (!squareCustomerId) {
-    if (user?.sub) {
-      squareCustomerId = await ensureSquareCustomerForUser(event, {
-        userId: user.sub,
-        email: user.email ?? session.guest_email ?? null,
-        firstName: metaFirstName ?? authFirstName,
-        lastName: metaLastName ?? authLastName,
-        phone: metaPhone ?? authPhone
-      })
-    } else {
-      const guestEmail = (session.guest_email ?? '').trim().toLowerCase()
-      if (!guestEmail) throw createError({ statusCode: 400, statusMessage: 'Checkout session is missing guest email.' })
-      squareCustomerId = await ensureSquareCustomerForGuest(event, {
-        email: guestEmail,
-        firstName: metaFirstName,
-        lastName: metaLastName,
-        phone: metaPhone
-      })
-    }
+  let squareCustomerId: string | null = null
+  if (user?.sub) {
+    squareCustomerId = await ensureSquareCustomerForUser(event, {
+      userId: user.sub,
+      email: user.email ?? session.guest_email ?? null,
+      firstName: metaFirstName ?? authFirstName,
+      lastName: metaLastName ?? authLastName,
+      phone: metaPhone ?? authPhone
+    })
+  } else {
+    const guestEmail = (session.guest_email ?? '').trim().toLowerCase()
+    if (!guestEmail) throw createError({ statusCode: 400, statusMessage: 'Checkout session is missing guest email.' })
+    squareCustomerId = await ensureSquareCustomerForGuest(event, {
+      email: guestEmail,
+      firstName: metaFirstName,
+      lastName: metaLastName,
+      phone: metaPhone
+    })
   }
+
+  squareCustomerId = (squareCustomerId ?? session.square_customer_id?.trim()) || null
 
   if (!squareCustomerId) {
     throw createError({ statusCode: 503, statusMessage: 'Could not initialize customer for payment.' })
@@ -457,17 +502,83 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    const hasRelativePhaseWithoutOrderTemplate = Array.isArray(subscriptionPhases) && subscriptionPhases.some((phase) => {
+    const relativePhases = Array.isArray(subscriptionPhases)
+      ? subscriptionPhases
+          .map(phase => asRecord(phase))
+          .filter((phase): phase is Record<string, unknown> => Boolean(phase))
+          .filter((phase) => {
+            const pricing = asRecord(phase.pricing)
+            const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
+            return pricingType === 'RELATIVE'
+          })
+      : []
+    const cadenceQuantity = cadenceQuantityForSubscription(session.cadence)
+
+    if (relativePhases.length) {
+      const existingRelativeOrderTemplateIds = Array.from(new Set(
+        relativePhases
+          .map(phase => readString(phase, 'orderTemplateId', 'order_template_id'))
+          .filter((value): value is string => Boolean(value))
+      ))
+
+      let requiresTemplateInjection = existingRelativeOrderTemplateIds.length === 0
+      if (!requiresTemplateInjection && cadenceQuantity > 1) {
+        const quantityChecks = await Promise.all(
+          existingRelativeOrderTemplateIds.map(orderTemplateId =>
+            orderTemplateHasExpectedQuantity(square, orderTemplateId, cadenceQuantity))
+        )
+        requiresTemplateInjection = quantityChecks.some(result => !result)
+      }
+
+      if (requiresTemplateInjection) {
+        const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId, session.cadence)
+        subscriptionPhases = (subscriptionPhases ?? []).map((phase) => {
+          const p = phase as Record<string, unknown>
+          const pricing = (p.pricing ?? null) as Record<string, unknown> | null
+          const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
+          if (pricingType !== 'RELATIVE') return p
+          return {
+            ...p,
+            orderTemplateId
+          }
+        })
+        console.info(logPrefix, 'phase-order-template-normalized', {
+          sessionId: session.id,
+          planVariationId,
+          orderTemplateId,
+          cadence: session.cadence,
+          expectedQuantity: cadenceQuantity
+        })
+      }
+    }
+
+    const parsedCadenceDiscount = parseDiscountLabel(variation.discount_label)
+    const expectedCadenceDiscount = parsedCadenceDiscount.type !== 'none' && Number(parsedCadenceDiscount.amount) > 0
+    if (expectedCadenceDiscount && relativePhases.length) {
+      const hasCadenceDiscountOnPhase = relativePhases.some((phase) => {
+        const pricing = asRecord(phase.pricing)
+        const discountIdsRaw = pricing?.discountIds ?? pricing?.discount_ids
+        const discountIds = Array.isArray(discountIdsRaw) ? discountIdsRaw.map(value => String(value).trim()).filter(Boolean) : []
+        return discountIds.some(discountId => discountId !== promoSquareDiscountId)
+      })
+
+      if (!hasCadenceDiscountOnPhase) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'This cadence is missing its Square discount configuration. Run variation repair in Admin before retrying checkout.'
+        })
+      }
+    }
+
+    if (Array.isArray(subscriptionPhases) && subscriptionPhases.some((phase) => {
       const p = phase as Record<string, unknown>
-      const pricing = (p.pricing ?? null) as Record<string, unknown> | null
+      const pricing = asRecord(p.pricing)
       const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
       const orderTemplateId = typeof p.orderTemplateId === 'string' && p.orderTemplateId.trim()
         ? p.orderTemplateId.trim()
         : null
       return pricingType === 'RELATIVE' && !orderTemplateId
-    })
-
-    if (hasRelativePhaseWithoutOrderTemplate) {
+    })) {
       try {
         const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId, session.cadence)
         subscriptionPhases = (subscriptionPhases ?? []).map((phase) => {
@@ -505,16 +616,16 @@ export default defineEventHandler(async (event) => {
       phaseCount: Array.isArray(subscriptionPhases) ? subscriptionPhases.length : 0,
       phases: Array.isArray(subscriptionPhases)
         ? subscriptionPhases.map((phase) => {
-          const p = phase as Record<string, unknown>
-          const pricing = (p.pricing ?? null) as Record<string, unknown> | null
-          return {
-            ordinal: p.ordinal,
-            cadence: p.cadence,
-            orderTemplateId: p.orderTemplateId ?? null,
-            pricingType: pricing?.type ?? null,
-            discountIds: Array.isArray(pricing?.discountIds) ? pricing?.discountIds : []
-          }
-        })
+            const p = phase as Record<string, unknown>
+            const pricing = (p.pricing ?? null) as Record<string, unknown> | null
+            return {
+              ordinal: p.ordinal,
+              cadence: p.cadence,
+              orderTemplateId: p.orderTemplateId ?? null,
+              pricingType: pricing?.type ?? null,
+              discountIds: Array.isArray(pricing?.discountIds) ? pricing?.discountIds : []
+            }
+          })
         : []
     })
     const buildCreatePayload = (phases: unknown) => {
@@ -622,7 +733,7 @@ export default defineEventHandler(async (event) => {
       square_subscription_id: subscriptionId,
       plan_variation_id: planVariationId,
       paid_at: session.paid_at ?? nowIso,
-      metadata: metadata as any
+      metadata: metadata as unknown as never
     })
     .eq('id', session.id)
 
