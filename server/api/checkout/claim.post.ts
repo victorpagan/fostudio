@@ -8,6 +8,8 @@ import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
 import { ensureDoorCodeForUser } from '~~/server/utils/membership/doorCode'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { buildSubscriptionCreatePhasesFromPlanVariation } from '~~/server/utils/square/subscriptionPhases'
+import { resolveOrCreateSquareCadenceDiscountId } from '~~/server/utils/square/cadenceDiscount'
+import { parseDiscountLabel } from '~~/app/utils/membershipDiscount'
 import { markPromoRedemption } from '~~/server/utils/promos'
 
 const bodySchema = z.object({
@@ -224,6 +226,21 @@ function readPromoId(metadata: Record<string, unknown> | null | undefined) {
   if (typeof raw !== 'string') return null
   const value = raw.trim()
   return value || null
+}
+
+function readPromoSquareDiscountId(metadata: Record<string, unknown> | null | undefined) {
+  const raw = metadata?.promo_square_discount_id
+  if (typeof raw !== 'string') return null
+  const value = raw.trim()
+  return value || null
+}
+
+function readPricingDiscountIds(pricing: Record<string, unknown> | null | undefined) {
+  const raw = pricing?.discountIds ?? pricing?.discount_ids
+  if (!Array.isArray(raw)) return [] as string[]
+  return raw
+    .map(value => String(value ?? '').trim())
+    .filter(Boolean) as string[]
 }
 
 async function findLatestSubscription(
@@ -637,6 +654,19 @@ export default defineEventHandler(async (event) => {
   }
 
   if (!subscriptionId && session.plan_variation_id) {
+    const { data: variation, error: variationErr } = await supabase
+      .from('membership_plan_variations')
+      .select('discount_label,currency,membership_tiers(display_name)')
+      .eq('provider', 'square')
+      .eq('provider_plan_variation_id', session.plan_variation_id)
+      .maybeSingle()
+
+    if (variationErr) throw createError({ statusCode: 500, statusMessage: variationErr.message })
+    const variationRecord = asRecord(variation)
+    const parsedCadenceDiscount = parseDiscountLabel(readString(variationRecord, 'discount_label'))
+    const expectedCadenceDiscount = parsedCadenceDiscount.type !== 'none' && Number(parsedCadenceDiscount.amount) > 0
+    const promoSquareDiscountId = readPromoSquareDiscountId(session.metadata)
+
     const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID').catch(() => null)
     if (!locationId || typeof locationId !== 'string') {
       subscriptionProvisioningIssue = 'missing_location_id'
@@ -659,7 +689,90 @@ export default defineEventHandler(async (event) => {
         createPayload.cardId = fallbackCardId
       }
 
+      let cadenceDiscountId: string | null = null
+      if (expectedCadenceDiscount) {
+        try {
+          cadenceDiscountId = await resolveOrCreateSquareCadenceDiscountId({
+            square,
+            cadence: session.cadence,
+            discountLabel: readString(variationRecord, 'discount_label'),
+            currency: readString(variationRecord, 'currency') ?? 'USD',
+            tierDisplayName: readString(asRecord(variationRecord?.membership_tiers), 'display_name')
+          })
+        } catch (error) {
+          throw createError({
+            statusCode: 409,
+            statusMessage: `Cadence discount is not available in Square: ${normalizeSquareErrorMessage(error)}`
+          })
+        }
+      }
+
+      const requiredPhaseDiscountIds = Array.from(new Set([
+        promoSquareDiscountId,
+        cadenceDiscountId
+      ].filter((value): value is string => Boolean(value))))
+
       let subscriptionPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, session.plan_variation_id)
+      if (requiredPhaseDiscountIds.length) {
+        let attachedToRelativePhase = false
+        subscriptionPhases = (subscriptionPhases ?? []).map((phase) => {
+          const p = asRecord(phase) ?? {}
+          const pricing = asRecord(p.pricing)
+          const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
+          if (pricingType !== 'RELATIVE') return p
+
+          const mergedDiscountIds = Array.from(new Set([
+            ...readPricingDiscountIds(pricing),
+            ...requiredPhaseDiscountIds
+          ]))
+          attachedToRelativePhase = true
+
+          return {
+            ...p,
+            pricing: {
+              ...(pricing ?? {}),
+              type: 'RELATIVE',
+              discountIds: mergedDiscountIds
+            }
+          }
+        })
+
+        if (!attachedToRelativePhase) {
+          const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, session.plan_variation_id, locationId, session.cadence)
+          const cadenceMap: Record<CheckoutSessionRow['cadence'], string> = {
+            daily: 'DAILY',
+            weekly: 'WEEKLY',
+            monthly: 'MONTHLY',
+            quarterly: 'QUARTERLY',
+            annual: 'ANNUAL'
+          }
+
+          if (Array.isArray(subscriptionPhases) && subscriptionPhases.length > 0) {
+            subscriptionPhases = subscriptionPhases.map((phase) => {
+              const p = asRecord(phase) ?? {}
+              return {
+                ...p,
+                orderTemplateId,
+                pricing: {
+                  type: 'RELATIVE',
+                  discountIds: requiredPhaseDiscountIds
+                }
+              }
+            })
+          } else {
+            subscriptionPhases = [{
+              ordinal: 0n,
+              cadence: cadenceMap[session.cadence],
+              orderTemplateId,
+              pricing: {
+                type: 'RELATIVE',
+                discountIds: requiredPhaseDiscountIds
+              }
+            }]
+          }
+        }
+      }
+
       if (subscriptionPhases?.length) {
         const relativePhases = subscriptionPhases
           .map(phase => asRecord(phase))
@@ -697,6 +810,19 @@ export default defineEventHandler(async (event) => {
                 ...p,
                 orderTemplateId
               }
+            })
+          }
+        }
+
+        if (expectedCadenceDiscount && cadenceDiscountId && relativePhases.length) {
+          const hasCadenceDiscountOnPhase = relativePhases.some((phase) => {
+            const pricing = asRecord(phase.pricing)
+            return readPricingDiscountIds(pricing).includes(cadenceDiscountId as string)
+          })
+          if (!hasCadenceDiscountOnPhase) {
+            throw createError({
+              statusCode: 409,
+              statusMessage: 'This cadence is missing its Square discount configuration. Re-save the cadence discount and retry checkout.'
             })
           }
         }

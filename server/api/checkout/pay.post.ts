@@ -5,6 +5,7 @@ import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { ensureSquareCustomerForGuest, ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
 import { buildSubscriptionCreatePhasesFromPlanVariation } from '~~/server/utils/square/subscriptionPhases'
+import { resolveOrCreateSquareCadenceDiscountId } from '~~/server/utils/square/cadenceDiscount'
 import { parseDiscountLabel } from '~~/app/utils/membershipDiscount'
 
 const bodySchema = z.object({
@@ -230,6 +231,14 @@ function readMetadataPromoSquareDiscountId(metadata: Record<string, unknown> | n
   return value || null
 }
 
+function readPricingDiscountIds(pricing: Record<string, unknown> | null | undefined) {
+  const raw = pricing?.discountIds ?? pricing?.discount_ids
+  if (!Array.isArray(raw)) return [] as string[]
+  return raw
+    .map(value => String(value ?? '').trim())
+    .filter(Boolean) as string[]
+}
+
 export default defineEventHandler(async (event) => {
   const body = bodySchema.parse(await readBody(event))
   const user = await serverSupabaseUser(event).catch(() => null)
@@ -259,7 +268,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: variation, error: variationErr } = await supabase
     .from('membership_plan_variations')
-    .select('price_cents,currency,provider_plan_variation_id,active,discount_label')
+    .select('price_cents,currency,provider_plan_variation_id,active,discount_label,membership_tiers(display_name)')
     .eq('tier_id', session.tier)
     .eq('cadence', session.cadence)
     .eq('provider', 'square')
@@ -400,7 +409,28 @@ export default defineEventHandler(async (event) => {
     const startDate = todayIsoDateInPacific()
     let subscriptionPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, planVariationId)
     const promoSquareDiscountId = readMetadataPromoSquareDiscountId(session.metadata)
-    let promoAttachedToPhase = false
+    const parsedCadenceDiscount = parseDiscountLabel(variation.discount_label)
+    const expectedCadenceDiscount = parsedCadenceDiscount.type !== 'none' && Number(parsedCadenceDiscount.amount) > 0
+    let cadenceDiscountId: string | null = null
+
+    if (expectedCadenceDiscount) {
+      try {
+        cadenceDiscountId = await resolveOrCreateSquareCadenceDiscountId({
+          square,
+          cadence: session.cadence,
+          discountLabel: variation.discount_label,
+          currency,
+          tierDisplayName: readString(asRecord(variation.membership_tiers), 'display_name')
+        })
+      } catch (error) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: `Cadence discount is not available in Square: ${readSquareErrorMessage(error)}`
+        })
+      }
+    }
+
+    const requiredPhaseDiscountIds: string[] = []
 
     if (promoSquareDiscountId) {
       try {
@@ -424,79 +454,84 @@ export default defineEventHandler(async (event) => {
           statusMessage: `Promo discount is not available in Square: ${readSquareErrorMessage(error)}`
         })
       }
+      requiredPhaseDiscountIds.push(promoSquareDiscountId)
+    }
+
+    if (cadenceDiscountId) requiredPhaseDiscountIds.push(cadenceDiscountId)
+
+    if (requiredPhaseDiscountIds.length) {
+      const normalizedRequiredDiscountIds = Array.from(new Set(requiredPhaseDiscountIds))
+      let attachedToRelativePhase = false
 
       subscriptionPhases = (subscriptionPhases ?? []).map((phase) => {
         const p = phase as Record<string, unknown>
-        const pricing = (p.pricing ?? null) as Record<string, unknown> | null
+        const pricing = asRecord(p.pricing)
         const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
         if (pricingType !== 'RELATIVE') return p
 
-        const currentDiscountIds = Array.isArray(pricing?.discountIds)
-          ? pricing.discountIds.map(value => String(value)).filter(Boolean)
-          : []
-        if (!currentDiscountIds.includes(promoSquareDiscountId)) {
-          currentDiscountIds.push(promoSquareDiscountId)
-        }
-        promoAttachedToPhase = true
+        const currentDiscountIds = readPricingDiscountIds(pricing)
+        const mergedDiscountIds = Array.from(new Set([
+          ...currentDiscountIds,
+          ...normalizedRequiredDiscountIds
+        ]))
+        attachedToRelativePhase = true
 
         return {
           ...p,
           pricing: {
             ...(pricing ?? {}),
             type: 'RELATIVE',
-            discountIds: currentDiscountIds
+            discountIds: mergedDiscountIds
           }
         }
       })
 
-      if (!promoAttachedToPhase) {
+      if (!attachedToRelativePhase) {
         try {
           const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId, session.cadence)
+          const cadenceMap: Record<Cadence, string> = {
+            daily: 'DAILY',
+            weekly: 'WEEKLY',
+            monthly: 'MONTHLY',
+            quarterly: 'QUARTERLY',
+            annual: 'ANNUAL'
+          }
 
           if (Array.isArray(subscriptionPhases) && subscriptionPhases.length > 0) {
             subscriptionPhases = subscriptionPhases.map((phase) => {
-              const p = phase as Record<string, unknown>
-              const normalizedPricing: Record<string, unknown> = {
-                type: 'RELATIVE',
-                discountIds: [promoSquareDiscountId]
-              }
-
+              const p = asRecord(phase) ?? {}
               return {
                 ...p,
                 orderTemplateId,
-                pricing: normalizedPricing
+                pricing: {
+                  type: 'RELATIVE',
+                  discountIds: normalizedRequiredDiscountIds
+                }
               }
             })
           } else {
-            const cadenceMap: Record<Cadence, string> = {
-              daily: 'DAILY',
-              weekly: 'WEEKLY',
-              monthly: 'MONTHLY',
-              quarterly: 'QUARTERLY',
-              annual: 'ANNUAL'
-            }
             subscriptionPhases = [{
               ordinal: 0n,
               cadence: cadenceMap[session.cadence],
               orderTemplateId,
               pricing: {
                 type: 'RELATIVE',
-                discountIds: [promoSquareDiscountId]
+                discountIds: normalizedRequiredDiscountIds
               }
             }]
           }
 
-          promoAttachedToPhase = true
-          console.info(logPrefix, 'promo-relative-fallback-applied', {
+          console.info(logPrefix, 'relative-phase-fallback-applied', {
             sessionId: session.id,
             planVariationId,
             orderTemplateId,
-            phaseCount: subscriptionPhases.length
+            phaseCount: subscriptionPhases.length,
+            discountCount: normalizedRequiredDiscountIds.length
           })
         } catch (error) {
           throw createError({
             statusCode: 409,
-            statusMessage: `Promo could not be applied to this plan: ${readSquareErrorMessage(error)}`
+            statusMessage: `Discounts could not be applied to this plan: ${readSquareErrorMessage(error)}`
           })
         }
       }
@@ -552,20 +587,24 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    const parsedCadenceDiscount = parseDiscountLabel(variation.discount_label)
-    const expectedCadenceDiscount = parsedCadenceDiscount.type !== 'none' && Number(parsedCadenceDiscount.amount) > 0
-    if (expectedCadenceDiscount && relativePhases.length) {
+    if (expectedCadenceDiscount && !cadenceDiscountId) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'This cadence is missing its Square discount configuration. Re-save the cadence discount and retry checkout.'
+      })
+    }
+
+    if (expectedCadenceDiscount && cadenceDiscountId && relativePhases.length) {
       const hasCadenceDiscountOnPhase = relativePhases.some((phase) => {
         const pricing = asRecord(phase.pricing)
-        const discountIdsRaw = pricing?.discountIds ?? pricing?.discount_ids
-        const discountIds = Array.isArray(discountIdsRaw) ? discountIdsRaw.map(value => String(value).trim()).filter(Boolean) : []
-        return discountIds.some(discountId => discountId !== promoSquareDiscountId)
+        const discountIds = readPricingDiscountIds(pricing)
+        return discountIds.includes(cadenceDiscountId)
       })
 
       if (!hasCadenceDiscountOnPhase) {
         throw createError({
           statusCode: 409,
-          statusMessage: 'This cadence is missing its Square discount configuration. Run variation repair in Admin before retrying checkout.'
+          statusMessage: 'This cadence is missing its Square discount configuration. Re-save the cadence discount and retry checkout.'
         })
       }
     }
