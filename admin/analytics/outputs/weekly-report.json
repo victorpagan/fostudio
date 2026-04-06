@@ -1,0 +1,83 @@
+{
+  "generated_at": "2026-04-06T01:20:28.114Z",
+  "week_of": "2026-03-30",
+  "snapshot": {
+    "revenue": 1430,
+    "revenue_wow_pct": 121.71,
+    "bookings": 7,
+    "booked_hours": 17,
+    "utilization_rate": 0.1012,
+    "active_members": 7,
+    "new_members": 2,
+    "cancellations": 1
+  },
+  "memberships": {
+    "creator": 3,
+    "pro": 3,
+    "studio_plus": 1,
+    "net_growth": 1
+  },
+  "marketing": {
+    "google_ads": {
+      "spend": 210,
+      "conversions": 4,
+      "cost_per_conversion": 52.5
+    },
+    "meta_ads": {
+      "spend": 180,
+      "conversions": 1,
+      "cost_per_conversion": 180
+    }
+  },
+  "what_changed": [
+    "Revenue increased +121.7% week-over-week.",
+    "Membership growth was net +1 this week.",
+    "Studio utilization trend improved versus the previous week."
+  ],
+  "alerts": [
+    "Low usage in Creator tier"
+  ],
+  "recommended_next_actions": [
+    "Shift 20-30% of Meta budget to high-intent Google Search campaigns.",
+    "Promote first-booker membership upgrade offer in follow-up email and Instagram stories.",
+    "Send a targeted Creator-tier nurture campaign focused on underused credits and session planning."
+  ],
+  "email_recommendations": [
+    {
+      "campaign_name": "First-Time Booker to Member Upgrade",
+      "objective": "Convert recent guest or first-time bookings into membership signups.",
+      "audience": "Guests and first-time bookers from the last 30 days.",
+      "subject_options": [
+        "Ready to make FO Studio your weekly home?",
+        "Your next session can cost less with membership",
+        "Keep your momentum: member pricing inside"
+      ],
+      "key_points": [
+        "Highlight membership value against one-off booking costs.",
+        "Include the active seasonal promo code and expiration date.",
+        "Show one clear path to compare Creator, Pro, and Studio+ tiers."
+      ],
+      "cta": "Compare memberships",
+      "send_window": "Tuesday 10:00 AM America/Los_Angeles",
+      "note": "Weekly active members: 7"
+    },
+    {
+      "campaign_name": "Low-Usage Creator Re-engagement",
+      "objective": "Increase booked sessions among active Creator members with low recent utilization.",
+      "audience": "Active Creator members with less than 25% usage in the last 30 days.",
+      "subject_options": [
+        "Use your studio access before this month closes",
+        "A quick plan to use your Creator hours this week",
+        "Book a focused session this Wednesday"
+      ],
+      "key_points": [
+        "Remind members of included access and current booking availability.",
+        "Offer a Wednesday-focused nudge to improve weak-day fill rate.",
+        "Use a direct booking CTA with calendar link."
+      ],
+      "cta": "Book your next session",
+      "send_window": "Monday 4:00 PM America/Los_Angeles",
+      "note": "Weekly active members: 7"
+    }
+  ]
+}

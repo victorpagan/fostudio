@@ -1,0 +1,32 @@
+{
+  "generated_at": "2026-04-06T01:20:27.024Z",
+  "week_of": "2026-03-30",
+  "week": {
+    "revenue_total": 1430,
+    "revenue_wow_pct": 121.71,
+    "bookings_total": 7,
+    "booked_hours": 17,
+    "utilization_rate": 0.1012,
+    "new_members": 2,
+    "canceled_members": 1,
+    "net_members": 1,
+    "active_members": 7
+  },
+  "tiers": {
+    "creator": 3,
+    "pro": 3,
+    "studio_plus": 1
+  },
+  "ads": {
+    "google": {
+      "spend": 210,
+      "conversions": 4,
+      "cost_per_conversion": 52.5
+    },
+    "meta": {
+      "spend": 180,
+      "conversions": 1,
+      "cost_per_conversion": 180
+    }
+  }
+}

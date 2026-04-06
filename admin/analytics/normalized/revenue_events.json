@@ -1,0 +1,110 @@
+[
+  {
+    "date": "2026-03-20",
+    "week": "2026-W12",
+    "month": "2026-03",
+    "user_id": "user_003",
+    "customer_id": "cust_003",
+    "source": "membership",
+    "amount": 625,
+    "order_id": null,
+    "tier": "studio_plus",
+    "cadence": "monthly"
+  },
+  {
+    "date": "2026-03-27",
+    "week": "2026-W13",
+    "month": "2026-03",
+    "user_id": "user_002",
+    "customer_id": "cust_002",
+    "source": "membership",
+    "amount": 425,
+    "order_id": null,
+    "tier": "pro",
+    "cadence": "monthly"
+  },
+  {
+    "date": "2026-03-28",
+    "week": "2026-W13",
+    "month": "2026-03",
+    "user_id": null,
+    "customer_id": "cust_guest_03",
+    "source": "guest_booking",
+    "amount": 220,
+    "order_id": "ord_1003",
+    "tier": null,
+    "cadence": null
+  },
+  {
+    "date": "2026-03-30",
+    "week": "2026-W14",
+    "month": "2026-03",
+    "user_id": "user_007",
+    "customer_id": "cust_007",
+    "source": "membership",
+    "amount": 285,
+    "order_id": null,
+    "tier": "creator",
+    "cadence": "monthly"
+  },
+  {
+    "date": "2026-04-01",
+    "week": "2026-W14",
+    "month": "2026-04",
+    "user_id": "user_001",
+    "customer_id": "cust_001",
+    "source": "credit_topup",
+    "amount": 90,
+    "order_id": null,
+    "tier": "creator",
+    "cadence": null
+  },
+  {
+    "date": "2026-04-02",
+    "week": "2026-W14",
+    "month": "2026-04",
+    "user_id": "user_003",
+    "customer_id": "cust_003",
+    "source": "hold_topup",
+    "amount": 60,
+    "order_id": null,
+    "tier": "studio_plus",
+    "cadence": null
+  },
+  {
+    "date": "2026-04-02",
+    "week": "2026-W14",
+    "month": "2026-04",
+    "user_id": null,
+    "customer_id": "cust_guest_01",
+    "source": "guest_booking",
+    "amount": 260,
+    "order_id": "ord_1001",
+    "tier": null,
+    "cadence": null
+  },
+  {
+    "date": "2026-04-03",
+    "week": "2026-W14",
+    "month": "2026-04",
+    "user_id": "user_005",
+    "customer_id": "cust_005",
+    "source": "membership",
+    "amount": 425,
+    "order_id": null,
+    "tier": "pro",
+    "cadence": "monthly"
+  },
+  {
+    "date": "2026-04-03",
+    "week": "2026-W14",
+    "month": "2026-04",
+    "user_id": null,
+    "customer_id": "cust_guest_02",
+    "source": "guest_booking",
+    "amount": 310,
+    "order_id": "ord_1002",
+    "tier": null,
+    "cadence": null
+  }
+]

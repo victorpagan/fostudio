@@ -133,6 +133,12 @@ const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
         onSelect: () => { open.value = false }
       },
       {
+        label: 'Analytics',
+        icon: 'i-lucide-chart-column',
+        to: '/dashboard/admin/analytics',
+        onSelect: () => { open.value = false }
+      },
+      {
         label: 'Subscriptions',
         icon: 'i-lucide-badge-check',
         to: '/dashboard/admin/subscriptions',
@@ -240,10 +246,10 @@ const primaryLinks = computed<NavigationMenuItem[]>(() => [
     onSelect: () => { open.value = false }
   },
   {
-      label: 'Waiver',
-      icon: 'i-lucide-file-signature',
-      to: '/dashboard/waiver',
-      onSelect: () => { open.value = false }
+    label: 'Waiver',
+    icon: 'i-lucide-file-signature',
+    to: '/dashboard/waiver',
+    onSelect: () => { open.value = false }
   },
   {
     label: 'Profile',

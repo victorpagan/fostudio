@@ -1,0 +1,84 @@
+{
+  "manifest": {
+    "generated_at": "2026-04-06T01:20:26.255Z",
+    "source": "csv",
+    "notes": [
+      "Loaded 4 Meta ad rows from /Users/vic/Documents/Github/fostudio/admin/analytics/inputs/ads_meta.csv.",
+      "Loaded 4 Google ad rows from /Users/vic/Documents/Github/fostudio/admin/analytics/inputs/ads_google.csv."
+    ]
+  },
+  "records": [
+    {
+      "date": "2026-03-30",
+      "platform": "meta",
+      "campaign": "meta-membership-awareness",
+      "spend": 55,
+      "clicks": 72,
+      "impressions": 4200,
+      "conversions": 0
+    },
+    {
+      "date": "2026-04-01",
+      "platform": "meta",
+      "campaign": "meta-membership-awareness",
+      "spend": 62,
+      "clicks": 80,
+      "impressions": 4380,
+      "conversions": 1
+    },
+    {
+      "date": "2026-04-03",
+      "platform": "meta",
+      "campaign": "meta-retargeting",
+      "spend": 63,
+      "clicks": 54,
+      "impressions": 3015,
+      "conversions": 0
+    },
+    {
+      "date": "2026-03-27",
+      "platform": "meta",
+      "campaign": "meta-membership-awareness",
+      "spend": 48,
+      "clicks": 61,
+      "impressions": 3900,
+      "conversions": 1
+    },
+    {
+      "date": "2026-03-30",
+      "platform": "google",
+      "campaign": "google-membership-search",
+      "spend": 70,
+      "clicks": 44,
+      "impressions": 1210,
+      "conversions": 2
+    },
+    {
+      "date": "2026-04-01",
+      "platform": "google",
+      "campaign": "google-membership-search",
+      "spend": 74,
+      "clicks": 48,
+      "impressions": 1325,
+      "conversions": 1
+    },
+    {
+      "date": "2026-04-03",
+      "platform": "google",
+      "campaign": "google-brand-search",
+      "spend": 66,
+      "clicks": 39,
+      "impressions": 1180,
+      "conversions": 1
+    },
+    {
+      "date": "2026-03-27",
+      "platform": "google",
+      "campaign": "google-membership-search",
+      "spend": 58,
+      "clicks": 36,
+      "impressions": 1100,
+      "conversions": 1
+    }
+  ]
+}
