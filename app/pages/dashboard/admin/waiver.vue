@@ -865,7 +865,7 @@ function hasPreviewBody(value: unknown) {
             Preview
           </div>
           <div
-            class="waiver-rich-content mt-3 max-w-none rounded-md border border-default p-4 text-sm leading-6"
+            class="waiver-rich-content mt-3 max-w-none rounded-md border border-default bg-white text-slate-900 p-4 text-sm leading-6"
             v-html="previewBodyHtml"
           />
           <div

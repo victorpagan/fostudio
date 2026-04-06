@@ -66,6 +66,7 @@ const bookingTab = ref<AdminBookingTab>('active')
 const pastPage = ref(1)
 const creatingBooking = ref(false)
 const createBookingOpen = ref(false)
+const showCalendar = ref(false)
 const memberSearch = ref('')
 const defaultCreateDate = DateTime.now().setZone('America/Los_Angeles').toISODate() ?? ''
 const createForm = reactive({
@@ -572,9 +573,21 @@ async function createBookingOnBehalf() {
               >
                 Past bookings
               </UButton>
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="soft"
+                :icon="showCalendar ? 'i-lucide-eye-off' : 'i-lucide-eye'"
+                @click="showCalendar = !showCalendar"
+              >
+                {{ showCalendar ? 'Hide calendar' : 'Show calendar' }}
+              </UButton>
             </div>
 
-            <UCard class="admin-panel-card border-0">
+            <UCard
+              v-if="showCalendar"
+              class="admin-panel-card border-0"
+            >
               <div class="space-y-3">
                 <div>
                   <p class="text-sm font-medium">
@@ -588,6 +601,14 @@ async function createBookingOnBehalf() {
                   endpoint="/api/calendar/public"
                   :full-day="true"
                 />
+              </div>
+            </UCard>
+            <UCard
+              v-else
+              class="admin-panel-card border-0"
+            >
+              <div class="text-sm text-dimmed">
+                Calendar hidden. Use <span class="font-medium text-highlighted">Show calendar</span> for full schedule context.
               </div>
             </UCard>
 

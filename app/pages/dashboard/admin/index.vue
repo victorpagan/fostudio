@@ -951,7 +951,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   --ui-bg-elevated: #dadbdc;
   --ui-bg-muted: #cfd1d3;
   --ui-border: rgba(18, 24, 32, 0.18);
-  --admin-ops-navbar-bg: color-mix(in srgb, #dadbdc 94%, #c8cdd3 6%);
+  --admin-ops-navbar-bg: #dadbdc;
   --admin-ops-shell-bg: #cfd1d3;
   --admin-ops-shell-accent-strength: 7%;
   --admin-ops-shell-aqua-strength: 7%;
@@ -1025,7 +1025,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
   --ui-bg-elevated: #343434;
   --ui-bg-muted: #2f2f2f;
   --ui-border: rgba(255, 255, 255, 0.14);
-  --admin-ops-navbar-bg: color-mix(in srgb, #2b2b2b 94%, #1a1a1a 6%);
+  --admin-ops-navbar-bg: #2b2b2b;
   --admin-ops-shell-bg: #222222;
   --admin-ops-shell-accent-strength: 12%;
   --admin-ops-shell-aqua-strength: 10%;

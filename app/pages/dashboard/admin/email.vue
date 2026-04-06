@@ -942,8 +942,8 @@ watch(templates, (nextTemplates) => {
 
       <template #body>
         <AdminOpsShell>
-          <div class="rounded-lg border border-info/30 bg-info/10 p-3">
-            <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="rounded-lg border border-info/30 bg-info/10 p-3 sm:p-4">
+            <div class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div class="space-y-1">
                 <div class="text-sm font-medium text-highlighted">
                   Centralized mail controls
@@ -954,7 +954,7 @@ watch(templates, (nextTemplates) => {
                 </div>
                 <div class="flex flex-wrap items-center gap-2 text-xs text-dimmed">
                   <span>Member broadcast now uses dedicated campaigns.</span>
-                  <code class="rounded bg-elevated px-2 py-0.5">{{ BROADCAST_EVENT_TYPE }}</code>
+                  <code class="rounded bg-elevated px-2 py-0.5 break-all">{{ BROADCAST_EVENT_TYPE }}</code>
                   <UBadge
                     :color="broadcastTemplate && hasTemplateId(broadcastTemplate) ? 'success' : 'warning'"
                     variant="soft"
@@ -966,6 +966,7 @@ watch(templates, (nextTemplates) => {
               </div>
               <UButton
                 icon="i-lucide-megaphone"
+                class="w-full sm:w-auto"
                 to="/dashboard/admin/email-campaigns"
               >
                 Open email campaigns
@@ -973,7 +974,7 @@ watch(templates, (nextTemplates) => {
             </div>
           </div>
 
-          <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+          <div class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
             <div class="space-y-4">
               <UCard v-if="templateDraft">
                 <div class="space-y-4">
@@ -1121,7 +1122,7 @@ watch(templates, (nextTemplates) => {
                   </UFormField>
 
                   <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
-                    <div class="flex items-center justify-between gap-2">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
                         High-fidelity preview
                       </div>
@@ -1154,7 +1155,7 @@ watch(templates, (nextTemplates) => {
                       >
                         <iframe
                           :srcdoc="registryPreviewHtml"
-                          class="w-full min-h-[760px] rounded-md border border-default/70 bg-white"
+                          class="w-full min-h-[560px] md:min-h-[760px] rounded-md border border-default/70 bg-white"
                           sandbox="allow-same-origin"
                           title="Registry template preview"
                         />
@@ -1192,11 +1193,12 @@ watch(templates, (nextTemplates) => {
                 </div>
 
                 <template #footer>
-                  <div class="flex items-center justify-end gap-2">
+                  <div class="flex flex-col-reverse items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
                     <UButton
                       color="info"
                       variant="soft"
                       icon="i-lucide-send"
+                      class="w-full sm:w-auto"
                       :loading="sendingTest"
                       :disabled="!hasTemplateId(templateDraft)"
                       @click="sendTemplateTest"
@@ -1204,6 +1206,7 @@ watch(templates, (nextTemplates) => {
                       Send test email
                     </UButton>
                     <UButton
+                      class="w-full sm:w-auto"
                       :loading="saving"
                       @click="saveSelectedTemplate"
                     >
@@ -1214,7 +1217,7 @@ watch(templates, (nextTemplates) => {
               </UCard>
             </div>
 
-            <aside class="space-y-4 xl:sticky xl:top-4 self-start">
+            <aside class="w-full self-start space-y-4 xl:sticky xl:top-4">
               <UCard>
                 <div class="space-y-4">
                   <div class="text-sm font-medium">
@@ -1259,6 +1262,7 @@ watch(templates, (nextTemplates) => {
 
                   <div class="flex justify-end">
                     <UButton
+                      class="w-full sm:w-auto"
                       :loading="saving"
                       @click="saveSettings()"
                     >
@@ -1282,7 +1286,7 @@ watch(templates, (nextTemplates) => {
                   </UBadge>
                 </div>
 
-                <div class="mt-3 max-h-[70vh] overflow-y-auto space-y-2 pr-1">
+                <div class="mt-3 max-h-[52vh] md:max-h-[70vh] overflow-y-auto space-y-2 pr-1">
                   <button
                     v-for="(template, index) in templates"
                     :key="`${template.eventType}-${index}`"
@@ -1294,7 +1298,7 @@ watch(templates, (nextTemplates) => {
                     @click="selectTemplate(index)"
                   >
                     <div class="flex flex-wrap items-center gap-1.5">
-                      <code class="rounded bg-elevated px-1.5 py-0.5 text-[11px]">
+                      <code class="rounded bg-elevated px-1.5 py-0.5 text-[11px] break-all">
                         {{ template.eventType }}
                       </code>
                       <UBadge
@@ -1420,5 +1424,14 @@ watch(templates, (nextTemplates) => {
   border: 0;
   border-top: 1px solid var(--ui-border);
   margin: 0.9rem 0;
+}
+
+@media (max-width: 767.98px) {
+  .email-editor-shell :deep(.tiptap.ProseMirror),
+  .email-editor-shell :deep(.ProseMirror) {
+    min-height: 16rem;
+    max-height: 24rem;
+    padding: 0.8rem 0.8rem 0.8rem 1.2rem;
+  }
 }
 </style>
