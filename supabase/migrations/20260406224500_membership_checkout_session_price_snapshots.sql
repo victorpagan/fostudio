@@ -9,6 +9,15 @@ WITH session_prices AS (
         THEN ROUND((COALESCE(metadata, '{}'::jsonb)->>'payment_amount_cents')::numeric)::int
       WHEN COALESCE(metadata, '{}'::jsonb)->>'effective_price_cents' ~ '^-?[0-9]+(\.[0-9]+)?$'
         THEN ROUND((COALESCE(metadata, '{}'::jsonb)->>'effective_price_cents')::numeric)::int
+      WHEN (
+        COALESCE(metadata, '{}'::jsonb)->>'base_price_cents' ~ '^-?[0-9]+(\.[0-9]+)?$'
+        AND COALESCE(metadata, '{}'::jsonb)->>'promo_discount_cents' ~ '^-?[0-9]+(\.[0-9]+)?$'
+      )
+        THEN GREATEST(
+          0,
+          ROUND((COALESCE(metadata, '{}'::jsonb)->>'base_price_cents')::numeric)::int
+          - ROUND((COALESCE(metadata, '{}'::jsonb)->>'promo_discount_cents')::numeric)::int
+        )
       WHEN COALESCE(metadata, '{}'::jsonb)->>'base_price_cents' ~ '^-?[0-9]+(\.[0-9]+)?$'
         THEN ROUND((COALESCE(metadata, '{}'::jsonb)->>'base_price_cents')::numeric)::int
       ELSE NULL

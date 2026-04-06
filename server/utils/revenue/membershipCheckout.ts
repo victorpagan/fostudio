@@ -73,6 +73,15 @@ function readMetadataAmountCents(metadata: JsonLike) {
   const effectiveAmount = toNumber(metadata?.effective_price_cents)
   if (effectiveAmount !== null && effectiveAmount >= 0) return Math.floor(effectiveAmount)
 
+  const baseAmount = toNumber(metadata?.base_price_cents)
+  const promoDiscount = toNumber(metadata?.promo_discount_cents)
+  if (baseAmount !== null && baseAmount >= 0) {
+    if (promoDiscount !== null && promoDiscount >= 0) {
+      return Math.max(0, Math.floor(baseAmount - promoDiscount))
+    }
+    return Math.floor(baseAmount)
+  }
+
   return null
 }
 
