@@ -44,6 +44,36 @@ const cutoutStyle = computed(() => {
   } as Record<string, string>
 })
 
+const cutoutPathD = computed(() => {
+  // SVG path for rounded rectangular cutout
+  // Using fill-rule: evenodd to cut out the inner rect
+  const r = 0.65 // corner radius
+  const mainR = 1 // card radius
+
+  // Dimensions in units where width=1, height=1
+  // This will be scaled by viewBox in SVG
+
+  // Count and dimensions
+  const count = visibleActionCount.value
+  const pad = 0.35 / 16 // convert rem to proportion
+  const btnSize = 2.28 / 16
+  const btnGap = 0.36 / 16
+  const cutw = pad + count * btnSize + (count - 1) * btnGap + pad
+  const cuth = pad + btnSize + pad
+
+  const cutx = 1 - cutw
+  const cuty = 0
+  const r_prop = r / 16
+
+  // Outer boundary (clockwise from top-left)
+  let path = `M ${mainR} 0 L ${1 - mainR} 0 Q 1 0 1 ${mainR} L 1 ${1 - mainR} Q 1 1 ${1 - mainR} 1 L ${mainR} 1 Q 0 1 0 ${1 - mainR} L 0 ${mainR} Q 0 0 ${mainR} 0`
+
+  // Cutout hole (clockwise from top-right corner)
+  path += ` M ${cutx + r_prop} ${cuty} L ${1 - r_prop} ${cuty} Q 1 ${cuty} 1 ${cuty + r_prop} L 1 ${cuth - r_prop} Q 1 ${cuth} ${1 - r_prop} ${cuth} L ${cutx + r_prop} ${cuth} Q ${cutx} ${cuth} ${cutx} ${cuth - r_prop} L ${cutx} ${cuty + r_prop} Q ${cutx} ${cuty} ${cutx + r_prop} ${cuty}`
+
+  return path
+})
+
 function onLinkAction() {
   if (props.linkDisabled) return
   emit('link')
@@ -63,8 +93,7 @@ function onNotificationAction() {
     <UCard
       :class="[
         'ops-kpi-card border-0',
-        cardClass,
-        { 'ops-kpi-card--with-actions': hasActions }
+        cardClass
       ]"
       :style="cutoutStyle"
     >
@@ -132,83 +161,28 @@ function onNotificationAction() {
   overflow: hidden;
 }
 
-.ops-kpi-card--with-actions {
-  --cutout-r: 0.9rem;
-  --cutout-sr: 0.45rem;
-
-  /*
-   * Mask uses subtract compositing to punch a rounded-corner hole
-   * from the card. 5 layers, bottom-up:
-   *   L5: BR corner anti-fill
-   *   L4: TL corner anti-fill
-   *   L3: BL corner anti-fill (main inverted radius)
-   *   L2: cutout rectangle      ── subtract (anti-fills) → rounded cutout
-   *   L1: full card base        ── subtract (rounded cutout) → final shape
-   */
-  -webkit-mask-image:
-    linear-gradient(black, black),
-    linear-gradient(black, black),
-    radial-gradient(circle at 100% 0%, transparent calc(var(--cutout-r) - 0.5px), black calc(var(--cutout-r) + 0.5px)),
-    radial-gradient(circle at 100% 100%, transparent calc(var(--cutout-sr) - 0.5px), black calc(var(--cutout-sr) + 0.5px)),
-    radial-gradient(circle at 0% 0%, transparent calc(var(--cutout-sr) - 0.5px), black calc(var(--cutout-sr) + 0.5px));
-  mask-image:
-    linear-gradient(black, black),
-    linear-gradient(black, black),
-    radial-gradient(circle at 100% 0%, transparent calc(var(--cutout-r) - 0.5px), black calc(var(--cutout-r) + 0.5px)),
-    radial-gradient(circle at 100% 100%, transparent calc(var(--cutout-sr) - 0.5px), black calc(var(--cutout-sr) + 0.5px)),
-    radial-gradient(circle at 0% 0%, transparent calc(var(--cutout-sr) - 0.5px), black calc(var(--cutout-sr) + 0.5px));
-
-  -webkit-mask-size:
-    100% 100%,
-    var(--cutout-w) var(--cutout-h),
-    var(--cutout-r) var(--cutout-r),
-    var(--cutout-sr) var(--cutout-sr),
-    var(--cutout-sr) var(--cutout-sr);
-  mask-size:
-    100% 100%,
-    var(--cutout-w) var(--cutout-h),
-    var(--cutout-r) var(--cutout-r),
-    var(--cutout-sr) var(--cutout-sr),
-    var(--cutout-sr) var(--cutout-sr);
-
-  -webkit-mask-position:
-    0 0,
-    right top,
-    calc(100% - var(--cutout-w) + var(--cutout-r)) calc(var(--cutout-h) - var(--cutout-r)),
-    calc(100% - var(--cutout-w) + var(--cutout-sr)) 0,
-    right calc(var(--cutout-h) - var(--cutout-sr));
-  mask-position:
-    0 0,
-    right top,
-    calc(100% - var(--cutout-w) + var(--cutout-r)) calc(var(--cutout-h) - var(--cutout-r)),
-    calc(100% - var(--cutout-w) + var(--cutout-sr)) 0,
-    right calc(var(--cutout-h) - var(--cutout-sr));
-
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-
-  -webkit-mask-composite: source-out, source-out, source-over, source-over;
-  mask-composite: subtract, subtract, add, add;
-}
 
 .ops-kpi-actions {
   position: absolute;
-  top: 0.35rem;
-  right: 0.35rem;
+  top: 0.14rem;
+  right: 0.14rem;
   z-index: 10;
   display: inline-flex;
   align-items: center;
   gap: 0.36rem;
+  padding: 0.21rem;
+  background: transparent;
 }
 
 .ops-kpi-action-btn {
   width: 2.28rem;
   height: 2.28rem;
-  border-radius: 999px;
+  border-radius: 0.65rem 0.65rem 0 0;
   border: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .ops-kpi-action-btn:disabled {
