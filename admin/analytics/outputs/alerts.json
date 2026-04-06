@@ -2,19 +2,31 @@
   {
     "severity": "medium",
     "type": "data",
+    "title": "Bookings data unavailable",
+    "detail": "Booking data is unavailable, so utilization and booking trend alerts may be incomplete. Supabase credentials were not found. Booking and revenue data are unavailable."
+  },
+  {
+    "severity": "medium",
+    "type": "data",
+    "title": "Membership data unavailable",
+    "detail": "Membership data is unavailable, so retention/churn activity alerts may be incomplete. Supabase credentials were not found. Membership data is unavailable."
+  },
+  {
+    "severity": "medium",
+    "type": "data",
+    "title": "Revenue data unavailable",
+    "detail": "Revenue model data is unavailable, so revenue alerts are suppressed. Supabase credentials were not found. Booking and revenue data are unavailable."
+  },
+  {
+    "severity": "low",
+    "type": "data",
     "title": "Ads data unavailable",
-    "detail": "Google/Meta ad performance is unavailable, so paid-channel metrics and CPA alerts may be incomplete. Ads source is unavailable because analytics ads sync is disabled or no ad platform is enabled."
+    "detail": "Google/Meta ad performance is unavailable, so paid-channel metrics and CPA alerts may be incomplete. Supabase credentials were not found. Ads data is unavailable."
   },
   {
-    "severity": "medium",
-    "type": "bookings",
-    "title": "Bookings down week-over-week",
-    "detail": "Bookings fell by 20.0% compared with last week (4 vs 5)."
-  },
-  {
-    "severity": "medium",
-    "type": "revenue",
-    "title": "Revenue trend softened week-over-week",
-    "detail": "Revenue is down 100.0% week-over-week."
+    "severity": "low",
+    "type": "data",
+    "title": "Analytics confidence is reduced",
+    "detail": "Current confidence score is 5%, so non-critical alerts are downgraded."
   }
 ]

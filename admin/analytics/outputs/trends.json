@@ -1,216 +1,78 @@
 {
-  "generated_at": "2026-04-06T07:42:46.077Z",
+  "generated_at": "2026-04-06T19:44:55.023Z",
   "week_of": "2026-04-06",
   "data_availability": {
-    "memberships": "supabase",
-    "bookings": "supabase",
-    "revenue": "supabase",
+    "memberships": "unavailable",
+    "bookings": "unavailable",
+    "revenue": "unavailable",
     "ads": "unavailable",
     "notes": {
       "memberships": [
-        "Loaded 6 membership rows from Supabase."
+        "Supabase credentials were not found. Membership data is unavailable."
       ],
       "bookings": [
-        "Loaded 37 booking rows from Supabase.",
-        "Loaded 15 revenue events from Supabase.",
-        "Membership revenue sessions included: 9 / 10.",
-        "Membership session drops: status=0, metadata_exclude=0, dedupe=1, missing_amount=0."
+        "Supabase credentials were not found. Booking and revenue data are unavailable."
       ],
       "revenue": [
-        "Loaded 37 booking rows from Supabase.",
-        "Loaded 15 revenue events from Supabase.",
-        "Membership revenue sessions included: 9 / 10.",
-        "Membership session drops: status=0, metadata_exclude=0, dedupe=1, missing_amount=0."
+        "Supabase credentials were not found. Booking and revenue data are unavailable."
       ],
       "ads": [
-        "Ads source is unavailable because analytics ads sync is disabled or no ad platform is enabled."
+        "Supabase credentials were not found. Ads data is unavailable."
       ]
     }
   },
-  "revenue_by_week": [
-    {
-      "week": "2026-W04",
-      "value": 0
+  "data_quality": {
+    "source_completeness": {
+      "memberships": 0,
+      "bookings": 0,
+      "revenue": 0,
+      "ads": 0
     },
-    {
-      "week": "2026-W05",
-      "value": 0
+    "row_counts": {
+      "memberships": 0,
+      "membership_state": 0,
+      "bookings": 0,
+      "revenue": 0,
+      "ads": 0
     },
-    {
-      "week": "2026-W06",
-      "value": 0
+    "exclusions_applied": {
+      "memberships": 0,
+      "membership_state": 0,
+      "bookings": 0,
+      "revenue": 0,
+      "ads": 0,
+      "accounts": 0
     },
-    {
-      "week": "2026-W07",
-      "value": 0
-    },
-    {
-      "week": "2026-W08",
-      "value": 0
-    },
-    {
-      "week": "2026-W09",
-      "value": 0
-    },
-    {
-      "week": "2026-W10",
-      "value": 3.6
-    },
-    {
-      "week": "2026-W11",
-      "value": 5
-    },
-    {
-      "week": "2026-W12",
-      "value": 1
-    },
-    {
-      "week": "2026-W13",
-      "value": 950
-    },
-    {
-      "week": "2026-W14",
-      "value": 1300
-    },
-    {
-      "week": "2026-W15",
-      "value": 0
+    "warnings": [
+      "memberships: Supabase credentials were not found. Membership data is unavailable.",
+      "bookings: Supabase credentials were not found. Booking and revenue data are unavailable.",
+      "revenue: Supabase credentials were not found. Booking and revenue data are unavailable.",
+      "ads: Supabase credentials were not found. Ads data is unavailable.",
+      "Very low booking row count for period trending."
+    ],
+    "confidence": {
+      "score": 0.05,
+      "label": "low"
     }
-  ],
-  "members_by_week": [
-    {
-      "week": "2026-W04",
-      "active": 0,
-      "new_members": 0,
-      "canceled_members": 0
-    },
-    {
-      "week": "2026-W05",
-      "active": 0,
-      "new_members": 0,
-      "canceled_members": 0
-    },
-    {
-      "week": "2026-W06",
-      "active": 0,
-      "new_members": 0,
-      "canceled_members": 0
-    },
-    {
-      "week": "2026-W07",
-      "active": 0,
-      "new_members": 0,
-      "canceled_members": 0
-    },
-    {
-      "week": "2026-W08",
-      "active": 0,
-      "new_members": 0,
-      "canceled_members": 0
-    },
-    {
-      "week": "2026-W09",
-      "active": 0,
-      "new_members": 0,
-      "canceled_members": 0
-    },
-    {
-      "week": "2026-W10",
-      "active": 0,
-      "new_members": 0,
-      "canceled_members": 0
-    },
-    {
-      "week": "2026-W11",
-      "active": 1,
-      "new_members": 2,
-      "canceled_members": 0
-    },
-    {
-      "week": "2026-W12",
-      "active": 1,
-      "new_members": 0,
-      "canceled_members": 0
-    },
-    {
-      "week": "2026-W13",
-      "active": 2,
-      "new_members": 1,
-      "canceled_members": 0
-    },
-    {
-      "week": "2026-W14",
-      "active": 5,
-      "new_members": 3,
-      "canceled_members": 1
-    },
-    {
-      "week": "2026-W15",
-      "active": 5,
-      "new_members": 0,
-      "canceled_members": 0
-    }
-  ],
-  "utilization_by_week": [
-    {
-      "week": "2026-W04",
-      "value": 0,
-      "booked_hours": 0
-    },
-    {
-      "week": "2026-W05",
-      "value": 0,
-      "booked_hours": 0
-    },
-    {
-      "week": "2026-W06",
-      "value": 0,
-      "booked_hours": 0
-    },
-    {
-      "week": "2026-W07",
-      "value": 0,
-      "booked_hours": 0
-    },
-    {
-      "week": "2026-W08",
-      "value": 0,
-      "booked_hours": 0
-    },
-    {
-      "week": "2026-W09",
-      "value": 0,
-      "booked_hours": 0
-    },
-    {
-      "week": "2026-W10",
-      "value": 0.0536,
-      "booked_hours": 9
-    },
-    {
-      "week": "2026-W11",
-      "value": 0.1071,
-      "booked_hours": 18
-    },
-    {
-      "week": "2026-W12",
-      "value": 0.1845,
-      "booked_hours": 31
-    },
-    {
-      "week": "2026-W13",
-      "value": 0.0506,
-      "booked_hours": 8.5
-    },
-    {
-      "week": "2026-W14",
-      "value": 0.0595,
-      "booked_hours": 10
-    },
-    {
-      "week": "2026-W15",
-      "value": 0.0387,
-      "booked_hours": 6.5
-    }
-  ]
+  },
+  "revenue_by_week": [],
+  "cash_received_by_week": [],
+  "recognized_revenue_by_week": [],
+  "one_time_booking_revenue_by_week": [],
+  "members_by_week": [],
+  "utilization_by_week": [],
+  "booking_mix_by_week": [],
+  "weekday_utilization": {
+    "lookback_weeks": 8,
+    "bookings_by_weekday": [],
+    "booked_hours_by_weekday": [],
+    "weakest_day": null
+  },
+  "cohort_conversion": {
+    "repeat_guests_not_converted": 0,
+    "converted_guest_members": 0,
+    "avg_guest_to_member_lag_days": null,
+    "median_guest_to_member_lag_days": null,
+    "records": []
+  }
 }

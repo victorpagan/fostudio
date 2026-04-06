@@ -1,103 +1,191 @@
 {
-  "generated_at": "2026-04-06T07:42:46.816Z",
+  "generated_at": "2026-04-06T19:44:55.966Z",
   "week_of": "2026-04-06",
   "data_availability": {
-    "memberships": "supabase",
-    "bookings": "supabase",
-    "revenue": "supabase",
+    "memberships": "unavailable",
+    "bookings": "unavailable",
+    "revenue": "unavailable",
     "ads": "unavailable",
     "notes": {
       "memberships": [
-        "Loaded 6 membership rows from Supabase."
+        "Supabase credentials were not found. Membership data is unavailable."
       ],
       "bookings": [
-        "Loaded 37 booking rows from Supabase.",
-        "Loaded 15 revenue events from Supabase.",
-        "Membership revenue sessions included: 9 / 10.",
-        "Membership session drops: status=0, metadata_exclude=0, dedupe=1, missing_amount=0."
+        "Supabase credentials were not found. Booking and revenue data are unavailable."
       ],
       "revenue": [
-        "Loaded 37 booking rows from Supabase.",
-        "Loaded 15 revenue events from Supabase.",
-        "Membership revenue sessions included: 9 / 10.",
-        "Membership session drops: status=0, metadata_exclude=0, dedupe=1, missing_amount=0."
+        "Supabase credentials were not found. Booking and revenue data are unavailable."
       ],
       "ads": [
-        "Ads source is unavailable because analytics ads sync is disabled or no ad platform is enabled."
+        "Supabase credentials were not found. Ads data is unavailable."
       ]
     }
   },
+  "data_quality": {
+    "source_completeness": {
+      "memberships": 0,
+      "bookings": 0,
+      "revenue": 0,
+      "ads": 0
+    },
+    "row_counts": {
+      "memberships": 0,
+      "membership_state": 0,
+      "bookings": 0,
+      "revenue": 0,
+      "ads": 0
+    },
+    "exclusions_applied": {
+      "memberships": 0,
+      "membership_state": 0,
+      "bookings": 0,
+      "revenue": 0,
+      "ads": 0,
+      "accounts": 0
+    },
+    "warnings": [
+      "memberships: Supabase credentials were not found. Membership data is unavailable.",
+      "bookings: Supabase credentials were not found. Booking and revenue data are unavailable.",
+      "revenue: Supabase credentials were not found. Booking and revenue data are unavailable.",
+      "ads: Supabase credentials were not found. Ads data is unavailable.",
+      "Very low booking row count for period trending."
+    ],
+    "confidence": {
+      "score": 0.05,
+      "label": "low"
+    }
+  },
   "snapshot": {
-    "revenue": 0,
-    "revenue_wow_pct": -100,
-    "bookings": 4,
-    "booked_hours": 6.5,
-    "utilization_rate": 0.0387,
-    "active_members": 5,
-    "new_members": 0,
-    "cancellations": 0
+    "revenue": null,
+    "revenue_wow_pct": null,
+    "cash_received": null,
+    "cash_received_wow_pct": null,
+    "recognized_revenue": null,
+    "recognized_revenue_wow_pct": null,
+    "one_time_booking_revenue": null,
+    "bookings": null,
+    "booked_hours": null,
+    "utilization_rate": null,
+    "active_members": null,
+    "new_members": null,
+    "cancellations": null
+  },
+  "member_usage": {
+    "bookings_per_member_7d": null,
+    "bookings_per_member_30d": null,
+    "booked_hours_per_member_30d": null,
+    "members_with_zero_bookings_14d": null,
+    "members_with_zero_bookings_30d": null,
+    "tier_usage_pct": {
+      "creator": null,
+      "pro": null,
+      "studio_plus": null
+    }
+  },
+  "booking_segmentation": {
+    "member": {
+      "bookings": null,
+      "booked_hours": null,
+      "revenue": null
+    },
+    "non_member": {
+      "bookings": null,
+      "booked_hours": null,
+      "revenue": null
+    }
+  },
+  "cohorts": {
+    "repeat_guests_not_converted": null,
+    "converted_guest_members": null,
+    "avg_guest_to_member_lag_days": null,
+    "median_guest_to_member_lag_days": null
+  },
+  "weekday_focus": {
+    "weakest_day": null,
+    "weakest_day_bookings": null,
+    "weakest_day_booked_hours": null
   },
   "memberships": {
-    "creator": 2,
-    "pro": 1,
-    "studio_plus": 1,
-    "net_growth": 0
+    "creator": null,
+    "pro": null,
+    "studio_plus": null,
+    "net_growth": null
   },
   "marketing": {
     "google_ads": null,
     "meta_ads": null
   },
   "what_changed": [
-    "Revenue declined -100.0% week-over-week.",
-    "Membership count was flat week-over-week.",
-    "Studio utilization softened versus the previous week."
+    "Utilization trend is unavailable because booking data is missing.",
+    "Paid-channel insights are incomplete because ads data is currently unavailable.",
+    "Analytics confidence is low (5%), so conclusions are directional."
   ],
   "alerts": [
-    "Ads data unavailable",
-    "Bookings down week-over-week",
-    "Revenue trend softened week-over-week"
+    "Bookings data unavailable: Booking data is unavailable, so utilization and booking trend alerts may be incomplete. Supabase credentials were not found. Booking and revenue data are unavailable.",
+    "Membership data unavailable: Membership data is unavailable, so retention/churn activity alerts may be incomplete. Supabase credentials were not found. Membership data is unavailable.",
+    "Revenue data unavailable: Revenue model data is unavailable, so revenue alerts are suppressed. Supabase credentials were not found. Booking and revenue data are unavailable.",
+    "Ads data unavailable: Google/Meta ad performance is unavailable, so paid-channel metrics and CPA alerts may be incomplete. Supabase credentials were not found. Ads data is unavailable.",
+    "Analytics confidence is reduced: Current confidence score is 5%, so non-critical alerts are downgraded."
   ],
   "recommended_next_actions": [
-    "Connect Google Ads and Meta Ads data ingestion so paid-channel performance can be measured accurately.",
-    "Run a Wednesday fill-rate promotion with a booking deadline and reminder email.",
-    "Promote first-booker membership upgrade offer in follow-up email and Instagram stories."
+    "Finish ads data integration so paid-channel spend and CPA recommendations are based on live platform data.",
+    "Resolve missing data sources and account classification gaps before making major budget changes.",
+    "Promote a member-only midweek offer and track incremental booked hours week-over-week."
   ],
   "email_recommendations": [
     {
-      "campaign_name": "First-Time Booker to Member Upgrade",
-      "objective": "Convert recent guest or first-time bookings into membership signups.",
-      "audience": "Guests and first-time bookers from the last 30 days.",
+      "campaign_name": "Low-Usage Member Reactivation",
+      "objective": "Increase near-term bookings among active members with recent inactivity.",
+      "audience": "Active members with zero bookings in the last 14 days.",
       "subject_options": [
-        "Ready to make FO Studio your weekly home?",
-        "Your next session can cost less with membership",
-        "Keep your momentum: member pricing inside"
+        "Use your studio access this week",
+        "A quick way to book your next FO session",
+        "Your included studio hours are waiting"
       ],
       "key_points": [
-        "Highlight membership value against one-off booking costs.",
-        "Include the active seasonal promo code and expiration date.",
-        "Show one clear path to compare Creator, Pro, and Studio+ tiers."
-      ],
-      "cta": "Compare memberships",
-      "send_window": "Tuesday 10:00 AM America/Los_Angeles",
-      "note": "Weekly active members: 5"
-    },
-    {
-      "campaign_name": "Low-Usage Creator Re-engagement",
-      "objective": "Increase booked sessions among active Creator members with low recent utilization.",
-      "audience": "Active Creator members with less than 25% usage in the last 30 days.",
-      "subject_options": [
-        "Use your studio access before this month closes",
-        "A quick plan to use your Creator hours this week",
-        "Book a focused session this Wednesday"
-      ],
-      "key_points": [
-        "Remind members of included access and current booking availability.",
-        "Offer a Wednesday-focused nudge to improve weak-day fill rate.",
-        "Use a direct booking CTA with calendar link."
+        "Highlight remaining included value this month.",
+        "Prioritize Wednesday slots to improve fill rate.",
+        "Use a direct calendar deep-link CTA."
       ],
       "cta": "Book your next session",
       "send_window": "Monday 4:00 PM America/Los_Angeles",
-      "note": "Weekly active members: 5"
+      "note": "Weekly active members: Data unavailable. Analytics confidence: Low (5%)."
+    },
+    {
+      "campaign_name": "Repeat Guest Conversion",
+      "objective": "Convert repeat non-member guests into paid memberships.",
+      "audience": "Guests with 2+ bookings who are not currently converted to membership.",
+      "subject_options": [
+        "You are booking often. Membership now saves you more.",
+        "Make your next session member-priced",
+        "Your FO routine deserves member rates"
+      ],
+      "key_points": [
+        "Compare one-time spend vs membership value.",
+        "Include Creator, Pro, and Studio+ ladder with clear differences.",
+        "Show a one-week conversion incentive window."
+      ],
+      "cta": "Compare membership options",
+      "send_window": "Tuesday 10:00 AM America/Los_Angeles",
+      "note": "Weekly active members: Data unavailable. Analytics confidence: Low (5%)."
+    },
+    {
+      "campaign_name": "Wednesday Fill-Rate Boost",
+      "objective": "Increase booked hours on Wednesday, currently the lowest-demand day.",
+      "audience": "Recent bookers and active members who can schedule on Wednesday.",
+      "subject_options": [
+        "Wednesday studio slots are open this week",
+        "Claim a Wednesday session before spots close",
+        "Best availability is Wednesday this week"
+      ],
+      "key_points": [
+        "Lead with strongest available time windows.",
+        "Offer a limited-time incentive tied to that day.",
+        "Follow with a final reminder 24 hours before close."
+      ],
+      "cta": "Book a Wednesday session",
+      "send_window": "Sunday 6:00 PM America/Los_Angeles",
+      "note": "Weekly active members: Data unavailable. Analytics confidence: Low (5%)."
     }
   ]
 }
