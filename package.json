@@ -14,7 +14,9 @@
     "analytics:compute": "pnpm exec tsx admin/analytics/scripts/compute_metrics.ts && pnpm exec tsx admin/analytics/scripts/compute_trends.ts && pnpm exec tsx admin/analytics/scripts/compute_alerts.ts",
     "analytics:report": "pnpm exec tsx admin/analytics/scripts/build_weekly_report.ts",
     "analytics:publish": "pnpm exec tsx admin/analytics/scripts/publish_outputs.ts",
-    "analytics:all": "pnpm analytics:ingest && pnpm analytics:compute && pnpm analytics:report && pnpm analytics:publish"
+    "analytics:all": "pnpm analytics:ingest && pnpm analytics:compute && pnpm analytics:report && pnpm analytics:publish",
+    "analytics:remote:run": "pnpm exec tsx admin/analytics/scripts/remote_analytics.ts run",
+    "analytics:remote:outputs": "pnpm exec tsx admin/analytics/scripts/remote_analytics.ts outputs"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.20",

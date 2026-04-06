@@ -60,6 +60,31 @@ curl -sS -X POST "$APP_URL/api/internal/analytics/run" \
   -d '{"requireSupabase": true}'
 ```
 
+## Remote run/fetch via fo.studio
+
+Use these commands when running analytics through deployed endpoints (instead of local pipeline execution):
+
+```bash
+pnpm analytics:remote:run
+pnpm analytics:remote:outputs
+```
+
+Defaults:
+
+- Base URL: `https://fo.studio`
+- Auth: values loaded from repo `.env` (`ANALYTICS_RUN_SHARED_KEY` and/or `ANALYTICS_EXPORT_SHARED_KEY`)
+- Run mode sends `{ "requireSupabase": true }` so ingest fails rather than falling back to CSV.
+
+Options:
+
+```bash
+pnpm analytics:remote:run -- --allow-fallback      # send requireSupabase=false
+pnpm analytics:remote:run -- --url=https://fo.studio --json
+pnpm analytics:remote:outputs -- --url=https://fo.studio --json
+```
+
+You can also set `ANALYTICS_APP_URL` if you want a different default host.
+
 Response includes:
 
 - `metrics`
