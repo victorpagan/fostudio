@@ -31,12 +31,17 @@ const claimLoading = ref(false)
 const claimError = ref<string | null>(null)
 const claimHint = ref<string | null>(null)
 const claimedMembershipId = ref<string | null>(null)
+const claimNewCustomer = ref<boolean | null>(null)
 const claimComplete = ref(false)
 const activationReminderTriggered = ref(false)
 const bootstrapAttempted = ref(false)
+const conversionTracked = ref(false)
 
 let timer: ReturnType<typeof setInterval> | null = null
 let claimRetryTimer: ReturnType<typeof setTimeout> | null = null
+
+const GOOGLE_ADS_MEMBERSHIP_PURCHASE_SEND_TO = 'AW-18068877892/iTzKCP-r05ccEMTk9KdD'
+const GOOGLE_ADS_CONVERSION_STORAGE_KEY_PREFIX = 'fo:ads-conversion:membership:'
 
 type ClaimErrorLike = {
   statusCode?: number
@@ -70,6 +75,10 @@ function startStatusPolling() {
   timer = setInterval(async () => {
     await pollLegacyMembershipStatus()
     if (status.value === 'active') {
+      trackMembershipPurchaseConversion({
+        membershipId: claimedMembershipId.value,
+        newCustomer: claimNewCustomer.value
+      })
       if (timer) clearInterval(timer)
       await navigateTo(returnTo.value)
     }
@@ -114,6 +123,71 @@ function isRetryableClaimError(error: unknown) {
     'eai_again',
     'enotfound'
   ].some(marker => haystack.includes(marker))
+}
+
+function conversionStorageKey(membershipId: string | null, checkout: string | null) {
+  const target = (membershipId ?? checkout ?? '').trim()
+  if (!target) return null
+  return `${GOOGLE_ADS_CONVERSION_STORAGE_KEY_PREFIX}${target}`
+}
+
+function hasTrackedConversion(key: string) {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.localStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+function markTrackedConversion(key: string) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(key, '1')
+  } catch {
+    // no-op
+  }
+}
+
+function trackMembershipPurchaseConversion(input: { membershipId: string | null, newCustomer: boolean | null }) {
+  if (isTest.value || conversionTracked.value) return
+
+  const dedupeKey = conversionStorageKey(input.membershipId, checkoutToken.value)
+  if (!dedupeKey) return
+  if (hasTrackedConversion(dedupeKey)) {
+    conversionTracked.value = true
+    return
+  }
+
+  const transactionId = (input.membershipId ?? checkoutToken.value ?? '').trim()
+  if (!transactionId) return
+
+  if (typeof window === 'undefined') return
+  const win = window as Window & {
+    dataLayer?: unknown[]
+    gtag?: (...args: unknown[]) => void
+  }
+
+  if (typeof win.gtag !== 'function') {
+    if (!Array.isArray(win.dataLayer)) {
+      win.dataLayer = []
+    }
+    win.gtag = (...args: unknown[]) => {
+      win.dataLayer?.push(args)
+    }
+  }
+
+  const payload: Record<string, unknown> = {
+    send_to: GOOGLE_ADS_MEMBERSHIP_PURCHASE_SEND_TO,
+    transaction_id: transactionId
+  }
+  if (typeof input.newCustomer === 'boolean') {
+    payload.new_customer = input.newCustomer
+  }
+
+  win.gtag('event', 'conversion', payload)
+  markTrackedConversion(dedupeKey)
+  conversionTracked.value = true
 }
 
 async function pollLegacyMembershipStatus() {
@@ -173,6 +247,7 @@ async function claimCheckout() {
       membershipId?: string
       membershipStatus: string
       returnTo?: string
+      newCustomer?: boolean
     }>('/api/checkout/claim', {
       method: 'POST',
       body: { token: checkoutToken.value },
@@ -181,6 +256,12 @@ async function claimCheckout() {
 
     status.value = res.membershipStatus || 'pending_checkout'
     claimHint.value = res.message ?? null
+    if (res.membershipId) {
+      claimedMembershipId.value = res.membershipId
+    }
+    if (typeof res.newCustomer === 'boolean') {
+      claimNewCustomer.value = res.newCustomer
+    }
 
     if (!res.ok && res.pending) {
       claimComplete.value = false
@@ -195,10 +276,13 @@ async function claimCheckout() {
       return
     }
 
-    claimedMembershipId.value = res.membershipId ?? null
     claimComplete.value = true
 
     if (status.value === 'active') {
+      trackMembershipPurchaseConversion({
+        membershipId: claimedMembershipId.value,
+        newCustomer: claimNewCustomer.value
+      })
       await navigateTo(res.returnTo ?? returnTo.value)
     }
   } catch (error: unknown) {

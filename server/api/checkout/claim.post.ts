@@ -351,7 +351,7 @@ export default defineEventHandler(async (event) => {
   if (session.status === 'claimed' && session.claimed_by_user_id === user.sub && session.claimed_membership_id) {
     const { data: claimedMembership } = await supabase
       .from('memberships')
-      .select('id,user_id,tier,cadence,status')
+      .select('id,user_id,tier,cadence,status,activated_at')
       .eq('id', session.claimed_membership_id)
       .maybeSingle()
 
@@ -360,11 +360,28 @@ export default defineEventHandler(async (event) => {
     const claimedMatchesSession = claimedMembership?.tier === session.tier
       && claimedMembership?.cadence === session.cadence
     if (claimedStatus === 'active' && claimedBelongsToUser && claimedMatchesSession) {
+      let newCustomer: boolean | null = null
+      const { data: activatedMembershipRows } = await supabase
+        .from('memberships')
+        .select('id')
+        .eq('user_id', user.sub)
+        .not('activated_at', 'is', null)
+
+      if (Array.isArray(activatedMembershipRows)) {
+        const activatedIds = activatedMembershipRows
+          .map(row => String((row as { id?: unknown }).id ?? '').trim())
+          .filter(Boolean)
+        if (activatedIds.length > 0) {
+          newCustomer = activatedIds.length === 1 && activatedIds[0] === session.claimed_membership_id
+        }
+      }
+
       return {
         ok: true,
         membershipId: session.claimed_membership_id,
         membershipStatus: claimedMembership?.status ?? 'active',
-        returnTo
+        returnTo,
+        newCustomer
       }
     }
 
@@ -1051,7 +1068,8 @@ export default defineEventHandler(async (event) => {
       membershipId: claimedMembership.id,
       membershipStatus: claimedMembership.status ?? 'pending_checkout',
       returnTo,
-      message: pendingMessage
+      message: pendingMessage,
+      newCustomer: isFirstActivation
     }
   }
 
@@ -1059,7 +1077,8 @@ export default defineEventHandler(async (event) => {
     ok: true,
     membershipId: claimedMembership.id,
     membershipStatus: claimedMembership.status ?? 'active',
-    returnTo
+    returnTo,
+    newCustomer: isFirstActivation
   }
 })
 

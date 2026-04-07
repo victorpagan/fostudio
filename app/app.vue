@@ -10,6 +10,7 @@ const globalDashboardNavProgress = useState<number>('global-dashboard-nav-progre
 const globalDashboardHooksBound = useState<boolean>('global-dashboard-nav-hooks-bound', () => false)
 const GLOBAL_DASHBOARD_PROGRESS_MIN_VISIBLE_MS = 380
 const GLOBAL_DASHBOARD_PROGRESS_RESET_MS = 220
+const GOOGLE_ADS_TAG_ID = 'AW-18068877892'
 
 let globalDashboardProgressTimer: ReturnType<typeof setInterval> | null = null
 let globalDashboardProgressDelayTimer: ReturnType<typeof setTimeout> | null = null
@@ -164,6 +165,22 @@ useHead({
   ],
   link: [
     { rel: 'icon', href: '/favicon.ico' }
+  ],
+  script: [
+    {
+      key: 'google-ads-gtag-src',
+      async: true,
+      src: `https://www.googletagmanager.com/gtag/js?id=${GOOGLE_ADS_TAG_ID}`
+    },
+    {
+      key: 'google-ads-gtag-init',
+      children: [
+        'window.dataLayer = window.dataLayer || [];',
+        'function gtag(){dataLayer.push(arguments);}',
+        'gtag(\'js\', new Date());',
+        `gtag('config', '${GOOGLE_ADS_TAG_ID}');`
+      ].join('\n')
+    }
   ],
   htmlAttrs: {
     lang: 'en'
