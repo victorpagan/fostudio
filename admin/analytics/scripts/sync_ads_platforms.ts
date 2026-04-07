@@ -115,6 +115,25 @@ type MetaRawRow = {
   actions?: MetaRawAction[]
 }
 
+type GoogleApiErrorPayload = {
+  error?: {
+    code?: number
+    message?: string
+    status?: string
+    details?: unknown
+  }
+}
+
+type MetaApiErrorPayload = {
+  error?: {
+    message?: string
+    type?: string
+    code?: number
+    error_subcode?: number
+    fbtrace_id?: string
+  }
+}
+
 const SETTINGS_KEYS = [
   'analytics_ads_sync_enabled',
   'analytics_ads_lookback_days',
@@ -198,6 +217,13 @@ function asStringArray(value: unknown, fallback: string[]) {
   return fallback
 }
 
+function firstDefined(...values: Array<unknown>) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) return value
+  }
+  return undefined
+}
+
 function toNumber(value: unknown, fallback = 0) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
@@ -209,6 +235,26 @@ function normalizeGoogleCustomerId(value: string) {
 
 function normalizeMetaAdAccountId(value: string) {
   return value.replace(/^act_/i, '').trim()
+}
+
+function normalizeGoogleApiVersion(value: string, fallback = 'v19') {
+  const raw = String(value ?? '').trim().toLowerCase()
+  if (!raw) return fallback
+  const match = raw.match(/v?(\d{1,3})(?:\.\d+)?/)
+  const major = Number(match?.[1] ?? NaN)
+  if (!Number.isFinite(major) || major < 1) return fallback
+  return `v${major}`
+}
+
+function normalizeMetaApiVersion(value: string, fallback = 'v25.0') {
+  const raw = String(value ?? '').trim().toLowerCase()
+  if (!raw) return fallback
+  const match = raw.match(/v?(\d{1,3})(?:\.(\d+))?/)
+  const major = Number(match?.[1] ?? NaN)
+  if (!Number.isFinite(major) || major < 1) return fallback
+  const minor = Number(match?.[2] ?? 0)
+  if (!Number.isFinite(minor) || minor < 0) return `v${major}.0`
+  return `v${major}.${Math.floor(minor)}`
 }
 
 function safeCampaignName(value: unknown) {
@@ -224,45 +270,109 @@ function readSettings(configMap: Map<string, unknown>): AdsSyncSettings {
   const lookbackFromFlag = readFlagValue('--lookback-days')
 
   return {
-    syncEnabled: asBoolean(configMap.get('analytics_ads_sync_enabled'), false),
+    syncEnabled: asBoolean(
+      firstDefined(
+        configMap.get('analytics_ads_sync_enabled'),
+        process.env.ANALYTICS_ADS_SYNC_ENABLED
+      ),
+      false
+    ),
     lookbackDays: clampInteger(
-      lookbackFromFlag ?? configMap.get('analytics_ads_lookback_days'),
+      firstDefined(
+        lookbackFromFlag,
+        configMap.get('analytics_ads_lookback_days'),
+        process.env.ANALYTICS_ADS_LOOKBACK_DAYS
+      ),
       30,
       1,
       365
     ),
     google: {
-      enabled: asBoolean(configMap.get('analytics_ads_google_enabled'), false),
-      customerId: normalizeGoogleCustomerId(asTrimmedString(configMap.get('analytics_ads_google_customer_id'))),
-      loginCustomerId: normalizeGoogleCustomerId(asTrimmedString(configMap.get('analytics_ads_google_login_customer_id'))),
-      apiVersion: asTrimmedString(configMap.get('analytics_ads_google_api_version'), 'v19'),
+      enabled: asBoolean(
+        firstDefined(
+          configMap.get('analytics_ads_google_enabled'),
+          process.env.ANALYTICS_ADS_GOOGLE_ENABLED
+        ),
+        false
+      ),
+      customerId: normalizeGoogleCustomerId(asTrimmedString(firstDefined(
+        configMap.get('analytics_ads_google_customer_id'),
+        process.env.ANALYTICS_ADS_GOOGLE_CUSTOMER_ID,
+        process.env.GOOGLE_ADS_CUSTOMER_ID
+      ))),
+      loginCustomerId: normalizeGoogleCustomerId(asTrimmedString(firstDefined(
+        configMap.get('analytics_ads_google_login_customer_id'),
+        process.env.ANALYTICS_ADS_GOOGLE_LOGIN_CUSTOMER_ID,
+        process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID
+      ))),
+      apiVersion: normalizeGoogleApiVersion(
+        asTrimmedString(firstDefined(
+          configMap.get('analytics_ads_google_api_version'),
+          process.env.ANALYTICS_ADS_GOOGLE_API_VERSION
+        )),
+        'v19'
+      ),
       developerTokenSecretName: asTrimmedString(
-        configMap.get('analytics_ads_google_developer_token_secret_name'),
+        firstDefined(
+          configMap.get('analytics_ads_google_developer_token_secret_name'),
+          process.env.ANALYTICS_ADS_GOOGLE_DEVELOPER_TOKEN_SECRET_NAME
+        ),
         'GOOGLE_ADS_DEVELOPER_TOKEN'
       ),
       clientIdSecretName: asTrimmedString(
-        configMap.get('analytics_ads_google_client_id_secret_name'),
+        firstDefined(
+          configMap.get('analytics_ads_google_client_id_secret_name'),
+          process.env.ANALYTICS_ADS_GOOGLE_CLIENT_ID_SECRET_NAME
+        ),
         'GOOGLE_ADS_CLIENT_ID'
       ),
       clientSecretSecretName: asTrimmedString(
-        configMap.get('analytics_ads_google_client_secret_secret_name'),
+        firstDefined(
+          configMap.get('analytics_ads_google_client_secret_secret_name'),
+          process.env.ANALYTICS_ADS_GOOGLE_CLIENT_SECRET_SECRET_NAME
+        ),
         'GOOGLE_ADS_CLIENT_SECRET'
       ),
       refreshTokenSecretName: asTrimmedString(
-        configMap.get('analytics_ads_google_refresh_token_secret_name'),
+        firstDefined(
+          configMap.get('analytics_ads_google_refresh_token_secret_name'),
+          process.env.ANALYTICS_ADS_GOOGLE_REFRESH_TOKEN_SECRET_NAME
+        ),
         'GOOGLE_ADS_REFRESH_TOKEN'
       )
     },
     meta: {
-      enabled: asBoolean(configMap.get('analytics_ads_meta_enabled'), false),
-      adAccountId: normalizeMetaAdAccountId(asTrimmedString(configMap.get('analytics_ads_meta_ad_account_id'))),
-      apiVersion: asTrimmedString(configMap.get('analytics_ads_meta_api_version'), 'v25.0'),
+      enabled: asBoolean(
+        firstDefined(
+          configMap.get('analytics_ads_meta_enabled'),
+          process.env.ANALYTICS_ADS_META_ENABLED
+        ),
+        false
+      ),
+      adAccountId: normalizeMetaAdAccountId(asTrimmedString(firstDefined(
+        configMap.get('analytics_ads_meta_ad_account_id'),
+        process.env.ANALYTICS_ADS_META_AD_ACCOUNT_ID,
+        process.env.META_AD_ACCOUNT_ID
+      ))),
+      apiVersion: normalizeMetaApiVersion(
+        asTrimmedString(firstDefined(
+          configMap.get('analytics_ads_meta_api_version'),
+          process.env.ANALYTICS_ADS_META_API_VERSION
+        )),
+        'v25.0'
+      ),
       accessTokenSecretName: asTrimmedString(
-        configMap.get('analytics_ads_meta_access_token_secret_name'),
+        firstDefined(
+          configMap.get('analytics_ads_meta_access_token_secret_name'),
+          process.env.ANALYTICS_ADS_META_ACCESS_TOKEN_SECRET_NAME
+        ),
         'META_MARKETING_ACCESS_TOKEN'
       ),
       conversionActionTypes: asStringArray(
-        configMap.get('analytics_ads_meta_conversion_action_types'),
+        firstDefined(
+          configMap.get('analytics_ads_meta_conversion_action_types'),
+          process.env.ANALYTICS_ADS_META_CONVERSION_ACTION_TYPES
+        ),
         DEFAULT_META_CONVERSION_ACTION_TYPES
       )
     }
@@ -336,8 +446,11 @@ async function fetchGoogleAdsRows(input: {
   startDate: string
   endDate: string
 }): Promise<AdUpsertRow[]> {
-  const version = input.apiVersion || 'v19'
-  const endpoint = `https://googleads.googleapis.com/${version}/customers/${input.customerId}/googleAds:searchStream`
+  const requestedVersion = normalizeGoogleApiVersion(input.apiVersion || 'v19', 'v19')
+  const fallbackVersion = 'v19'
+  const candidateVersions = requestedVersion === fallbackVersion
+    ? [requestedVersion]
+    : [requestedVersion, fallbackVersion]
 
   const query = [
     'SELECT',
@@ -363,54 +476,76 @@ async function fetchGoogleAdsRows(input: {
     headers['login-customer-id'] = input.loginCustomerId
   }
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ query })
-  })
-
-  if (!response.ok) {
-    const text = await response.text()
-    throw new Error(`Google Ads query failed (${response.status}): ${text.slice(0, 900)}`)
-  }
-
-  const payload = await response.json()
-  const chunks = Array.isArray(payload) ? payload : [payload]
+  let lastError: Error | null = null
   const rows: AdUpsertRow[] = []
 
-  for (const chunk of chunks) {
-    const results = Array.isArray((chunk as { results?: unknown[] }).results)
-      ? (chunk as { results: GoogleRawResult[] }).results
-      : []
+  for (const version of candidateVersions) {
+    const endpoint = `https://googleads.googleapis.com/${version}/customers/${input.customerId}/googleAds:searchStream`
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query })
+    })
 
-    for (const result of results) {
-      const date = asTrimmedString(result.segments?.date)
-      if (!date) continue
+    if (!response.ok) {
+      const text = await response.text()
+      let detail = text.slice(0, 900)
 
-      const costMicros = readGoogleMetric(result.metrics, 'costMicros', 'cost_micros')
-      const spend = Math.max(0, costMicros / 1_000_000)
-      const clicks = Math.max(0, Math.round(readGoogleMetric(result.metrics, 'clicks', 'clicks')))
-      const impressions = Math.max(0, Math.round(readGoogleMetric(result.metrics, 'impressions', 'impressions')))
-      const conversions = Math.max(0, readGoogleMetric(result.metrics, 'conversions', 'conversions'))
+      try {
+        const parsed = JSON.parse(text) as GoogleApiErrorPayload
+        const message = asTrimmedString(parsed.error?.message)
+        if (message) detail = message
+      } catch {
+        // preserve raw text snippet
+      }
 
-      rows.push({
-        date,
-        platform: 'google',
-        campaign: safeCampaignName(result.campaign?.name),
-        spend,
-        clicks,
-        impressions,
-        conversions,
-        source: 'google_api',
-        metadata: {
-          campaign_id: asTrimmedString(result.campaign?.id) || null
-        },
-        synced_at: new Date().toISOString()
-      })
+      const isLikelyVersionIssue = response.status === 404
+      lastError = new Error(`Google Ads query failed (${response.status}) on ${version}: ${detail}`)
+      if (isLikelyVersionIssue && version !== fallbackVersion) {
+        continue
+      }
+      throw lastError
     }
+
+    const payload = await response.json()
+    const chunks = Array.isArray(payload) ? payload : [payload]
+
+    for (const chunk of chunks) {
+      const results = Array.isArray((chunk as { results?: unknown[] }).results)
+        ? (chunk as { results: GoogleRawResult[] }).results
+        : []
+
+      for (const result of results) {
+        const date = asTrimmedString(result.segments?.date)
+        if (!date) continue
+
+        const costMicros = readGoogleMetric(result.metrics, 'costMicros', 'cost_micros')
+        const spend = Math.max(0, costMicros / 1_000_000)
+        const clicks = Math.max(0, Math.round(readGoogleMetric(result.metrics, 'clicks', 'clicks')))
+        const impressions = Math.max(0, Math.round(readGoogleMetric(result.metrics, 'impressions', 'impressions')))
+        const conversions = Math.max(0, readGoogleMetric(result.metrics, 'conversions', 'conversions'))
+
+        rows.push({
+          date,
+          platform: 'google',
+          campaign: safeCampaignName(result.campaign?.name),
+          spend,
+          clicks,
+          impressions,
+          conversions,
+          source: 'google_api',
+          metadata: {
+            campaign_id: asTrimmedString(result.campaign?.id) || null
+          },
+          synced_at: new Date().toISOString()
+        })
+      }
+    }
+
+    return rows
   }
 
-  return rows
+  throw (lastError ?? new Error('Google Ads query failed: no response.'))
 }
 
 function parseMetaConversions(actions: MetaRawAction[] | undefined, allowList: string[]) {
@@ -457,7 +592,26 @@ async function fetchMetaAdsRows(input: {
 
     if (!response.ok) {
       const text = await response.text()
-      throw new Error(`Meta insights query failed (${response.status}): ${text.slice(0, 900)}`)
+      let detail = text.slice(0, 900)
+      try {
+        const parsed = JSON.parse(text) as MetaApiErrorPayload
+        const message = asTrimmedString(parsed.error?.message)
+        const code = parsed.error?.code
+        const subcode = parsed.error?.error_subcode
+        if (message && code === 190 && subcode === 463) {
+          throw new Error(`Meta access token expired (code 190/463). ${message}`)
+        }
+        if (message) {
+          detail = code
+            ? `${message} (code ${code}${subcode ? `/${subcode}` : ''})`
+            : message
+        }
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message.toLowerCase().includes('token expired')) {
+          throw error
+        }
+      }
+      throw new Error(`Meta insights query failed (${response.status}): ${detail}`)
     }
 
     const payload = await response.json() as {
