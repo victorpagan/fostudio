@@ -61,7 +61,7 @@ const form = reactive<AdsIntegrationSettings>({
     enabled: false,
     customerId: '',
     loginCustomerId: '',
-    apiVersion: 'v19',
+    apiVersion: 'v23',
     developerTokenSecretName: 'GOOGLE_ADS_DEVELOPER_TOKEN',
     clientIdSecretName: 'GOOGLE_ADS_CLIENT_ID',
     clientSecretSecretName: 'GOOGLE_ADS_CLIENT_SECRET',
@@ -89,7 +89,7 @@ const { pending, refresh } = await useAsyncData('admin:analytics:integrations:se
   form.google.enabled = Boolean(settings.google.enabled)
   form.google.customerId = String(settings.google.customerId ?? '')
   form.google.loginCustomerId = String(settings.google.loginCustomerId ?? '')
-  form.google.apiVersion = String(settings.google.apiVersion ?? 'v19')
+  form.google.apiVersion = String(settings.google.apiVersion ?? 'v23')
   form.google.developerTokenSecretName = String(settings.google.developerTokenSecretName ?? 'GOOGLE_ADS_DEVELOPER_TOKEN')
   form.google.clientIdSecretName = String(settings.google.clientIdSecretName ?? 'GOOGLE_ADS_CLIENT_ID')
   form.google.clientSecretSecretName = String(settings.google.clientSecretSecretName ?? 'GOOGLE_ADS_CLIENT_SECRET')
@@ -326,7 +326,7 @@ async function syncNow(dryRun = false) {
               <UFormField label="API version">
                 <UInput
                   v-model="form.google.apiVersion"
-                  placeholder="v19"
+                  placeholder="v23"
                 />
               </UFormField>
               <UFormField label="Customer ID">

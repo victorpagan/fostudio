@@ -103,7 +103,7 @@ export default defineEventHandler(async (event) => {
         enabled: asBoolean(configMap.get('analytics_ads_google_enabled'), false),
         customerId: asTrimmedString(configMap.get('analytics_ads_google_customer_id')),
         loginCustomerId: asTrimmedString(configMap.get('analytics_ads_google_login_customer_id')),
-        apiVersion: asTrimmedString(configMap.get('analytics_ads_google_api_version'), 'v19'),
+        apiVersion: asTrimmedString(configMap.get('analytics_ads_google_api_version'), 'v23'),
         developerTokenSecretName: asTrimmedString(
           configMap.get('analytics_ads_google_developer_token_secret_name'),
           'GOOGLE_ADS_DEVELOPER_TOKEN'

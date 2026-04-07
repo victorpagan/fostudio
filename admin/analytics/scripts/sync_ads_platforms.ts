@@ -115,15 +115,6 @@ type MetaRawRow = {
   actions?: MetaRawAction[]
 }
 
-type GoogleApiErrorPayload = {
-  error?: {
-    code?: number
-    message?: string
-    status?: string
-    details?: unknown
-  }
-}
-
 type MetaApiErrorPayload = {
   error?: {
     message?: string
@@ -162,6 +153,9 @@ const DEFAULT_META_CONVERSION_ACTION_TYPES = [
   'offsite_conversion.purchase',
   'offsite_conversion.fb_pixel_purchase'
 ]
+
+const GOOGLE_DEFAULT_API_VERSION = 'v23'
+const GOOGLE_API_FALLBACK_VERSIONS = ['v23', 'v22', 'v21', 'v20'] as const
 
 function hasFlag(name: string) {
   return process.argv.includes(name)
@@ -237,7 +231,7 @@ function normalizeMetaAdAccountId(value: string) {
   return value.replace(/^act_/i, '').trim()
 }
 
-function normalizeGoogleApiVersion(value: string, fallback = 'v19') {
+function normalizeGoogleApiVersion(value: string, fallback = GOOGLE_DEFAULT_API_VERSION) {
   const raw = String(value ?? '').trim().toLowerCase()
   if (!raw) return fallback
   const match = raw.match(/v?(\d{1,3})(?:\.\d+)?/)
@@ -260,6 +254,43 @@ function normalizeMetaApiVersion(value: string, fallback = 'v25.0') {
 function safeCampaignName(value: unknown) {
   const normalized = asTrimmedString(value, 'unknown-campaign')
   return normalized || 'unknown-campaign'
+}
+
+function parseGoogleErrorMessage(rawText: string) {
+  let parsedMessage: string | null = null
+  let authorizationError: string | null = null
+
+  try {
+    const parsed = JSON.parse(rawText) as unknown
+    const node = Array.isArray(parsed) ? parsed[0] : parsed
+    const root = (node && typeof node === 'object') ? (node as { error?: unknown }).error : null
+    const errorObj = (root && typeof root === 'object') ? root as { message?: unknown, details?: unknown[] } : null
+    const topMessage = asTrimmedString(errorObj?.message)
+    if (topMessage) parsedMessage = topMessage
+
+    if (Array.isArray(errorObj?.details)) {
+      for (const detail of errorObj.details) {
+        if (!detail || typeof detail !== 'object') continue
+        const errors = Array.isArray((detail as { errors?: unknown[] }).errors)
+          ? (detail as { errors: Array<{ errorCode?: { authorizationError?: string }, message?: string }> }).errors
+          : []
+        for (const item of errors) {
+          const code = asTrimmedString(item?.errorCode?.authorizationError)
+          const message = asTrimmedString(item?.message)
+          if (code) authorizationError = code
+          if (message) parsedMessage = message
+        }
+      }
+    }
+  } catch {
+    // keep defaults
+  }
+
+  const fallback = rawText.slice(0, 900)
+  return {
+    message: parsedMessage || fallback,
+    authorizationError
+  }
 }
 
 function mapConfigRows(rows: SystemConfigRow[]) {
@@ -310,7 +341,7 @@ function readSettings(configMap: Map<string, unknown>): AdsSyncSettings {
           configMap.get('analytics_ads_google_api_version'),
           process.env.ANALYTICS_ADS_GOOGLE_API_VERSION
         )),
-        'v19'
+        GOOGLE_DEFAULT_API_VERSION
       ),
       developerTokenSecretName: asTrimmedString(
         firstDefined(
@@ -446,11 +477,11 @@ async function fetchGoogleAdsRows(input: {
   startDate: string
   endDate: string
 }): Promise<AdUpsertRow[]> {
-  const requestedVersion = normalizeGoogleApiVersion(input.apiVersion || 'v19', 'v19')
-  const fallbackVersion = 'v19'
-  const candidateVersions = requestedVersion === fallbackVersion
-    ? [requestedVersion]
-    : [requestedVersion, fallbackVersion]
+  const requestedVersion = normalizeGoogleApiVersion(input.apiVersion || GOOGLE_DEFAULT_API_VERSION, GOOGLE_DEFAULT_API_VERSION)
+  const candidateVersions = [...new Set<string>([
+    requestedVersion,
+    ...GOOGLE_API_FALLBACK_VERSIONS
+  ])]
 
   const query = [
     'SELECT',
@@ -489,19 +520,17 @@ async function fetchGoogleAdsRows(input: {
 
     if (!response.ok) {
       const text = await response.text()
-      let detail = text.slice(0, 900)
+      const parsed = parseGoogleErrorMessage(text)
+      const contentType = String(response.headers.get('content-type') ?? '').toLowerCase()
 
-      try {
-        const parsed = JSON.parse(text) as GoogleApiErrorPayload
-        const message = asTrimmedString(parsed.error?.message)
-        if (message) detail = message
-      } catch {
-        // preserve raw text snippet
-      }
+      const detail = parsed.authorizationError
+        ? `${parsed.message} (authorizationError=${parsed.authorizationError})`
+        : parsed.message
 
       const isLikelyVersionIssue = response.status === 404
+        && (contentType.includes('text/html') || detail.toLowerCase().includes('method not found'))
       lastError = new Error(`Google Ads query failed (${response.status}) on ${version}: ${detail}`)
-      if (isLikelyVersionIssue && version !== fallbackVersion) {
+      if (isLikelyVersionIssue) {
         continue
       }
       throw lastError
@@ -545,7 +574,7 @@ async function fetchGoogleAdsRows(input: {
     return rows
   }
 
-  throw (lastError ?? new Error('Google Ads query failed: no response.'))
+  throw (lastError ?? new Error(`Google Ads query failed across versions: ${candidateVersions.join(', ')}`))
 }
 
 function parseMetaConversions(actions: MetaRawAction[] | undefined, allowList: string[]) {
