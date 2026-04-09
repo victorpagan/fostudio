@@ -28,6 +28,7 @@ type BookingPolicy = {
 
 type AdminCalendarBooking = {
   id: string
+  source_type?: 'booking' | 'external'
   start_time: string
   end_time: string
   status: string
@@ -319,8 +320,9 @@ export function useAdminBookingReschedule(options: UseAdminBookingRescheduleOpti
       const statuses = new Set(['confirmed', 'requested', 'pending_payment'])
 
       for (const booking of bookingsRes.bookings ?? []) {
+        const isExternal = booking.source_type === 'external' || String(booking.status ?? '').toLowerCase() === 'external'
         if (booking.id === targetBookingId) continue
-        if (!statuses.has(String(booking.status ?? '').toLowerCase())) continue
+        if (!isExternal && !statuses.has(String(booking.status ?? '').toLowerCase())) continue
         const start = DateTime.fromISO(booking.start_time, { setZone: true }).setZone(STUDIO_TZ)
         const end = DateTime.fromISO(booking.end_time, { setZone: true }).setZone(STUDIO_TZ)
         if (!start.isValid || !end.isValid || end <= start) continue
