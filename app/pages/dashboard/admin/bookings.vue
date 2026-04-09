@@ -9,7 +9,6 @@ definePageMeta({ middleware: ['admin'] })
 
 type AdminBooking = {
   id: string
-  source_type?: 'booking' | 'external'
   user_id: string | null
   customer_id: string | null
   start_time: string
@@ -24,9 +23,6 @@ type AdminBooking = {
   member_name: string | null
   member_email: string | null
   is_guest: boolean
-  external_provider?: string | null
-  external_location?: string | null
-  external_calendar_id?: string | null
   booking_holds?: {
     id: string
     hold_start: string
@@ -217,30 +213,22 @@ function bookingStartsAtMillis(booking: AdminBooking) {
   return Number.isFinite(fallback) ? fallback : Number.NaN
 }
 
-function isExternalBooking(booking: AdminBooking) {
-  return booking.source_type === 'external' || booking.status === 'external'
-}
-
-function isReadOnlyBooking(booking: AdminBooking) {
-  return isExternalBooking(booking)
-}
-
 const activeBookings = computed(() =>
   bookings.value
     .filter((booking) => {
-      if (!isExternalBooking(booking) && booking.status === 'canceled') return false
+      if (booking.status === 'canceled') return false
       const endMillis = bookingEndsAtMillis(booking)
       return Number.isFinite(endMillis) ? endMillis >= Date.now() : true
     })
     .sort((a, b) => bookingStartsAtMillis(a) - bookingStartsAtMillis(b))
 )
 const activeHoldBookings = computed(() =>
-  activeBookings.value.filter(booking => !isExternalBooking(booking) && hasHold(booking))
+  activeBookings.value.filter(booking => hasHold(booking))
 )
 const pastBookings = computed(() =>
   bookings.value
     .filter((booking) => {
-      if (!isExternalBooking(booking) && booking.status === 'canceled') return true
+      if (booking.status === 'canceled') return true
       const endMillis = bookingEndsAtMillis(booking)
       return Number.isFinite(endMillis) ? endMillis < Date.now() : false
     })
@@ -268,35 +256,8 @@ function readErrorMessage(error: unknown) {
 }
 
 function bookingLabel(booking: AdminBooking) {
-  if (isExternalBooking(booking)) return booking.guest_name || 'External booking'
   if (booking.is_guest) return booking.guest_name || booking.guest_email || 'Guest booking'
   return booking.member_name || booking.member_email || booking.user_id || 'Member booking'
-}
-
-function bookingStatusColor(booking: AdminBooking) {
-  if (isExternalBooking(booking)) return 'info'
-  if (booking.status === 'confirmed') return 'success'
-  if (booking.status === 'requested') return 'warning'
-  return 'neutral'
-}
-
-function bookingTypeColor(booking: AdminBooking) {
-  if (isExternalBooking(booking)) return 'info'
-  return booking.is_guest ? 'neutral' : 'primary'
-}
-
-function bookingTypeLabel(booking: AdminBooking) {
-  if (isExternalBooking(booking)) return 'external'
-  return booking.is_guest ? 'guest' : 'member'
-}
-
-function externalMetaLabel(booking: AdminBooking) {
-  if (!isExternalBooking(booking)) return null
-  const provider = String(booking.external_provider ?? '').trim()
-  const location = String(booking.external_location ?? '').trim()
-  const calendarId = String(booking.external_calendar_id ?? '').trim()
-  const parts = [provider, location, calendarId ? `calendar ${calendarId}` : ''].filter(Boolean)
-  return parts.length ? parts.join(' · ') : 'Google Calendar'
 }
 
 function bookingDateKey(booking: AdminBooking) {
@@ -637,9 +598,8 @@ async function createBookingOnBehalf() {
                   </p>
                 </div>
                 <AvailabilityCalendar
-                  endpoint="/api/admin/calendar/bookings"
+                  endpoint="/api/calendar/public"
                   :full-day="true"
-                  :admin-view="true"
                 />
               </div>
             </UCard>
@@ -695,7 +655,6 @@ async function createBookingOnBehalf() {
                 <UCard
                   v-for="booking in group.items"
                   :key="`${booking.id}-${bookingTab}`"
-                  :class="isExternalBooking(booking) ? 'admin-booking-card-external' : ''"
                 >
                   <div class="flex flex-wrap items-start justify-between gap-3">
                     <div class="min-w-0">
@@ -704,34 +663,26 @@ async function createBookingOnBehalf() {
                           {{ bookingLabel(booking) }}
                         </div>
                         <UBadge
-                          :color="bookingStatusColor(booking)"
+                          :color="booking.status === 'confirmed' ? 'success' : booking.status === 'requested' ? 'warning' : 'neutral'"
                           size="xs"
                           variant="soft"
                         >
                           {{ booking.status }}
                         </UBadge>
                         <UBadge
-                          :color="bookingTypeColor(booking)"
+                          :color="booking.is_guest ? 'neutral' : 'primary'"
                           size="xs"
                           variant="soft"
                         >
-                          {{ bookingTypeLabel(booking) }}
+                          {{ booking.is_guest ? 'guest' : 'member' }}
                         </UBadge>
                         <UBadge
-                          v-if="!isReadOnlyBooking(booking) && (bookingTab === 'holds' || hasHold(booking))"
+                          v-if="bookingTab === 'holds' || hasHold(booking)"
                           color="warning"
                           size="xs"
                           variant="soft"
                         >
                           hold
-                        </UBadge>
-                        <UBadge
-                          v-if="isReadOnlyBooking(booking)"
-                          color="neutral"
-                          size="xs"
-                          variant="soft"
-                        >
-                          read only
                         </UBadge>
                       </div>
                       <div class="mt-1 text-sm text-dimmed">
@@ -743,22 +694,12 @@ async function createBookingOnBehalf() {
                       >
                         Hold: {{ holdRangeLabel(booking) }}
                       </div>
-                      <div
-                        v-if="isReadOnlyBooking(booking)"
-                        class="mt-1 text-xs text-[color:var(--ui-info)]"
-                      >
-                        External source: {{ externalMetaLabel(booking) }}
-                      </div>
-                      <div
-                        v-else
-                        class="mt-1 text-xs text-dimmed"
-                      >
+                      <div class="mt-1 text-xs text-dimmed">
                         Credits burned: {{ booking.credits_burned ?? 0 }} · Created {{ formatDate(booking.created_at) }}
                       </div>
                       <div
                         v-if="booking.notes"
-                        class="mt-2 text-xs"
-                        :class="isReadOnlyBooking(booking) ? 'text-[color:var(--ui-info)]' : 'text-dimmed'"
+                        class="mt-2 text-xs text-dimmed"
                       >
                         {{ booking.notes }}
                       </div>
@@ -766,7 +707,7 @@ async function createBookingOnBehalf() {
 
                     <div class="flex flex-wrap items-center gap-2">
                       <UButton
-                        v-if="bookingTab !== 'past' && !isReadOnlyBooking(booking)"
+                        v-if="bookingTab !== 'past'"
                         color="neutral"
                         variant="soft"
                         size="sm"
@@ -775,7 +716,7 @@ async function createBookingOnBehalf() {
                         Edit time
                       </UButton>
                       <UButton
-                        v-if="bookingTab !== 'past' && !isReadOnlyBooking(booking)"
+                        v-if="bookingTab !== 'past'"
                         color="error"
                         variant="soft"
                         size="sm"
@@ -784,15 +725,6 @@ async function createBookingOnBehalf() {
                         @click="cancelBooking(booking.id)"
                       >
                         Cancel booking
-                      </UButton>
-                      <UButton
-                        v-if="bookingTab !== 'past' && isReadOnlyBooking(booking)"
-                        color="neutral"
-                        variant="soft"
-                        size="sm"
-                        disabled
-                      >
-                        Read only
                       </UButton>
                     </div>
                   </div>
@@ -1002,10 +934,3 @@ async function createBookingOnBehalf() {
     />
   </div>
 </template>
-
-<style scoped>
-.admin-booking-card-external {
-  border: 1px solid color-mix(in srgb, var(--ui-info) 45%, var(--ui-border) 55%) !important;
-  background: color-mix(in srgb, var(--ui-info) 12%, transparent) !important;
-}
-</style>

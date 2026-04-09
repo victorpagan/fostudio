@@ -23,8 +23,6 @@ type CalendarEvent = EventInput & {
     notes?: string
     provider?: string
     location?: string
-    isGuest?: boolean
-    calendarId?: string
   }
 }
 
@@ -41,10 +39,8 @@ type PeakWindow = {
 const props = withDefaults(defineProps<{
   endpoint: string // '/api/calendar/public' or '/api/calendar/member'
   fullDay?: boolean
-  adminView?: boolean
 }>(), {
-  fullDay: false,
-  adminView: false
+  fullDay: false
 })
 
 const emit = defineEmits<{
@@ -224,7 +220,6 @@ function eventClassNames(arg: { event: { display: string, end?: Date | null, ext
   }
   if (type === 'booking') {
     classes.push('fc-event-booked')
-    if (props.adminView) classes.push('fc-event-admin-booking')
     if (arg.event.extendedProps?.isOwn) classes.push('fc-event-own')
     else classes.push('fc-event-member')
   }
@@ -235,39 +230,23 @@ function eventClassNames(arg: { event: { display: string, end?: Date | null, ext
 function eventContent(arg: { event: { display: string, title: string, extendedProps?: CalendarEvent['extendedProps'] }, timeText: string }) {
   if (arg.event.display === 'background') return undefined
 
-  const ext = arg.event.extendedProps ?? {}
-  const isHold = ext.type === 'hold'
-  const isExternal = ext.type === 'external'
-  const isOwnBooking = ext.type === 'booking' && ext.isOwn
-  const isUnownedBooking = ext.type === 'booking' && !ext.isOwn
-  const showAdminDetail = props.adminView
-
-  const ownNoteRaw = isOwnBooking ? (ext.notes ?? '').trim() : ''
-  const adminNoteRaw = showAdminDetail ? (ext.notes ?? '').trim() : ''
-  const noteRaw = showAdminDetail ? adminNoteRaw : ownNoteRaw
+  const isHold = arg.event.extendedProps?.type === 'hold'
+  const isExternal = arg.event.extendedProps?.type === 'external'
+  const isOwnBooking = arg.event.extendedProps?.type === 'booking' && arg.event.extendedProps?.isOwn
+  const isUnownedBooking = arg.event.extendedProps?.type === 'booking' && !arg.event.extendedProps?.isOwn
+  const noteRaw = isOwnBooking ? (arg.event.extendedProps?.notes ?? '').trim() : ''
   const note = noteRaw ? `<div class="fc-event-note">${formatNoteHtml(noteRaw)}</div>` : ''
-  const titleRaw = showAdminDetail ? arg.event.title.trim() : ''
-  const title = titleRaw ? `<div class="fc-event-title">${escapeHtml(titleRaw)}</div>` : ''
-  const externalMeta = showAdminDetail && isExternal
-    ? [ext.provider, ext.location].map(value => String(value ?? '').trim()).filter(Boolean).join(' · ')
-    : ''
-  const externalMetaHtml = externalMeta ? `<div class="fc-event-note">${escapeHtml(externalMeta)}</div>` : ''
-
   let label = ''
   if (isHold) {
     label = '<div class="fc-event-label">Equipement Hold</div>'
   } else if (isExternal) {
-    label = showAdminDetail
-      ? '<div class="fc-event-label">External booking</div>'
-      : '<div class="fc-event-label">Blocked</div>'
-  } else if (showAdminDetail && ext.type === 'booking') {
-    label = `<div class="fc-event-label">${ext.isGuest ? 'Guest booking' : 'Member booking'}</div>`
+    label = '<div class="fc-event-label">Blocked</div>'
   } else if (isUnownedBooking) {
     label = '<div class="fc-event-label">Blocked</div>'
   }
   const time = arg.timeText ? `<div class="fc-event-time">${arg.timeText}</div>` : ''
   return {
-    html: `${label}${time}${title}${note}${externalMetaHtml}`
+    html: `${label}${time}${note}`
   }
 }
 
