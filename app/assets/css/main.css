@@ -2577,12 +2577,20 @@ body.dashboard-ui :where(.campaign-editor-shell, .waiver-editor-shell) :is(.tipt
 }
 
 .availability-shell .fc .fc-event.fc-event-external {
-  background: rgba(22, 22, 22, 0.96);
-  color: #f8fafc;
-  border: 1px solid rgba(15, 23, 42, 0.85);
+  background: linear-gradient(135deg, rgba(13, 148, 136, 0.96) 0%, rgba(14, 116, 144, 0.97) 100%);
+  color: #ecfeff;
+  border: 1px solid rgba(8, 76, 99, 0.9);
   box-shadow: none;
   cursor: not-allowed;
   pointer-events: none;
+}
+
+.availability-shell .fc .fc-event.fc-event-admin-booking {
+  background: linear-gradient(135deg, rgba(66, 99, 235, 0.93) 0%, rgba(71, 125, 244, 0.93) 100%) !important;
+  color: #eef4ff !important;
+  border: 1px solid rgba(58, 92, 202, 0.88) !important;
+  box-shadow: none;
+  cursor: default;
 }
 
 .availability-shell .fc .fc-event.fc-event-member {
@@ -2609,6 +2617,16 @@ body.dashboard-ui :where(.campaign-editor-shell, .waiver-editor-shell) :is(.tipt
 .dark .availability-shell .fc .fc-event.fc-event-own {
   background: linear-gradient(135deg, rgba(239, 107, 131, 0.92) 0%, rgba(201, 88, 109, 0.92) 100%);
   border: 1px solid rgba(229, 124, 147, 0.72);
+}
+
+.dark .availability-shell .fc .fc-event.fc-event-external {
+  background: linear-gradient(135deg, rgba(20, 133, 126, 0.95) 0%, rgba(12, 97, 123, 0.95) 100%);
+  border: 1px solid rgba(35, 176, 167, 0.55);
+}
+
+.dark .availability-shell .fc .fc-event.fc-event-admin-booking {
+  background: linear-gradient(135deg, rgba(59, 96, 214, 0.93) 0%, rgba(54, 123, 214, 0.93) 100%) !important;
+  border: 1px solid rgba(110, 146, 255, 0.62) !important;
 }
 
 .dark .availability-shell .fc .fc-event.fc-event-own:hover {
