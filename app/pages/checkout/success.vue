@@ -43,40 +43,6 @@ let claimRetryTimer: ReturnType<typeof setTimeout> | null = null
 const GOOGLE_ADS_MEMBERSHIP_PURCHASE_SEND_TO = 'AW-18068877892/iTzKCP-r05ccEMTk9KdD'
 const GOOGLE_ADS_CONVERSION_STORAGE_KEY_PREFIX = 'fo:ads-conversion:membership:'
 
-type WindowWithGoogleAds = Window & {
-  dataLayer?: unknown[]
-  gtag?: (...args: unknown[]) => void
-  __foGoogleAdsMembershipPurchase?: (payload: {
-    transaction_id?: string
-    new_customer?: boolean
-    event_callback?: () => void
-    event_timeout?: number
-  }) => boolean
-}
-
-useHead({
-  script: [
-    {
-      key: 'google-ads-membership-conversion-helper',
-      children: [
-        'window.__foGoogleAdsMembershipPurchase = window.__foGoogleAdsMembershipPurchase || function(payload) {',
-        '  if (typeof window === \'undefined\' || typeof window.gtag !== \'function\') return false;',
-        '  var data = payload || {};',
-        '  var eventPayload = {',
-        `    'send_to': '${GOOGLE_ADS_MEMBERSHIP_PURCHASE_SEND_TO}',`,
-        '    \'transaction_id\': data.transaction_id || \'\'',
-        '  };',
-        '  if (typeof data.new_customer === \'boolean\') eventPayload.new_customer = data.new_customer;',
-        '  if (typeof data.event_callback === \'function\') eventPayload.event_callback = data.event_callback;',
-        '  if (typeof data.event_timeout === \'number\') eventPayload.event_timeout = data.event_timeout;',
-        '  window.gtag(\'event\', \'conversion\', eventPayload);',
-        '  return true;',
-        '};'
-      ].join('\n')
-    }
-  ]
-})
-
 type ClaimErrorLike = {
   statusCode?: number
   statusMessage?: string
@@ -183,7 +149,7 @@ function markTrackedConversion(key: string) {
   }
 }
 
-async function trackMembershipPurchaseConversion(input: { membershipId: string | null, newCustomer: boolean | null }) {
+function trackMembershipPurchaseConversion(input: { membershipId: string | null, newCustomer: boolean | null }) {
   if (isTest.value || conversionTracked.value) return
 
   const dedupeKey = conversionStorageKey(input.membershipId, checkoutToken.value)
@@ -197,7 +163,10 @@ async function trackMembershipPurchaseConversion(input: { membershipId: string |
   if (!transactionId) return
 
   if (typeof window === 'undefined') return
-  const win = window as WindowWithGoogleAds
+  const win = window as Window & {
+    dataLayer?: unknown[]
+    gtag?: (...args: unknown[]) => void
+  }
 
   if (typeof win.gtag !== 'function') {
     if (!Array.isArray(win.dataLayer)) {
@@ -208,49 +177,15 @@ async function trackMembershipPurchaseConversion(input: { membershipId: string |
     }
   }
 
-  const payload: {
-    transaction_id: string
-    new_customer?: boolean
-    event_callback?: () => void
-    event_timeout?: number
-  } = {
+  const payload: Record<string, unknown> = {
+    send_to: GOOGLE_ADS_MEMBERSHIP_PURCHASE_SEND_TO,
     transaction_id: transactionId
   }
   if (typeof input.newCustomer === 'boolean') {
     payload.new_customer = input.newCustomer
   }
 
-  await new Promise<void>((resolve) => {
-    let settled = false
-    const finish = () => {
-      if (settled) return
-      settled = true
-      resolve()
-    }
-
-    payload.event_callback = finish
-    payload.event_timeout = 900
-    const timeout = setTimeout(finish, 1000)
-    payload.event_callback = () => {
-      clearTimeout(timeout)
-      finish()
-    }
-
-    const invoked = typeof win.__foGoogleAdsMembershipPurchase === 'function'
-      ? win.__foGoogleAdsMembershipPurchase(payload)
-      : false
-
-    if (!invoked && typeof win.gtag === 'function') {
-      win.gtag('event', 'conversion', {
-        send_to: GOOGLE_ADS_MEMBERSHIP_PURCHASE_SEND_TO,
-        transaction_id: payload.transaction_id,
-        new_customer: payload.new_customer,
-        event_callback: payload.event_callback,
-        event_timeout: payload.event_timeout
-      })
-    }
-  })
-
+  win.gtag('event', 'conversion', payload)
   markTrackedConversion(dedupeKey)
   conversionTracked.value = true
 }
