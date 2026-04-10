@@ -124,6 +124,52 @@ Note: Meta Marketing API data includes Instagram placements when campaigns serve
 
 Secrets are referenced by name. Actual secret values should be set in Supabase secrets/vault.
 
+### Google Ads OAuth setup reference (desktop app)
+
+Use this when wiring Google Ads credentials for:
+
+- `analytics_ads_google_customer_id`
+- `analytics_ads_google_login_customer_id`
+- `analytics_ads_google_developer_token_secret_name`
+- `analytics_ads_google_client_id_secret_name`
+- `analytics_ads_google_client_secret_secret_name`
+- `analytics_ads_google_refresh_token_secret_name`
+
+Where each value comes from:
+
+- `customer_id`: Google Ads account ID for the client account (API format is digits only, no hyphens).
+- `login_customer_id`: manager (MCC) account ID if querying a child account through MCC (also digits only).
+- `developer_token`: Google Ads API Center (manager account).
+- `client_id` + `client_secret`: Google Cloud OAuth credentials, client type **Desktop app**.
+- `refresh_token`: generated once via OAuth consent, then reused.
+
+#### One-time refresh token generation (desktop client)
+
+1. In Google Cloud, ensure OAuth consent is configured and your Google user is added as a test user (if app is in testing mode).
+2. Download OAuth desktop client JSON (for example: `client_secret.json`).
+3. Run:
+
+```bash
+python3 -m pip install google-auth-oauthlib
+python3 - <<'PY'
+from google_auth_oauthlib.flow import InstalledAppFlow
+
+flow = InstalledAppFlow.from_client_secrets_file(
+    "client_secret.json",
+    scopes=["https://www.googleapis.com/auth/adwords"],
+)
+creds = flow.run_local_server(port=0, access_type="offline", prompt="consent")
+print("REFRESH_TOKEN:", creds.refresh_token)
+PY
+```
+
+4. Save `REFRESH_TOKEN` into your secret store and reference it from `analytics_ads_google_refresh_token_secret_name`.
+
+Notes:
+
+- If `refresh_token` is empty, revoke prior consent for this app in your Google account and run the command again.
+- Apps left in OAuth “Testing” mode may issue refresh tokens that expire quickly. Production consent is recommended for long-lived automation.
+
 Manual sync endpoint (admin auth required):
 
 - `POST /api/admin/analytics/integrations/sync` (body: `{ "dryRun": true|false }`)
