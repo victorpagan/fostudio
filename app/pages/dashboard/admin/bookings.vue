@@ -53,6 +53,14 @@ type AdminCreateBookingResponse = {
   newBalance: number | null
 }
 
+type CalendarBlock = {
+  id: string
+  start_time: string
+  end_time: string
+  reason: string | null
+  active: boolean
+}
+
 type BookingGroup = {
   key: string
   label: string
@@ -64,14 +72,18 @@ type AdminBookingTab = 'active' | 'holds' | 'past'
 
 const toast = useToast()
 const statusFilter = ref<string>('all')
+const bookingSearch = ref('')
 const refundCredits = ref(true)
 const cancelingId = ref<string | null>(null)
 const bookingTab = ref<AdminBookingTab>('active')
 const pastPage = ref(1)
 const creatingBooking = ref(false)
 const createBookingOpen = ref(false)
+const blockOffOpen = ref(false)
 const showCalendar = ref(false)
 const memberSearch = ref('')
+const savingBlock = ref(false)
+const deletingBlockId = ref<string | null>(null)
 const defaultCreateDate = DateTime.now().setZone('America/Los_Angeles').toISODate() ?? ''
 const createForm = reactive({
   userId: '',
@@ -81,6 +93,13 @@ const createForm = reactive({
   notes: '',
   requestHold: false,
   burnCredits: true
+})
+const blockForm = reactive({
+  id: '',
+  date: defaultCreateDate,
+  startSlot: '',
+  endSlot: '',
+  notes: ''
 })
 
 const { data: bookingRows, refresh, pending } = await useAsyncData('admin:bookings', async () => {
@@ -98,7 +117,18 @@ const { data: memberRows, refresh: refreshMembers, pending: membersPending } = a
   return res.members
 })
 
+const { data: blockRows, refresh: refreshBlocks, pending: blocksPending } = await useAsyncData('admin:bookings:blocks', async () => {
+  const res = await $fetch<{ blocks: CalendarBlock[] }>('/api/admin/calendar/blocks', {
+    query: { activeOnly: true }
+  })
+  return res.blocks
+})
+
 const members = computed(() => memberRows.value ?? [])
+const blocks = computed(() => blockRows.value ?? [])
+const sortedBlocks = computed(() => [...blocks.value].sort((left, right) => {
+  return bookingStartsAtMillis(left) - bookingStartsAtMillis(right)
+}))
 
 const filteredMembers = computed(() => {
   const q = memberSearch.value.trim().toLowerCase()
@@ -157,6 +187,20 @@ const endSlotItems = computed(() => {
     }))
 })
 
+const selectedBlockStartSlot = computed(() =>
+  halfHourSlotItems.find(item => item.value === blockForm.startSlot) ?? null
+)
+
+const blockEndSlotItems = computed(() => {
+  if (!selectedBlockStartSlot.value) return []
+  return halfHourSlotItems
+    .filter(item => item.minutes > selectedBlockStartSlot.value!.minutes)
+    .map(item => ({
+      label: item.label,
+      value: item.value
+    }))
+})
+
 watch(() => createForm.startSlot, (next) => {
   if (!next) {
     createForm.endSlot = ''
@@ -177,13 +221,38 @@ watch(() => createForm.startSlot, (next) => {
   createForm.endSlot = defaultEnd?.value ?? ''
 })
 
+watch(() => blockForm.startSlot, (next) => {
+  if (!next) {
+    blockForm.endSlot = ''
+    return
+  }
+
+  const startSlot = halfHourSlotItems.find(item => item.value === next)
+  if (!startSlot) {
+    blockForm.endSlot = ''
+    return
+  }
+
+  const oneHourLater = startSlot.minutes + 60
+  const defaultEnd = halfHourSlotItems.find(item => item.minutes >= oneHourLater)
+    ?? halfHourSlotItems.find(item => item.minutes > startSlot.minutes)
+    ?? null
+
+  blockForm.endSlot = defaultEnd?.value ?? ''
+})
+
 onMounted(async () => {
-  await Promise.allSettled([refresh(), refreshMembers()])
+  await Promise.allSettled([refresh(), refreshMembers(), refreshBlocks()])
 })
 
 watch(createBookingOpen, async (open) => {
   if (!open) return
   await refreshMembers()
+})
+
+watch(blockOffOpen, async (open) => {
+  if (!open) return
+  await refreshBlocks()
 })
 
 const canSubmitCreateBooking = computed(() =>
@@ -192,6 +261,13 @@ const canSubmitCreateBooking = computed(() =>
   && !!createForm.startSlot
   && !!createForm.endSlot
   && !creatingBooking.value
+)
+
+const canSubmitBlockWindow = computed(() =>
+  !!blockForm.date
+  && !!blockForm.startSlot
+  && !!blockForm.endSlot
+  && !savingBlock.value
 )
 
 function parseBookingTime(value: string | null | undefined) {
@@ -203,17 +279,17 @@ function parseBookingTime(value: string | null | undefined) {
   return null
 }
 
-function bookingEndsAtMillis(booking: AdminBooking) {
-  const parsed = parseBookingTime(booking.end_time)
+function bookingEndsAtMillis(value: { end_time: string }) {
+  const parsed = parseBookingTime(value.end_time)
   if (parsed?.isValid) return parsed.toMillis()
-  const fallback = new Date(booking.end_time).getTime()
+  const fallback = new Date(value.end_time).getTime()
   return Number.isFinite(fallback) ? fallback : Number.NaN
 }
 
-function bookingStartsAtMillis(booking: AdminBooking) {
-  const parsed = parseBookingTime(booking.start_time)
+function bookingStartsAtMillis(value: { start_time: string }) {
+  const parsed = parseBookingTime(value.start_time)
   if (parsed?.isValid) return parsed.toMillis()
-  const fallback = new Date(booking.start_time).getTime()
+  const fallback = new Date(value.start_time).getTime()
   return Number.isFinite(fallback) ? fallback : Number.NaN
 }
 
@@ -246,11 +322,15 @@ const pastBookings = computed(() =>
     })
     .sort((a, b) => bookingStartsAtMillis(b) - bookingStartsAtMillis(a))
 )
-const pastTotalPages = computed(() => Math.max(1, Math.ceil(pastBookings.value.length / PAST_BOOKINGS_PAGE_SIZE)))
+const filteredActiveBookings = computed(() => activeBookings.value.filter(booking => bookingMatchesSearch(booking)))
+const filteredActiveHoldBookings = computed(() => activeHoldBookings.value.filter(booking => bookingMatchesSearch(booking)))
+const filteredPastBookings = computed(() => pastBookings.value.filter(booking => bookingMatchesSearch(booking)))
+
+const pastTotalPages = computed(() => Math.max(1, Math.ceil(filteredPastBookings.value.length / PAST_BOOKINGS_PAGE_SIZE)))
 const paginatedPastBookings = computed(() => {
   const page = Math.min(Math.max(1, pastPage.value), pastTotalPages.value)
   const start = (page - 1) * PAST_BOOKINGS_PAGE_SIZE
-  return pastBookings.value.slice(start, start + PAST_BOOKINGS_PAGE_SIZE)
+  return filteredPastBookings.value.slice(start, start + PAST_BOOKINGS_PAGE_SIZE)
 })
 
 watch([statusFilter, bookingTab], () => {
@@ -299,6 +379,29 @@ function externalMetaLabel(booking: AdminBooking) {
   return parts.length ? parts.join(' · ') : 'Google Calendar'
 }
 
+function bookingMatchesSearch(booking: AdminBooking) {
+  const query = bookingSearch.value.trim().toLowerCase()
+  if (!query) return true
+
+  const haystack = [
+    bookingLabel(booking),
+    booking.status,
+    booking.member_name,
+    booking.member_email,
+    booking.guest_name,
+    booking.guest_email,
+    booking.notes,
+    externalMetaLabel(booking),
+    formatDate(booking.start_time),
+    formatDate(booking.end_time)
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  return haystack.includes(query)
+}
+
 function bookingDateKey(booking: AdminBooking) {
   const parsed = parseBookingTime(booking.start_time)
   if (!parsed?.isValid) return 'unknown'
@@ -343,14 +446,18 @@ function groupBookingsByDate(source: AdminBooking[], order: 'asc' | 'desc'): Boo
   return groups
 }
 
-const activeBookingGroups = computed(() => groupBookingsByDate(activeBookings.value, 'asc'))
-const activeHoldBookingGroups = computed(() => groupBookingsByDate(activeHoldBookings.value, 'asc'))
+const activeBookingGroups = computed(() => groupBookingsByDate(filteredActiveBookings.value, 'asc'))
+const activeHoldBookingGroups = computed(() => groupBookingsByDate(filteredActiveHoldBookings.value, 'asc'))
 const pastBookingGroups = computed(() => groupBookingsByDate(paginatedPastBookings.value, 'desc'))
 const visibleBookingGroups = computed(() => {
   if (bookingTab.value === 'active') return activeBookingGroups.value
   if (bookingTab.value === 'holds') return activeHoldBookingGroups.value
   return pastBookingGroups.value
 })
+
+function toggleCalendarVisibility() {
+  showCalendar.value = !showCalendar.value
+}
 
 function formatDate(value: string) {
   const parsed = parseBookingTime(value)
@@ -461,6 +568,92 @@ function resetCreateForm(options?: { keepMember?: boolean }) {
   createForm.burnCredits = true
 }
 
+function resetBlockForm() {
+  blockForm.id = ''
+  blockForm.date = defaultCreateDate
+  blockForm.startSlot = ''
+  blockForm.endSlot = ''
+  blockForm.notes = ''
+}
+
+function loadBlockForm(block: CalendarBlock) {
+  const start = parseBookingTime(block.start_time)?.setZone('America/Los_Angeles')
+  const end = parseBookingTime(block.end_time)?.setZone('America/Los_Angeles')
+  const startSlot = start?.isValid ? start.toFormat('HH:mm') : ''
+  const endSlot = end?.isValid ? end.toFormat('HH:mm') : ''
+  const hasStartSlot = halfHourSlotItems.some(item => item.value === startSlot)
+  const hasEndSlot = halfHourSlotItems.some(item => item.value === endSlot)
+
+  blockForm.id = block.id
+  blockForm.date = start?.isValid ? (start.toISODate() ?? defaultCreateDate) : defaultCreateDate
+  blockForm.startSlot = hasStartSlot ? startSlot : ''
+  blockForm.endSlot = hasEndSlot ? endSlot : ''
+  blockForm.notes = block.reason ?? ''
+}
+
+async function saveBlockWindow() {
+  const startIso = toIsoFromDateAndSlot(blockForm.date, blockForm.startSlot)
+  const endIso = toIsoFromDateAndSlot(blockForm.date, blockForm.endSlot)
+  if (!startIso || !endIso) {
+    toast.add({
+      title: 'Missing required fields',
+      description: 'Select a date plus start and end slots for this block-off window.',
+      color: 'warning'
+    })
+    return
+  }
+
+  savingBlock.value = true
+  try {
+    await $fetch('/api/admin/calendar/blocks.upsert', {
+      method: 'POST',
+      body: {
+        id: blockForm.id || undefined,
+        startTime: startIso,
+        endTime: endIso,
+        reason: blockForm.notes.trim() || null,
+        active: true
+      }
+    })
+
+    toast.add({
+      title: blockForm.id ? 'Block-off window updated' : 'Block-off window created'
+    })
+
+    resetBlockForm()
+    await refreshBlocks()
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not save block-off window',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    savingBlock.value = false
+  }
+}
+
+async function deleteBlockWindow(blockId: string) {
+  deletingBlockId.value = blockId
+  try {
+    await $fetch('/api/admin/calendar/blocks.delete', {
+      method: 'POST',
+      body: { id: blockId }
+    })
+    toast.add({ title: 'Block-off window removed' })
+    if (blockForm.id === blockId) resetBlockForm()
+    await refreshBlocks()
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not delete block-off window',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    deletingBlockId.value = null
+  }
+}
+
 async function createBookingOnBehalf() {
   const startIso = toIsoFromDateAndSlot(createForm.date, createForm.startSlot)
   const endIso = toIsoFromDateAndSlot(createForm.date, createForm.endSlot)
@@ -518,166 +711,139 @@ async function createBookingOnBehalf() {
 
 <template>
   <div class="flex min-h-0 flex-1">
-    <UDashboardPanel
-      id="admin-bookings"
-      class="min-h-0 flex-1 admin-ops-panel"
-      :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+    <DashboardPageScaffold
+      panel-id="admin-bookings"
+      title="Bookings"
     >
-      <template #header>
-        <UDashboardNavbar
-          title="Bookings"
-          class="admin-ops-navbar"
-          :ui="{ root: 'border-b-0', right: 'gap-2' }"
-        >
-          <template #leading>
-            <UDashboardSidebarCollapse />
-          </template>
-
-          <template #right>
-            <UButton
-              size="sm"
-              color="primary"
-              variant="soft"
-              icon="i-lucide-plus"
-              @click="createBookingOpen = true"
-            >
-              Create booking
-            </UButton>
-            <UButton
-              size="sm"
-              color="neutral"
-              variant="soft"
-              icon="i-lucide-refresh-cw"
-              :loading="pending"
-              @click="() => refresh()"
-            />
-          </template>
-        </UDashboardNavbar>
+      <template #right>
+        <DashboardActionGroup
+          :primary="{
+            label: 'Create booking',
+            icon: 'i-lucide-plus',
+            color: 'primary',
+            variant: 'soft',
+            onSelect: () => { createBookingOpen = true }
+          }"
+          :secondary="[
+            {
+              label: 'Studio block-off',
+              icon: 'i-lucide-calendar-minus',
+              color: 'neutral',
+              variant: 'soft',
+              onSelect: () => { blockOffOpen = true }
+            },
+            {
+              label: 'Refresh',
+              icon: 'i-lucide-refresh-cw',
+              color: 'neutral',
+              variant: 'soft',
+              loading: pending,
+              onSelect: () => refresh()
+            }
+          ]"
+        />
       </template>
 
-      <template #body>
-        <AdminOpsShell>
-          <UAlert
-            color="warning"
-            variant="soft"
-            icon="i-lucide-calendar-range"
-            title="Booking operations"
-            description="Review all member and guest bookings. Use admin cancel/reschedule when manual intervention is needed, or create bookings directly on behalf of members."
+      <UAlert
+        color="warning"
+        variant="soft"
+        icon="i-lucide-calendar-range"
+        title="Booking operations"
+        description="Review all member and guest bookings. Use admin cancel/reschedule when manual intervention is needed, or create bookings directly on behalf of members."
+      />
+
+      <UCard>
+        <div class="flex flex-wrap items-center gap-3">
+          <UFormField label="Status filter">
+            <USelect
+              v-model="statusFilter"
+              class="min-w-44"
+              :items="[
+                { label: 'All', value: 'all' },
+                { label: 'Confirmed', value: 'confirmed' },
+                { label: 'Requested', value: 'requested' },
+                { label: 'Canceled', value: 'canceled' }
+              ]"
+            />
+          </UFormField>
+          <UCheckbox
+            v-model="refundCredits"
+            label="Refund credits on cancel"
           />
+        </div>
+      </UCard>
 
-          <UCard>
-            <div class="flex flex-wrap items-center gap-3">
-              <UFormField label="Status filter">
-                <USelect
-                  v-model="statusFilter"
-                  class="min-w-44"
-                  :items="[
-                    { label: 'All', value: 'all' },
-                    { label: 'Confirmed', value: 'confirmed' },
-                    { label: 'Requested', value: 'requested' },
-                    { label: 'Canceled', value: 'canceled' }
-                  ]"
-                />
-              </UFormField>
-              <UCheckbox
-                v-model="refundCredits"
-                label="Refund credits on cancel"
-              />
-            </div>
-          </UCard>
+      <div class="space-y-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <UButton
+            size="sm"
+            :variant="bookingTab === 'active' ? 'solid' : 'soft'"
+            :color="bookingTab === 'active' ? 'primary' : 'neutral'"
+            @click="bookingTab = 'active'"
+          >
+            Active bookings
+          </UButton>
+          <UButton
+            size="sm"
+            :variant="bookingTab === 'holds' ? 'solid' : 'soft'"
+            :color="bookingTab === 'holds' ? 'primary' : 'neutral'"
+            @click="bookingTab = 'holds'"
+          >
+            Active holds
+          </UButton>
+          <UButton
+            size="sm"
+            :variant="bookingTab === 'past' ? 'solid' : 'soft'"
+            :color="bookingTab === 'past' ? 'primary' : 'neutral'"
+            @click="bookingTab = 'past'"
+          >
+            Past bookings
+          </UButton>
+        </div>
 
-          <div class="space-y-4">
-            <div class="flex flex-wrap items-center gap-2">
-              <UButton
-                size="sm"
-                :variant="bookingTab === 'active' ? 'solid' : 'soft'"
-                :color="bookingTab === 'active' ? 'primary' : 'neutral'"
-                @click="bookingTab = 'active'"
-              >
-                Active bookings
-              </UButton>
-              <UButton
-                size="sm"
-                :variant="bookingTab === 'holds' ? 'solid' : 'soft'"
-                :color="bookingTab === 'holds' ? 'primary' : 'neutral'"
-                @click="bookingTab = 'holds'"
-              >
-                Active holds
-              </UButton>
-              <UButton
-                size="sm"
-                :variant="bookingTab === 'past' ? 'solid' : 'soft'"
-                :color="bookingTab === 'past' ? 'primary' : 'neutral'"
-                @click="bookingTab = 'past'"
-              >
-                Past bookings
-              </UButton>
-              <UButton
-                size="sm"
-                color="neutral"
-                variant="soft"
-                :icon="showCalendar ? 'i-lucide-eye-off' : 'i-lucide-eye'"
-                @click="showCalendar = !showCalendar"
-              >
-                {{ showCalendar ? 'Hide calendar' : 'Show calendar' }}
-              </UButton>
-            </div>
-
-            <UCard
-              v-if="showCalendar"
-              class="admin-panel-card border-0"
-            >
-              <div class="space-y-3">
-                <div>
-                  <p class="text-sm font-medium">
-                    Live calendar reference
-                  </p>
-                  <p class="text-xs text-dimmed">
-                    Full schedule view for context while reviewing, editing, and creating bookings.
-                  </p>
-                </div>
-                <AvailabilityCalendar
-                  endpoint="/api/admin/calendar/bookings"
-                  :full-day="true"
-                  :admin-view="true"
-                />
+        <DashboardDataPanel
+          list-title="Bookings by date"
+          list-description="Search first, then review grouped bookings and take action."
+          detail-title="Calendar reference"
+          detail-description="Live schedule context for admin actions."
+          list-width-class="xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]"
+        >
+          <template #list-controls>
+            <UCard class="admin-panel-card border-0">
+              <div class="flex flex-wrap items-end gap-3">
+                <UFormField
+                  label="Search bookings"
+                  class="min-w-[15rem] grow"
+                >
+                  <UInput
+                    v-model="bookingSearch"
+                    placeholder="Search name, email, notes, date"
+                    icon="i-lucide-search"
+                  />
+                </UFormField>
               </div>
             </UCard>
-            <UCard
-              v-else
-              class="admin-panel-card border-0"
-            >
-              <div class="text-sm text-dimmed">
-                Calendar hidden. Use <span class="font-medium text-highlighted">Show calendar</span> for full schedule context.
-              </div>
-            </UCard>
+          </template>
 
-            <UCard>
-              <div class="text-sm font-medium">
-                Bookings by date
-              </div>
-            </UCard>
-
-            <div
-              v-if="bookingTab === 'active' && !activeBookings.length"
-              class="rounded-lg border border-default p-3 text-sm text-dimmed"
-            >
-              No active bookings.
-            </div>
-
-            <div
-              v-else-if="bookingTab === 'holds' && !activeHoldBookings.length"
-              class="rounded-lg border border-default p-3 text-sm text-dimmed"
-            >
-              No active holds.
-            </div>
-
-            <div
-              v-else-if="bookingTab === 'past' && !pastBookings.length"
-              class="rounded-lg border border-default p-3 text-sm text-dimmed"
-            >
-              No past bookings.
-            </div>
+          <template #list>
+            <DashboardSectionState
+              v-if="bookingTab === 'active' && !filteredActiveBookings.length"
+              state="empty"
+              title="No active bookings"
+              description="Try changing the status filter or search query."
+            />
+            <DashboardSectionState
+              v-else-if="bookingTab === 'holds' && !filteredActiveHoldBookings.length"
+              state="empty"
+              title="No active holds"
+              description="No hold bookings match this filter."
+            />
+            <DashboardSectionState
+              v-else-if="bookingTab === 'past' && !filteredPastBookings.length"
+              state="empty"
+              title="No past bookings"
+              description="No historical bookings match this filter."
+            />
 
             <div
               v-else
@@ -798,40 +964,69 @@ async function createBookingOnBehalf() {
                   </div>
                 </UCard>
               </div>
-            </div>
 
-            <div
-              v-if="bookingTab === 'past' && pastBookings.length > 0"
-              class="flex items-center justify-between gap-2"
-            >
-              <p class="text-xs text-dimmed">
-                Page {{ pastPage }} of {{ pastTotalPages }}
-              </p>
-              <div class="flex items-center gap-2">
-                <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="soft"
-                  :disabled="pastPage <= 1"
-                  @click="goToPastPage(pastPage - 1)"
-                >
-                  Previous
-                </UButton>
-                <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="soft"
-                  :disabled="pastPage >= pastTotalPages"
-                  @click="goToPastPage(pastPage + 1)"
-                >
-                  Next
-                </UButton>
+              <div
+                v-if="bookingTab === 'past' && filteredPastBookings.length > 0"
+                class="flex items-center justify-between gap-2"
+              >
+                <p class="text-xs text-dimmed">
+                  Page {{ pastPage }} of {{ pastTotalPages }}
+                </p>
+                <div class="flex items-center gap-2">
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="soft"
+                    :disabled="pastPage <= 1"
+                    @click="goToPastPage(pastPage - 1)"
+                  >
+                    Previous
+                  </UButton>
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="soft"
+                    :disabled="pastPage >= pastTotalPages"
+                    @click="goToPastPage(pastPage + 1)"
+                  >
+                    Next
+                  </UButton>
+                </div>
               </div>
             </div>
-          </div>
-        </AdminOpsShell>
-      </template>
-    </UDashboardPanel>
+          </template>
+
+          <template #detail>
+            <UCard class="admin-panel-card border-0">
+              <div class="space-y-3">
+                <DashboardActionGroup
+                  :secondary="[
+                    {
+                      label: showCalendar ? 'Hide calendar' : 'Show calendar',
+                      icon: showCalendar ? 'i-lucide-eye-off' : 'i-lucide-eye',
+                      onSelect: toggleCalendarVisibility
+                    }
+                  ]"
+                  align="start"
+                />
+                <AvailabilityCalendar
+                  v-if="showCalendar"
+                  endpoint="/api/admin/calendar/bookings"
+                  :full-day="true"
+                  :admin-view="true"
+                />
+                <DashboardSectionState
+                  v-else
+                  state="empty"
+                  title="Calendar hidden"
+                  description="Enable live calendar to compare list entries against the schedule."
+                />
+              </div>
+            </UCard>
+          </template>
+        </DashboardDataPanel>
+      </div>
+    </DashboardPageScaffold>
 
     <UModal v-model:open="createBookingOpen">
       <template #content>
@@ -973,6 +1168,159 @@ async function createBookingOnBehalf() {
       </template>
     </UModal>
 
+    <UModal v-model:open="blockOffOpen">
+      <template #content>
+        <UCard
+          class="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-h-[calc(100dvh-4rem)]"
+          :ui="{ body: 'min-h-0 overflow-y-scroll' }"
+        >
+          <template #header>
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold">
+                  Studio block-off windows
+                </h3>
+                <p class="mt-1 text-xs text-dimmed">
+                  Create admin-only studio block-offs using the same date/time slot flow as create booking.
+                </p>
+              </div>
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="soft"
+                icon="i-lucide-refresh-cw"
+                :loading="blocksPending"
+                @click="() => refreshBlocks()"
+              />
+            </div>
+          </template>
+
+          <div class="space-y-4 pr-1">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <UAlert
+                color="warning"
+                variant="soft"
+                icon="i-lucide-calendar-x"
+                title="Blocked windows"
+                description="These windows prevent new bookings and reschedules during the selected range."
+              />
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="soft"
+                icon="i-lucide-plus"
+                @click="resetBlockForm"
+              >
+                New block window
+              </UButton>
+            </div>
+
+            <div class="grid gap-3 md:grid-cols-2">
+              <UFormField label="Date (local)">
+                <UInput
+                  v-model="blockForm.date"
+                  type="date"
+                />
+              </UFormField>
+
+              <UFormField label="Start time (30-min)">
+                <USelect
+                  v-model="blockForm.startSlot"
+                  :items="startSlotItems"
+                  placeholder="Select start time"
+                />
+              </UFormField>
+
+              <UFormField label="End time (30-min)">
+                <USelect
+                  v-model="blockForm.endSlot"
+                  :items="blockEndSlotItems"
+                  :disabled="!blockForm.startSlot || !blockEndSlotItems.length"
+                  placeholder="Select end time"
+                />
+              </UFormField>
+            </div>
+
+            <UFormField label="Note">
+              <UTextarea
+                v-model="blockForm.notes"
+                placeholder="Optional note (maintenance, private booking, etc.)"
+                :rows="2"
+              />
+            </UFormField>
+
+            <div class="space-y-2">
+              <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+                Existing block-off windows
+              </div>
+              <DashboardSectionState
+                v-if="!sortedBlocks.length"
+                state="empty"
+                title="No block-off windows"
+                description="Create your first block window using date and time slots."
+              />
+              <div
+                v-for="block in sortedBlocks"
+                :key="block.id"
+                class="rounded-lg border border-default px-3 py-2"
+              >
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <div class="text-sm font-medium">
+                      {{ block.reason || 'Studio block-off' }}
+                    </div>
+                    <div class="mt-0.5 text-xs text-dimmed">
+                      {{ formatDate(block.start_time) }} → {{ formatDate(block.end_time) }} (LA)
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <UButton
+                      size="xs"
+                      color="neutral"
+                      variant="soft"
+                      @click="loadBlockForm(block)"
+                    >
+                      Edit
+                    </UButton>
+                    <UButton
+                      size="xs"
+                      color="error"
+                      variant="soft"
+                      :loading="deletingBlockId === block.id"
+                      @click="deleteBlockWindow(block.id)"
+                    >
+                      Delete
+                    </UButton>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <template #footer>
+            <div class="flex items-center justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="savingBlock"
+                @click="blockOffOpen = false"
+              >
+                Close
+              </UButton>
+              <UButton
+                color="warning"
+                :loading="savingBlock"
+                :disabled="!canSubmitBlockWindow"
+                @click="saveBlockWindow"
+              >
+                {{ blockForm.id ? 'Update block window' : 'Create block window' }}
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
+
     <AdminRescheduleModal
       v-model:open="rescheduleOpen"
       :loading="Boolean(reschedulingId)"
@@ -996,6 +1344,8 @@ async function createBookingOnBehalf() {
       @apply-day="applyRescheduleDay"
       @start-change="onRescheduleStartChange"
       @end-change="onRescheduleEndChange"
+      @notes-change="(value) => { rescheduleForm.notes = value }"
+      @keep-hold-change="(value) => { rescheduleForm.keepHold = value }"
       @prev-month="goToPrevRescheduleMonth"
       @next-month="goToNextRescheduleMonth"
       @save="saveReschedule"

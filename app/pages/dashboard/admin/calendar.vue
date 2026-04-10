@@ -18,18 +18,8 @@ type PeakDayOption = {
   value: number
 }
 
-type CalendarBlock = {
-  id: string
-  start_time: string
-  end_time: string
-  reason: string | null
-  active: boolean
-}
-
 const toast = useToast()
 const savingSettings = ref(false)
-const savingBlock = ref(false)
-const deletingBlockId = ref<string | null>(null)
 
 const calendarSettings = reactive<CalendarSettings>({
   peakDays: [1, 2, 3, 4],
@@ -41,14 +31,6 @@ const calendarSettings = reactive<CalendarSettings>({
   guestBookingStartHour: 11,
   guestBookingEndHour: 19,
   memberRescheduleNoticeHours: 24
-})
-
-const blockForm = reactive({
-  id: '' as string,
-  startTime: '',
-  endTime: '',
-  reason: '',
-  active: true
 })
 
 const peakDayItems: PeakDayOption[] = [
@@ -97,62 +79,36 @@ const { pending, refresh } = await useAsyncData('admin:calendar:settings', async
   return res.settings
 })
 
-const { data: calendarBlocks, refresh: refreshBlocks } = await useAsyncData('admin:calendar:blocks', async () => {
-  const res = await $fetch<{ blocks: CalendarBlock[] }>('/api/admin/calendar/blocks')
-  return res.blocks
-})
+function formatHourLabel(value: number) {
+  const normalized = Math.max(0, Math.min(23, Math.round(Number(value) || 0)))
+  const period = normalized >= 12 ? 'PM' : 'AM'
+  const hour12 = normalized % 12 === 0 ? 12 : normalized % 12
+  return `${hour12}:00 ${period}`
+}
 
-const blocks = computed(() => calendarBlocks.value ?? [])
+const calendarPolicySummary = computed(() => {
+  const uniquePeakDays = [...new Set(calendarSettings.peakDays)]
+    .map(value => Math.round(Number(value) || 0))
+    .filter(value => value >= 1 && value <= 7)
+    .sort((a, b) => a - b)
+  const peakDayLabel = uniquePeakDays.length
+    ? uniquePeakDays.map(day => peakDayItems.find(item => item.value === day)?.label ?? String(day)).join(', ')
+    : 'None'
+
+  return {
+    peakDayLabel,
+    peakWindowLabel: `${formatHourLabel(calendarSettings.peakStartHour)} to ${formatHourLabel(calendarSettings.peakEndHour)}`,
+    guestRateLabel: `$${(Math.max(0, Number(calendarSettings.guestBookingRatePerCreditCents) || 0) / 100).toFixed(2)} per credit`,
+    guestWindowLabel: `${Math.max(1, Math.round(Number(calendarSettings.guestBookingWindowDays) || 1))} day booking window`,
+    guestHoursLabel: `${formatHourLabel(calendarSettings.guestBookingStartHour)} to ${formatHourLabel(calendarSettings.guestBookingEndHour)}`,
+    memberNoticeLabel: `${Math.max(1, Math.round(Number(calendarSettings.memberRescheduleNoticeHours) || 1))} hour notice`
+  }
+})
 
 function readErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Unknown error'
   const maybe = error as { data?: { statusMessage?: string }, message?: string }
   return maybe.data?.statusMessage ?? maybe.message ?? 'Unknown error'
-}
-
-function formatDate(value: string) {
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return value
-  return dt.toLocaleString('en-US', {
-    timeZone: 'America/Los_Angeles',
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  })
-}
-
-function toLocalInputValue(value: string | null | undefined) {
-  if (!value) return ''
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return ''
-  const year = dt.getFullYear()
-  const month = `${dt.getMonth() + 1}`.padStart(2, '0')
-  const day = `${dt.getDate()}`.padStart(2, '0')
-  const hour = `${dt.getHours()}`.padStart(2, '0')
-  const minute = `${dt.getMinutes()}`.padStart(2, '0')
-  return `${year}-${month}-${day}T${hour}:${minute}`
-}
-
-function fromLocalInputValue(value: string) {
-  if (!value.trim()) return null
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return null
-  return dt.toISOString()
-}
-
-function loadBlock(block: CalendarBlock) {
-  blockForm.id = block.id
-  blockForm.startTime = block.start_time
-  blockForm.endTime = block.end_time
-  blockForm.reason = block.reason ?? ''
-  blockForm.active = block.active
-}
-
-function resetBlockForm() {
-  blockForm.id = ''
-  blockForm.startTime = ''
-  blockForm.endTime = ''
-  blockForm.reason = ''
-  blockForm.active = true
 }
 
 async function saveCalendarSettings() {
@@ -184,208 +140,221 @@ async function saveCalendarSettings() {
     savingSettings.value = false
   }
 }
-
-async function saveBlock() {
-  savingBlock.value = true
-  try {
-    const start = blockForm.startTime || null
-    const end = blockForm.endTime || null
-    if (!start || !end) throw new Error('Start and end times are required')
-    await $fetch('/api/admin/calendar/blocks.upsert', {
-      method: 'POST',
-      body: {
-        id: blockForm.id || undefined,
-        startTime: start,
-        endTime: end,
-        reason: blockForm.reason.trim() || null,
-        active: blockForm.active
-      }
-    })
-    toast.add({ title: blockForm.id ? 'Block updated' : 'Block created' })
-    resetBlockForm()
-    await refreshBlocks()
-  } catch (error: unknown) {
-    toast.add({
-      title: 'Could not save block',
-      description: readErrorMessage(error),
-      color: 'error'
-    })
-  } finally {
-    savingBlock.value = false
-  }
-}
-
-async function deleteBlock(id: string) {
-  deletingBlockId.value = id
-  try {
-    await $fetch('/api/admin/calendar/blocks.delete', {
-      method: 'POST',
-      body: { id }
-    })
-    toast.add({ title: 'Block removed' })
-    if (blockForm.id === id) resetBlockForm()
-    await refreshBlocks()
-  } catch (error: unknown) {
-    toast.add({
-      title: 'Could not delete block',
-      description: readErrorMessage(error),
-      color: 'error'
-    })
-  } finally {
-    deletingBlockId.value = null
-  }
-}
 </script>
 
 <template>
-  <UDashboardPanel
-    id="admin-calendar-settings"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <DashboardPageScaffold
+    panel-id="admin-calendar-settings"
+    title="Calendar Settings"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Calendar Settings"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-2' }"
-      >
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-
-        <template #right>
-          <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-refresh-cw" :loading="pending" @click="() => refresh()" />
-        </template>
-      </UDashboardNavbar>
+    <template #right>
+      <DashboardActionGroup
+        :primary="{
+          label: 'Save settings',
+          icon: 'i-lucide-save',
+          loading: savingSettings,
+          onSelect: () => { void saveCalendarSettings() }
+        }"
+        :secondary="[
+          {
+            label: 'Refresh',
+            icon: 'i-lucide-refresh-cw',
+            color: 'neutral',
+            variant: 'soft',
+            loading: pending,
+            onSelect: () => { void refresh() }
+          }
+        ]"
+      />
     </template>
+    <UAlert
+      color="warning"
+      variant="soft"
+      icon="i-lucide-calendar-clock"
+      title="Calendar controls"
+      description="Configure LA peak windows, guest behavior, and member reschedule policy."
+    />
 
-    <template #body>
-      <AdminOpsShell>
-        <UAlert
-          color="warning"
-          variant="soft"
-          icon="i-lucide-calendar-clock"
-          title="Calendar controls"
-          description="Configure LA peak windows, guest behavior, and manage blackout windows."
-        />
-
+    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div class="space-y-4">
         <UCard>
-          <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="space-y-4">
             <div>
               <div class="font-medium">
-                Booking window settings
+                Peak window and pricing
               </div>
               <div class="text-sm text-dimmed">
-                Used by booking cost previews and scheduling limits.
+                Defines when peak multipliers apply for guest booking estimates.
               </div>
             </div>
-            <UButton :loading="savingSettings" @click="saveCalendarSettings">
-              Save settings
-            </UButton>
-          </div>
 
-          <div class="mt-4 grid gap-3 md:grid-cols-4 lg:grid-cols-8">
-            <UFormField label="Peak days">
-              <USelectMenu v-model="selectedPeakDays" multiple :items="peakDayItems" />
-            </UFormField>
-            <UFormField label="Peak start hour (LA)">
-              <UInput v-model.number="calendarSettings.peakStartHour" type="number" min="0" max="23" />
-            </UFormField>
-            <UFormField label="Peak end hour (LA)">
-              <UInput v-model.number="calendarSettings.peakEndHour" type="number" min="1" max="24" />
-            </UFormField>
-            <UFormField label="Guest peak multiplier">
-              <UInput v-model.number="calendarSettings.guestPeakMultiplier" type="number" step="0.25" min="1" />
-            </UFormField>
-            <UFormField label="Guest rate per credit ($)">
-              <UInput v-model.number="guestBookingRatePerCreditDollars" type="number" min="1" step="0.01" />
-            </UFormField>
-            <UFormField label="Guest booking window (days)">
-              <UInput v-model.number="calendarSettings.guestBookingWindowDays" type="number" min="1" max="60" />
-            </UFormField>
-            <UFormField label="Guest start hour (LA)">
-              <UInput v-model.number="calendarSettings.guestBookingStartHour" type="number" min="0" max="23" />
-            </UFormField>
-            <UFormField label="Guest end hour (LA)">
-              <UInput v-model.number="calendarSettings.guestBookingEndHour" type="number" min="1" max="24" />
-            </UFormField>
-            <UFormField label="Member reschedule notice (hours)">
-              <UInput v-model.number="calendarSettings.memberRescheduleNoticeHours" type="number" min="1" max="240" />
-            </UFormField>
+            <div class="grid gap-3 md:grid-cols-2">
+              <UFormField label="Peak days">
+                <USelectMenu
+                  v-model="selectedPeakDays"
+                  multiple
+                  :items="peakDayItems"
+                />
+              </UFormField>
+              <UFormField label="Guest peak multiplier">
+                <UInput
+                  v-model.number="calendarSettings.guestPeakMultiplier"
+                  type="number"
+                  step="0.25"
+                  min="1"
+                />
+              </UFormField>
+              <UFormField label="Peak start hour (LA)">
+                <UInput
+                  v-model.number="calendarSettings.peakStartHour"
+                  type="number"
+                  min="0"
+                  max="23"
+                />
+              </UFormField>
+              <UFormField label="Peak end hour (LA)">
+                <UInput
+                  v-model.number="calendarSettings.peakEndHour"
+                  type="number"
+                  min="1"
+                  max="24"
+                />
+              </UFormField>
+            </div>
           </div>
         </UCard>
 
         <UCard>
-          <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="space-y-4">
             <div>
               <div class="font-medium">
-                Studio block-off windows
+                Guest access window
               </div>
               <div class="text-sm text-dimmed">
-                Prevent bookings during maintenance, closures, or private events.
+                Controls guest visibility, hourly access range, and base credit pricing.
               </div>
             </div>
-            <UButton color="neutral" variant="soft" @click="resetBlockForm">
-              New block
-            </UButton>
-          </div>
 
-          <div class="mt-4 grid gap-3 md:grid-cols-4">
-            <UFormField label="Start">
-              <UInput
-                :model-value="toLocalInputValue(blockForm.startTime)"
-                type="datetime-local"
-                @update:model-value="(value) => { blockForm.startTime = fromLocalInputValue(String(value ?? '')) ?? '' }"
-              />
-            </UFormField>
-            <UFormField label="End">
-              <UInput
-                :model-value="toLocalInputValue(blockForm.endTime)"
-                type="datetime-local"
-                @update:model-value="(value) => { blockForm.endTime = fromLocalInputValue(String(value ?? '')) ?? '' }"
-              />
-            </UFormField>
-            <UFormField label="Reason">
-              <UInput v-model="blockForm.reason" placeholder="Maintenance" />
-            </UFormField>
-            <div class="flex items-end gap-3">
-              <UCheckbox v-model="blockForm.active" label="Active" />
-              <UButton :loading="savingBlock" @click="saveBlock">
-                {{ blockForm.id ? 'Update block' : 'Create block' }}
-              </UButton>
-            </div>
-          </div>
-
-          <div class="mt-4 space-y-2">
-            <div v-for="block in blocks" :key="block.id" class="rounded-lg border border-default p-3">
-              <div class="flex items-center justify-between gap-3">
-                <div class="text-sm">
-                  <div class="font-medium">
-                    {{ block.reason || 'Studio block' }}
-                  </div>
-                  <div class="text-dimmed">
-                    {{ formatDate(block.start_time) }} → {{ formatDate(block.end_time) }} (LA)
-                  </div>
-                </div>
-                <div class="flex items-center gap-2">
-                  <UBadge :color="block.active ? 'warning' : 'neutral'" size="xs" variant="soft">
-                    {{ block.active ? 'active' : 'inactive' }}
-                  </UBadge>
-                  <UButton size="xs" color="neutral" variant="soft" @click="loadBlock(block)">
-                    Edit
-                  </UButton>
-                  <UButton size="xs" color="error" variant="soft" :loading="deletingBlockId === block.id" @click="deleteBlock(block.id)">
-                    Delete
-                  </UButton>
-                </div>
-              </div>
-            </div>
-            <div v-if="!blocks.length" class="text-sm text-dimmed">
-              No block-off windows configured.
+            <div class="grid gap-3 md:grid-cols-2">
+              <UFormField label="Guest rate per credit ($)">
+                <UInput
+                  v-model.number="guestBookingRatePerCreditDollars"
+                  type="number"
+                  min="1"
+                  step="0.01"
+                />
+              </UFormField>
+              <UFormField label="Guest booking window (days)">
+                <UInput
+                  v-model.number="calendarSettings.guestBookingWindowDays"
+                  type="number"
+                  min="1"
+                  max="60"
+                />
+              </UFormField>
+              <UFormField label="Guest start hour (LA)">
+                <UInput
+                  v-model.number="calendarSettings.guestBookingStartHour"
+                  type="number"
+                  min="0"
+                  max="23"
+                />
+              </UFormField>
+              <UFormField label="Guest end hour (LA)">
+                <UInput
+                  v-model.number="calendarSettings.guestBookingEndHour"
+                  type="number"
+                  min="1"
+                  max="24"
+                />
+              </UFormField>
             </div>
           </div>
         </UCard>
-      </AdminOpsShell>
-    </template>
-  </UDashboardPanel>
+
+        <UCard>
+          <div class="space-y-4">
+            <div>
+              <div class="font-medium">
+                Member reschedule policy
+              </div>
+              <div class="text-sm text-dimmed">
+                Sets required lead time before members can reschedule existing bookings.
+              </div>
+            </div>
+
+            <UFormField
+              label="Member reschedule notice (hours)"
+              class="max-w-sm"
+            >
+              <UInput
+                v-model.number="calendarSettings.memberRescheduleNoticeHours"
+                type="number"
+                min="1"
+                max="240"
+              />
+            </UFormField>
+          </div>
+        </UCard>
+      </div>
+
+      <aside class="space-y-4 xl:sticky xl:top-4 self-start">
+        <UCard>
+          <div class="text-sm font-medium">
+            Policy summary
+          </div>
+          <dl class="mt-3 space-y-2 text-sm">
+            <div class="flex items-start justify-between gap-3">
+              <dt class="text-dimmed">
+                Peak days
+              </dt>
+              <dd class="font-medium text-right">
+                {{ calendarPolicySummary.peakDayLabel }}
+              </dd>
+            </div>
+            <div class="flex items-start justify-between gap-3">
+              <dt class="text-dimmed">
+                Peak window
+              </dt>
+              <dd class="font-medium text-right">
+                {{ calendarPolicySummary.peakWindowLabel }}
+              </dd>
+            </div>
+            <div class="flex items-start justify-between gap-3">
+              <dt class="text-dimmed">
+                Guest pricing
+              </dt>
+              <dd class="font-medium text-right">
+                {{ calendarPolicySummary.guestRateLabel }}
+              </dd>
+            </div>
+            <div class="flex items-start justify-between gap-3">
+              <dt class="text-dimmed">
+                Guest booking window
+              </dt>
+              <dd class="font-medium text-right">
+                {{ calendarPolicySummary.guestWindowLabel }}
+              </dd>
+            </div>
+            <div class="flex items-start justify-between gap-3">
+              <dt class="text-dimmed">
+                Guest access hours
+              </dt>
+              <dd class="font-medium text-right">
+                {{ calendarPolicySummary.guestHoursLabel }}
+              </dd>
+            </div>
+            <div class="flex items-start justify-between gap-3">
+              <dt class="text-dimmed">
+                Member notice
+              </dt>
+              <dd class="font-medium text-right">
+                {{ calendarPolicySummary.memberNoticeLabel }}
+              </dd>
+            </div>
+          </dl>
+        </UCard>
+      </aside>
+    </div>
+  </DashboardPageScaffold>
 </template>
