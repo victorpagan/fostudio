@@ -1,9 +1,13 @@
+const studioModuleEnabled = process.env.NUXT_STUDIO_ENABLED
+  ? process.env.NUXT_STUDIO_ENABLED === 'true'
+  : process.env.NODE_ENV === 'production'
+
 const modules = [
   '@nuxt/eslint',
   '@nuxt/image',
   '@nuxt/ui',
   '@nuxt/content',
-  'nuxt-studio',
+  ...(studioModuleEnabled ? ['nuxt-studio'] : []),
   '@vueuse/nuxt',
   'nuxt-og-image',
   '@nuxtjs/supabase'
@@ -12,6 +16,7 @@ const modules = [
 const studioRepoPrivate = process.env.STUDIO_REPOSITORY_PRIVATE
   ? process.env.STUDIO_REPOSITORY_PRIVATE.toLowerCase() !== 'false'
   : true
+const studioDevEnabled = process.env.NUXT_STUDIO_DEV === 'true'
 
 const normalizeStudioRootDir = (value?: string) => {
   const normalized = (value ?? '').trim().replace(/^\/+|\/+$/g, '')
@@ -88,17 +93,22 @@ export default defineNuxtConfig({
       }
     }
   },
-  studio: {
-    route: process.env.NUXT_STUDIO_ROUTE || '/_studio',
-    repository: {
-      provider: process.env.STUDIO_REPOSITORY_PROVIDER || 'github',
-      owner: process.env.STUDIO_REPOSITORY_OWNER || 'victorpagan',
-      repo: process.env.STUDIO_REPOSITORY_REPO || 'fostudio',
-      branch: process.env.STUDIO_REPOSITORY_BRANCH || 'main',
-      rootDir: normalizeStudioRootDir(process.env.STUDIO_REPOSITORY_ROOT_DIR),
-      private: studioRepoPrivate
-    }
-  },
+  studio: studioModuleEnabled
+    ? {
+        // Keep Studio disabled in normal local dev sessions to avoid editor-runtime
+        // noise in app pages. Opt-in locally with NUXT_STUDIO_ENABLED=true.
+        dev: studioDevEnabled,
+        route: process.env.NUXT_STUDIO_ROUTE || '/_studio',
+        repository: {
+          provider: process.env.STUDIO_REPOSITORY_PROVIDER || 'github',
+          owner: process.env.STUDIO_REPOSITORY_OWNER || 'victorpagan',
+          repo: process.env.STUDIO_REPOSITORY_REPO || 'fostudio',
+          branch: process.env.STUDIO_REPOSITORY_BRANCH || 'main',
+          rootDir: normalizeStudioRootDir(process.env.STUDIO_REPOSITORY_ROOT_DIR),
+          private: studioRepoPrivate
+        }
+      }
+    : false,
 
   supabase: {
     // Point the module at our local types file so useSupabaseClient() is

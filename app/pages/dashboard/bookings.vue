@@ -572,9 +572,54 @@ function extendLockReason(booking: Booking) {
   return 'Extension unavailable.'
 }
 
-function cancelLockReason(booking: Booking) {
-  if (hasPassed(booking)) return 'Cancel unavailable: booking has already started/passed.'
-  return 'Cancel unavailable within 24h of booking start.'
+function bookingManageItems(booking: Booking): DropdownMenuItem[][] {
+  const items: DropdownMenuItem[] = []
+
+  if (canExtend(booking)) {
+    items.push({
+      label: 'Extend',
+      icon: 'i-lucide-expand',
+      onSelect: (event: Event) => {
+        event.preventDefault()
+        openExtension(booking)
+      }
+    })
+  }
+
+  items.push({
+    label: 'Reschedule',
+    icon: 'i-lucide-clock3',
+    disabled: !canReschedule(booking),
+    onSelect: (event: Event) => {
+      event.preventDefault()
+      if (!canReschedule(booking)) return
+      openReschedule(booking)
+    }
+  })
+
+  if (canCancelHoldOnly(booking)) {
+    items.push({
+      label: 'Cancel hold',
+      icon: 'i-lucide-package-x',
+      onSelect: (event: Event) => {
+        event.preventDefault()
+        void cancelBookingHold(booking.id)
+      }
+    })
+  }
+
+  items.push({
+    label: 'Cancel booking',
+    icon: 'i-lucide-x-circle',
+    disabled: !canCancel(booking),
+    onSelect: (event: Event) => {
+      event.preventDefault()
+      if (!canCancel(booking)) return
+      openCancelConfirm(booking)
+    }
+  })
+
+  return [items]
 }
 
 function openReschedule(booking: Booking, mode: RescheduleMode = 'reschedule') {
@@ -865,11 +910,6 @@ function setRescheduleStartFromOption(value: unknown) {
   onRescheduleStartChange(value)
 }
 
-function onRescheduleStartSelectChange(event: Event) {
-  const target = event.target as HTMLSelectElement | null
-  setRescheduleStartFromOption(target?.value ?? '')
-}
-
 function onRescheduleEndChange(value: unknown) {
   const next = normalizeLocalInputValue(value)
   rescheduleForm.endTime = next
@@ -879,11 +919,6 @@ function onRescheduleEndChange(value: unknown) {
     rescheduleDurationMinutes.value = Math.max(1, Math.round(end.diff(start, 'minutes').minutes))
     rescheduleAutoSyncEnd.value = false
   }
-}
-
-function onRescheduleEndSelectChange(event: Event) {
-  const target = event.target as HTMLSelectElement | null
-  onRescheduleEndChange(target?.value ?? '')
 }
 
 function toDayKey(dt: DateTime) {
@@ -1487,239 +1522,371 @@ watch(
 
 <template>
   <div class="flex min-h-0 flex-1">
-    <UDashboardPanel
-      id="bookings"
-      class="min-h-0 flex-1 admin-ops-panel"
-      :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+    <DashboardPageScaffold
+      panel-id="bookings"
+      title="My Bookings"
     >
-      <template #header>
-        <UDashboardNavbar
-          title="My Bookings"
-          class="admin-ops-navbar"
-          :ui="{ root: 'border-b-0', right: 'gap-3' }"
-        >
-          <template #leading>
-            <UDashboardSidebarCollapse />
-          </template>
-          <template #right>
-            <template v-if="hasMembership">
-              <UButton
-                size="sm"
-                icon="i-lucide-refresh-cw"
-                color="neutral"
-                variant="ghost"
-                @click="refreshAll"
-              />
-              <UButton
-                size="sm"
-                icon="i-lucide-calendar-plus"
-                to="/dashboard/book"
-              >
-                Book studio
-              </UButton>
-            </template>
-          </template>
-        </UDashboardNavbar>
+      <template #right>
+        <DashboardActionGroup
+          :secondary="[
+            {
+              label: 'Refresh',
+              icon: 'i-lucide-refresh-cw',
+              color: 'neutral',
+              variant: 'ghost',
+              onSelect: refreshAll
+            },
+            ...(hasMembership
+              ? [{
+                label: 'Book studio',
+                icon: 'i-lucide-calendar-plus',
+                color: 'primary',
+                variant: 'solid',
+                to: '/dashboard/book'
+              }]
+              : [])
+          ]"
+        />
       </template>
 
-      <template #body>
-        <AdminOpsShell>
-          <!-- ── No active membership: show tier upsell ── -->
-          <div
-            v-if="!hasMembership"
-            class="space-y-6"
-          >
-            <UCard>
-              <div class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p class="font-semibold">
-                    You don't have an active membership
-                  </p>
-                  <p class="mt-1 text-sm text-dimmed">
-                    Choose a plan below to unlock studio booking, credits, and priority access.
-                  </p>
+      <template #default>
+        <!-- ── No active membership: show tier upsell ── -->
+        <div
+          v-if="!hasMembership"
+          class="space-y-6"
+        >
+          <UCard>
+            <div class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p class="font-semibold">
+                  You don't have an active membership
+                </p>
+                <p class="mt-1 text-sm text-dimmed">
+                  Choose a plan below to unlock studio booking, credits, and priority access.
+                </p>
+              </div>
+              <UBadge
+                color="warning"
+                variant="soft"
+              >
+                No active plan
+              </UBadge>
+            </div>
+          </UCard>
+
+          <div class="grid gap-4 lg:grid-cols-3">
+            <UCard
+              v-for="tier in tiers"
+              :key="tier.id"
+            >
+              <div class="flex items-center gap-2">
+                <div class="text-base font-semibold">
+                  {{ tier.display_name }}
                 </div>
                 <UBadge
+                  v-if="tier.adminOnly"
                   color="warning"
                   variant="soft"
+                  size="xs"
+                  icon="i-lucide-flask-conical"
                 >
-                  No active plan
+                  Admin only
                 </UBadge>
               </div>
-            </UCard>
-
-            <div class="grid gap-4 lg:grid-cols-3">
-              <UCard
-                v-for="tier in tiers"
-                :key="tier.id"
+              <p
+                v-if="tier.description"
+                class="mt-1 text-sm text-dimmed"
               >
-                <div class="flex items-center gap-2">
-                  <div class="text-base font-semibold">
-                    {{ tier.display_name }}
-                  </div>
-                  <UBadge
-                    v-if="tier.adminOnly"
-                    color="warning"
-                    variant="soft"
-                    size="xs"
-                    icon="i-lucide-flask-conical"
-                  >
-                    Admin only
-                  </UBadge>
-                </div>
-                <p
-                  v-if="tier.description"
-                  class="mt-1 text-sm text-dimmed"
-                >
-                  {{ tier.description }}
-                </p>
+                {{ tier.description }}
+              </p>
 
-                <div class="mt-4 grid grid-cols-3 gap-2">
-                  <div class="rounded-lg border border-default p-2 text-center">
-                    <div class="text-sm font-medium">
-                      {{ tier.booking_window_days }}d
-                    </div>
-                    <div class="text-xs text-dimmed">
-                      booking
-                    </div>
+              <div class="mt-4 grid grid-cols-3 gap-2">
+                <div class="rounded-lg border border-default p-2 text-center">
+                  <div class="text-sm font-medium">
+                    {{ tier.booking_window_days }}d
                   </div>
-                  <div class="rounded-lg border border-default p-2 text-center">
-                    <div class="text-sm font-medium">
-                      {{ formatPeakCredits(tier.peak_multiplier) }} cr/hr
-                    </div>
-                    <div class="text-xs text-dimmed">
-                      peak hour
-                    </div>
-                  </div>
-                  <div class="rounded-lg border border-default p-2 text-center">
-                    <div class="text-sm font-medium">
-                      {{ tier.max_bank }}
-                    </div>
-                    <div class="text-xs text-dimmed">
-                      credit cap
-                    </div>
+                  <div class="text-xs text-dimmed">
+                    booking
                   </div>
                 </div>
-
-                <div class="mt-4 space-y-2">
-                  <div
-                    v-for="opt in tier.membership_plan_variations"
-                    :key="opt.cadence"
-                    class="flex items-center justify-between rounded-lg border border-default p-3"
-                  >
-                    <div>
-                      <div class="text-sm font-medium flex items-center gap-2">
-                        {{ cadenceLabel(opt.cadence) }}
-                        <UBadge
-                          v-if="getDiscountLabel(opt.discount_label)"
-                          color="neutral"
-                          variant="soft"
-                          size="xs"
-                        >
-                          {{ getDiscountLabel(opt.discount_label) }}
-                        </UBadge>
-                      </div>
-                      <div class="text-xs text-dimmed">
-                        {{ opt.credits_per_month }} credits/{{ cadenceCreditsUnit(opt.cadence) }}
-                      </div>
-                    </div>
-                    <div class="text-right">
-                      <div class="text-sm font-semibold">
-                        {{ formatMoney(opt.price_cents, opt.currency) }}
-                      </div>
-                      <div class="text-xs text-dimmed">
-                        / {{ cadencePriceUnit(opt.cadence) }}
-                      </div>
-                    </div>
+                <div class="rounded-lg border border-default p-2 text-center">
+                  <div class="text-sm font-medium">
+                    {{ formatPeakCredits(tier.peak_multiplier) }} cr/hr
+                  </div>
+                  <div class="text-xs text-dimmed">
+                    peak hour
                   </div>
                 </div>
-
-                <div class="mt-4 grid gap-2">
-                  <UButton
-                    v-for="opt in tier.membership_plan_variations"
-                    :key="opt.cadence + '-cta'"
-                    block
-                    size="sm"
-                    @click="goCheckout(tier.id, opt.cadence)"
-                  >
-                    Start {{ tier.display_name }} · {{ cadenceLabel(opt.cadence) }}
-                  </UButton>
+                <div class="rounded-lg border border-default p-2 text-center">
+                  <div class="text-sm font-medium">
+                    {{ tier.max_bank }}
+                  </div>
+                  <div class="text-xs text-dimmed">
+                    credit cap
+                  </div>
                 </div>
-              </UCard>
-            </div>
-          </div>
-
-          <!-- ── Active membership: show bookings ── -->
-          <div
-            v-else
-            class="space-y-6"
-          >
-            <UAlert
-              color="neutral"
-              variant="soft"
-              icon="i-lucide-info"
-              :description="`Reschedules require at least ${memberRescheduleNoticeHours} hours notice before the booking start time.`"
-            />
-
-            <div class="space-y-4">
-              <div class="flex flex-wrap items-center gap-2">
-                <UButton
-                  size="sm"
-                  :variant="bookingsTab === 'active' ? 'solid' : 'soft'"
-                  :color="bookingsTab === 'active' ? 'primary' : 'neutral'"
-                  @click="bookingsTab = 'active'"
-                >
-                  Active bookings
-                </UButton>
-                <UButton
-                  size="sm"
-                  :variant="bookingsTab === 'holds' ? 'solid' : 'soft'"
-                  :color="bookingsTab === 'holds' ? 'primary' : 'neutral'"
-                  @click="bookingsTab = 'holds'"
-                >
-                  Active holds
-                </UButton>
-                <UButton
-                  size="sm"
-                  :variant="bookingsTab === 'past' ? 'solid' : 'soft'"
-                  :color="bookingsTab === 'past' ? 'primary' : 'neutral'"
-                  @click="bookingsTab = 'past'"
-                >
-                  Past bookings
-                </UButton>
               </div>
 
-              <div v-if="bookingsTab === 'active'">
+              <div class="mt-4 space-y-2">
                 <div
-                  v-if="!upcoming?.length"
-                  class="rounded-lg border border-default p-6 text-center"
+                  v-for="opt in tier.membership_plan_variations"
+                  :key="opt.cadence"
+                  class="flex items-center justify-between rounded-lg border border-default p-3"
                 >
-                  <UIcon
-                    name="i-lucide-calendar-x"
-                    class="size-8 text-dimmed mx-auto mb-2"
-                  />
-                  <p class="text-sm text-dimmed">
-                    No upcoming bookings.
-                  </p>
+                  <div>
+                    <div class="text-sm font-medium flex items-center gap-2">
+                      {{ cadenceLabel(opt.cadence) }}
+                      <UBadge
+                        v-if="getDiscountLabel(opt.discount_label)"
+                        color="neutral"
+                        variant="soft"
+                        size="xs"
+                      >
+                        {{ getDiscountLabel(opt.discount_label) }}
+                      </UBadge>
+                    </div>
+                    <div class="text-xs text-dimmed">
+                      {{ opt.credits_per_month }} credits/{{ cadenceCreditsUnit(opt.cadence) }}
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-sm font-semibold">
+                      {{ formatMoney(opt.price_cents, opt.currency) }}
+                    </div>
+                    <div class="text-xs text-dimmed">
+                      / {{ cadencePriceUnit(opt.cadence) }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-4 grid gap-2">
+                <UButton
+                  v-for="opt in tier.membership_plan_variations"
+                  :key="opt.cadence + '-cta'"
+                  block
+                  size="sm"
+                  @click="goCheckout(tier.id, opt.cadence)"
+                >
+                  Start {{ tier.display_name }} · {{ cadenceLabel(opt.cadence) }}
+                </UButton>
+              </div>
+            </UCard>
+          </div>
+        </div>
+
+        <!-- ── Active membership: show bookings ── -->
+        <div
+          v-else
+          class="space-y-6"
+        >
+          <UAlert
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-info"
+            :description="`Reschedules require at least ${memberRescheduleNoticeHours} hours notice before the booking start time.`"
+          />
+
+          <div class="space-y-4">
+            <div class="flex flex-wrap items-center gap-2">
+              <UButton
+                size="sm"
+                :variant="bookingsTab === 'active' ? 'solid' : 'soft'"
+                :color="bookingsTab === 'active' ? 'primary' : 'neutral'"
+                @click="bookingsTab = 'active'"
+              >
+                Active bookings
+              </UButton>
+              <UButton
+                size="sm"
+                :variant="bookingsTab === 'holds' ? 'solid' : 'soft'"
+                :color="bookingsTab === 'holds' ? 'primary' : 'neutral'"
+                @click="bookingsTab = 'holds'"
+              >
+                Active holds
+              </UButton>
+              <UButton
+                size="sm"
+                :variant="bookingsTab === 'past' ? 'solid' : 'soft'"
+                :color="bookingsTab === 'past' ? 'primary' : 'neutral'"
+                @click="bookingsTab = 'past'"
+              >
+                Past bookings
+              </UButton>
+            </div>
+
+            <div v-if="bookingsTab === 'active'">
+              <DashboardSectionState
+                v-if="!upcoming?.length"
+                state="empty"
+                title="No upcoming bookings"
+                description="Reserve studio time to build your next session."
+                icon="i-lucide-calendar-x"
+              >
+                <template #actions>
                   <UButton
-                    class="mt-3"
                     size="sm"
                     to="/dashboard/book"
                   >
                     Book studio time
                   </UButton>
-                </div>
+                </template>
+              </DashboardSectionState>
 
-                <div
-                  v-else
-                  class="space-y-2"
+              <div
+                v-else
+                class="space-y-2"
+              >
+                <UCard
+                  v-for="booking in upcoming"
+                  :key="booking.id"
+                  :ui="{ body: 'p-4 sm:p-4' }"
                 >
+                  <div class="flex items-start justify-between gap-3 flex-wrap">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <UBadge
+                          :color="statusColor(booking.status)"
+                          variant="soft"
+                          size="sm"
+                        >
+                          {{ formatStatus(booking.status) }}
+                        </UBadge>
+                        <span class="text-sm font-medium">{{ formatRange(booking.start_time, booking.end_time).dateStr }}</span>
+                      </div>
+                      <p class="mt-1 text-sm text-dimmed">
+                        {{ formatRange(booking.start_time, booking.end_time).timeStr }}
+                        · {{ durationLabel(booking.start_time, booking.end_time) }}
+                        <span v-if="booking.credits_burned"> · {{ booking.credits_burned }} credits</span>
+                      </p>
+                      <p
+                        v-if="hasHold(booking)"
+                        class="mt-1 text-xs text-amber-600 dark:text-amber-400"
+                      >
+                        Overnight hold attached
+                        <span v-if="holdRangeLabel(booking)">
+                          · {{ holdRangeLabel(booking)?.timeStr }}
+                        </span>
+                      </p>
+                      <p
+                        v-if="booking.notes"
+                        class="mt-1.5 text-xs text-dimmed italic truncate max-w-sm"
+                      >
+                        {{ booking.notes }}
+                      </p>
+                    </div>
+                    <div class="shrink-0 flex items-center gap-2">
+                      <UDropdownMenu
+                        :items="bookingExportItems(booking)"
+                        :content="{ align: 'end' }"
+                      >
+                        <UButton
+                          size="sm"
+                          color="neutral"
+                          variant="soft"
+                          icon="i-lucide-calendar-plus"
+                        >
+                          Add to calendar
+                        </UButton>
+                      </UDropdownMenu>
+                      <UDropdownMenu
+                        :items="bookingManageItems(booking)"
+                        :content="{ align: 'end' }"
+                      >
+                        <UButton
+                          size="sm"
+                          variant="soft"
+                          color="neutral"
+                          icon="i-lucide-more-horizontal"
+                        >
+                          Manage
+                        </UButton>
+                      </UDropdownMenu>
+                    </div>
+                  </div>
+                </UCard>
+              </div>
+            </div>
+
+            <div v-else-if="bookingsTab === 'holds'">
+              <DashboardSectionState
+                v-if="!activeHoldBookings.length"
+                state="empty"
+                title="No active holds"
+                description="Hold details appear here when attached to upcoming bookings."
+                icon="i-lucide-package"
+              />
+              <div
+                v-else
+                class="space-y-2"
+              >
+                <UCard
+                  v-for="booking in activeHoldBookings"
+                  :key="`${booking.id}-hold`"
+                  :ui="{ body: 'p-4 sm:p-4' }"
+                >
+                  <div class="flex items-start justify-between gap-3 flex-wrap">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <UBadge
+                          color="warning"
+                          variant="soft"
+                          size="sm"
+                        >
+                          Equipment Hold
+                        </UBadge>
+                        <span class="text-sm font-medium">{{ formatRange(booking.start_time, booking.end_time).dateStr }}</span>
+                      </div>
+                      <p class="mt-1 text-sm text-dimmed">
+                        Booking · {{ formatRange(booking.start_time, booking.end_time).timeStr }}
+                      </p>
+                      <p
+                        v-if="holdRangeLabel(booking)"
+                        class="mt-1 text-sm text-dimmed"
+                      >
+                        Hold · {{ holdRangeLabel(booking)?.timeStr }}
+                      </p>
+                    </div>
+                    <div class="shrink-0 flex items-center gap-2">
+                      <UDropdownMenu
+                        :items="bookingManageItems(booking)"
+                        :content="{ align: 'end' }"
+                      >
+                        <UButton
+                          size="sm"
+                          color="neutral"
+                          variant="soft"
+                          icon="i-lucide-more-horizontal"
+                        >
+                          Manage
+                        </UButton>
+                      </UDropdownMenu>
+                    </div>
+                  </div>
+                </UCard>
+              </div>
+            </div>
+
+            <div v-else>
+              <DashboardSectionState
+                v-if="!past?.length"
+                state="empty"
+                title="No booking history"
+                description="Completed and canceled sessions will appear here."
+                icon="i-lucide-history"
+              />
+
+              <div
+                v-else
+                class="space-y-3"
+              >
+                <div class="space-y-2">
                   <UCard
-                    v-for="booking in upcoming"
+                    v-for="booking in paginatedPastBookings"
                     :key="booking.id"
                     :ui="{ body: 'p-4 sm:p-4' }"
                   >
-                    <div class="flex items-start justify-between gap-3 flex-wrap">
+                    <div class="flex items-start justify-between gap-3">
                       <div class="min-w-0 flex-1">
                         <div class="flex items-center gap-2 flex-wrap">
                           <UBadge
@@ -1737,22 +1904,13 @@ watch(
                           <span v-if="booking.credits_burned"> · {{ booking.credits_burned }} credits</span>
                         </p>
                         <p
-                          v-if="hasHold(booking)"
-                          class="mt-1 text-xs text-amber-600 dark:text-amber-400"
-                        >
-                          Overnight hold attached
-                          <span v-if="holdRangeLabel(booking)">
-                            · {{ holdRangeLabel(booking)?.timeStr }}
-                          </span>
-                        </p>
-                        <p
                           v-if="booking.notes"
                           class="mt-1.5 text-xs text-dimmed italic truncate max-w-sm"
                         >
                           {{ booking.notes }}
                         </p>
                       </div>
-                      <div class="shrink-0 flex items-center gap-2">
+                      <div class="shrink-0">
                         <UDropdownMenu
                           :items="bookingExportItems(booking)"
                           :content="{ align: 'end' }"
@@ -1766,236 +1924,42 @@ watch(
                             Add to calendar
                           </UButton>
                         </UDropdownMenu>
-                        <UTooltip
-                          v-if="canExtend(booking)"
-                          text="Extend end time if the next slot is open."
-                        >
-                          <UButton
-                            size="sm"
-                            color="primary"
-                            variant="soft"
-                            @click="openExtension(booking)"
-                          >
-                            Extend
-                          </UButton>
-                        </UTooltip>
-                        <UTooltip
-                          :text="canReschedule(booking)
-                            ? `Reschedule booking (${memberRescheduleNoticeHours}+h notice)`
-                            : rescheduleLockReason(booking)"
-                        >
-                          <UButton
-                            size="sm"
-                            color="neutral"
-                            variant="soft"
-                            :disabled="!canReschedule(booking)"
-                            @click="openReschedule(booking)"
-                          >
-                            Reschedule
-                          </UButton>
-                        </UTooltip>
-                        <UTooltip
-                          v-if="canCancelHoldOnly(booking)"
-                          :text="isRefundEligible(booking) ? 'Cancel hold only · hold token can be returned' : 'Cancel hold only · no hold return (< 24h)'"
-                        >
-                          <UButton
-                            size="sm"
-                            color="warning"
-                            variant="soft"
-                            :loading="holdCancellingId === booking.id"
-                            @click="cancelBookingHold(booking.id)"
-                          >
-                            Cancel hold
-                          </UButton>
-                        </UTooltip>
-                        <UTooltip
-                          :text="canCancel(booking) ? 'Cancel · credit refund eligible' : cancelLockReason(booking)"
-                        >
-                          <UButton
-                            size="sm"
-                            color="error"
-                            variant="soft"
-                            :disabled="!canCancel(booking)"
-                            :loading="cancellingId === booking.id"
-                            @click="openCancelConfirm(booking)"
-                          >
-                            Cancel
-                          </UButton>
-                        </UTooltip>
                       </div>
                     </div>
                   </UCard>
                 </div>
-              </div>
 
-              <div v-else-if="bookingsTab === 'holds'">
-                <div
-                  v-if="!activeHoldBookings.length"
-                  class="rounded-lg border border-default p-6 text-center"
-                >
-                  <p class="text-sm text-dimmed">
-                    No active holds right now.
+                <div class="flex items-center justify-between gap-2">
+                  <p class="text-xs text-dimmed">
+                    Page {{ pastPage }} of {{ pastTotalPages }}
                   </p>
-                </div>
-                <div
-                  v-else
-                  class="space-y-2"
-                >
-                  <UCard
-                    v-for="booking in activeHoldBookings"
-                    :key="`${booking.id}-hold`"
-                    :ui="{ body: 'p-4 sm:p-4' }"
-                  >
-                    <div class="flex items-start justify-between gap-3 flex-wrap">
-                      <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-2 flex-wrap">
-                          <UBadge
-                            color="warning"
-                            variant="soft"
-                            size="sm"
-                          >
-                            Equipment Hold
-                          </UBadge>
-                          <span class="text-sm font-medium">{{ formatRange(booking.start_time, booking.end_time).dateStr }}</span>
-                        </div>
-                        <p class="mt-1 text-sm text-dimmed">
-                          Booking · {{ formatRange(booking.start_time, booking.end_time).timeStr }}
-                        </p>
-                        <p
-                          v-if="holdRangeLabel(booking)"
-                          class="mt-1 text-sm text-dimmed"
-                        >
-                          Hold · {{ holdRangeLabel(booking)?.timeStr }}
-                        </p>
-                      </div>
-                      <div class="shrink-0 flex items-center gap-2">
-                        <UDropdownMenu
-                          :items="bookingExportItems(booking)"
-                          :content="{ align: 'end' }"
-                        >
-                          <UButton
-                            size="sm"
-                            color="neutral"
-                            variant="soft"
-                            icon="i-lucide-calendar-plus"
-                          >
-                            Add to calendar
-                          </UButton>
-                        </UDropdownMenu>
-                        <UTooltip
-                          :text="isRefundEligible(booking) ? 'Cancel hold only · hold token can be returned' : 'Cancel hold only · no hold return (< 24h)'"
-                        >
-                          <UButton
-                            size="sm"
-                            color="warning"
-                            variant="soft"
-                            :loading="holdCancellingId === booking.id"
-                            @click="cancelBookingHold(booking.id)"
-                          >
-                            Cancel hold
-                          </UButton>
-                        </UTooltip>
-                      </div>
-                    </div>
-                  </UCard>
-                </div>
-              </div>
-
-              <div v-else>
-                <div
-                  v-if="!past?.length"
-                  class="rounded-lg border border-default p-6 text-center"
-                >
-                  <p class="text-sm text-dimmed">
-                    No booking history yet.
-                  </p>
-                </div>
-
-                <div
-                  v-else
-                  class="space-y-3"
-                >
-                  <div class="space-y-2">
-                    <UCard
-                      v-for="booking in paginatedPastBookings"
-                      :key="booking.id"
-                      :ui="{ body: 'p-4 sm:p-4' }"
+                  <div class="flex items-center gap-2">
+                    <UButton
+                      size="xs"
+                      color="neutral"
+                      variant="soft"
+                      :disabled="pastPage <= 1"
+                      @click="goToPastPage(pastPage - 1)"
                     >
-                      <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0 flex-1">
-                          <div class="flex items-center gap-2 flex-wrap">
-                            <UBadge
-                              :color="statusColor(booking.status)"
-                              variant="soft"
-                              size="sm"
-                            >
-                              {{ formatStatus(booking.status) }}
-                            </UBadge>
-                            <span class="text-sm font-medium">{{ formatRange(booking.start_time, booking.end_time).dateStr }}</span>
-                          </div>
-                          <p class="mt-1 text-sm text-dimmed">
-                            {{ formatRange(booking.start_time, booking.end_time).timeStr }}
-                            · {{ durationLabel(booking.start_time, booking.end_time) }}
-                            <span v-if="booking.credits_burned"> · {{ booking.credits_burned }} credits</span>
-                          </p>
-                          <p
-                            v-if="booking.notes"
-                            class="mt-1.5 text-xs text-dimmed italic truncate max-w-sm"
-                          >
-                            {{ booking.notes }}
-                          </p>
-                        </div>
-                        <div class="shrink-0">
-                          <UDropdownMenu
-                            :items="bookingExportItems(booking)"
-                            :content="{ align: 'end' }"
-                          >
-                            <UButton
-                              size="sm"
-                              color="neutral"
-                              variant="soft"
-                              icon="i-lucide-calendar-plus"
-                            >
-                              Add to calendar
-                            </UButton>
-                          </UDropdownMenu>
-                        </div>
-                      </div>
-                    </UCard>
-                  </div>
-
-                  <div class="flex items-center justify-between gap-2">
-                    <p class="text-xs text-dimmed">
-                      Page {{ pastPage }} of {{ pastTotalPages }}
-                    </p>
-                    <div class="flex items-center gap-2">
-                      <UButton
-                        size="xs"
-                        color="neutral"
-                        variant="soft"
-                        :disabled="pastPage <= 1"
-                        @click="goToPastPage(pastPage - 1)"
-                      >
-                        Previous
-                      </UButton>
-                      <UButton
-                        size="xs"
-                        color="neutral"
-                        variant="soft"
-                        :disabled="pastPage >= pastTotalPages"
-                        @click="goToPastPage(pastPage + 1)"
-                      >
-                        Next
-                      </UButton>
-                    </div>
+                      Previous
+                    </UButton>
+                    <UButton
+                      size="xs"
+                      color="neutral"
+                      variant="soft"
+                      :disabled="pastPage >= pastTotalPages"
+                      @click="goToPastPage(pastPage + 1)"
+                    >
+                      Next
+                    </UButton>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </AdminOpsShell>
+        </div>
       </template>
-    </UDashboardPanel>
+    </DashboardPageScaffold>
 
     <UModal
       v-model:open="rescheduleOpen"
@@ -2030,26 +1994,15 @@ watch(
               v-if="rescheduleMode === 'reschedule'"
               label="Start"
             >
-              <select
-                class="w-full rounded-md border border-default bg-default px-3 py-2 text-sm"
-                :value="rescheduleForm.startTime"
-                @change="onRescheduleStartSelectChange"
-              >
-                <option
-                  v-if="!selectedDayStartOptions.length"
-                  disabled
-                  value=""
-                >
-                  No available start times for selected day
-                </option>
-                <option
-                  v-for="option in selectedDayStartOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
+              <USelect
+                :model-value="rescheduleForm.startTime"
+                :items="selectedDayStartOptions"
+                option-attribute="label"
+                value-attribute="value"
+                :disabled="!selectedDayStartOptions.length"
+                placeholder="No available start times for selected day"
+                @update:model-value="setRescheduleStartFromOption"
+              />
             </UFormField>
             <UFormField
               v-else
@@ -2062,26 +2015,15 @@ watch(
               />
             </UFormField>
             <UFormField :label="rescheduleMode === 'extend' ? 'New end time' : 'End'">
-              <select
-                class="w-full rounded-md border border-default bg-default px-3 py-2 text-sm"
-                :value="rescheduleForm.endTime"
-                @change="onRescheduleEndSelectChange"
-              >
-                <option
-                  v-if="!selectedDayEndOptions.length"
-                  disabled
-                  value=""
-                >
-                  No available end times for selected start
-                </option>
-                <option
-                  v-for="option in selectedDayEndOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
+              <USelect
+                :model-value="rescheduleForm.endTime"
+                :items="selectedDayEndOptions"
+                option-attribute="label"
+                value-attribute="value"
+                :disabled="!selectedDayEndOptions.length"
+                placeholder="No available end times for selected start"
+                @update:model-value="onRescheduleEndChange"
+              />
             </UFormField>
             <p class="text-xs text-dimmed">
               <template v-if="rescheduleMode === 'extend'">

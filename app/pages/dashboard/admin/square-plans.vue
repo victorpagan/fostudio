@@ -113,134 +113,118 @@ async function deleteSelectedPlans() {
 </script>
 
 <template>
-  <UDashboardPanel
-    id="admin-square-plans-temp"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <DashboardPageScaffold
+    panel-id="admin-square-plans-temp"
+    title="Square Plan Cleanup (Temp)"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Square Plan Cleanup (Temp)"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-2' }"
-      >
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
+    <template #right>
+      <DashboardActionGroup
+        :primary="{
+          label: 'Deactivate selected',
+          icon: 'i-lucide-circle-off',
+          color: 'warning',
+          disabled: selectedPlanIds.length === 0,
+          loading: deleting,
+          onSelect: deleteSelectedPlans
+        }"
+        :secondary="[
+          {
+            label: 'Refresh',
+            icon: 'i-lucide-refresh-cw',
+            color: 'neutral',
+            variant: 'soft',
+            loading: pending,
+            onSelect: refresh
+          }
+        ]"
+      />
+    </template>
+    <UAlert
+      color="warning"
+      variant="soft"
+      icon="i-lucide-triangle-alert"
+      title="Temporary admin page"
+      description="Deactivates selected Square subscription plan variations first, then deactivates the plan."
+    />
 
-        <template #right>
+    <UCard>
+      <template #header>
+        <div class="flex items-center justify-between gap-3">
+          <div class="font-medium">
+            Subscription plans in Square
+          </div>
           <UButton
             color="neutral"
-            variant="soft"
-            icon="i-lucide-refresh-cw"
-            :loading="pending"
-            @click="refresh()"
+            variant="ghost"
+            size="sm"
+            @click="toggleAll"
           >
-            Refresh
+            {{ allSelected ? 'Clear selection' : 'Select all' }}
           </UButton>
-          <UButton
-            color="warning"
-            :disabled="selectedPlanIds.length === 0"
-            :loading="deleting"
-            icon="i-lucide-circle-off"
-            @click="deleteSelectedPlans"
-          >
-            Deactivate selected
-          </UButton>
-        </template>
-      </UDashboardNavbar>
-    </template>
+        </div>
+      </template>
 
-    <template #body>
-      <AdminOpsShell>
-        <UAlert
-          color="warning"
-          variant="soft"
-          icon="i-lucide-triangle-alert"
-          title="Temporary admin page"
-          description="Deactivates selected Square subscription plan variations first, then deactivates the plan."
-        />
+      <div
+        v-if="error"
+        class="text-sm text-error"
+      >
+        {{ loadErrorMessage }}
+      </div>
 
-        <UCard>
-          <template #header>
-            <div class="flex items-center justify-between gap-3">
-              <div class="font-medium">
-                Subscription plans in Square
+      <div
+        v-else-if="pending"
+        class="text-sm text-dimmed"
+      >
+        Loading plans...
+      </div>
+
+      <div
+        v-else-if="plans.length === 0"
+        class="text-sm text-dimmed"
+      >
+        No subscription plans found.
+      </div>
+
+      <div
+        v-else
+        class="space-y-3"
+      >
+        <div
+          v-for="plan in plans"
+          :key="plan.id"
+          class="rounded-lg ring ring-default p-3"
+        >
+          <div class="flex items-start gap-3">
+            <UCheckbox
+              :model-value="isPlanSelected(plan.id)"
+              :label="plan.name"
+              @update:model-value="(value) => setPlanSelected(plan.id, value)"
+            />
+            <div class="min-w-0 flex-1 text-sm space-y-1">
+              <div class="font-mono text-xs text-dimmed break-all">
+                {{ plan.id }}
               </div>
-              <UButton
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                @click="toggleAll"
-              >
-                {{ allSelected ? 'Clear selection' : 'Select all' }}
-              </UButton>
-            </div>
-          </template>
-
-          <div
-            v-if="error"
-            class="text-sm text-error"
-          >
-            {{ loadErrorMessage }}
-          </div>
-
-          <div
-            v-else-if="pending"
-            class="text-sm text-dimmed"
-          >
-            Loading plans...
-          </div>
-
-          <div
-            v-else-if="plans.length === 0"
-            class="text-sm text-dimmed"
-          >
-            No subscription plans found.
-          </div>
-
-          <div
-            v-else
-            class="space-y-3"
-          >
-            <div
-              v-for="plan in plans"
-              :key="plan.id"
-              class="rounded-lg ring ring-default p-3"
-            >
-              <div class="flex items-start gap-3">
-                <UCheckbox
-                  :model-value="isPlanSelected(plan.id)"
-                  :label="plan.name"
-                  @update:model-value="(value) => setPlanSelected(plan.id, value)"
-                />
-                <div class="min-w-0 flex-1 text-sm space-y-1">
-                  <div class="font-mono text-xs text-dimmed break-all">
-                    {{ plan.id }}
-                  </div>
-                  <div class="text-xs text-dimmed">
-                    {{ plan.variationIds.length }} variation(s) • {{ plan.eligibleItemIds.length }} eligible item(s)
-                  </div>
-                  <div class="text-xs text-dimmed">
-                    Updated {{ formatDate(plan.updatedAt) }}
-                  </div>
-                  <div class="flex flex-wrap gap-1 pt-1">
-                    <UBadge
-                      v-for="variationId in plan.variationIds"
-                      :key="variationId"
-                      color="neutral"
-                      variant="outline"
-                      size="sm"
-                    >
-                      {{ variationId }}
-                    </UBadge>
-                  </div>
-                </div>
+              <div class="text-xs text-dimmed">
+                {{ plan.variationIds.length }} variation(s) • {{ plan.eligibleItemIds.length }} eligible item(s)
+              </div>
+              <div class="text-xs text-dimmed">
+                Updated {{ formatDate(plan.updatedAt) }}
+              </div>
+              <div class="flex flex-wrap gap-1 pt-1">
+                <UBadge
+                  v-for="variationId in plan.variationIds"
+                  :key="variationId"
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                >
+                  {{ variationId }}
+                </UBadge>
               </div>
             </div>
           </div>
-        </UCard>
-      </AdminOpsShell>
-    </template>
-  </UDashboardPanel>
+        </div>
+      </div>
+    </UCard>
+  </DashboardPageScaffold>
 </template>

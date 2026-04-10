@@ -35,12 +35,15 @@ type DoorCodesTab = 'members' | 'permanent'
 const toast = useToast()
 const selectedMemberId = ref<string | null>(null)
 const memberDoorCode = ref('')
+const memberCodeSearch = ref('')
 const savingMemberDoorCode = ref(false)
 
 const savingPermanent = ref(false)
 const deletingPermanentId = ref<string | null>(null)
 const savingAccessSettings = ref(false)
 const doorCodesTab = ref<DoorCodesTab>('members')
+const permanentCodeSearch = ref('')
+const permanentStatusFilter = ref<'all' | 'active' | 'inactive'>('all')
 const permanentCodesDisarmAbodeOutsideLabHours = ref(false)
 const permanentForm = reactive({
   id: '' as string,
@@ -80,6 +83,45 @@ onMounted(async () => {
 
 const members = computed(() => data.value?.members ?? [])
 const permanentCodes = computed(() => data.value?.permanentCodes ?? [])
+const filteredMemberCodes = computed(() => {
+  const query = memberCodeSearch.value.trim().toLowerCase()
+  if (!query) return members.value
+
+  return members.value.filter((member) => {
+    const text = [
+      memberLabel(member),
+      member.customer_email,
+      member.user_id,
+      member.effective_status,
+      member.door_code
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+
+    return text.includes(query)
+  })
+})
+const filteredPermanentCodes = computed(() => {
+  const query = permanentCodeSearch.value.trim().toLowerCase()
+  return permanentCodes.value.filter((row) => {
+    if (permanentStatusFilter.value === 'active' && !row.active) return false
+    if (permanentStatusFilter.value === 'inactive' && row.active) return false
+    if (!query) return true
+
+    const text = [
+      row.label,
+      String(row.slot_number),
+      row.code,
+      row.last_sync_status,
+      row.last_sync_error
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return text.includes(query)
+  })
+})
 const initialPermanentCodesDisarmOutsideLabHours = computed(() =>
   Boolean(data.value?.settings?.permanentCodesDisarmAbodeOutsideLabHours)
 )
@@ -101,12 +143,6 @@ function memberStatusColor(status: string) {
   return normalized === 'active' || normalized === 'past_due' ? 'success' : 'neutral'
 }
 
-function syncStatusColor(status: PermanentCodeRecord['last_sync_status']) {
-  if (status === 'ok') return 'success'
-  if (status === 'error') return 'error'
-  return 'neutral'
-}
-
 watch(members, (next) => {
   if (!next.length) return
   if (!selectedMemberId.value) {
@@ -123,6 +159,21 @@ watch(members, (next) => {
   }
 
   memberDoorCode.value = current.door_code ?? ''
+}, { immediate: true })
+
+watch(filteredMemberCodes, (next) => {
+  if (!next.length) {
+    selectedMemberId.value = null
+    return
+  }
+
+  if (selectedMemberId.value && next.some(member => member.membership_id === selectedMemberId.value)) {
+    return
+  }
+
+  const target = next[0]!
+  selectedMemberId.value = target.membership_id
+  memberDoorCode.value = target.door_code ?? ''
 }, { immediate: true })
 
 watch(initialPermanentCodesDisarmOutsideLabHours, (next) => {
@@ -265,338 +316,333 @@ function formatDateTime(value: string | null) {
 </script>
 
 <template>
-  <UDashboardPanel
-    id="admin-door-codes"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <DashboardPageScaffold
+    panel-id="admin-door-codes"
+    title="Door Codes"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Door Codes"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-2' }"
-      >
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-
-        <template #right>
-          <UButton
-            size="sm"
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-refresh-cw"
-            :loading="pending"
-            @click="() => refresh()"
-          />
-        </template>
-      </UDashboardNavbar>
+    <template #right>
+      <DashboardActionGroup
+        align="end"
+        :secondary="[
+          {
+            label: 'Refresh',
+            icon: 'i-lucide-refresh-cw',
+            loading: pending,
+            onSelect: () => refresh()
+          }
+        ]"
+      />
     </template>
+    <UAlert
+      color="warning"
+      variant="soft"
+      icon="i-lucide-key-round"
+      title="Door code controls"
+      description="Manage member codes and permanent lock codes. Permanent codes stay active outside booking windows."
+    />
 
-    <template #body>
-      <AdminOpsShell>
-        <UAlert
-          color="warning"
-          variant="soft"
-          icon="i-lucide-key-round"
-          title="Door code controls"
-          description="Manage member codes and permanent lock codes. Permanent codes stay active outside booking windows."
-        />
-
-        <UCard>
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div class="font-medium">
-                Access automation settings
-              </div>
-              <p class="mt-1 text-xs text-dimmed">
-                When enabled, permanent-code unlocks can trigger Abode disarm only outside lab hours (11:00 AM–7:00 PM).
-              </p>
-            </div>
-            <div class="flex items-center gap-3">
-              <USwitch v-model="permanentCodesDisarmAbodeOutsideLabHours" />
-              <UButton
-                size="sm"
-                :disabled="!accessSettingsDirty"
-                :loading="savingAccessSettings"
-                @click="saveAccessSettings"
-              >
-                Save setting
-              </UButton>
-            </div>
+    <UCard>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div class="font-medium">
+            Access automation settings
           </div>
-        </UCard>
-
-        <div class="flex flex-wrap items-center gap-2">
+          <p class="mt-1 text-xs text-dimmed">
+            When enabled, permanent-code unlocks can trigger Abode disarm only outside lab hours (11:00 AM–7:00 PM).
+          </p>
+        </div>
+        <div class="flex items-center gap-3">
+          <USwitch v-model="permanentCodesDisarmAbodeOutsideLabHours" />
           <UButton
             size="sm"
-            :variant="doorCodesTab === 'members' ? 'solid' : 'soft'"
-            :color="doorCodesTab === 'members' ? 'primary' : 'neutral'"
-            @click="doorCodesTab = 'members'"
+            :disabled="!accessSettingsDirty"
+            :loading="savingAccessSettings"
+            @click="saveAccessSettings"
           >
-            Member codes
-          </UButton>
-          <UButton
-            size="sm"
-            :variant="doorCodesTab === 'permanent' ? 'solid' : 'soft'"
-            :color="doorCodesTab === 'permanent' ? 'primary' : 'neutral'"
-            @click="doorCodesTab = 'permanent'"
-          >
-            Permanent codes
+            Save setting
           </UButton>
         </div>
+      </div>
+    </UCard>
 
-        <div class="space-y-4">
-          <UCard v-if="doorCodesTab === 'members'">
-            <div class="font-medium">
-              Member door codes
-            </div>
-            <p class="mt-1 text-xs text-dimmed">
-              Member codes are booking-window controlled by access jobs.
-            </p>
+    <div class="flex flex-wrap items-center gap-2">
+      <UButton
+        size="sm"
+        :variant="doorCodesTab === 'members' ? 'solid' : 'soft'"
+        :color="doorCodesTab === 'members' ? 'primary' : 'neutral'"
+        @click="doorCodesTab = 'members'"
+      >
+        Member codes
+      </UButton>
+      <UButton
+        size="sm"
+        :variant="doorCodesTab === 'permanent' ? 'solid' : 'soft'"
+        :color="doorCodesTab === 'permanent' ? 'primary' : 'neutral'"
+        @click="doorCodesTab = 'permanent'"
+      >
+        Permanent codes
+      </UButton>
+    </div>
 
-            <div class="mt-3 max-h-80 overflow-auto rounded-lg border border-default">
-              <table class="min-w-full text-sm">
-                <thead class="bg-elevated/50 text-left text-xs uppercase tracking-wide text-dimmed">
-                  <tr>
-                    <th class="px-3 py-2 font-medium">
-                      Member
-                    </th>
-                    <th class="px-3 py-2 font-medium">
-                      Status
-                    </th>
-                    <th class="px-3 py-2 font-medium">
-                      Code
-                    </th>
-                    <th class="px-3 py-2 font-medium text-right">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="member in members"
-                    :key="member.membership_id"
-                    class="border-t border-default transition"
-                    :class="selectedMemberId === member.membership_id ? 'bg-elevated/60' : 'hover:bg-elevated/30'"
-                  >
-                    <td class="px-3 py-2">
-                      {{ memberLabel(member) }}
-                    </td>
-                    <td class="px-3 py-2">
-                      <UBadge
-                        :color="memberStatusColor(member.effective_status)"
-                        size="xs"
-                        variant="soft"
-                      >
-                        {{ member.effective_status }}
-                      </UBadge>
-                    </td>
-                    <td class="px-3 py-2 font-mono">
-                      {{ member.door_code || 'none' }}
-                    </td>
-                    <td class="px-3 py-2 text-right">
-                      <UButton
-                        size="xs"
-                        color="neutral"
-                        variant="soft"
-                        @click="() => { selectedMemberId = member.membership_id; memberDoorCode = member.door_code ?? '' }"
-                      >
-                        Edit
-                      </UButton>
-                    </td>
-                  </tr>
-                  <tr v-if="!members.length">
-                    <td
-                      colspan="4"
-                      class="px-3 py-4 text-sm text-dimmed"
-                    >
-                      No members found.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div
-              v-if="selectedMember"
-              class="mt-4 grid gap-3 sm:grid-cols-[12rem_auto]"
-            >
+    <div class="space-y-4">
+      <DashboardDataPanel
+        v-if="doorCodesTab === 'members'"
+        list-title="Member door codes"
+        list-description="Search members first, then update their assigned code."
+        detail-title="Member code editor"
+        detail-description="Member codes are booking-window controlled by access jobs."
+      >
+        <template #list-controls>
+          <UCard class="admin-panel-card border-0">
+            <UFormField label="Search members">
               <UInput
-                v-model="memberDoorCode"
-                maxlength="6"
-                inputmode="numeric"
-                placeholder="000000"
+                v-model="memberCodeSearch"
+                icon="i-lucide-search"
+                placeholder="Name, email, user id, code"
               />
-              <UButton
-                :loading="savingMemberDoorCode"
-                @click="saveMemberDoorCode"
-              >
-                Save member code
-              </UButton>
-            </div>
+            </UFormField>
           </UCard>
+        </template>
 
-          <UCard v-else>
-            <div class="font-medium">
-              Permanent door codes
-            </div>
-            <p class="mt-1 text-xs text-dimmed">
-              Permanent codes are programmed directly to the selected slot and stay active while enabled.
-            </p>
+        <template #list>
+          <DashboardSectionState
+            v-if="pending && !members.length"
+            state="loading"
+            title="Loading member codes"
+            description="Fetching membership and code assignments."
+          />
+          <DashboardSectionState
+            v-else-if="!filteredMemberCodes.length"
+            state="empty"
+            title="No members found"
+            description="Try a different search query."
+          />
+          <div
+            v-else
+            class="space-y-2"
+          >
+            <button
+              v-for="member in filteredMemberCodes"
+              :key="member.membership_id"
+              class="w-full rounded-xl border border-default bg-elevated/35 p-3 text-left transition hover:bg-elevated/55"
+              :class="selectedMemberId === member.membership_id ? '!border-primary bg-elevated/70' : ''"
+              @click="() => { selectedMemberId = member.membership_id; memberDoorCode = member.door_code ?? '' }"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <div class="truncate text-sm font-medium">
+                  {{ memberLabel(member) }}
+                </div>
+                <UBadge
+                  :color="memberStatusColor(member.effective_status)"
+                  size="xs"
+                  variant="soft"
+                >
+                  {{ member.effective_status }}
+                </UBadge>
+              </div>
+              <div class="mt-1 text-xs text-dimmed truncate">
+                {{ member.customer_email || member.user_id }}
+              </div>
+              <div class="mt-2 text-xs font-mono text-highlighted">
+                {{ member.door_code || 'no code set' }}
+              </div>
+            </button>
+          </div>
+        </template>
 
-            <div class="mt-3 grid gap-3 sm:grid-cols-2">
-              <UFormField label="Label">
+        <template #detail>
+          <DashboardSectionState
+            v-if="!selectedMember"
+            state="empty"
+            title="No member selected"
+            description="Select a member to update the door code."
+          />
+          <UCard
+            v-else
+            class="admin-panel-card border-0"
+          >
+            <div class="space-y-3">
+              <div>
+                <div class="text-sm font-medium">
+                  {{ memberLabel(selectedMember) }}
+                </div>
+                <div class="mt-1 text-xs text-dimmed">
+                  {{ selectedMember.customer_email || selectedMember.user_id }}
+                </div>
+              </div>
+              <div class="grid gap-3 sm:grid-cols-[12rem_auto]">
                 <UInput
-                  v-model="permanentForm.label"
-                  placeholder="Staff / Cleaner / Owner"
-                />
-              </UFormField>
-              <UFormField label="Slot">
-                <UInput
-                  v-model.number="permanentForm.slotNumber"
-                  type="number"
-                  min="1"
-                  max="99"
-                />
-              </UFormField>
-              <UFormField label="Code">
-                <UInput
-                  v-model="permanentForm.code"
+                  v-model="memberDoorCode"
                   maxlength="6"
                   inputmode="numeric"
                   placeholder="000000"
                 />
+                <UButton
+                  :loading="savingMemberDoorCode"
+                  @click="saveMemberDoorCode"
+                >
+                  Save member code
+                </UButton>
+              </div>
+            </div>
+          </UCard>
+        </template>
+      </DashboardDataPanel>
+
+      <DashboardDataPanel
+        v-else
+        list-title="Permanent door codes"
+        list-description="Filter and search permanent lock slots, then edit details."
+        detail-title="Permanent code editor"
+        detail-description="Permanent codes are programmed directly to lock slots and stay active while enabled."
+      >
+        <template #list-controls>
+          <UCard class="admin-panel-card border-0">
+            <div class="grid gap-3 md:grid-cols-2">
+              <UFormField label="Search permanent codes">
+                <UInput
+                  v-model="permanentCodeSearch"
+                  icon="i-lucide-search"
+                  placeholder="Label, slot, code, sync status"
+                />
               </UFormField>
-              <UFormField label="Active">
-                <UCheckbox
-                  v-model="permanentForm.active"
-                  label="Enabled"
+              <UFormField label="Status">
+                <USelect
+                  v-model="permanentStatusFilter"
+                  :items="[
+                    { label: 'All statuses', value: 'all' },
+                    { label: 'Active', value: 'active' },
+                    { label: 'Inactive', value: 'inactive' }
+                  ]"
                 />
               </UFormField>
             </div>
+          </UCard>
+        </template>
 
-            <div class="mt-3 flex gap-2">
-              <UButton
-                :loading="savingPermanent"
-                @click="savePermanentCode"
-              >
-                {{ permanentForm.id ? 'Update permanent code' : 'Create permanent code' }}
-              </UButton>
-              <UButton
-                color="neutral"
-                variant="soft"
-                @click="resetPermanentForm"
-              >
-                New
-              </UButton>
-            </div>
-
-            <div class="mt-4 max-h-80 overflow-auto rounded-lg border border-default">
-              <table class="min-w-full text-sm">
-                <thead class="bg-elevated/50 text-left text-xs uppercase tracking-wide text-dimmed">
-                  <tr>
-                    <th class="px-3 py-2 font-medium">
-                      Label
-                    </th>
-                    <th class="px-3 py-2 font-medium">
-                      Slot
-                    </th>
-                    <th class="px-3 py-2 font-medium">
-                      Code
-                    </th>
-                    <th class="px-3 py-2 font-medium">
-                      Status
-                    </th>
-                    <th class="px-3 py-2 font-medium">
-                      Sync
-                    </th>
-                    <th class="px-3 py-2 font-medium">
-                      Last sync
-                    </th>
-                    <th class="px-3 py-2 font-medium text-right">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="row in permanentCodes"
-                    :key="row.id"
-                    class="border-t border-default"
-                  >
-                    <td class="px-3 py-2">
+        <template #list>
+          <DashboardSectionState
+            v-if="!filteredPermanentCodes.length"
+            state="empty"
+            title="No permanent codes"
+            description="No permanent codes match this filter."
+          />
+          <div
+            v-else
+            class="space-y-2"
+          >
+            <UCard
+              v-for="row in filteredPermanentCodes"
+              :key="row.id"
+              class="admin-panel-card border-0"
+            >
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <div class="truncate text-sm font-medium">
                       {{ row.label }}
-                    </td>
-                    <td class="px-3 py-2">
-                      {{ row.slot_number }}
-                    </td>
-                    <td class="px-3 py-2 font-mono">
-                      {{ row.code }}
-                    </td>
-                    <td class="px-3 py-2">
-                      <UBadge
-                        :color="row.active ? 'success' : 'neutral'"
-                        size="xs"
-                        variant="soft"
-                      >
-                        {{ row.active ? 'active' : 'inactive' }}
-                      </UBadge>
-                    </td>
-                    <td class="px-3 py-2">
-                      <UBadge
-                        :color="syncStatusColor(row.last_sync_status)"
-                        size="xs"
-                        variant="soft"
-                      >
-                        {{ row.last_sync_status ?? 'unknown' }}
-                      </UBadge>
-                    </td>
-                    <td class="px-3 py-2">
-                      <span class="text-xs text-dimmed">{{ formatDateTime(row.last_synced_at) }}</span>
-                      <div
-                        v-if="row.last_sync_error"
-                        class="mt-1 text-xs text-error"
-                      >
-                        {{ row.last_sync_error }}
-                      </div>
-                    </td>
-                    <td class="px-3 py-2">
-                      <div class="flex justify-end gap-2">
-                        <UButton
-                          size="xs"
-                          color="neutral"
-                          variant="soft"
-                          @click="editPermanentCode(row)"
-                        >
-                          Edit
-                        </UButton>
-                        <UButton
-                          size="xs"
-                          color="error"
-                          variant="soft"
-                          :loading="deletingPermanentId === row.id"
-                          @click="deletePermanentCode(row.id)"
-                        >
-                          Delete
-                        </UButton>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr v-if="!permanentCodes.length">
-                    <td
-                      colspan="7"
-                      class="px-3 py-4 text-sm text-dimmed"
+                    </div>
+                    <UBadge
+                      :color="row.active ? 'success' : 'neutral'"
+                      size="xs"
+                      variant="soft"
                     >
-                      No permanent door codes configured.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                      {{ row.active ? 'active' : 'inactive' }}
+                    </UBadge>
+                  </div>
+                  <div class="mt-1 text-xs text-dimmed">
+                    Slot {{ row.slot_number }} · Code {{ row.code }}
+                  </div>
+                  <div class="mt-1 text-xs text-dimmed">
+                    Sync: {{ row.last_sync_status ?? 'unknown' }} · {{ formatDateTime(row.last_synced_at) }}
+                  </div>
+                  <div
+                    v-if="row.last_sync_error"
+                    class="mt-1 text-xs text-error"
+                  >
+                    {{ row.last_sync_error }}
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="soft"
+                    @click="editPermanentCode(row)"
+                  >
+                    Edit
+                  </UButton>
+                  <UButton
+                    size="xs"
+                    color="error"
+                    variant="soft"
+                    :loading="deletingPermanentId === row.id"
+                    @click="deletePermanentCode(row.id)"
+                  >
+                    Delete
+                  </UButton>
+                </div>
+              </div>
+            </UCard>
+          </div>
+        </template>
+
+        <template #detail>
+          <UCard class="admin-panel-card border-0">
+            <div class="space-y-3">
+              <div class="text-sm font-medium">
+                {{ permanentForm.id ? 'Edit permanent code' : 'Create permanent code' }}
+              </div>
+              <div class="grid gap-3 sm:grid-cols-2">
+                <UFormField label="Label">
+                  <UInput
+                    v-model="permanentForm.label"
+                    placeholder="Staff / Cleaner / Owner"
+                  />
+                </UFormField>
+                <UFormField label="Slot">
+                  <UInput
+                    v-model.number="permanentForm.slotNumber"
+                    type="number"
+                    min="1"
+                    max="99"
+                  />
+                </UFormField>
+                <UFormField label="Code">
+                  <UInput
+                    v-model="permanentForm.code"
+                    maxlength="6"
+                    inputmode="numeric"
+                    placeholder="000000"
+                  />
+                </UFormField>
+                <UFormField label="Active">
+                  <UCheckbox
+                    v-model="permanentForm.active"
+                    label="Enabled"
+                  />
+                </UFormField>
+              </div>
+              <DashboardActionGroup
+                align="start"
+                :primary="{
+                  label: permanentForm.id ? 'Update permanent code' : 'Create permanent code',
+                  loading: savingPermanent,
+                  onSelect: savePermanentCode
+                }"
+                :secondary="[
+                  {
+                    label: 'New',
+                    color: 'neutral',
+                    variant: 'soft',
+                    onSelect: resetPermanentForm
+                  }
+                ]"
+              />
             </div>
           </UCard>
-        </div>
-      </AdminOpsShell>
-    </template>
-  </UDashboardPanel>
+        </template>
+      </DashboardDataPanel>
+    </div>
+  </DashboardPageScaffold>
 </template>

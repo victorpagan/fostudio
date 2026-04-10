@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { DropdownMenuItem } from '@nuxt/ui'
 import { formatMembershipTierLabel } from '~~/app/utils/membershipTierLabel'
 import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
@@ -9,12 +8,6 @@ const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const { isNotificationsSlideoverOpen } = useDashboard()
 const { isAdmin } = useCurrentUser()
-
-const actions = [[
-  { label: 'Book studio', icon: 'i-lucide-calendar-plus', to: '/dashboard/book' },
-  { label: 'View calendar', icon: 'i-lucide-calendar', to: '/calendar' },
-  { label: 'Manage membership', icon: 'i-lucide-badge-check', to: '/dashboard/membership' }
-]] satisfies DropdownMenuItem[][]
 
 type HoldSummary = {
   holdsIncluded: number
@@ -114,6 +107,44 @@ const membershipCta = computed(() => {
   return { label: 'Manage membership', to: '/dashboard/membership' }
 })
 
+const headerPrimaryAction = computed(() => {
+  if (needsMembership.value) {
+    return {
+      label: membershipCta.value.label,
+      to: membershipCta.value.to,
+      icon: 'i-lucide-badge-check'
+    }
+  }
+
+  return {
+    label: 'Book studio',
+    to: '/dashboard/book',
+    icon: 'i-lucide-calendar-plus'
+  }
+})
+
+const headerSecondaryActions = computed(() => {
+  if (needsMembership.value) return []
+  return [{
+    label: 'My bookings',
+    to: '/dashboard/bookings',
+    icon: 'i-lucide-list-checks'
+  }]
+})
+
+const headerTertiaryActions = computed(() => ([
+  {
+    label: 'Manage membership',
+    to: '/dashboard/membership',
+    icon: 'i-lucide-badge-check'
+  },
+  {
+    label: 'Profile',
+    to: '/dashboard/profile',
+    icon: 'i-lucide-user'
+  }
+]))
+
 const tierLabel = computed(() => {
   if (!membership.value) return null
   const tierName = formatMembershipTierLabel(membership.value.tier)
@@ -186,22 +217,17 @@ const pendingCancelSummary = computed(() => {
 </script>
 
 <template>
-  <UDashboardPanel
-    id="home"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <DashboardPageScaffold
+    panel-id="home"
+    title="Dashboard"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Dashboard"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-3' }"
+    <template #right>
+      <DashboardActionGroup
+        :primary="headerPrimaryAction"
+        :secondary="headerSecondaryActions"
+        :tertiary="headerTertiaryActions"
       >
         <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-
-        <template #right>
           <UTooltip
             text="Notifications"
             :shortcuts="['N']"
@@ -210,6 +236,7 @@ const pendingCancelSummary = computed(() => {
               color="neutral"
               variant="ghost"
               square
+              aria-label="Open notifications"
               @click="isNotificationsSlideoverOpen = true"
             >
               <UChip
@@ -223,250 +250,222 @@ const pendingCancelSummary = computed(() => {
               </UChip>
             </UButton>
           </UTooltip>
-
-          <UDropdownMenu :items="actions">
-            <UButton
-              icon="i-lucide-plus"
-              size="md"
-              class="rounded-full"
-            />
-          </UDropdownMenu>
         </template>
-      </UDashboardNavbar>
+      </DashboardActionGroup>
     </template>
 
-    <template #body>
-      <AdminOpsShell>
-        <div class="w-full space-y-4">
-          <!-- Admin bypass notice -->
-          <UAlert
-            v-if="isAdmin"
-            color="primary"
-            variant="soft"
-            title="Admin access"
-            description="You are viewing the dashboard as an admin. Membership guards are bypassed."
-          />
-          <!-- Membership CTA for non-members -->
-          <UAlert
-            v-else-if="needsMembership"
-            color="warning"
-            variant="soft"
-            title="Membership required to book"
-            description="Choose a plan (or finish checkout) to access booking and credits."
+    <div class="w-full space-y-4">
+      <!-- Admin bypass notice -->
+      <UAlert
+        v-if="isAdmin"
+        color="primary"
+        variant="soft"
+        title="Admin access"
+        description="You are viewing the dashboard as an admin. Membership guards are bypassed."
+      />
+      <!-- Membership CTA for non-members -->
+      <UAlert
+        v-else-if="needsMembership"
+        color="warning"
+        variant="soft"
+        title="Membership required to book"
+        description="Choose a plan (or finish checkout) to access booking and credits."
+      >
+        <template #actions>
+          <UButton
+            size="sm"
+            :to="membershipCta.to"
           >
-            <template #actions>
-              <UButton
-                size="sm"
-                :to="membershipCta.to"
-              >
-                {{ membershipCta.label }}
-              </UButton>
-            </template>
-          </UAlert>
-          <!-- Active member welcome -->
-          <UAlert
-            v-else
-            color="success"
-            variant="soft"
-            title="Membership active"
-            :description="tierLabel ? `Plan: ${tierLabel}` : 'Welcome back!'"
+            {{ membershipCta.label }}
+          </UButton>
+        </template>
+      </UAlert>
+      <!-- Active member welcome -->
+      <UAlert
+        v-else
+        color="success"
+        variant="soft"
+        title="Membership active"
+        :description="tierLabel ? `Plan: ${tierLabel}` : 'Welcome back!'"
+      >
+        <template #actions>
+          <UButton
+            size="sm"
+            to="/dashboard/book"
           >
-            <template #actions>
-              <UButton
-                size="sm"
-                to="/dashboard/book"
-              >
-                Book studio
-              </UButton>
-              <UButton
-                size="sm"
-                color="neutral"
-                variant="soft"
-                to="/dashboard/credits"
-              >
-                Buy credits
-              </UButton>
-              <UButton
-                size="sm"
-                color="neutral"
-                variant="soft"
-                to="/dashboard/membership"
-              >
-                Manage membership
-              </UButton>
-            </template>
-          </UAlert>
-          <UAlert
-            v-if="pendingCancelSummary"
-            class="mt-3"
-            color="warning"
+            Book studio
+          </UButton>
+        </template>
+      </UAlert>
+      <UAlert
+        v-if="pendingCancelSummary"
+        class="mt-3"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-calendar-x"
+        title="Cancellation scheduled"
+        :description="pendingCancelSummary"
+      />
+    </div>
+    <!-- Stat cards -->
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <!-- Credits + holds card -->
+      <UCard>
+        <div class="text-xs text-dimmed uppercase tracking-wide">
+          Credits and holds
+        </div>
+        <div class="mt-3 grid grid-cols-2 gap-3">
+          <div class="rounded-lg border border-default bg-elevated/60 p-3">
+            <div class="text-[11px] uppercase tracking-wide text-dimmed">
+              Credits
+            </div>
+            <div class="mt-1 text-3xl font-semibold tabular-nums">
+              <span v-if="creditBalance !== null">{{ creditBalance }}</span>
+              <span
+                v-else
+                class="text-dimmed text-xl"
+              >—</span>
+            </div>
+          </div>
+          <div class="rounded-lg border border-default bg-elevated/60 p-3">
+            <div class="text-[11px] uppercase tracking-wide text-dimmed">
+              Holds left
+            </div>
+            <div class="mt-1 text-3xl font-semibold tabular-nums">
+              {{ holdSummary?.includedHoldsRemaining ?? 0 }}
+            </div>
+          </div>
+        </div>
+        <div class="mt-3 text-xs text-dimmed">
+          <template v-if="creditBalance === null">
+            Credits appear once your first invoice is paid.
+          </template>
+          <template v-else>
+            Paid hold balance: {{ holdSummary?.paidHoldBalance ?? 0 }}
+          </template>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-2">
+          <UButton
+            size="sm"
+            color="neutral"
             variant="soft"
-            icon="i-lucide-calendar-x"
-            title="Cancellation scheduled"
-            :description="pendingCancelSummary"
+            to="/dashboard/credits"
+          >
+            Manage credits
+          </UButton>
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="soft"
+            to="/dashboard/membership#holds"
+          >
+            Manage holds
+          </UButton>
+        </div>
+        <div
+          v-if="pendingSwapSummary"
+          class="mt-3 rounded-lg border border-default bg-elevated/60 p-2"
+        >
+          <div class="text-xs font-medium">
+            {{ pendingSwapSummary.title }}
+          </div>
+          <div class="mt-1 text-xs text-dimmed">
+            {{ pendingSwapSummary.detail }}
+          </div>
+        </div>
+      </UCard>
+
+      <!-- Upcoming bookings card -->
+      <UCard>
+        <div class="text-xs text-dimmed uppercase tracking-wide">
+          Upcoming
+        </div>
+        <div class="mt-2 text-4xl font-semibold tabular-nums">
+          {{ upcomingCount ?? 0 }}
+        </div>
+        <div class="mt-1.5 text-xs text-dimmed">
+          {{ upcomingCount === 1 ? 'upcoming booking' : 'upcoming bookings' }}
+        </div>
+        <div class="mt-4 flex flex-col gap-2">
+          <UButton
+            :disabled="needsMembership"
+            to="/dashboard/book"
+            size="sm"
+          >
+            Book studio
+          </UButton>
+          <UButton
+            color="neutral"
+            variant="soft"
+            to="/dashboard/bookings"
+            size="sm"
+          >
+            My bookings
+          </UButton>
+        </div>
+      </UCard>
+
+      <UCard>
+        <div class="text-xs text-dimmed uppercase tracking-wide">
+          Waiver
+        </div>
+        <div class="mt-2 text-4xl font-semibold tabular-nums">
+          <UIcon
+            :name="waiverState?.status === 'current' ? 'i-lucide-shield-check' : 'i-lucide-file-warning'"
+            class="size-9"
           />
         </div>
-        <!-- Stat cards -->
-        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <!-- Credits + holds card -->
-          <UCard>
-            <div class="text-xs text-dimmed uppercase tracking-wide">
-              Credits and holds
-            </div>
-            <div class="mt-3 grid grid-cols-2 gap-3">
-              <div class="rounded-lg border border-default bg-elevated/60 p-3">
-                <div class="text-[11px] uppercase tracking-wide text-dimmed">
-                  Credits
-                </div>
-                <div class="mt-1 text-3xl font-semibold tabular-nums">
-                  <span v-if="creditBalance !== null">{{ creditBalance }}</span>
-                  <span
-                    v-else
-                    class="text-dimmed text-xl"
-                  >—</span>
-                </div>
-              </div>
-              <div class="rounded-lg border border-default bg-elevated/60 p-3">
-                <div class="text-[11px] uppercase tracking-wide text-dimmed">
-                  Holds left
-                </div>
-                <div class="mt-1 text-3xl font-semibold tabular-nums">
-                  {{ holdSummary?.includedHoldsRemaining ?? 0 }}
-                </div>
-              </div>
-            </div>
-            <div class="mt-3 text-xs text-dimmed">
-              <template v-if="creditBalance === null">
-                Credits appear once your first invoice is paid.
-              </template>
-              <template v-else>
-                Paid hold balance: {{ holdSummary?.paidHoldBalance ?? 0 }}
-              </template>
-            </div>
-            <div class="mt-4 flex flex-wrap gap-2">
-              <UButton
-                size="sm"
-                color="neutral"
-                variant="soft"
-                to="/dashboard/credits"
-              >
-                Manage credits
-              </UButton>
-              <UButton
-                size="sm"
-                color="neutral"
-                variant="soft"
-                to="/dashboard/membership#holds"
-              >
-                Manage holds
-              </UButton>
-            </div>
-            <div
-              v-if="pendingSwapSummary"
-              class="mt-3 rounded-lg border border-default bg-elevated/60 p-2"
-            >
-              <div class="text-xs font-medium">
-                {{ pendingSwapSummary.title }}
-              </div>
-              <div class="mt-1 text-xs text-dimmed">
-                {{ pendingSwapSummary.detail }}
-              </div>
-            </div>
-          </UCard>
-
-          <!-- Upcoming bookings card -->
-          <UCard>
-            <div class="text-xs text-dimmed uppercase tracking-wide">
-              Upcoming
-            </div>
-            <div class="mt-2 text-4xl font-semibold tabular-nums">
-              {{ upcomingCount ?? 0 }}
-            </div>
-            <div class="mt-1.5 text-xs text-dimmed">
-              {{ upcomingCount === 1 ? 'upcoming booking' : 'upcoming bookings' }}
-            </div>
-            <div class="mt-4 flex flex-col gap-2">
-              <UButton
-                :disabled="needsMembership"
-                to="/dashboard/book"
-                size="sm"
-              >
-                Book studio
-              </UButton>
-              <UButton
-                color="neutral"
-                variant="soft"
-                to="/dashboard/bookings"
-                size="sm"
-              >
-                My bookings
-              </UButton>
-            </div>
-          </UCard>
-
-          <UCard>
-            <div class="text-xs text-dimmed uppercase tracking-wide">
-              Waiver
-            </div>
-            <div class="mt-2 text-4xl font-semibold tabular-nums">
-              <UIcon
-                :name="waiverState?.status === 'current' ? 'i-lucide-shield-check' : 'i-lucide-file-warning'"
-                class="size-9"
-              />
-            </div>
-            <div class="mt-1.5">
-              <UBadge
-                :color="waiverStatusColor"
-                variant="soft"
-                size="sm"
-              >
-                {{ waiverStatusLabel }}
-              </UBadge>
-            </div>
-            <div class="mt-1.5 text-xs text-dimmed">
-              {{ waiverStatusDescription }}
-            </div>
-            <div class="mt-4">
-              <UButton
-                size="sm"
-                color="neutral"
-                variant="soft"
-                to="/dashboard/waiver"
-              >
-                {{ waiverState?.status === 'current' ? 'View waiver' : 'Review and sign' }}
-              </UButton>
-            </div>
-          </UCard>
+        <div class="mt-1.5">
+          <UBadge
+            :color="waiverStatusColor"
+            variant="soft"
+            size="sm"
+          >
+            {{ waiverStatusLabel }}
+          </UBadge>
         </div>
-
-        <div class="max-w-xl">
-          <UCard>
-            <div class="text-xs text-dimmed uppercase tracking-wide mb-3">
-              Account
-            </div>
-            <div class="flex flex-col gap-2">
-              <UButton
-                color="neutral"
-                variant="soft"
-                to="/dashboard/membership"
-                icon="i-lucide-badge-check"
-                class="justify-start"
-              >
-                Membership details
-              </UButton>
-              <UButton
-                color="neutral"
-                variant="soft"
-                to="/dashboard/profile"
-                icon="i-lucide-user"
-                class="justify-start"
-              >
-                Edit profile
-              </UButton>
-            </div>
-          </UCard>
+        <div class="mt-1.5 text-xs text-dimmed">
+          {{ waiverStatusDescription }}
         </div>
-      </AdminOpsShell>
-    </template>
-  </UDashboardPanel>
+        <div class="mt-4">
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="soft"
+            to="/dashboard/waiver"
+          >
+            {{ waiverState?.status === 'current' ? 'View waiver' : 'Review and sign' }}
+          </UButton>
+        </div>
+      </UCard>
+    </div>
+
+    <div class="max-w-xl">
+      <UCard>
+        <div class="text-xs text-dimmed uppercase tracking-wide mb-3">
+          Account
+        </div>
+        <div class="flex flex-col gap-2">
+          <UButton
+            color="neutral"
+            variant="soft"
+            to="/dashboard/membership"
+            icon="i-lucide-badge-check"
+            class="justify-start"
+          >
+            Membership details
+          </UButton>
+          <UButton
+            color="neutral"
+            variant="soft"
+            to="/dashboard/profile"
+            icon="i-lucide-user"
+            class="justify-start"
+          >
+            Edit profile
+          </UButton>
+        </div>
+      </UCard>
+    </div>
+  </DashboardPageScaffold>
 </template>

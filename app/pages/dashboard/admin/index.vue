@@ -421,523 +421,512 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
 </script>
 
 <template>
-  <UDashboardPanel
-    id="admin-overview"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <DashboardPageScaffold
+    panel-id="admin-overview"
+    title="Ops Overview"
+    :use-ops-shell="false"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Ops Overview"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-2' }"
-      >
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-
-        <template #right>
-          <UButton
-            size="sm"
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-refresh-cw"
-            :loading="pending"
-            @click="() => refresh()"
-          />
-        </template>
-      </UDashboardNavbar>
+    <template #right>
+      <DashboardActionGroup
+        :secondary="[
+          {
+            label: 'Refresh',
+            icon: 'i-lucide-refresh-cw',
+            color: 'neutral',
+            variant: 'soft',
+            loading: pending,
+            onSelect: () => refresh()
+          }
+        ]"
+      />
     </template>
-
-    <template #body>
-      <div class="admin-ops-shell-frame h-full">
-        <div
-          class="admin-ops-shell-shadow admin-ops-shell-shadow--top"
-          :class="{ 'is-visible': opsCanScrollUp }"
-        />
-        <div
-          class="admin-ops-shell-shadow admin-ops-shell-shadow--bottom"
-          :class="{ 'is-visible': opsCanScrollDown }"
-        />
-        <div
-          ref="opsScrollRef"
-          class="admin-ops-shell h-full overflow-y-auto p-4 sm:p-5 md:p-6 space-y-4 md:space-y-5"
-        >
-          <section class="admin-ops-hero rounded-2xl p-4 sm:p-5 md:p-6">
-            <div class="admin-hero-grid gap-4">
-              <div class="space-y-2">
-                <p class="text-[11px] uppercase tracking-[0.22em] text-dimmed">
-                  Revenue + Critical Operations
-                </p>
-                <p class="max-w-3xl text-sm text-toned">
-                  Selected range drives all totals, trend bars, and pressure signals.
-                </p>
-                <div class="mt-4 flex flex-wrap items-center gap-2">
-                  <UButton
-                    v-for="mode in periodButtons"
-                    :key="mode.value"
-                    size="xs"
-                    :color="periodMode === mode.value ? 'primary' : 'neutral'"
-                    :variant="periodMode === mode.value ? 'solid' : 'ghost'"
-                    @click="periodMode = mode.value"
-                  >
-                    {{ mode.label }}
-                  </UButton>
-                </div>
-              </div>
-              <div class="admin-period-toolbar">
+    <div class="admin-ops-shell-frame h-full">
+      <div
+        class="admin-ops-shell-shadow admin-ops-shell-shadow--top"
+        :class="{ 'is-visible': opsCanScrollUp }"
+      />
+      <div
+        class="admin-ops-shell-shadow admin-ops-shell-shadow--bottom"
+        :class="{ 'is-visible': opsCanScrollDown }"
+      />
+      <div
+        ref="opsScrollRef"
+        class="admin-ops-shell h-full overflow-y-auto p-4 sm:p-5 md:p-6 space-y-4 md:space-y-5"
+      >
+        <section class="admin-ops-hero rounded-2xl p-4 sm:p-5 md:p-6">
+          <div class="admin-hero-grid gap-4">
+            <div class="space-y-2">
+              <p class="text-[11px] uppercase tracking-[0.22em] text-dimmed">
+                Revenue + Critical Operations
+              </p>
+              <p class="max-w-3xl text-sm text-toned">
+                Selected range drives all totals, trend bars, and pressure signals.
+              </p>
+              <div class="mt-4 flex flex-wrap items-center gap-2">
                 <UButton
-                  class="admin-period-nav-btn"
-                  size="sm"
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-chevron-left"
-                  @click="stepPeriod(-1)"
-                />
-                <div class="admin-range-label text-center">
-                  {{ rangeLabel }}
-                </div>
-                <UButton
-                  class="admin-period-nav-btn"
-                  size="sm"
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-chevron-right"
-                  :disabled="!canStepForward"
-                  @click="stepPeriod(1)"
-                />
+                  v-for="mode in periodButtons"
+                  :key="mode.value"
+                  size="xs"
+                  :color="periodMode === mode.value ? 'primary' : 'neutral'"
+                  :variant="periodMode === mode.value ? 'solid' : 'ghost'"
+                  @click="periodMode = mode.value"
+                >
+                  {{ mode.label }}
+                </UButton>
               </div>
             </div>
-          </section>
-
-          <section class="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <OpsKpiCard card-class="admin-kpi-card admin-kpi-card--revenue">
-              <div class="text-[11px] uppercase tracking-[0.2em] text-inverted/85">
-                Revenue
-              </div>
-              <div class="mt-2 text-3xl font-[var(--font-display)] font-light text-inverted">
-                {{ formatMoney(data?.summary?.totalRevenueCents) }}
-              </div>
-              <p class="mt-2 text-xs text-inverted/80">
-                {{ data?.summary?.totalOrders ?? 0 }} paid transactions in range
-              </p>
-            </OpsKpiCard>
-
-            <OpsKpiCard
-              card-class="admin-kpi-card admin-kpi-card--pressure"
-              show-link-action
-              show-notification-action
-              :notification-disabled="true"
-              link-aria-label="Open critical pressure sources"
-              @link="criticalDetailsOpen = true"
-            >
-              <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                Critical pressure
-              </div>
-              <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
-                {{ criticalPressureTotal }}
-              </div>
-              <p class="mt-2 text-xs text-dimmed">
-                Incidents + dead jobs + due grants
-              </p>
-            </OpsKpiCard>
-
-            <OpsKpiCard card-class="admin-kpi-card">
-              <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                Campaign reminders
-              </div>
-              <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
-                {{ campaignReminders.length }}
-              </div>
-              <p class="mt-2 text-xs text-dimmed">
-                {{ campaignReminders[0]?.dueLabel ?? 'No reminders queued' }}
-              </p>
+            <div class="admin-period-toolbar">
               <UButton
-                class="mt-3 w-fit"
-                size="xs"
+                class="admin-period-nav-btn"
+                size="sm"
                 color="neutral"
                 variant="ghost"
-                to="/dashboard/admin/email-campaigns"
-              >
-                Open campaigns
-              </UButton>
-            </OpsKpiCard>
-
-            <OpsKpiCard card-class="admin-kpi-card">
-              <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                Analytics workspace
+                icon="i-lucide-chevron-left"
+                @click="stepPeriod(-1)"
+              />
+              <div class="admin-range-label text-center">
+                {{ rangeLabel }}
               </div>
-              <div class="mt-2 text-2xl font-[var(--font-display)] font-light">
-                KPI + trends
-              </div>
-              <p class="mt-2 text-xs text-dimmed">
-                Review generated metrics, alerts, and weekly report outputs.
-              </p>
               <UButton
-                class="mt-3 w-fit"
-                size="xs"
-                color="primary"
-                variant="soft"
-                to="/dashboard/admin/analytics"
-              >
-                Open analytics
-              </UButton>
-            </OpsKpiCard>
-          </section>
-
-          <section class="grid gap-3 sm:gap-4 xl:grid-cols-[1.6fr_1fr]">
-            <UCard
-              class="admin-panel-card border-0 admin-revenue-panel h-full"
-              :ui="{ root: 'h-full flex flex-col', body: 'h-full flex flex-col min-h-0' }"
-            >
-              <div class="flex items-center justify-between gap-3">
-                <div>
-                  <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                    Sales trend
-                  </div>
-                  <h2 class="mt-1 text-xl font-[var(--font-display)] font-light">
-                    Revenue by {{ data?.range?.bucket === 'month' ? 'month' : data?.range?.bucket === 'week' ? 'week' : 'day' }}
-                  </h2>
-                </div>
-                <UBadge
-                  size="sm"
-                  color="primary"
-                  variant="soft"
-                >
-                  {{ formatMoney(data?.summary?.totalRevenueCents) }}
-                </UBadge>
-              </div>
-
-              <div class="admin-revenue-body mt-4">
-                <div
-                  :class="{ 'is-visible': revenueHasUserScrolled && revenueCanScrollLeft }"
-                />
-                <div
-                  :class="{ 'is-visible': revenueHasUserScrolled && revenueCanScrollRight }"
-                />
-                <div
-                  ref="revenueScrollRef"
-                  class="admin-revenue-scroll"
-                  :class="{ 'admin-revenue-scroll--scrolling': revenueIsScrolling }"
-                >
-                  <div
-                    class="admin-revenue-chart"
-                    :style="{ minWidth: revenueChartMinWidth }"
-                  >
-                    <div
-                      v-for="point in revenueSeries"
-                      :key="point.key"
-                      class="admin-revenue-chart-col"
-                    >
-                      <div class="admin-revenue-bar-shell">
-                        <div class="admin-revenue-bar-stack">
-                          <div
-                            class="admin-revenue-segment admin-revenue-segment--holds"
-                            :style="{ height: barSegmentHeight(point.holdTopupCents) }"
-                          />
-                          <div
-                            class="admin-revenue-segment admin-revenue-segment--topups"
-                            :style="{ height: barSegmentHeight(point.creditTopupCents) }"
-                          />
-                          <div
-                            class="admin-revenue-segment admin-revenue-segment--membership"
-                            :style="{ height: barSegmentHeight(point.membershipCents) }"
-                          />
-                        </div>
-                      </div>
-                      <div class="admin-revenue-label">
-                        {{ point.label }}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div
-                  class="admin-revenue-seek mt-2"
-                  :class="{ 'admin-revenue-seek--disabled': revenueSeekMax <= 0 }"
-                >
-                  <input
-                    class="admin-revenue-seek-input"
-                    type="range"
-                    min="0"
-                    :max="revenueSeekMax"
-                    :step="1"
-                    :value="revenueSeekValue"
-                    :disabled="revenueSeekMax <= 0"
-                    @input="onRevenueSeekInput"
-                  >
-                </div>
-                <div class="admin-revenue-legend mt-3 flex flex-wrap gap-2 text-[11px]">
-                  <span class="admin-legend-pill">
-                    <span class="admin-legend-dot admin-legend-dot--membership" /> Membership
-                  </span>
-                  <span class="admin-legend-pill">
-                    <span class="admin-legend-dot admin-legend-dot--topups" /> Credits
-                  </span>
-                  <span class="admin-legend-pill">
-                    <span class="admin-legend-dot admin-legend-dot--holds" /> Holds
-                  </span>
-                </div>
-              </div>
-            </UCard>
-
-            <UCard
-              class="border-0 admin-usage-panel"
-              :ui="{ root: 'bg-transparent shadow-none ring-0', body: 'bg-transparent' }"
-            >
-              <div class="flex items-center justify-between gap-2">
-                <div>
-                  <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                    Usage leaders
-                  </div>
-                  <h2 class="mt-1 text-xl font-[var(--font-display)] font-light">
-                    Top 4 in {{ rangeLabel }}
-                  </h2>
-                </div>
-              </div>
-
-              <p class="mt-2 text-xs text-dimmed">
-                Derived from non-canceled member bookings plus processed membership/top-up payments in {{ rangeLabel }}.
-              </p>
-
-              <div class="mt-3 grid gap-2 sm:grid-cols-2">
-                <NuxtLink
-                  v-for="(member, index) in usageLeaders"
-                  :key="member.userId"
-                  class="admin-leader-tile"
-                  :class="{ 'admin-leader-tile--top': index === 0 }"
-                  :to="usageLeaderTo(member.userId)"
-                >
-                  <div class="min-w-0 space-y-2">
-                    <div class="flex items-center gap-2">
-                      <div class="admin-leader-avatar">
-                        {{ (member.name || member.email || member.userId || '?').slice(0, 1).toUpperCase() }}
-                      </div>
-                      <div class="min-w-0">
-                        <div class="truncate text-sm font-medium text-highlighted">
-                          {{ member.name || member.email || member.userId }}
-                        </div>
-                        <div class="truncate text-xs text-dimmed">
-                          {{ member.email || member.userId }}
-                        </div>
-                      </div>
-                    </div>
-                    <div class="admin-leader-value">
-                      {{ formatMoney(member.revenueCents) }}
-                    </div>
-                    <div class="admin-leader-metrics">
-                      <span class="admin-leader-pill">{{ member.bookings }} bookings</span>
-                      <span class="admin-leader-pill">{{ member.creditsBurned }} cr</span>
-                      <span class="admin-leader-pill">Last {{ formatShortDate(member.lastBookingAt) }}</span>
-                    </div>
-                  </div>
-                  <div class="admin-leader-arrow">
-                    <UIcon
-                      name="i-lucide-arrow-up-right"
-                      class="size-4"
-                    />
-                  </div>
-                </NuxtLink>
-                <div
-                  v-if="!usageLeaders.length"
-                  class="sm:col-span-2 text-center text-dimmed py-5 text-sm"
-                >
-                  No member activity in selected period.
-                </div>
-              </div>
-            </UCard>
-          </section>
-
-          <section>
-            <div class="grid gap-3 sm:gap-4 md:grid-cols-2">
-              <UCard class="admin-panel-card border-0">
-                <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                  Revenue mix
-                </div>
-                <p class="mt-1 text-xs text-dimmed">
-                  Split for {{ rangeLabel }}
-                </p>
-                <div class="mt-3 flex items-center gap-4">
-                  <div
-                    class="admin-mix-ring"
-                    :style="revenueMixStyle"
-                  />
-                  <div class="space-y-1.5 text-xs text-dimmed">
-                    <div>Membership: <span class="text-highlighted">{{ formatMoney(data?.summary?.membershipRevenueCents) }}</span></div>
-                    <div>Credit topups: <span class="text-highlighted">{{ formatMoney(data?.summary?.creditTopupRevenueCents) }}</span></div>
-                    <div>Hold topups: <span class="text-highlighted">{{ formatMoney(data?.summary?.holdTopupRevenueCents) }}</span></div>
-                  </div>
-                </div>
-              </UCard>
-
-              <UCard class="admin-panel-card border-0">
-                <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                  Access + door state
-                </div>
-                <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
-                  <div class="admin-mini-stat">
-                    <span>Pending jobs</span>
-                    <strong>{{ accessStatus.pendingJobs }}</strong>
-                  </div>
-                  <div class="admin-mini-stat">
-                    <span>Dead jobs</span>
-                    <strong>{{ accessStatus.deadJobs }}</strong>
-                  </div>
-                  <div class="admin-mini-stat">
-                    <span>Open incidents</span>
-                    <strong>{{ accessStatus.openIncidents }}</strong>
-                  </div>
-                  <div class="admin-mini-stat">
-                    <span>Active permanent codes</span>
-                    <strong>{{ accessStatus.permanentCodesActive }}</strong>
-                  </div>
-                  <div class="admin-mini-stat col-span-2">
-                    <span>Abode disarm outside lab hours</span>
-                    <UBadge
-                      size="xs"
-                      :color="accessStatus.permanentCodesDisarmAbodeOutsideLabHours ? 'success' : 'neutral'"
-                      variant="soft"
-                    >
-                      {{ accessStatus.permanentCodesDisarmAbodeOutsideLabHours ? 'Enabled' : 'Disabled' }}
-                    </UBadge>
-                  </div>
-                  <div class="admin-mini-stat col-span-2">
-                    <span>Permanent sync errors</span>
-                    <UBadge
-                      size="xs"
-                      :color="accessStatus.permanentCodesSyncErrors > 0 ? 'warning' : 'success'"
-                      variant="soft"
-                    >
-                      {{ accessStatus.permanentCodesSyncErrors }}
-                    </UBadge>
-                  </div>
-                </div>
-              </UCard>
-
-              <UCard class="admin-panel-card border-0 md:col-span-2">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                      Recent lock incidents
-                    </div>
-                    <p class="mt-1 text-xs text-dimmed">
-                      Latest access incidents requiring manual verification.
-                    </p>
-                  </div>
-                  <UButton
-                    size="xs"
-                    color="neutral"
-                    variant="soft"
-                    icon="i-lucide-panel-right"
-                    @click="criticalDetailsOpen = true"
-                  >
-                    See sources
-                  </UButton>
-                </div>
-
-                <div
-                  v-if="!recentLockIncidents.length"
-                  class="mt-3 rounded-lg border border-default/60 bg-elevated/45 p-3 text-xs text-dimmed"
-                >
-                  No lock incidents recorded.
-                </div>
-
-                <div
-                  v-else
-                  class="mt-3 space-y-2"
-                >
-                  <div
-                    v-for="incident in recentLockIncidents.slice(0, 6)"
-                    :key="incident.id"
-                    class="rounded-lg border border-default/60 bg-elevated/45 p-3"
-                  >
-                    <div class="flex items-center justify-between gap-2">
-                      <div class="text-sm font-medium text-highlighted">
-                        {{ incident.title }}
-                      </div>
-                      <UBadge
-                        size="xs"
-                        :color="incident.severity === 'critical' ? 'error' : incident.severity === 'warning' ? 'warning' : 'neutral'"
-                        variant="soft"
-                      >
-                        {{ incident.severity }}
-                      </UBadge>
-                    </div>
-                    <div class="mt-1 text-xs text-dimmed">
-                      {{ incident.incident_type }} · {{ incident.status }} · {{ formatShortDate(incident.created_at) }}
-                    </div>
-                    <div
-                      v-if="incident.message"
-                      class="mt-1 text-xs text-dimmed"
-                    >
-                      {{ incident.message }}
-                    </div>
-                  </div>
-                </div>
-              </UCard>
+                class="admin-period-nav-btn"
+                size="sm"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-chevron-right"
+                :disabled="!canStepForward"
+                @click="stepPeriod(1)"
+              />
             </div>
-          </section>
+          </div>
+        </section>
 
-          <section>
-            <UCard class="admin-panel-card border-0">
-              <div class="space-y-3">
-                <div>
-                  <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-                    Live calendar
-                  </div>
-                  <p class="mt-1 text-xs text-dimmed">
-                    Always-on schedule reference for current bookings, holds, and external blocks.
-                  </p>
-                </div>
-                <AvailabilityCalendar
-                  endpoint="/api/calendar/public"
-                  :full-day="true"
-                />
-              </div>
-            </UCard>
-          </section>
-        </div>
-      </div>
-
-      <USlideover
-        v-model:open="criticalDetailsOpen"
-        side="right"
-        title="Critical pressure sources"
-        description="Signals that roll up into critical pressure and where to take action."
-        :ui="{ content: 'max-w-xl w-full border-0 admin-critical-slideover' }"
-      >
-        <template #body>
-          <div class="space-y-2 p-2">
-            <div class="pb-1 text-sm text-toned">
-              <span class="font-medium text-highlighted">{{ criticalPressureTotal }}</span> active pressure points
+        <section class="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <OpsKpiCard card-class="admin-kpi-card admin-kpi-card--revenue">
+            <div class="text-[11px] uppercase tracking-[0.2em] text-inverted/85">
+              Revenue
             </div>
-            <NuxtLink
-              v-for="source in criticalPressureSources"
-              :key="source.id"
-              :to="source.to"
-              class="admin-critical-source"
-              @click="criticalDetailsOpen = false"
+            <div class="mt-2 text-3xl font-[var(--font-display)] font-light text-inverted">
+              {{ formatMoney(data?.summary?.totalRevenueCents) }}
+            </div>
+            <p class="mt-2 text-xs text-inverted/80">
+              {{ data?.summary?.totalOrders ?? 0 }} paid transactions in range
+            </p>
+          </OpsKpiCard>
+
+          <OpsKpiCard
+            card-class="admin-kpi-card admin-kpi-card--pressure"
+            show-link-action
+            show-notification-action
+            :notification-disabled="true"
+            link-aria-label="Open critical pressure sources"
+            @link="criticalDetailsOpen = true"
+          >
+            <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+              Critical pressure
+            </div>
+            <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
+              {{ criticalPressureTotal }}
+            </div>
+            <p class="mt-2 text-xs text-dimmed">
+              Incidents + dead jobs + due grants
+            </p>
+          </OpsKpiCard>
+
+          <OpsKpiCard card-class="admin-kpi-card">
+            <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+              Campaign reminders
+            </div>
+            <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
+              {{ campaignReminders.length }}
+            </div>
+            <p class="mt-2 text-xs text-dimmed">
+              {{ campaignReminders[0]?.dueLabel ?? 'No reminders queued' }}
+            </p>
+            <UButton
+              class="mt-3 w-fit"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              to="/dashboard/admin/email-campaigns"
             >
-              <div class="space-y-1">
-                <div class="text-sm font-medium text-highlighted">
-                  {{ source.title }}
+              Open campaigns
+            </UButton>
+          </OpsKpiCard>
+
+          <OpsKpiCard card-class="admin-kpi-card">
+            <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+              Analytics workspace
+            </div>
+            <div class="mt-2 text-2xl font-[var(--font-display)] font-light">
+              KPI + trends
+            </div>
+            <p class="mt-2 text-xs text-dimmed">
+              Review generated metrics, alerts, and weekly report outputs.
+            </p>
+            <UButton
+              class="mt-3 w-fit"
+              size="xs"
+              color="primary"
+              variant="soft"
+              to="/dashboard/admin/analytics"
+            >
+              Open analytics
+            </UButton>
+          </OpsKpiCard>
+        </section>
+
+        <section class="grid gap-3 sm:gap-4 xl:grid-cols-[1.6fr_1fr]">
+          <UCard
+            class="admin-panel-card border-0 admin-revenue-panel h-full"
+            :ui="{ root: 'h-full flex flex-col', body: 'h-full flex flex-col min-h-0' }"
+          >
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                  Sales trend
                 </div>
-                <p class="text-xs text-dimmed">
-                  {{ source.description }}
-                </p>
+                <h2 class="mt-1 text-xl font-[var(--font-display)] font-light">
+                  Revenue by {{ data?.range?.bucket === 'month' ? 'month' : data?.range?.bucket === 'week' ? 'week' : 'day' }}
+                </h2>
               </div>
               <UBadge
                 size="sm"
-                :color="source.count > 0 ? 'warning' : 'neutral'"
+                color="primary"
                 variant="soft"
               >
-                {{ source.count }}
+                {{ formatMoney(data?.summary?.totalRevenueCents) }}
               </UBadge>
-            </NuxtLink>
+            </div>
+
+            <div class="admin-revenue-body mt-4">
+              <div
+                :class="{ 'is-visible': revenueHasUserScrolled && revenueCanScrollLeft }"
+              />
+              <div
+                :class="{ 'is-visible': revenueHasUserScrolled && revenueCanScrollRight }"
+              />
+              <div
+                ref="revenueScrollRef"
+                class="admin-revenue-scroll"
+                :class="{ 'admin-revenue-scroll--scrolling': revenueIsScrolling }"
+              >
+                <div
+                  class="admin-revenue-chart"
+                  :style="{ minWidth: revenueChartMinWidth }"
+                >
+                  <div
+                    v-for="point in revenueSeries"
+                    :key="point.key"
+                    class="admin-revenue-chart-col"
+                  >
+                    <div class="admin-revenue-bar-shell">
+                      <div class="admin-revenue-bar-stack">
+                        <div
+                          class="admin-revenue-segment admin-revenue-segment--holds"
+                          :style="{ height: barSegmentHeight(point.holdTopupCents) }"
+                        />
+                        <div
+                          class="admin-revenue-segment admin-revenue-segment--topups"
+                          :style="{ height: barSegmentHeight(point.creditTopupCents) }"
+                        />
+                        <div
+                          class="admin-revenue-segment admin-revenue-segment--membership"
+                          :style="{ height: barSegmentHeight(point.membershipCents) }"
+                        />
+                      </div>
+                    </div>
+                    <div class="admin-revenue-label">
+                      {{ point.label }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div
+                class="admin-revenue-seek mt-2"
+                :class="{ 'admin-revenue-seek--disabled': revenueSeekMax <= 0 }"
+              >
+                <input
+                  class="admin-revenue-seek-input"
+                  type="range"
+                  min="0"
+                  :max="revenueSeekMax"
+                  :step="1"
+                  :value="revenueSeekValue"
+                  :disabled="revenueSeekMax <= 0"
+                  @input="onRevenueSeekInput"
+                >
+              </div>
+              <div class="admin-revenue-legend mt-3 flex flex-wrap gap-2 text-[11px]">
+                <span class="admin-legend-pill">
+                  <span class="admin-legend-dot admin-legend-dot--membership" /> Membership
+                </span>
+                <span class="admin-legend-pill">
+                  <span class="admin-legend-dot admin-legend-dot--topups" /> Credits
+                </span>
+                <span class="admin-legend-pill">
+                  <span class="admin-legend-dot admin-legend-dot--holds" /> Holds
+                </span>
+              </div>
+            </div>
+          </UCard>
+
+          <UCard
+            class="border-0 admin-usage-panel"
+            :ui="{ root: 'bg-transparent shadow-none ring-0', body: 'bg-transparent' }"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                  Usage leaders
+                </div>
+                <h2 class="mt-1 text-xl font-[var(--font-display)] font-light">
+                  Top 4 in {{ rangeLabel }}
+                </h2>
+              </div>
+            </div>
+
+            <p class="mt-2 text-xs text-dimmed">
+              Derived from non-canceled member bookings plus processed membership/top-up payments in {{ rangeLabel }}.
+            </p>
+
+            <div class="mt-3 grid gap-2 sm:grid-cols-2">
+              <NuxtLink
+                v-for="(member, index) in usageLeaders"
+                :key="member.userId"
+                class="admin-leader-tile"
+                :class="{ 'admin-leader-tile--top': index === 0 }"
+                :to="usageLeaderTo(member.userId)"
+              >
+                <div class="min-w-0 space-y-2">
+                  <div class="flex items-center gap-2">
+                    <div class="admin-leader-avatar">
+                      {{ (member.name || member.email || member.userId || '?').slice(0, 1).toUpperCase() }}
+                    </div>
+                    <div class="min-w-0">
+                      <div class="truncate text-sm font-medium text-highlighted">
+                        {{ member.name || member.email || member.userId }}
+                      </div>
+                      <div class="truncate text-xs text-dimmed">
+                        {{ member.email || member.userId }}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="admin-leader-value">
+                    {{ formatMoney(member.revenueCents) }}
+                  </div>
+                  <div class="admin-leader-metrics">
+                    <span class="admin-leader-pill">{{ member.bookings }} bookings</span>
+                    <span class="admin-leader-pill">{{ member.creditsBurned }} cr</span>
+                    <span class="admin-leader-pill">Last {{ formatShortDate(member.lastBookingAt) }}</span>
+                  </div>
+                </div>
+                <div class="admin-leader-arrow">
+                  <UIcon
+                    name="i-lucide-arrow-up-right"
+                    class="size-4"
+                  />
+                </div>
+              </NuxtLink>
+              <div
+                v-if="!usageLeaders.length"
+                class="sm:col-span-2 text-center text-dimmed py-5 text-sm"
+              >
+                No member activity in selected period.
+              </div>
+            </div>
+          </UCard>
+        </section>
+
+        <section>
+          <div class="grid gap-3 sm:gap-4 md:grid-cols-2">
+            <UCard class="admin-panel-card border-0">
+              <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                Revenue mix
+              </div>
+              <p class="mt-1 text-xs text-dimmed">
+                Split for {{ rangeLabel }}
+              </p>
+              <div class="mt-3 flex items-center gap-4">
+                <div
+                  class="admin-mix-ring"
+                  :style="revenueMixStyle"
+                />
+                <div class="space-y-1.5 text-xs text-dimmed">
+                  <div>Membership: <span class="text-highlighted">{{ formatMoney(data?.summary?.membershipRevenueCents) }}</span></div>
+                  <div>Credit topups: <span class="text-highlighted">{{ formatMoney(data?.summary?.creditTopupRevenueCents) }}</span></div>
+                  <div>Hold topups: <span class="text-highlighted">{{ formatMoney(data?.summary?.holdTopupRevenueCents) }}</span></div>
+                </div>
+              </div>
+            </UCard>
+
+            <UCard class="admin-panel-card border-0">
+              <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                Access + door state
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <div class="admin-mini-stat">
+                  <span>Pending jobs</span>
+                  <strong>{{ accessStatus.pendingJobs }}</strong>
+                </div>
+                <div class="admin-mini-stat">
+                  <span>Dead jobs</span>
+                  <strong>{{ accessStatus.deadJobs }}</strong>
+                </div>
+                <div class="admin-mini-stat">
+                  <span>Open incidents</span>
+                  <strong>{{ accessStatus.openIncidents }}</strong>
+                </div>
+                <div class="admin-mini-stat">
+                  <span>Active permanent codes</span>
+                  <strong>{{ accessStatus.permanentCodesActive }}</strong>
+                </div>
+                <div class="admin-mini-stat col-span-2">
+                  <span>Abode disarm outside lab hours</span>
+                  <UBadge
+                    size="xs"
+                    :color="accessStatus.permanentCodesDisarmAbodeOutsideLabHours ? 'success' : 'neutral'"
+                    variant="soft"
+                  >
+                    {{ accessStatus.permanentCodesDisarmAbodeOutsideLabHours ? 'Enabled' : 'Disabled' }}
+                  </UBadge>
+                </div>
+                <div class="admin-mini-stat col-span-2">
+                  <span>Permanent sync errors</span>
+                  <UBadge
+                    size="xs"
+                    :color="accessStatus.permanentCodesSyncErrors > 0 ? 'warning' : 'success'"
+                    variant="soft"
+                  >
+                    {{ accessStatus.permanentCodesSyncErrors }}
+                  </UBadge>
+                </div>
+              </div>
+            </UCard>
+
+            <UCard class="admin-panel-card border-0 md:col-span-2">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                    Recent lock incidents
+                  </div>
+                  <p class="mt-1 text-xs text-dimmed">
+                    Latest access incidents requiring manual verification.
+                  </p>
+                </div>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  icon="i-lucide-panel-right"
+                  @click="criticalDetailsOpen = true"
+                >
+                  See sources
+                </UButton>
+              </div>
+
+              <div
+                v-if="!recentLockIncidents.length"
+                class="mt-3 rounded-lg border border-default/60 bg-elevated/45 p-3 text-xs text-dimmed"
+              >
+                No lock incidents recorded.
+              </div>
+
+              <div
+                v-else
+                class="mt-3 space-y-2"
+              >
+                <div
+                  v-for="incident in recentLockIncidents.slice(0, 6)"
+                  :key="incident.id"
+                  class="rounded-lg border border-default/60 bg-elevated/45 p-3"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-sm font-medium text-highlighted">
+                      {{ incident.title }}
+                    </div>
+                    <UBadge
+                      size="xs"
+                      :color="incident.severity === 'critical' ? 'error' : incident.severity === 'warning' ? 'warning' : 'neutral'"
+                      variant="soft"
+                    >
+                      {{ incident.severity }}
+                    </UBadge>
+                  </div>
+                  <div class="mt-1 text-xs text-dimmed">
+                    {{ incident.incident_type }} · {{ incident.status }} · {{ formatShortDate(incident.created_at) }}
+                  </div>
+                  <div
+                    v-if="incident.message"
+                    class="mt-1 text-xs text-dimmed"
+                  >
+                    {{ incident.message }}
+                  </div>
+                </div>
+              </div>
+            </UCard>
           </div>
-        </template>
-      </USlideover>
-    </template>
-  </UDashboardPanel>
+        </section>
+
+        <section>
+          <UCard class="admin-panel-card border-0">
+            <div class="space-y-3">
+              <div>
+                <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                  Live calendar
+                </div>
+                <p class="mt-1 text-xs text-dimmed">
+                  Always-on schedule reference for current bookings, holds, and external blocks.
+                </p>
+              </div>
+              <AvailabilityCalendar
+                endpoint="/api/calendar/public"
+                :full-day="true"
+              />
+            </div>
+          </UCard>
+        </section>
+      </div>
+    </div>
+
+    <USlideover
+      v-model:open="criticalDetailsOpen"
+      side="right"
+      title="Critical pressure sources"
+      description="Signals that roll up into critical pressure and where to take action."
+      :ui="{ content: 'max-w-xl w-full border-0 admin-critical-slideover' }"
+    >
+      <template #body>
+        <div class="space-y-2 p-2">
+          <div class="pb-1 text-sm text-toned">
+            <span class="font-medium text-highlighted">{{ criticalPressureTotal }}</span> active pressure points
+          </div>
+          <NuxtLink
+            v-for="source in criticalPressureSources"
+            :key="source.id"
+            :to="source.to"
+            class="admin-critical-source"
+            @click="criticalDetailsOpen = false"
+          >
+            <div class="space-y-1">
+              <div class="text-sm font-medium text-highlighted">
+                {{ source.title }}
+              </div>
+              <p class="text-xs text-dimmed">
+                {{ source.description }}
+              </p>
+            </div>
+            <UBadge
+              size="sm"
+              :color="source.count > 0 ? 'warning' : 'neutral'"
+              variant="soft"
+            >
+              {{ source.count }}
+            </UBadge>
+          </NuxtLink>
+        </div>
+      </template>
+    </USlideover>
+  </DashboardPageScaffold>
 </template>
 
 <style scoped>

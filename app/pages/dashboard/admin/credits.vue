@@ -351,191 +351,247 @@ async function saveCreditPolicy() {
 </script>
 
 <template>
-  <UDashboardPanel
-    id="admin-credits"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <DashboardPageScaffold
+    panel-id="admin-credits"
+    title="Credits Handler"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Credits Handler"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-2' }"
-      >
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-
-        <template #right>
-          <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-refresh-cw" :loading="pending" @click="() => refresh()" />
-        </template>
-      </UDashboardNavbar>
+    <template #right>
+      <DashboardActionGroup
+        :secondary="[
+          {
+            label: 'Refresh',
+            icon: 'i-lucide-refresh-cw',
+            color: 'neutral',
+            variant: 'soft',
+            loading: pending,
+            onSelect: () => refresh()
+          }
+        ]"
+      />
     </template>
+    <UAlert
+      color="warning"
+      variant="soft"
+      icon="i-lucide-wallet-cards"
+      title="Credits catalog management"
+      description="Configure top-up options, run timed discounts, and sync each option to a Square catalog item."
+    />
 
-    <template #body>
-      <AdminOpsShell>
-        <UAlert
-          color="warning"
-          variant="soft"
-          icon="i-lucide-wallet-cards"
-          title="Credits catalog management"
-          description="Configure top-up options, run timed discounts, and sync each option to a Square catalog item."
-        />
-
-        <UCard>
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div class="font-medium">
-                Top-up reconciliation
-              </div>
-              <div class="text-sm text-dimmed">
-                Claims any completed Square top-up sessions still marked pending.
-              </div>
-            </div>
-            <UButton
-              color="neutral"
-              variant="soft"
-              icon="i-lucide-rotate-cw"
-              :loading="reconcilingTopups"
-              @click="reconcilePendingTopups"
-            >
-              Reconcile pending top-ups
-            </UButton>
+    <UCard>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div class="font-medium">
+            Top-up reconciliation
           </div>
-        </UCard>
-
-        <UCard>
-          <div class="flex items-center justify-between gap-3">
-            <div>
-              <div class="font-medium">
-                Credit lifecycle settings
-              </div>
-              <div class="text-sm text-dimmed">
-                Configure expiration and maximum rollover cap used by monthly grant processing.
-              </div>
-            </div>
-            <UButton :loading="savingCreditPolicy" @click="saveCreditPolicy">
-              Save policy
-            </UButton>
+          <div class="text-sm text-dimmed">
+            Claims any completed Square top-up sessions still marked pending.
           </div>
-          <div class="mt-4 grid gap-3 md:grid-cols-2">
-            <UFormField label="Credit expiration (days)">
-              <UInput v-model.number="creditPolicy.creditExpiryDays" type="number" min="0" />
-            </UFormField>
-            <UFormField label="Rollover max multiplier">
-              <UInput v-model.number="creditPolicy.creditRolloverMaxMultiplier" type="number" step="0.25" min="0.5" />
-            </UFormField>
-          </div>
-        </UCard>
-
-        <div class="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-          <UCard>
-            <div class="flex items-center justify-between">
-              <div class="font-medium">
-                Credit options
-              </div>
-              <UButton size="xs" color="neutral" variant="soft" @click="resetForm">
-                New option
-              </UButton>
-            </div>
-            <div class="mt-3 space-y-2">
-              <button
-                v-for="option in reorderedOptions"
-                :key="option.id"
-                class="w-full rounded-lg border border-default p-2 text-left text-sm transition hover:bg-elevated"
-                :class="selectedId === option.id ? 'border-primary bg-elevated' : ''"
-                draggable="true"
-                @dragstart="onOptionDragStart($event, option.id)"
-                @dragover="onOptionDragOver"
-                @drop="onOptionDrop($event, option.id)"
-                @dragend="onOptionDragEnd"
-                @click="loadOption(option.id)"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <span class="inline-flex items-center gap-2 font-medium">
-                    <UIcon
-                      name="i-lucide-grip-vertical"
-                      class="h-4 w-4 text-dimmed"
-                    />
-                    <span>{{ option.label }}</span>
-                  </span>
-                  <UBadge :color="option.active ? 'success' : 'neutral'" size="xs" variant="soft">
-                    {{ option.active ? 'active' : 'inactive' }}
-                  </UBadge>
-                </div>
-                <div class="mt-1 text-xs text-dimmed">
-                  {{ option.key }}
-                </div>
-              </button>
-            </div>
-          </UCard>
-
-          <UCard>
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Key">
-                <UInput v-model="form.key" placeholder="bundle_5" />
-              </UFormField>
-              <UFormField label="Label">
-                <UInput v-model="form.label" placeholder="5 credits" />
-              </UFormField>
-              <UFormField label="Description" class="md:col-span-2">
-                <UInput v-model="form.description" placeholder="Five-credit bundle" />
-              </UFormField>
-              <UFormField label="Credits">
-                <UInput v-model.number="form.credits" type="number" min="0.25" step="0.25" />
-              </UFormField>
-              <UFormField label="Base price (USD)">
-                <UInput v-model="form.basePriceDollars" type="text" inputmode="decimal" placeholder="40.00" />
-              </UFormField>
-              <UFormField label="Sale price (USD, optional)">
-                <UInput v-model="form.salePriceDollars" type="text" inputmode="decimal" placeholder="35.00" />
-              </UFormField>
-              <UFormField label="Sort order">
-                <UInput v-model.number="form.sortOrder" type="number" :disabled="reordering" />
-              </UFormField>
-              <UFormField label="Sale starts">
-                <UInput
-                  :model-value="toLocalInputValue(form.saleStartsAt)"
-                  type="datetime-local"
-                  @update:model-value="(value) => { form.saleStartsAt = fromLocalInputValue(String(value ?? '')) }"
-                />
-              </UFormField>
-              <UFormField label="Sale ends">
-                <UInput
-                  :model-value="toLocalInputValue(form.saleEndsAt)"
-                  type="datetime-local"
-                  @update:model-value="(value) => { form.saleEndsAt = fromLocalInputValue(String(value ?? '')) }"
-                />
-              </UFormField>
-            </div>
-
-            <div class="mt-4 flex items-center gap-4">
-              <UCheckbox v-model="form.active" label="Active" />
-            </div>
-
-            <div
-              v-if="selectedId"
-              class="mt-3 text-xs text-dimmed"
-            >
-              Square link:
-              {{
-                options.find(option => option.id === selectedId)?.square_item_id
-                  ? 'Connected'
-                  : 'Not connected'
-              }}
-            </div>
-
-            <div class="mt-4 flex flex-wrap gap-2">
-              <UButton :loading="savingAndSyncing" @click="saveAndSyncSquare">
-                Save
-              </UButton>
-              <UButton color="error" variant="soft" :loading="deleting" @click="deleteOption">
-                Delete option
-              </UButton>
-            </div>
-          </UCard>
         </div>
-      </AdminOpsShell>
-    </template>
-  </UDashboardPanel>
+        <UButton
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-rotate-cw"
+          :loading="reconcilingTopups"
+          @click="reconcilePendingTopups"
+        >
+          Reconcile pending top-ups
+        </UButton>
+      </div>
+    </UCard>
+
+    <UCard>
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <div class="font-medium">
+            Credit lifecycle settings
+          </div>
+          <div class="text-sm text-dimmed">
+            Configure expiration and maximum rollover cap used by monthly grant processing.
+          </div>
+        </div>
+        <UButton
+          :loading="savingCreditPolicy"
+          @click="saveCreditPolicy"
+        >
+          Save policy
+        </UButton>
+      </div>
+      <div class="mt-4 grid gap-3 md:grid-cols-2">
+        <UFormField label="Credit expiration (days)">
+          <UInput
+            v-model.number="creditPolicy.creditExpiryDays"
+            type="number"
+            min="0"
+          />
+        </UFormField>
+        <UFormField label="Rollover max multiplier">
+          <UInput
+            v-model.number="creditPolicy.creditRolloverMaxMultiplier"
+            type="number"
+            step="0.25"
+            min="0.5"
+          />
+        </UFormField>
+      </div>
+    </UCard>
+
+    <div class="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+      <UCard>
+        <div class="flex items-center justify-between">
+          <div class="font-medium">
+            Credit options
+          </div>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="soft"
+            @click="resetForm"
+          >
+            New option
+          </UButton>
+        </div>
+        <div class="mt-3 space-y-2">
+          <button
+            v-for="option in reorderedOptions"
+            :key="option.id"
+            class="w-full rounded-lg border border-default p-2 text-left text-sm transition hover:bg-elevated"
+            :class="selectedId === option.id ? 'border-primary bg-elevated' : ''"
+            draggable="true"
+            @dragstart="onOptionDragStart($event, option.id)"
+            @dragover="onOptionDragOver"
+            @drop="onOptionDrop($event, option.id)"
+            @dragend="onOptionDragEnd"
+            @click="loadOption(option.id)"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <span class="inline-flex items-center gap-2 font-medium">
+                <UIcon
+                  name="i-lucide-grip-vertical"
+                  class="h-4 w-4 text-dimmed"
+                />
+                <span>{{ option.label }}</span>
+              </span>
+              <UBadge
+                :color="option.active ? 'success' : 'neutral'"
+                size="xs"
+                variant="soft"
+              >
+                {{ option.active ? 'active' : 'inactive' }}
+              </UBadge>
+            </div>
+            <div class="mt-1 text-xs text-dimmed">
+              {{ option.key }}
+            </div>
+          </button>
+        </div>
+      </UCard>
+
+      <UCard>
+        <div class="grid gap-3 md:grid-cols-2">
+          <UFormField label="Key">
+            <UInput
+              v-model="form.key"
+              placeholder="bundle_5"
+            />
+          </UFormField>
+          <UFormField label="Label">
+            <UInput
+              v-model="form.label"
+              placeholder="5 credits"
+            />
+          </UFormField>
+          <UFormField
+            label="Description"
+            class="md:col-span-2"
+          >
+            <UInput
+              v-model="form.description"
+              placeholder="Five-credit bundle"
+            />
+          </UFormField>
+          <UFormField label="Credits">
+            <UInput
+              v-model.number="form.credits"
+              type="number"
+              min="0.25"
+              step="0.25"
+            />
+          </UFormField>
+          <UFormField label="Base price (USD)">
+            <UInput
+              v-model="form.basePriceDollars"
+              type="text"
+              inputmode="decimal"
+              placeholder="40.00"
+            />
+          </UFormField>
+          <UFormField label="Sale price (USD, optional)">
+            <UInput
+              v-model="form.salePriceDollars"
+              type="text"
+              inputmode="decimal"
+              placeholder="35.00"
+            />
+          </UFormField>
+          <UFormField label="Sort order">
+            <UInput
+              v-model.number="form.sortOrder"
+              type="number"
+              :disabled="reordering"
+            />
+          </UFormField>
+          <UFormField label="Sale starts">
+            <UInput
+              :model-value="toLocalInputValue(form.saleStartsAt)"
+              type="datetime-local"
+              @update:model-value="(value) => { form.saleStartsAt = fromLocalInputValue(String(value ?? '')) }"
+            />
+          </UFormField>
+          <UFormField label="Sale ends">
+            <UInput
+              :model-value="toLocalInputValue(form.saleEndsAt)"
+              type="datetime-local"
+              @update:model-value="(value) => { form.saleEndsAt = fromLocalInputValue(String(value ?? '')) }"
+            />
+          </UFormField>
+        </div>
+
+        <div class="mt-4 flex items-center gap-4">
+          <UCheckbox
+            v-model="form.active"
+            label="Active"
+          />
+        </div>
+
+        <div
+          v-if="selectedId"
+          class="mt-3 text-xs text-dimmed"
+        >
+          Square link:
+          {{
+            options.find(option => option.id === selectedId)?.square_item_id
+              ? 'Connected'
+              : 'Not connected'
+          }}
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-2">
+          <UButton
+            :loading="savingAndSyncing"
+            @click="saveAndSyncSquare"
+          >
+            Save
+          </UButton>
+          <UButton
+            color="error"
+            variant="soft"
+            :loading="deleting"
+            @click="deleteOption"
+          >
+            Delete option
+          </UButton>
+        </div>
+      </UCard>
+    </div>
+  </DashboardPageScaffold>
 </template>

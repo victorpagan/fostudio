@@ -270,330 +270,316 @@ function formatSquareSyncReason(reason: string | null | undefined) {
 </script>
 
 <template>
-  <UDashboardPanel
-    id="admin-promos"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <DashboardPageScaffold
+    panel-id="admin-promos"
+    title="Promo Code Management"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Promo Code Management"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-2' }"
-      >
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
+    <template #right>
+      <DashboardActionGroup
+        :secondary="[
+          {
+            label: 'Refresh',
+            icon: 'i-lucide-refresh-cw',
+            color: 'neutral',
+            variant: 'soft',
+            loading: pending,
+            onSelect: () => refresh()
+          }
+        ]"
+      />
+    </template>
+    <UAlert
+      color="warning"
+      variant="soft"
+      icon="i-lucide-ticket-percent"
+      title="Promo code controls"
+      description="Create and manage promo rules, date windows, and redemption limits."
+    />
 
-        <template #right>
+    <div class="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+      <UCard>
+        <div class="flex items-center justify-between">
+          <div class="font-medium">
+            Promo codes
+          </div>
           <UButton
-            size="sm"
+            size="xs"
             color="neutral"
             variant="soft"
-            icon="i-lucide-refresh-cw"
-            :loading="pending"
-            @click="() => refresh()"
-          />
-        </template>
-      </UDashboardNavbar>
-    </template>
+            @click="resetForm"
+          >
+            New promo
+          </UButton>
+        </div>
+        <div class="mt-3 space-y-2">
+          <div
+            v-for="promo in promos"
+            :key="promo.id"
+            class="rounded-lg border border-default p-2"
+            :class="selectedId === promo.id ? 'border-primary bg-elevated' : ''"
+          >
+            <button
+              class="w-full text-left"
+              @click="loadPromo(promo.id)"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-medium">{{ promo.code }}</span>
+                <UBadge
+                  :color="promo.active ? 'success' : 'neutral'"
+                  size="xs"
+                  variant="soft"
+                >
+                  {{ promo.active ? 'active' : 'inactive' }}
+                </UBadge>
+              </div>
+              <div class="mt-1 flex flex-wrap items-center gap-1 text-xs text-dimmed">
+                <span>{{ formatPromoValue(promo) }}</span>
+                <span>·</span>
+                <UBadge
+                  size="xs"
+                  variant="subtle"
+                  color="neutral"
+                  class="max-w-full whitespace-normal"
+                >
+                  {{ formatPromoAppliesTo(promo) }}
+                </UBadge>
+                <UBadge
+                  size="xs"
+                  :color="promo.square_sync?.valid ? 'success' : 'warning'"
+                  variant="soft"
+                >
+                  {{ formatSquareSyncReason(promo.square_sync?.reason) }}
+                </UBadge>
+              </div>
+            </button>
+            <UButton
+              class="mt-2"
+              size="xs"
+              color="error"
+              variant="soft"
+              :loading="deletingId === promo.id"
+              @click="deletePromo(promo.id)"
+            >
+              Delete
+            </UButton>
+          </div>
+        </div>
+      </UCard>
 
-    <template #body>
-      <AdminOpsShell>
+      <UCard>
+        <div class="grid gap-3 md:grid-cols-2">
+          <UFormField label="Code">
+            <UInput
+              v-model="form.code"
+              placeholder="SPRING20"
+            />
+          </UFormField>
+          <UFormField label="Applies to">
+            <USelect
+              v-model="form.appliesTo"
+              class="w-full"
+              :items="[
+                { label: 'All', value: 'all' },
+                { label: 'Membership', value: 'membership' },
+                { label: 'Credits', value: 'credits' },
+                { label: 'Holds', value: 'holds' }
+              ]"
+            />
+          </UFormField>
+          <UFormField
+            v-if="form.appliesTo === 'membership'"
+            label="Membership tiers"
+            class="md:col-span-2"
+          >
+            <div class="rounded-lg border border-default p-3">
+              <div
+                v-if="tiersPending"
+                class="text-xs text-dimmed"
+              >
+                Loading tiers...
+              </div>
+              <div
+                v-else-if="tiersError"
+                class="text-xs text-error"
+              >
+                Could not load tiers.
+              </div>
+              <div
+                v-else-if="!tierOptions.length"
+                class="text-xs text-dimmed"
+              >
+                No tiers found.
+              </div>
+              <div
+                v-else
+                class="grid gap-2 md:grid-cols-2"
+              >
+                <UCheckbox
+                  v-for="tier in tierOptions"
+                  :key="tier.id"
+                  :model-value="form.appliesTierIds.includes(tier.id)"
+                  :label="tier.display_name"
+                  @update:model-value="(checked) => {
+                    if (checked) {
+                      if (!form.appliesTierIds.includes(tier.id)) form.appliesTierIds.push(tier.id)
+                    }
+                    else {
+                      form.appliesTierIds = form.appliesTierIds.filter(id => id !== tier.id)
+                    }
+                  }"
+                />
+              </div>
+            </div>
+          </UFormField>
+          <UFormField
+            v-if="form.appliesTo === 'credits'"
+            label="Credit packages"
+            class="md:col-span-2"
+          >
+            <div class="rounded-lg border border-default p-3">
+              <div
+                v-if="creditOptionsPending"
+                class="text-xs text-dimmed"
+              >
+                Loading credit packages...
+              </div>
+              <div
+                v-else-if="creditOptionsError"
+                class="text-xs text-error"
+              >
+                Could not load credit packages.
+              </div>
+              <div
+                v-else-if="!creditOptions.length"
+                class="text-xs text-dimmed"
+              >
+                No active credit packages found.
+              </div>
+              <div
+                v-else
+                class="grid gap-2 md:grid-cols-2"
+              >
+                <UCheckbox
+                  v-for="option in creditOptions"
+                  :key="option.key"
+                  :model-value="form.appliesCreditOptionKeys.includes(option.key)"
+                  :label="option.label"
+                  @update:model-value="(checked) => {
+                    if (checked) {
+                      if (!form.appliesCreditOptionKeys.includes(option.key)) form.appliesCreditOptionKeys.push(option.key)
+                    }
+                    else {
+                      form.appliesCreditOptionKeys = form.appliesCreditOptionKeys.filter(key => key !== option.key)
+                    }
+                  }"
+                />
+              </div>
+              <p class="mt-2 text-xs text-dimmed">
+                Leave empty to apply this promo to all credit packages.
+              </p>
+            </div>
+          </UFormField>
+          <UFormField
+            label="Description"
+            class="md:col-span-2"
+          >
+            <UInput
+              v-model="form.description"
+              placeholder="Spring campaign promo"
+            />
+          </UFormField>
+          <UFormField label="Discount type">
+            <USelect
+              v-model="form.discountType"
+              class="w-full"
+              :items="[
+                { label: 'Percent', value: 'percent' },
+                { label: 'Fixed amount ($)', value: 'fixed_cents' }
+              ]"
+            />
+          </UFormField>
+          <UFormField :label="form.discountType === 'percent' ? 'Discount percent' : 'Discount amount ($)'">
+            <UInput
+              v-if="form.discountType === 'percent'"
+              v-model.number="form.discountValue"
+              type="number"
+              min="0.01"
+              step="0.01"
+            />
+            <UFieldGroup v-else>
+              <UBadge
+                color="neutral"
+                variant="outline"
+                size="lg"
+                label="$"
+              />
+              <UInput
+                v-model.number="form.discountValue"
+                type="number"
+                min="0.01"
+                step="0.01"
+              />
+            </UFieldGroup>
+          </UFormField>
+          <UFormField label="Starts at">
+            <UInput
+              :model-value="toLocalInputValue(form.startsAt)"
+              type="datetime-local"
+              @update:model-value="(value) => { form.startsAt = fromLocalInputValue(String(value ?? '')) }"
+            />
+          </UFormField>
+          <UFormField label="Ends at">
+            <UInput
+              :model-value="toLocalInputValue(form.endsAt)"
+              type="datetime-local"
+              @update:model-value="(value) => { form.endsAt = fromLocalInputValue(String(value ?? '')) }"
+            />
+          </UFormField>
+          <UFormField label="Max redemptions">
+            <UInput
+              v-model.number="form.maxRedemptions"
+              type="number"
+              min="0"
+            />
+          </UFormField>
+        </div>
+
+        <div class="mt-4 flex items-center gap-4">
+          <UCheckbox
+            v-model="form.active"
+            label="Active"
+          />
+        </div>
+
         <UAlert
+          v-if="validationErrors.length"
+          class="mt-4"
           color="warning"
           variant="soft"
-          icon="i-lucide-ticket-percent"
-          title="Promo code controls"
-          description="Create and manage promo rules, date windows, and redemption limits."
+          icon="i-lucide-circle-alert"
+          :title="validationErrors[0]"
         />
 
-        <div class="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-          <UCard>
-            <div class="flex items-center justify-between">
-              <div class="font-medium">
-                Promo codes
-              </div>
-              <UButton
-                size="xs"
-                color="neutral"
-                variant="soft"
-                @click="resetForm"
-              >
-                New promo
-              </UButton>
-            </div>
-            <div class="mt-3 space-y-2">
-              <div
-                v-for="promo in promos"
-                :key="promo.id"
-                class="rounded-lg border border-default p-2"
-                :class="selectedId === promo.id ? 'border-primary bg-elevated' : ''"
-              >
-                <button
-                  class="w-full text-left"
-                  @click="loadPromo(promo.id)"
-                >
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="font-medium">{{ promo.code }}</span>
-                    <UBadge
-                      :color="promo.active ? 'success' : 'neutral'"
-                      size="xs"
-                      variant="soft"
-                    >
-                      {{ promo.active ? 'active' : 'inactive' }}
-                    </UBadge>
-                  </div>
-                  <div class="mt-1 flex flex-wrap items-center gap-1 text-xs text-dimmed">
-                    <span>{{ formatPromoValue(promo) }}</span>
-                    <span>·</span>
-                    <UBadge
-                      size="xs"
-                      variant="subtle"
-                      color="neutral"
-                      class="max-w-full whitespace-normal"
-                    >
-                      {{ formatPromoAppliesTo(promo) }}
-                    </UBadge>
-                    <UBadge
-                      size="xs"
-                      :color="promo.square_sync?.valid ? 'success' : 'warning'"
-                      variant="soft"
-                    >
-                      {{ formatSquareSyncReason(promo.square_sync?.reason) }}
-                    </UBadge>
-                  </div>
-                </button>
-                <UButton
-                  class="mt-2"
-                  size="xs"
-                  color="error"
-                  variant="soft"
-                  :loading="deletingId === promo.id"
-                  @click="deletePromo(promo.id)"
-                >
-                  Delete
-                </UButton>
-              </div>
-            </div>
-          </UCard>
+        <UAlert
+          v-if="selectedId && promos.find(p => p.id === selectedId)?.square_sync?.valid === false"
+          class="mt-3"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-link-2-off"
+          :title="`Square sync status: ${formatSquareSyncReason(promos.find(p => p.id === selectedId)?.square_sync?.reason)}`"
+          description="Save this promo to re-sync its Square discount object."
+        />
 
-          <UCard>
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Code">
-                <UInput
-                  v-model="form.code"
-                  placeholder="SPRING20"
-                />
-              </UFormField>
-              <UFormField label="Applies to">
-                <USelect
-                  v-model="form.appliesTo"
-                  class="w-full"
-                  :items="[
-                    { label: 'All', value: 'all' },
-                    { label: 'Membership', value: 'membership' },
-                    { label: 'Credits', value: 'credits' },
-                    { label: 'Holds', value: 'holds' }
-                  ]"
-                />
-              </UFormField>
-              <UFormField
-                v-if="form.appliesTo === 'membership'"
-                label="Membership tiers"
-                class="md:col-span-2"
-              >
-                <div class="rounded-lg border border-default p-3">
-                  <div
-                    v-if="tiersPending"
-                    class="text-xs text-dimmed"
-                  >
-                    Loading tiers...
-                  </div>
-                  <div
-                    v-else-if="tiersError"
-                    class="text-xs text-error"
-                  >
-                    Could not load tiers.
-                  </div>
-                  <div
-                    v-else-if="!tierOptions.length"
-                    class="text-xs text-dimmed"
-                  >
-                    No tiers found.
-                  </div>
-                  <div
-                    v-else
-                    class="grid gap-2 md:grid-cols-2"
-                  >
-                    <UCheckbox
-                      v-for="tier in tierOptions"
-                      :key="tier.id"
-                      :model-value="form.appliesTierIds.includes(tier.id)"
-                      :label="tier.display_name"
-                      @update:model-value="(checked) => {
-                        if (checked) {
-                          if (!form.appliesTierIds.includes(tier.id)) form.appliesTierIds.push(tier.id)
-                        }
-                        else {
-                          form.appliesTierIds = form.appliesTierIds.filter(id => id !== tier.id)
-                        }
-                      }"
-                    />
-                  </div>
-                </div>
-              </UFormField>
-              <UFormField
-                v-if="form.appliesTo === 'credits'"
-                label="Credit packages"
-                class="md:col-span-2"
-              >
-                <div class="rounded-lg border border-default p-3">
-                  <div
-                    v-if="creditOptionsPending"
-                    class="text-xs text-dimmed"
-                  >
-                    Loading credit packages...
-                  </div>
-                  <div
-                    v-else-if="creditOptionsError"
-                    class="text-xs text-error"
-                  >
-                    Could not load credit packages.
-                  </div>
-                  <div
-                    v-else-if="!creditOptions.length"
-                    class="text-xs text-dimmed"
-                  >
-                    No active credit packages found.
-                  </div>
-                  <div
-                    v-else
-                    class="grid gap-2 md:grid-cols-2"
-                  >
-                    <UCheckbox
-                      v-for="option in creditOptions"
-                      :key="option.key"
-                      :model-value="form.appliesCreditOptionKeys.includes(option.key)"
-                      :label="option.label"
-                      @update:model-value="(checked) => {
-                        if (checked) {
-                          if (!form.appliesCreditOptionKeys.includes(option.key)) form.appliesCreditOptionKeys.push(option.key)
-                        }
-                        else {
-                          form.appliesCreditOptionKeys = form.appliesCreditOptionKeys.filter(key => key !== option.key)
-                        }
-                      }"
-                    />
-                  </div>
-                  <p class="mt-2 text-xs text-dimmed">
-                    Leave empty to apply this promo to all credit packages.
-                  </p>
-                </div>
-              </UFormField>
-              <UFormField
-                label="Description"
-                class="md:col-span-2"
-              >
-                <UInput
-                  v-model="form.description"
-                  placeholder="Spring campaign promo"
-                />
-              </UFormField>
-              <UFormField label="Discount type">
-                <USelect
-                  v-model="form.discountType"
-                  class="w-full"
-                  :items="[
-                    { label: 'Percent', value: 'percent' },
-                    { label: 'Fixed amount ($)', value: 'fixed_cents' }
-                  ]"
-                />
-              </UFormField>
-              <UFormField :label="form.discountType === 'percent' ? 'Discount percent' : 'Discount amount ($)'">
-                <UInput
-                  v-if="form.discountType === 'percent'"
-                  v-model.number="form.discountValue"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                />
-                <UFieldGroup v-else>
-                  <UBadge
-                    color="neutral"
-                    variant="outline"
-                    size="lg"
-                    label="$"
-                  />
-                  <UInput
-                    v-model.number="form.discountValue"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                  />
-                </UFieldGroup>
-              </UFormField>
-              <UFormField label="Starts at">
-                <UInput
-                  :model-value="toLocalInputValue(form.startsAt)"
-                  type="datetime-local"
-                  @update:model-value="(value) => { form.startsAt = fromLocalInputValue(String(value ?? '')) }"
-                />
-              </UFormField>
-              <UFormField label="Ends at">
-                <UInput
-                  :model-value="toLocalInputValue(form.endsAt)"
-                  type="datetime-local"
-                  @update:model-value="(value) => { form.endsAt = fromLocalInputValue(String(value ?? '')) }"
-                />
-              </UFormField>
-              <UFormField label="Max redemptions">
-                <UInput
-                  v-model.number="form.maxRedemptions"
-                  type="number"
-                  min="0"
-                />
-              </UFormField>
-            </div>
-
-            <div class="mt-4 flex items-center gap-4">
-              <UCheckbox
-                v-model="form.active"
-                label="Active"
-              />
-            </div>
-
-            <UAlert
-              v-if="validationErrors.length"
-              class="mt-4"
-              color="warning"
-              variant="soft"
-              icon="i-lucide-circle-alert"
-              :title="validationErrors[0]"
-            />
-
-            <UAlert
-              v-if="selectedId && promos.find(p => p.id === selectedId)?.square_sync?.valid === false"
-              class="mt-3"
-              color="warning"
-              variant="soft"
-              icon="i-lucide-link-2-off"
-              :title="`Square sync status: ${formatSquareSyncReason(promos.find(p => p.id === selectedId)?.square_sync?.reason)}`"
-              description="Save this promo to re-sync its Square discount object."
-            />
-
-            <div class="mt-4">
-              <UButton
-                :loading="saving"
-                :disabled="!canSave"
-                @click="savePromo"
-              >
-                Save promo
-              </UButton>
-            </div>
-          </UCard>
+        <div class="mt-4">
+          <UButton
+            :loading="saving"
+            :disabled="!canSave"
+            @click="savePromo"
+          >
+            Save promo
+          </UButton>
         </div>
-      </AdminOpsShell>
-    </template>
-  </UDashboardPanel>
+      </UCard>
+    </div>
+  </DashboardPageScaffold>
 </template>

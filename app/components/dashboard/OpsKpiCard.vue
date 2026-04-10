@@ -26,13 +26,13 @@ const emit = defineEmits<{
 }>()
 
 const showNotificationAction = computed(() => props.showNotificationAction && !props.notificationDisabled)
-const visibleActionCount = computed(() => Number(props.showLinkAction) + Number(showNotificationAction.value))
-const hasActions = computed(() => visibleActionCount.value > 0)
+const actionCount = computed(() => Number(props.showLinkAction) + Number(showNotificationAction.value))
+const hasActions = computed(() => actionCount.value > 0)
 const hasLinkNavigation = computed(() => Boolean(props.linkTo) && !props.linkDisabled)
 
 const cutoutStyle = computed(() => {
   if (!hasActions.value) return undefined
-  const count = visibleActionCount.value
+  const count = actionCount.value
   const pad = 0.35
   const btnSize = 2.28
   const btnGap = 0.36
@@ -40,38 +40,9 @@ const cutoutStyle = computed(() => {
   const h = pad + btnSize + pad
   return {
     '--cutout-w': `${w}rem`,
-    '--cutout-h': `${h}rem`
+    '--cutout-h': `${h}rem`,
+    '--cutout-r': '0.92rem'
   } as Record<string, string>
-})
-
-const cutoutPathD = computed(() => {
-  // SVG path for rounded rectangular cutout
-  // Using fill-rule: evenodd to cut out the inner rect
-  const r = 0.65 // corner radius
-  const mainR = 1 // card radius
-
-  // Dimensions in units where width=1, height=1
-  // This will be scaled by viewBox in SVG
-
-  // Count and dimensions
-  const count = visibleActionCount.value
-  const pad = 0.35 / 16 // convert rem to proportion
-  const btnSize = 2.28 / 16
-  const btnGap = 0.36 / 16
-  const cutw = pad + count * btnSize + (count - 1) * btnGap + pad
-  const cuth = pad + btnSize + pad
-
-  const cutx = 1 - cutw
-  const cuty = 0
-  const r_prop = r / 16
-
-  // Outer boundary (clockwise from top-left)
-  let path = `M ${mainR} 0 L ${1 - mainR} 0 Q 1 0 1 ${mainR} L 1 ${1 - mainR} Q 1 1 ${1 - mainR} 1 L ${mainR} 1 Q 0 1 0 ${1 - mainR} L 0 ${mainR} Q 0 0 ${mainR} 0`
-
-  // Cutout hole (clockwise from top-right corner)
-  path += ` M ${cutx + r_prop} ${cuty} L ${1 - r_prop} ${cuty} Q 1 ${cuty} 1 ${cuty + r_prop} L 1 ${cuth - r_prop} Q 1 ${cuth} ${1 - r_prop} ${cuth} L ${cutx + r_prop} ${cuth} Q ${cutx} ${cuth} ${cutx} ${cuth - r_prop} L ${cutx} ${cuty + r_prop} Q ${cutx} ${cuty} ${cutx + r_prop} ${cuty}`
-
-  return path
 })
 
 function onLinkAction() {
@@ -90,12 +61,19 @@ function onNotificationAction() {
     class="ops-kpi-shell"
     :class="{ 'ops-kpi-shell--with-actions': hasActions }"
   >
+    <div
+      v-if="hasActions"
+      class="ops-kpi-cutout"
+      :style="cutoutStyle"
+      aria-hidden="true"
+    />
+
     <UCard
       :class="[
         'ops-kpi-card border-0',
+        { 'ops-kpi-card--with-actions': hasActions },
         cardClass
       ]"
-      :style="cutoutStyle"
     >
       <slot />
     </UCard>
@@ -151,8 +129,9 @@ function onNotificationAction() {
   position: relative;
   height: 100%;
   border-radius: 1rem;
-  overflow: hidden;
+  overflow: visible;
   --admin-kpi-surface: color-mix(in srgb, var(--ui-bg-elevated) 72%, transparent 28%);
+  --ops-kpi-shell-bg: var(--admin-ops-shell-bg, transparent);
 }
 
 .ops-kpi-card {
@@ -161,12 +140,23 @@ function onNotificationAction() {
   overflow: hidden;
 }
 
+.ops-kpi-cutout {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: var(--cutout-w, 0);
+  height: var(--cutout-h, 0);
+  z-index: 2;
+  border-bottom-left-radius: var(--cutout-r, 0.92rem);
+  background: var(--ops-kpi-shell-bg, transparent);
+  pointer-events: none;
+}
 
 .ops-kpi-actions {
   position: absolute;
   top: 0.14rem;
   right: 0.14rem;
-  z-index: 10;
+  z-index: 4;
   display: inline-flex;
   align-items: center;
   gap: 0.36rem;

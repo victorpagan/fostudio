@@ -196,12 +196,14 @@ const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
         label: 'Email',
         icon: 'i-lucide-mail',
         to: '/dashboard/admin/email',
+        exact: true,
         onSelect: () => { open.value = false }
       },
       {
         label: 'Email Campaigns',
         icon: 'i-lucide-megaphone',
         to: '/dashboard/admin/email-campaigns',
+        exact: true,
         onSelect: () => { open.value = false }
       },
       {
@@ -273,11 +275,7 @@ const sidebarLinks = computed<NavigationMenuItem[]>(() =>
     : primaryLinks.value
 )
 
-const sidebarClass = computed(() =>
-  isAdminSidebarMode.value
-    ? 'dashboard-sidebar-admin !border-0 shadow-none'
-    : 'bg-elevated/25 !border-0 shadow-none'
-)
+const sidebarClass = computed(() => 'dashboard-sidebar-admin !border-0 shadow-none')
 
 const sidebarUi = computed(() => ({
   root: 'border-0 ring-0 shadow-none',
@@ -503,7 +501,7 @@ onBeforeUnmount(() => {
 <template>
   <UDashboardGroup
     unit="rem"
-    :class="['dashboard-shell', { 'dashboard-admin-outer': isAdminSidebarMode }]"
+    class="dashboard-shell dashboard-admin-outer"
   >
     <div class="pointer-events-none fixed inset-x-0 top-0 z-[80] h-1">
       <div

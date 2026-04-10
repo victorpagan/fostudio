@@ -551,72 +551,57 @@ function formatPeakCredits(value: number) {
 
 <template>
   <div class="flex min-h-0 flex-1">
-    <UDashboardPanel
-      id="book"
-      class="min-h-0 flex-1 admin-ops-panel"
-      :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+    <DashboardPageScaffold
+      panel-id="book"
+      title="Book Studio"
     >
-      <template #header>
-        <UDashboardNavbar
-          title="Book Studio"
-          class="admin-ops-navbar"
-          :ui="{ root: 'border-b-0', right: 'gap-3' }"
-        >
-          <template #leading>
-            <UDashboardSidebarCollapse />
-          </template>
-          <template #right>
-            <UButton
-              color="neutral"
-              variant="soft"
-              size="sm"
-              icon="i-lucide-list-checks"
-              to="/dashboard/bookings"
-            >
-              My bookings
-            </UButton>
-          </template>
-        </UDashboardNavbar>
+      <template #right>
+        <DashboardActionGroup
+          :secondary="[
+            {
+              label: 'My bookings',
+              icon: 'i-lucide-list-checks',
+              color: 'neutral',
+              variant: 'soft',
+              to: '/dashboard/bookings'
+            }
+          ]"
+        />
       </template>
+      <div class="w-full space-y-4">
+        <UCard class="admin-panel-card border-0">
+          <p class="text-sm text-dimmed">
+            Click and drag on the calendar to select a time slot (30-minute increments). Your tier's booking window and peak-hour credit rates apply. Reschedules require {{ memberRescheduleNoticeHours }}+ hours notice.
+          </p>
+        </UCard>
 
-      <template #body>
-        <AdminOpsShell>
-          <div class="w-full space-y-4">
-            <UCard class="admin-panel-card border-0">
-              <p class="text-sm text-dimmed">
-                Click and drag on the calendar to select a time slot (30-minute increments). Your tier's booking window and peak-hour credit rates apply. Reschedules require {{ memberRescheduleNoticeHours }}+ hours notice.
-              </p>
-            </UCard>
-
-            <UAlert
-              v-if="!hasActiveMembership"
+        <UAlert
+          v-if="!hasActiveMembership"
+          color="warning"
+          variant="soft"
+          title="No active membership"
+          description="You can still book with remaining unexpired credits. Renew or switch plans to restore full membership access."
+        >
+          <template #actions>
+            <UButton
               color="warning"
               variant="soft"
-              title="No active membership"
-              description="You can still book with remaining unexpired credits. Renew or switch plans to restore full membership access."
+              size="sm"
+              to="/memberships"
             >
-              <template #actions>
-                <UButton
-                  color="warning"
-                  variant="soft"
-                  size="sm"
-                  to="/memberships"
-                >
-                  View memberships
-                </UButton>
-              </template>
-            </UAlert>
+              View memberships
+            </UButton>
+          </template>
+        </UAlert>
 
-            <AvailabilityCalendar
-              :key="calendarKey"
-              endpoint="/api/calendar/member"
-              @select="onSelect"
-              @booking-click="onOwnBookingClick"
-            />
-          </div>
-        </AdminOpsShell>
-      </template>
-    </UDashboardPanel>
+        <AvailabilityCalendar
+          :key="calendarKey"
+          endpoint="/api/calendar/member"
+          @select="onSelect"
+          @booking-click="onOwnBookingClick"
+        />
+      </div>
+    </DashboardPageScaffold>
 
     <!-- Booking confirmation modal -->
     <UModal
@@ -645,26 +630,29 @@ function formatPeakCredits(value: number) {
           </template>
 
           <div class="space-y-4 pr-1">
-            <!-- Time summary -->
-            <div
-              v-if="selected"
-              class="rounded-lg bg-elevated p-3 space-y-1.5 text-sm"
-            >
-              <div class="flex justify-between">
-                <span class="text-dimmed">Start</span>
-                <span class="font-medium">{{ formatDateTime(selected.start) }}</span>
+            <section class="space-y-2">
+              <p class="text-xs uppercase tracking-wide text-dimmed">
+                Session details
+              </p>
+              <div
+                v-if="selected"
+                class="rounded-lg bg-elevated p-3 space-y-1.5 text-sm"
+              >
+                <div class="flex justify-between">
+                  <span class="text-dimmed">Start</span>
+                  <span class="font-medium">{{ formatDateTime(selected.start) }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-dimmed">End</span>
+                  <span class="font-medium">{{ formatDateTime(selected.end) }}</span>
+                </div>
               </div>
-              <div class="flex justify-between">
-                <span class="text-dimmed">End</span>
-                <span class="font-medium">{{ formatDateTime(selected.end) }}</span>
-              </div>
-            </div>
+            </section>
 
-            <!-- Credit cost preview -->
-            <div class="rounded-lg border border-default p-3 space-y-2">
-              <div class="text-sm font-medium">
-                Credit cost
-              </div>
+            <section class="space-y-2 rounded-lg border border-default p-3">
+              <p class="text-xs uppercase tracking-wide text-dimmed">
+                Credits and hold
+              </p>
 
               <div
                 v-if="previewLoading"
@@ -721,60 +709,62 @@ function formatPeakCredits(value: number) {
                   <span>{{ requiredCredits }} credits</span>
                 </div>
               </div>
-            </div>
 
-            <UAlert
-              v-if="hasInsufficientCredits"
-              color="warning"
-              variant="soft"
-              icon="i-lucide-wallet-cards"
-              title="Insufficient credits"
-              :description="`This booking needs ${requiredCredits} credits, but you currently have ${creditBalance}.`"
-            />
-
-            <!-- Notes -->
-            <UFormField
-              label="Notes"
-              hint="Optional"
-            >
-              <UTextarea
-                v-model="form.notes"
-                placeholder="Setup requirements, shoot type, etc."
-                :rows="2"
-                class="w-full"
+              <UAlert
+                v-if="hasInsufficientCredits"
+                class="mt-2"
+                color="warning"
+                variant="soft"
+                icon="i-lucide-wallet-cards"
+                title="Insufficient credits"
+                :description="`This booking needs ${requiredCredits} credits, but you currently have ${creditBalance}.`"
               />
-            </UFormField>
 
-            <!-- Overnight hold -->
-            <UAlert
-              v-if="!canShowHoldOption"
-              color="warning"
-              variant="soft"
-              icon="i-lucide-circle-alert"
-              :description="holdSelectionEligibility.reasons.join(' ')"
-            />
-            <UCheckbox
-              v-if="canShowHoldOption"
-              v-model="form.request_hold"
-              label="Request overnight equipment hold"
-              :description="`Extends your reservation until ${DateTime.fromObject({ hour: holdEndHour, minute: 0 }, { zone: 'America/Los_Angeles' }).toFormat('h:mm a')} next day. Hold time does not count as booking hours, and door locks do not work during hold hours unless staff is contacted first.`"
-            />
-
-            <UFormField
-              v-if="holdSelectionRequired"
-              label="How to cover this hold"
-            >
-              <USelect
-                v-model="form.holdPaymentMethod"
-                :items="holdPaymentOptions"
-                value-key="value"
-                label-key="label"
-                placeholder="Choose hold payment method"
+              <UAlert
+                v-if="!canShowHoldOption"
+                class="mt-2"
+                color="warning"
+                variant="soft"
+                icon="i-lucide-circle-alert"
+                :description="holdSelectionEligibility.reasons.join(' ')"
               />
-              <p class="mt-1 text-xs text-dimmed">
-                Included holds are currently exhausted. Choose to use a hold token or {{ holdCreditCost }} credits.
-              </p>
-            </UFormField>
+              <UCheckbox
+                v-if="canShowHoldOption"
+                v-model="form.request_hold"
+                label="Request overnight equipment hold"
+                :description="`Extends your reservation until ${DateTime.fromObject({ hour: holdEndHour, minute: 0 }, { zone: 'America/Los_Angeles' }).toFormat('h:mm a')} next day. Hold time does not count as booking hours, and door locks do not work during hold hours unless staff is contacted first.`"
+              />
+
+              <UFormField
+                v-if="holdSelectionRequired"
+                label="How to cover this hold"
+              >
+                <USelect
+                  v-model="form.holdPaymentMethod"
+                  :items="holdPaymentOptions"
+                  value-key="value"
+                  label-key="label"
+                  placeholder="Choose hold payment method"
+                />
+                <p class="mt-1 text-xs text-dimmed">
+                  Included holds are currently exhausted. Choose to use a hold token or {{ holdCreditCost }} credits.
+                </p>
+              </UFormField>
+            </section>
+
+            <section class="space-y-2">
+              <UFormField
+                label="Notes"
+                hint="Optional"
+              >
+                <UTextarea
+                  v-model="form.notes"
+                  placeholder="Setup requirements, shoot type, etc."
+                  :rows="2"
+                  class="w-full"
+                />
+              </UFormField>
+            </section>
           </div>
 
           <template #footer>
@@ -821,7 +811,7 @@ function formatPeakCredits(value: number) {
                 variant="ghost"
                 size="sm"
                 :disabled="ownBookingActionLoading"
-                @click="closeOwnBookingActions"
+                @click="() => closeOwnBookingActions()"
               />
             </div>
           </template>

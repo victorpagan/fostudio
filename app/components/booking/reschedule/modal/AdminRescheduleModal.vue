@@ -54,6 +54,8 @@ const emit = defineEmits<{
   applyDay: [key: string]
   startChange: [value: string]
   endChange: [value: string]
+  notesChange: [value: string]
+  keepHoldChange: [value: boolean]
   prevMonth: []
   nextMonth: []
 }>()
@@ -61,16 +63,6 @@ const emit = defineEmits<{
 function handleClose() {
   emit('close')
   open.value = false
-}
-
-function handleStartSelectChange(event: Event) {
-  const target = event.target as HTMLSelectElement | null
-  emit('startChange', String(target?.value ?? ''))
-}
-
-function handleEndSelectChange(event: Event) {
-  const target = event.target as HTMLSelectElement | null
-  emit('endChange', String(target?.value ?? ''))
 }
 </script>
 
@@ -105,54 +97,32 @@ function handleEndSelectChange(event: Event) {
 
         <div class="grid gap-3 md:grid-cols-2">
           <UFormField label="Start">
-            <select
-              class="w-full rounded-md border border-default bg-default px-3 py-2 text-sm"
-              :value="props.form.startTime"
-              @change="handleStartSelectChange"
-            >
-              <option
-                v-if="!props.startOptions.length"
-                disabled
-                value=""
-              >
-                No available start times for selected day
-              </option>
-              <option
-                v-for="option in props.startOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
+            <USelect
+              :model-value="props.form.startTime"
+              :items="props.startOptions"
+              :disabled="!props.startOptions.length"
+              placeholder="No available start times for selected day"
+              @update:model-value="(value) => emit('startChange', String(value ?? ''))"
+            />
           </UFormField>
           <UFormField label="End">
-            <select
-              class="w-full rounded-md border border-default bg-default px-3 py-2 text-sm"
-              :value="props.form.endTime"
-              @change="handleEndSelectChange"
-            >
-              <option
-                v-if="!props.endOptions.length"
-                disabled
-                value=""
-              >
-                No available end times for selected start
-              </option>
-              <option
-                v-for="option in props.endOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
+            <USelect
+              :model-value="props.form.endTime"
+              :items="props.endOptions"
+              :disabled="!props.endOptions.length"
+              placeholder="No available end times for selected start"
+              @update:model-value="(value) => emit('endChange', String(value ?? ''))"
+            />
           </UFormField>
           <UFormField
             label="Notes"
             class="md:col-span-2"
           >
-            <UInput v-model="props.form.notes" placeholder="Optional update notes" />
+            <UInput
+              :model-value="props.form.notes"
+              placeholder="Optional update notes"
+              @update:model-value="(value) => emit('notesChange', String(value ?? ''))"
+            />
           </UFormField>
         </div>
 
@@ -291,9 +261,10 @@ function handleEndSelectChange(event: Event) {
         />
         <UCheckbox
           v-if="props.form.hadHold"
-          v-model="props.form.keepHold"
+          :model-value="props.form.keepHold"
           class="mt-3"
           label="Keep overnight hold after reschedule"
+          @update:model-value="(value) => emit('keepHoldChange', Boolean(value))"
         />
         <UAlert
           v-if="props.form.hadHold && props.form.keepHold && !props.holdEligibility.ok"

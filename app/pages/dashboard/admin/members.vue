@@ -30,6 +30,8 @@ type MemberRecord = {
 
 const toast = useToast()
 const selectedMemberId = ref<string | null>(null)
+const memberSearch = ref('')
+const memberStatusFilter = ref<'all' | 'active' | 'past_due' | 'pending_checkout' | 'canceled' | 'inactive'>('all')
 const updatingStatus = ref(false)
 const adjustingCredits = ref(false)
 const updatingDoorCode = ref(false)
@@ -55,6 +57,28 @@ const { data: memberRows, refresh, pending } = await useAsyncData('admin:members
 })
 
 const members = computed(() => memberRows.value ?? [])
+const filteredMembers = computed(() => {
+  const query = memberSearch.value.trim().toLowerCase()
+  return members.value.filter((member) => {
+    if (memberStatusFilter.value !== 'all' && member.effective_status !== memberStatusFilter.value) {
+      return false
+    }
+    if (!query) return true
+
+    const text = [
+      member.customer_first_name,
+      member.customer_last_name,
+      member.customer_email,
+      member.user_id,
+      member.tier,
+      member.cadence
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return text.includes(query)
+  })
+})
 
 const selectedMember = computed(() =>
   members.value.find(member => member.membership_id === selectedMemberId.value) ?? null
@@ -117,6 +141,22 @@ function selectMember(member: MemberRecord) {
     }
   })
 }
+
+watch(filteredMembers, (next) => {
+  if (!next.length) {
+    selectedMemberId.value = null
+    return
+  }
+
+  if (selectedMemberId.value && next.some(member => member.membership_id === selectedMemberId.value)) {
+    return
+  }
+
+  const target = next[0]!
+  selectedMemberId.value = target.membership_id
+  statusForm.status = target.status ?? 'active'
+  doorCodeForm.value = target.door_code ?? ''
+})
 
 function memberLabel(member: MemberRecord) {
   const name = [member.customer_first_name, member.customer_last_name].filter(Boolean).join(' ')
@@ -242,226 +282,306 @@ onMounted(() => {
 </script>
 
 <template>
-  <UDashboardPanel
-    id="admin-members"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <DashboardPageScaffold
+    panel-id="admin-members"
+    title="Members Management"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Members Management"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-2' }"
-      >
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-
-        <template #right>
-          <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-refresh-cw" :loading="pending" @click="() => refresh()" />
-        </template>
-      </UDashboardNavbar>
+    <template #right>
+      <DashboardActionGroup
+        align="end"
+        :secondary="[
+          {
+            label: 'Refresh',
+            icon: 'i-lucide-refresh-cw',
+            loading: pending,
+            onSelect: () => refresh()
+          }
+        ]"
+      />
     </template>
+    <UAlert
+      color="warning"
+      variant="soft"
+      icon="i-lucide-users"
+      title="Member account controls"
+      description="Review memberships, update status, and apply manual credit adjustments."
+    />
 
-    <template #body>
-      <AdminOpsShell>
-        <UAlert
-          color="warning"
-          variant="soft"
-          icon="i-lucide-users"
-          title="Member account controls"
-          description="Review memberships, update status, and apply manual credit adjustments."
+    <DashboardDataPanel
+      list-title="Member list"
+      list-description="Search and filter members first, then manage account controls."
+      detail-title="Member detail"
+      detail-description="Status, waiver, and credit controls for the selected member."
+    >
+      <template #list-controls>
+        <UCard class="admin-panel-card border-0">
+          <div class="grid gap-3 md:grid-cols-2">
+            <UFormField label="Search">
+              <UInput
+                v-model="memberSearch"
+                icon="i-lucide-search"
+                placeholder="Name, email, tier, cadence"
+              />
+            </UFormField>
+            <UFormField label="Status">
+              <USelect
+                v-model="memberStatusFilter"
+                :items="[
+                  { label: 'All statuses', value: 'all' },
+                  { label: 'Active', value: 'active' },
+                  { label: 'Past due', value: 'past_due' },
+                  { label: 'Pending checkout', value: 'pending_checkout' },
+                  { label: 'Canceled', value: 'canceled' },
+                  { label: 'Inactive', value: 'inactive' }
+                ]"
+              />
+            </UFormField>
+          </div>
+        </UCard>
+      </template>
+
+      <template #list>
+        <DashboardSectionState
+          v-if="pending && !members.length"
+          state="loading"
+          title="Loading members"
+          description="Fetching membership records."
         />
-
-        <div class="grid gap-4 lg:grid-cols-[20rem_minmax(0,1fr)]">
-          <UCard>
-            <div class="font-medium">
-              Member list
-            </div>
-            <div class="mt-3 space-y-2">
-              <button
-                v-for="member in members"
-                :key="member.membership_id"
-                class="w-full rounded-lg border border-default p-2 text-left text-sm transition hover:bg-elevated"
-                :class="selectedMemberId === member.membership_id ? 'bg-elevated border-primary' : ''"
-                @click="selectMember(member)"
+        <DashboardSectionState
+          v-else-if="!filteredMembers.length"
+          state="empty"
+          title="No members found"
+          description="Try adjusting the status filter or search query."
+        />
+        <div
+          v-else
+          class="space-y-2"
+        >
+          <button
+            v-for="member in filteredMembers"
+            :key="member.membership_id"
+            class="w-full rounded-xl border border-default bg-elevated/35 p-3 text-left text-sm transition hover:bg-elevated/55"
+            :class="selectedMemberId === member.membership_id ? '!border-primary bg-elevated/70' : ''"
+            @click="selectMember(member)"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-medium truncate">{{ memberLabel(member) }}</span>
+              <UBadge
+                :color="memberStatusColor(member.effective_status)"
+                size="xs"
+                variant="soft"
               >
-                <div class="flex items-center justify-between gap-2">
-                  <span class="font-medium truncate">{{ memberLabel(member) }}</span>
-                  <UBadge :color="memberStatusColor(member.effective_status)" size="xs" variant="soft">
-                    {{ member.effective_status }}
-                  </UBadge>
+                {{ member.effective_status }}
+              </UBadge>
+            </div>
+            <div class="mt-1 text-xs text-dimmed truncate">
+              {{ member.tier || 'No tier' }} · {{ member.cadence || 'no cadence' }}
+            </div>
+            <div class="mt-2 flex items-center gap-2">
+              <UBadge
+                :color="waiverStatusColor(member.waiver_status)"
+                size="xs"
+                variant="soft"
+              >
+                Waiver: {{ waiverStatusLabel(member.waiver_status) }}
+              </UBadge>
+              <UBadge
+                color="neutral"
+                size="xs"
+                variant="soft"
+              >
+                {{ member.credit_balance ?? 0 }} cr
+              </UBadge>
+            </div>
+          </button>
+        </div>
+      </template>
+
+      <template #detail>
+        <DashboardSectionState
+          v-if="!selectedMember"
+          state="empty"
+          title="No member selected"
+          description="Select a member from the list to view account controls."
+        />
+        <div
+          v-else
+          class="space-y-4"
+        >
+          <UCard class="admin-panel-card border-0">
+            <div class="grid gap-2 text-sm sm:grid-cols-2">
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Member
                 </div>
-                <div class="mt-1 text-xs text-dimmed truncate">
-                  {{ member.tier }} · {{ member.cadence }}
+                <div class="mt-1 font-medium">
+                  {{ memberLabel(selectedMember) }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Credit balance
+                </div>
+                <div class="mt-1 font-medium">
+                  {{ selectedMember.credit_balance ?? 0 }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Period start
                 </div>
                 <div class="mt-1">
-                  <UBadge :color="waiverStatusColor(member.waiver_status)" size="xs" variant="soft">
-                    Waiver: {{ waiverStatusLabel(member.waiver_status) }}
+                  {{ formatDate(selectedMember.current_period_start) }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Period end
+                </div>
+                <div class="mt-1">
+                  {{ formatDate(selectedMember.current_period_end) }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Door code request
+                </div>
+                <div class="mt-1">
+                  {{ formatRequestStatus(selectedMember.door_code_request_status) }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Last request at
+                </div>
+                <div class="mt-1">
+                  {{ formatDate(selectedMember.door_code_last_request_at) }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Waiver status
+                </div>
+                <div class="mt-1">
+                  <UBadge
+                    :color="waiverStatusColor(selectedMember.waiver_status)"
+                    size="xs"
+                    variant="soft"
+                  >
+                    {{ waiverStatusLabel(selectedMember.waiver_status) }}
                   </UBadge>
                 </div>
-              </button>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Waiver version
+                </div>
+                <div class="mt-1">
+                  {{ selectedMember.waiver_version ?? '—' }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Waiver signer
+                </div>
+                <div class="mt-1">
+                  {{ selectedMember.waiver_signer_name ?? '—' }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Waiver signed
+                </div>
+                <div class="mt-1">
+                  {{ formatDate(selectedMember.waiver_signed_at) }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Waiver expires
+                </div>
+                <div class="mt-1">
+                  {{ formatDate(selectedMember.waiver_expires_at) }}
+                </div>
+              </div>
             </div>
           </UCard>
 
-          <div class="space-y-4">
-            <UCard v-if="selectedMember">
-              <div class="grid gap-2 text-sm sm:grid-cols-2">
-                <div>
-                  <div class="text-xs uppercase tracking-wide text-dimmed">
-                    Member
-                  </div>
-                  <div class="mt-1 font-medium">
-                    {{ memberLabel(selectedMember) }}
-                  </div>
-                </div>
-                <div>
-                  <div class="text-xs uppercase tracking-wide text-dimmed">
-                    Credit balance
-                  </div>
-                  <div class="mt-1 font-medium">
-                    {{ selectedMember.credit_balance ?? 0 }}
-                  </div>
-                </div>
-                <div>
-                  <div class="text-xs uppercase tracking-wide text-dimmed">
-                    Period start
-                  </div>
-                  <div class="mt-1">
-                    {{ formatDate(selectedMember.current_period_start) }}
-                  </div>
-                </div>
-                <div>
-                  <div class="text-xs uppercase tracking-wide text-dimmed">
-                    Period end
-                  </div>
-                  <div class="mt-1">
-                    {{ formatDate(selectedMember.current_period_end) }}
-                  </div>
-                </div>
-                <div>
-                  <div class="text-xs uppercase tracking-wide text-dimmed">
-                    Door code request
-                  </div>
-                  <div class="mt-1">
-                    {{ formatRequestStatus(selectedMember.door_code_request_status) }}
-                  </div>
-                </div>
-                <div>
-                  <div class="text-xs uppercase tracking-wide text-dimmed">
-                    Last request at
-                  </div>
-                  <div class="mt-1">
-                    {{ formatDate(selectedMember.door_code_last_request_at) }}
-                  </div>
-                </div>
-                <div>
-                  <div class="text-xs uppercase tracking-wide text-dimmed">
-                    Waiver status
-                  </div>
-                  <div class="mt-1">
-                    <UBadge :color="waiverStatusColor(selectedMember.waiver_status)" size="xs" variant="soft">
-                      {{ waiverStatusLabel(selectedMember.waiver_status) }}
-                    </UBadge>
-                  </div>
-                </div>
-                <div>
-                  <div class="text-xs uppercase tracking-wide text-dimmed">
-                    Waiver version
-                  </div>
-                  <div class="mt-1">
-                    {{ selectedMember.waiver_version ?? '—' }}
-                  </div>
-                </div>
-                <div>
-                  <div class="text-xs uppercase tracking-wide text-dimmed">
-                    Waiver signer
-                  </div>
-                  <div class="mt-1">
-                    {{ selectedMember.waiver_signer_name ?? '—' }}
-                  </div>
-                </div>
-                <div>
-                  <div class="text-xs uppercase tracking-wide text-dimmed">
-                    Waiver signed
-                  </div>
-                  <div class="mt-1">
-                    {{ formatDate(selectedMember.waiver_signed_at) }}
-                  </div>
-                </div>
-                <div>
-                  <div class="text-xs uppercase tracking-wide text-dimmed">
-                    Waiver expires
-                  </div>
-                  <div class="mt-1">
-                    {{ formatDate(selectedMember.waiver_expires_at) }}
-                  </div>
-                </div>
-              </div>
-            </UCard>
-
-            <UCard v-if="selectedMember">
-              <div class="font-medium">
-                Door code
-              </div>
-              <p class="mt-1 text-xs text-dimmed">
-                Set a 6-digit code. Saving a new code resolves pending member requests.
-              </p>
-              <div class="mt-3 grid gap-3 sm:grid-cols-[12rem_auto]">
-                <UInput
-                  v-model="doorCodeForm.value"
-                  maxlength="6"
-                  inputmode="numeric"
-                  placeholder="000000"
-                />
-                <UButton :loading="updatingDoorCode" @click="saveDoorCode">
-                  Save door code
-                </UButton>
-              </div>
-            </UCard>
-
-            <UCard v-if="selectedMember">
-              <div class="font-medium">
-                Membership status
-              </div>
-              <div class="mt-3 grid gap-3 sm:grid-cols-[12rem_auto]">
-                <USelect
-                  v-model="statusForm.status"
-                  :items="[
-                    { label: 'Active', value: 'active' },
-                    { label: 'Pending checkout', value: 'pending_checkout' },
-                    { label: 'Past due', value: 'past_due' },
-                    { label: 'Canceled', value: 'canceled' }
-                  ]"
-                />
-                <UButton :loading="updatingStatus" @click="saveMembershipStatus">
-                  Save status
-                </UButton>
-              </div>
-            </UCard>
-
-            <UCard v-if="selectedMember">
-              <div class="font-medium">
-                Credit adjustment
-              </div>
-              <div class="mt-3 grid gap-3 sm:grid-cols-3">
-                <UFormField label="Delta credits">
-                  <UInput v-model.number="creditForm.delta" type="number" step="0.25" />
-                </UFormField>
-                <UFormField label="Reason">
-                  <UInput v-model="creditForm.reason" />
-                </UFormField>
-                <UFormField label="Note">
-                  <UInput v-model="creditForm.note" />
-                </UFormField>
-              </div>
-              <UButton class="mt-3" :loading="adjustingCredits" @click="applyCreditAdjustment">
-                Apply credits
+          <UCard class="admin-panel-card border-0">
+            <div class="font-medium">
+              Door code
+            </div>
+            <p class="mt-1 text-xs text-dimmed">
+              Set a 6-digit code. Saving a new code resolves pending member requests.
+            </p>
+            <div class="mt-3 grid gap-3 sm:grid-cols-[12rem_auto]">
+              <UInput
+                v-model="doorCodeForm.value"
+                maxlength="6"
+                inputmode="numeric"
+                placeholder="000000"
+              />
+              <UButton
+                :loading="updatingDoorCode"
+                @click="saveDoorCode"
+              >
+                Save door code
               </UButton>
-            </UCard>
-          </div>
+            </div>
+          </UCard>
+
+          <UCard class="admin-panel-card border-0">
+            <div class="font-medium">
+              Membership status
+            </div>
+            <div class="mt-3 grid gap-3 sm:grid-cols-[12rem_auto]">
+              <USelect
+                v-model="statusForm.status"
+                :items="[
+                  { label: 'Active', value: 'active' },
+                  { label: 'Pending checkout', value: 'pending_checkout' },
+                  { label: 'Past due', value: 'past_due' },
+                  { label: 'Canceled', value: 'canceled' }
+                ]"
+              />
+              <UButton
+                :loading="updatingStatus"
+                @click="saveMembershipStatus"
+              >
+                Save status
+              </UButton>
+            </div>
+          </UCard>
+
+          <UCard class="admin-panel-card border-0">
+            <div class="font-medium">
+              Credit adjustment
+            </div>
+            <div class="mt-3 grid gap-3 sm:grid-cols-3">
+              <UFormField label="Delta credits">
+                <UInput
+                  v-model.number="creditForm.delta"
+                  type="number"
+                  step="0.25"
+                />
+              </UFormField>
+              <UFormField label="Reason">
+                <UInput v-model="creditForm.reason" />
+              </UFormField>
+              <UFormField label="Note">
+                <UInput v-model="creditForm.note" />
+              </UFormField>
+            </div>
+            <UButton
+              class="mt-3"
+              :loading="adjustingCredits"
+              @click="applyCreditAdjustment"
+            >
+              Apply credits
+            </UButton>
+          </UCard>
         </div>
-      </AdminOpsShell>
-    </template>
-  </UDashboardPanel>
+      </template>
+    </DashboardDataPanel>
+  </DashboardPageScaffold>
 </template>

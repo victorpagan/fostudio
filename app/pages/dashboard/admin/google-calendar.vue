@@ -265,178 +265,213 @@ async function startOauthConnect() {
 </script>
 
 <template>
-  <UDashboardPanel
-    id="admin-google-calendar"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <DashboardPageScaffold
+    panel-id="admin-google-calendar"
+    title="Google Calendar Sync"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Google Calendar Sync"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-2' }"
-      >
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-
-        <template #right>
-          <UButton
-            size="sm"
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-refresh-cw"
-            :loading="pending"
-            @click="refresh"
-          />
-        </template>
-      </UDashboardNavbar>
+    <template #right>
+      <DashboardActionGroup
+        :secondary="[
+          {
+            label: 'Refresh',
+            icon: 'i-lucide-refresh-cw',
+            color: 'neutral',
+            variant: 'soft',
+            loading: pending,
+            onSelect: () => refresh()
+          }
+        ]"
+      />
     </template>
+    <UAlert
+      color="warning"
+      variant="soft"
+      icon="i-lucide-calendar-sync"
+      title="Peerspace mirror from Google Calendar"
+      description="Sync a designated Google Calendar into the booking calendar as non-bookable external blocks."
+    />
 
-    <template #body>
-      <AdminOpsShell>
-        <UAlert
-          color="warning"
-          variant="soft"
-          icon="i-lucide-calendar-sync"
-          title="Peerspace mirror from Google Calendar"
-          description="Sync a designated Google Calendar into the booking calendar as non-bookable external blocks."
-        />
-
-        <div class="grid gap-4 md:grid-cols-2">
-          <UCard>
-            <div class="text-xs uppercase tracking-wide text-dimmed">
-              Active synced events
-            </div>
-            <div class="mt-2 text-3xl font-semibold">
-              {{ stats.activeSyncedEvents }}
-            </div>
-          </UCard>
-          <UCard>
-            <div class="text-xs uppercase tracking-wide text-dimmed">
-              Next 7 days
-            </div>
-            <div class="mt-2 text-3xl font-semibold">
-              {{ stats.nextWeekEvents }}
-            </div>
-          </UCard>
+    <div class="grid gap-4 md:grid-cols-2">
+      <UCard>
+        <div class="text-xs uppercase tracking-wide text-dimmed">
+          Active synced events
         </div>
+        <div class="mt-2 text-3xl font-semibold">
+          {{ stats.activeSyncedEvents }}
+        </div>
+      </UCard>
+      <UCard>
+        <div class="text-xs uppercase tracking-wide text-dimmed">
+          Next 7 days
+        </div>
+        <div class="mt-2 text-3xl font-semibold">
+          {{ stats.nextWeekEvents }}
+        </div>
+      </UCard>
+    </div>
 
-        <UAlert
-          v-if="statsError"
-          color="warning"
-          variant="soft"
-          icon="i-lucide-circle-alert"
-          title="Google sync stats unavailable"
-          :description="statsError"
-        />
+    <UAlert
+      v-if="statsError"
+      color="warning"
+      variant="soft"
+      icon="i-lucide-circle-alert"
+      title="Google sync stats unavailable"
+      :description="statsError"
+    />
 
-        <UCard>
-          <div class="grid gap-3 md:grid-cols-2">
-            <UFormField label="Enable sync">
-              <USwitch v-model="form.enabled" />
-            </UFormField>
+    <UCard>
+      <div class="grid gap-3 md:grid-cols-2">
+        <UFormField label="Enable sync">
+          <USwitch v-model="form.enabled" />
+        </UFormField>
 
-            <UFormField label="Push FO Studio busy blocks to Google">
-              <USwitch v-model="form.pushEnabled" />
-            </UFormField>
+        <UFormField label="Push FO Studio busy blocks to Google">
+          <USwitch v-model="form.pushEnabled" />
+        </UFormField>
 
-            <UFormField label="Google Calendar ID">
-              <UInput v-model="form.calendarId" placeholder="your-calendar-id@group.calendar.google.com" />
-            </UFormField>
+        <UFormField label="Google Calendar ID">
+          <UInput
+            v-model="form.calendarId"
+            placeholder="your-calendar-id@group.calendar.google.com"
+          />
+        </UFormField>
 
-            <UFormField v-if="form.oauthConnected" label="Select Google calendar">
-              <div class="space-y-2">
-                <USelect
-                  v-model="form.calendarId"
-                  :items="calendarSelectItems"
-                  option-attribute="label"
-                  value-attribute="value"
-                  :disabled="loadingCalendars || calendarSelectItems.length === 0"
-                />
-                <div class="flex flex-wrap items-center gap-2">
-                  <UButton
-                    size="xs"
-                    color="neutral"
-                    variant="soft"
-                    :loading="loadingCalendars"
-                    @click="refreshGoogleCalendars"
-                  >
-                    Refresh calendars
-                  </UButton>
-                  <span v-if="!loadingCalendars && calendarSelectItems.length === 0" class="text-xs text-dimmed">
-                    No calendars returned for this account.
-                  </span>
-                </div>
-                <p v-if="calendarsError" class="text-xs text-error">
-                  {{ calendarsError }}
-                </p>
-              </div>
-            </UFormField>
-
-            <UFormField label="Google OAuth Client ID">
-              <UInput v-model="form.oauthClientId" placeholder="1234567890-xxxx.apps.googleusercontent.com" />
-            </UFormField>
-
-            <UFormField label="OAuth client secret key name">
-              <UInput v-model="form.oauthClientSecretName" placeholder="GOOGLE_OAUTH_CLIENT_SECRET" />
-            </UFormField>
-
-            <UFormField label="OAuth connection">
-              <div class="flex items-center gap-2">
-                <UBadge
-                  :color="form.oauthConnected ? 'success' : 'neutral'"
-                  variant="soft"
-                  :label="oauthConnectedLabel"
-                />
-                <UButton
-                  color="neutral"
-                  variant="soft"
-                  icon="i-lucide-link"
-                  @click="startOauthConnect"
-                >
-                  Connect to Google Calendar
-                </UButton>
-              </div>
-            </UFormField>
-
-            <UFormField label="Service account secret key name (fallback)">
-              <UInput v-model="form.serviceAccountSecretName" placeholder="GOOGLE_SERVICE_ACCOUNT_JSON" />
-            </UFormField>
-
-            <UFormField label="Sync interval (minutes)">
-              <UInput v-model.number="form.syncIntervalMinutes" type="number" min="1" max="1440" />
-            </UFormField>
-
-            <UFormField label="Lookback window (days)">
-              <UInput v-model.number="form.lookbackDays" type="number" min="0" max="365" />
-            </UFormField>
-
-            <UFormField label="Lookahead window (days)">
-              <UInput v-model.number="form.lookaheadDays" type="number" min="1" max="730" />
-            </UFormField>
-          </div>
-
-          <div class="mt-4 space-y-1 text-xs text-dimmed">
-            <div>Last sync: {{ formatLastSync(form.lastSyncAt) }}</div>
-            <div v-if="lastSyncSummary">
-              {{ lastSyncSummary }}
+        <UFormField
+          v-if="form.oauthConnected"
+          label="Select Google calendar"
+        >
+          <div class="space-y-2">
+            <USelect
+              v-model="form.calendarId"
+              :items="calendarSelectItems"
+              option-attribute="label"
+              value-attribute="value"
+              :disabled="loadingCalendars || calendarSelectItems.length === 0"
+            />
+            <div class="flex flex-wrap items-center gap-2">
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="soft"
+                :loading="loadingCalendars"
+                @click="refreshGoogleCalendars"
+              >
+                Refresh calendars
+              </UButton>
+              <span
+                v-if="!loadingCalendars && calendarSelectItems.length === 0"
+                class="text-xs text-dimmed"
+              >
+                No calendars returned for this account.
+              </span>
             </div>
+            <p
+              v-if="calendarsError"
+              class="text-xs text-error"
+            >
+              {{ calendarsError }}
+            </p>
           </div>
+        </UFormField>
 
-          <div class="mt-4 flex flex-wrap gap-2">
-            <UButton :loading="saving" @click="saveSettings">
-              Save settings
-            </UButton>
-            <UButton color="neutral" variant="soft" :loading="testing" @click="testConnection">
-              Test connection
-            </UButton>
-            <UButton color="neutral" variant="soft" :loading="syncing" @click="syncNow">
-              Sync now
+        <UFormField label="Google OAuth Client ID">
+          <UInput
+            v-model="form.oauthClientId"
+            placeholder="1234567890-xxxx.apps.googleusercontent.com"
+          />
+        </UFormField>
+
+        <UFormField label="OAuth client secret key name">
+          <UInput
+            v-model="form.oauthClientSecretName"
+            placeholder="GOOGLE_OAUTH_CLIENT_SECRET"
+          />
+        </UFormField>
+
+        <UFormField label="OAuth connection">
+          <div class="flex items-center gap-2">
+            <UBadge
+              :color="form.oauthConnected ? 'success' : 'neutral'"
+              variant="soft"
+              :label="oauthConnectedLabel"
+            />
+            <UButton
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-link"
+              @click="startOauthConnect"
+            >
+              Connect to Google Calendar
             </UButton>
           </div>
-        </UCard>
-      </AdminOpsShell>
-    </template>
-  </UDashboardPanel>
+        </UFormField>
+
+        <UFormField label="Service account secret key name (fallback)">
+          <UInput
+            v-model="form.serviceAccountSecretName"
+            placeholder="GOOGLE_SERVICE_ACCOUNT_JSON"
+          />
+        </UFormField>
+
+        <UFormField label="Sync interval (minutes)">
+          <UInput
+            v-model.number="form.syncIntervalMinutes"
+            type="number"
+            min="1"
+            max="1440"
+          />
+        </UFormField>
+
+        <UFormField label="Lookback window (days)">
+          <UInput
+            v-model.number="form.lookbackDays"
+            type="number"
+            min="0"
+            max="365"
+          />
+        </UFormField>
+
+        <UFormField label="Lookahead window (days)">
+          <UInput
+            v-model.number="form.lookaheadDays"
+            type="number"
+            min="1"
+            max="730"
+          />
+        </UFormField>
+      </div>
+
+      <div class="mt-4 space-y-1 text-xs text-dimmed">
+        <div>Last sync: {{ formatLastSync(form.lastSyncAt) }}</div>
+        <div v-if="lastSyncSummary">
+          {{ lastSyncSummary }}
+        </div>
+      </div>
+
+      <div class="mt-4 flex flex-wrap gap-2">
+        <UButton
+          :loading="saving"
+          @click="saveSettings"
+        >
+          Save settings
+        </UButton>
+        <UButton
+          color="neutral"
+          variant="soft"
+          :loading="testing"
+          @click="testConnection"
+        >
+          Test connection
+        </UButton>
+        <UButton
+          color="neutral"
+          variant="soft"
+          :loading="syncing"
+          @click="syncNow"
+        >
+          Sync now
+        </UButton>
+      </div>
+    </UCard>
+  </DashboardPageScaffold>
 </template>

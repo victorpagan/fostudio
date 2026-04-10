@@ -166,26 +166,31 @@ useHead({
   link: [
     { rel: 'icon', href: '/favicon.ico' }
   ],
-  script: [
-    {
-      key: 'google-ads-gtag-src',
-      async: true,
-      src: `https://www.googletagmanager.com/gtag/js?id=${GOOGLE_ADS_TAG_ID}`
-    },
-    {
-      key: 'google-ads-gtag-init',
-      children: [
-        'window.dataLayer = window.dataLayer || [];',
-        'function gtag(){dataLayer.push(arguments);}',
-        'gtag(\'js\', new Date());',
-        `gtag('config', '${GOOGLE_ADS_TAG_ID}');`
-      ].join('\n')
-    }
-  ],
   htmlAttrs: {
     lang: 'en'
   }
 })
+
+if (!import.meta.dev) {
+  useHead({
+    script: [
+      {
+        key: 'google-ads-gtag-src',
+        async: true,
+        src: `https://www.googletagmanager.com/gtag/js?id=${GOOGLE_ADS_TAG_ID}`
+      },
+      {
+        key: 'google-ads-gtag-init',
+        innerHTML: [
+          'window.dataLayer = window.dataLayer || [];',
+          'function gtag(){dataLayer.push(arguments);}',
+          'gtag(\'js\', new Date());',
+          `gtag('config', '${GOOGLE_ADS_TAG_ID}');`
+        ].join('\n')
+      }
+    ]
+  })
+}
 
 useSeoMeta({
   twitterCard: 'summary_large_image'
