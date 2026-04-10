@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
+import { getRegisteredMailEvents } from '~~/server/utils/mail/templateVariables'
 
 const jsonValueSchema: z.ZodType<unknown> = z.lazy(() => z.union([
   z.string(),
@@ -111,14 +112,28 @@ function findUnsupportedTemplateSyntax(value: string): string | null {
   return null
 }
 
+type QueryResult = PromiseLike<{ data: unknown, error: { message: string } | null }>
+type SelectEqBuilder = {
+  maybeSingle: () => Promise<{ data: unknown, error: { message: string } | null }>
+  order: (column: string, options?: { ascending?: boolean }) => {
+    limit: (value: number) => {
+      maybeSingle: () => Promise<{ data: unknown, error: { message: string } | null }>
+    }
+  }
+}
+
+type InsertBuilder = QueryResult & {
+  select: (columns: string) => {
+    maybeSingle: () => Promise<{ data: unknown, error: { message: string } | null }>
+  }
+}
+
 export default defineEventHandler(async (event) => {
   const { supabase, user } = await requireServerAdmin(event)
   const db = supabase as unknown as {
     from: (table: string) => {
       select: (columns: string) => {
-        eq: (column: string, value: string) => {
-          maybeSingle: () => Promise<{ data: unknown, error: { message: string } | null }>
-        }
+        eq: (column: string, value: string) => SelectEqBuilder
       }
       update: (value: Record<string, unknown>) => {
         eq: (column: string, value: string) => {
@@ -127,15 +142,18 @@ export default defineEventHandler(async (event) => {
           }
         }
       }
-      insert: (values: Record<string, unknown>[]) => {
-        select: (columns: string) => {
-          maybeSingle: () => Promise<{ data: unknown, error: { message: string } | null }>
-        }
-      }
+      insert: (values: Record<string, unknown>[]) => InsertBuilder
     }
   }
 
   const body = campaignSchema.parse(await readBody(event))
+  const validEventTypes = new Set(getRegisteredMailEvents().map(item => item.eventType))
+  if (!validEventTypes.has(body.eventType)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Mail event type must be one of the registered values. Received: ${body.eventType}`
+    })
+  }
 
   const unsupportedSubject = findUnsupportedTemplateSyntax(body.subjectTemplate)
   if (unsupportedSubject) {
@@ -189,6 +207,44 @@ export default defineEventHandler(async (event) => {
     additional_recipients: recipients
   } satisfies Record<string, unknown>
 
+  async function appendTemplateIdHistoryIfNeeded(campaignId: string) {
+    const nextTemplateId = String(body.sendgridTemplateId ?? '').trim()
+    if (!nextTemplateId) return
+
+    const latestHistoryResult = await db
+      .from('mail_campaign_template_id_history')
+      .select('template_id')
+      .eq('campaign_id', campaignId)
+      .order('saved_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (latestHistoryResult.error) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: `Could not read template id history: ${latestHistoryResult.error.message}`
+      })
+    }
+
+    const latestTemplateId = String((latestHistoryResult.data as { template_id?: string } | null)?.template_id ?? '').trim()
+    if (latestTemplateId === nextTemplateId) return
+
+    const insertHistoryResult = await db
+      .from('mail_campaign_template_id_history')
+      .insert([{
+        campaign_id: campaignId,
+        template_id: nextTemplateId,
+        saved_by: user.sub ?? null
+      }])
+
+    if (insertHistoryResult.error) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: `Could not write template id history: ${insertHistoryResult.error.message}`
+      })
+    }
+  }
+
   if (body.id) {
     const updateResult = await db
       .from('mail_campaigns')
@@ -205,6 +261,8 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 404, statusMessage: 'Campaign not found.' })
     }
 
+    await appendTemplateIdHistoryIfNeeded(body.id)
+
     return { campaign: updateResult.data }
   }
 
@@ -219,6 +277,11 @@ export default defineEventHandler(async (event) => {
 
   if (insertResult.error) {
     throw createError({ statusCode: 500, statusMessage: `Could not create campaign: ${insertResult.error.message}` })
+  }
+
+  const insertedCampaignId = String((insertResult.data as { id?: string } | null)?.id ?? '').trim()
+  if (insertedCampaignId) {
+    await appendTemplateIdHistoryIfNeeded(insertedCampaignId)
   }
 
   return { campaign: insertResult.data }

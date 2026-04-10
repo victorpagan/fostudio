@@ -40,12 +40,51 @@ type CampaignRecord = {
   createdBy: string | null
   createdAt: string
   updatedAt: string
+  templateIdHistory: Array<{
+    templateId: string
+    savedBy: string | null
+    savedAt: string
+  }>
+}
+
+type EventTypeOption = {
+  eventType: string
+  category: 'critical' | 'non_critical'
+  description: string
+}
+
+type EventTypeRegistryEntry = {
+  eventType: string
+  sendgridTemplateId: string
+  category: 'critical' | 'non_critical'
+  active: boolean
+  updatedAt: string | null
 }
 
 type CampaignsResponse = {
   templates: CampaignTemplate[]
   campaigns: CampaignRecord[]
+  eventTypeOptions: EventTypeOption[]
+  eventTypeRegistry: EventTypeRegistryEntry[]
   availableVariablesByEvent: Record<string, string[]>
+}
+
+type SendgridTemplateLookupResponse = {
+  templateId: string
+  name: string
+  generation: string
+  updatedAt: string | null
+  resolvedFrom: 'active' | 'latest' | 'none'
+  selectedVersion: {
+    id: string
+    name: string
+    active: boolean
+    subject: string
+    htmlContent: string
+    plainContent: string
+    updatedAt: string | null
+    createdAt: string | null
+  } | null
 }
 
 type CampaignDraft = {
@@ -282,13 +321,18 @@ const EDITOR_HTML_PREVIEW_TEMPLATE = `<!doctype html>
 </body>
 </html>`
 
+const route = useRoute()
+const router = useRouter()
 const toast = useToast()
 const saving = ref(false)
 const sending = ref(false)
 const sendingTest = ref(false)
-const selectingTemplate = ref(false)
+const syncingCampaignQuery = ref(false)
 const selectedCampaignId = ref<string | null>(null)
 const testRecipient = ref('')
+const sendgridLookupPending = ref(false)
+const sendgridLookupError = ref<string | null>(null)
+const sendgridLookup = ref<SendgridTemplateLookupResponse | null>(null)
 const draft = reactive<CampaignDraft>({
   id: null,
   name: '',
@@ -307,6 +351,7 @@ const draft = reactive<CampaignDraft>({
 
 const EDITOR_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 const DEFAULT_IMAGE_MAX_WIDTH = '640px'
+const SENDGRID_LOOKUP_DEBOUNCE_MS = 450
 const editorDragHandleOptions = {
   placement: 'left-start',
   offset: {
@@ -325,20 +370,111 @@ const { data, pending, refresh } = await useAsyncData('admin:email:campaigns', a
   return await $fetch<CampaignsResponse>('/api/admin/email/campaigns')
 })
 
+let sendgridLookupTimer: ReturnType<typeof setTimeout> | null = null
+let sendgridLookupSequence = 0
+
 const templates = computed(() => data.value?.templates ?? [])
 const campaigns = computed(() => data.value?.campaigns ?? [])
+const eventTypeOptions = computed(() => data.value?.eventTypeOptions ?? [])
+const eventTypeRegistry = computed(() => data.value?.eventTypeRegistry ?? [])
 const availableVariablesByEvent = computed(() => data.value?.availableVariablesByEvent ?? { '*': [] as string[] })
+const knownEventTypeSet = computed(() => new Set(eventTypeOptions.value.map(option => option.eventType)))
+const eventTypeRegistryByEvent = computed(() => {
+  const map = new Map<string, EventTypeRegistryEntry>()
+  for (const entry of eventTypeRegistry.value) {
+    map.set(entry.eventType, entry)
+  }
+  return map
+})
 
 const selectedTemplate = computed(() => {
   if (!draft.templateId) return null
   return templates.value.find(template => template.id === draft.templateId) ?? null
 })
 
+const CUSTOM_TEMPLATE_VALUE = '__custom__'
+const NO_CAMPAIGN_SELECTED_VALUE = '__none__'
+const LEGACY_EVENT_LABEL_PREFIX = 'Legacy (unregistered): '
+
 const templateSelectValue = computed({
-  get: () => draft.templateId ?? '',
+  get: () => draft.templateId ?? CUSTOM_TEMPLATE_VALUE,
   set: (value: string) => {
-    draft.templateId = value || null
+    const normalized = String(value ?? '')
+    draft.templateId = normalized && normalized !== CUSTOM_TEMPLATE_VALUE ? normalized : null
   }
+})
+
+const eventTypeSelectValue = computed({
+  get: () => draft.eventType,
+  set: (value: string) => {
+    const normalized = String(value ?? '').trim()
+    if (!normalized || normalized === draft.eventType) return
+    onEventTypeSelected(normalized)
+  }
+})
+
+const eventTypeSelectItems = computed(() => {
+  const base = eventTypeOptions.value.map(option => ({
+    label: option.eventType,
+    value: option.eventType,
+    description: option.description
+  }))
+
+  if (!draft.eventType) return base
+  if (knownEventTypeSet.value.has(draft.eventType)) return base
+
+  return [{
+    label: `${LEGACY_EVENT_LABEL_PREFIX}${draft.eventType}`,
+    value: draft.eventType,
+    description: 'Select a registered event type before saving this campaign.'
+  }, ...base]
+})
+
+const isDraftEventTypeRegistered = computed(() => knownEventTypeSet.value.has(draft.eventType))
+const selectedEventTypeOption = computed(() => {
+  return eventTypeOptions.value.find(option => option.eventType === draft.eventType) ?? null
+})
+const selectedEventTypeRegistryEntry = computed(() => {
+  return eventTypeRegistryByEvent.value.get(draft.eventType) ?? null
+})
+const registryTemplateIdForDraftEvent = computed(() => {
+  return String(selectedEventTypeRegistryEntry.value?.sendgridTemplateId ?? '').trim()
+})
+const isDraftTemplateIdSyncedWithRegistry = computed(() => {
+  const draftTemplateId = String(draft.sendgridTemplateId ?? '').trim()
+  const registryTemplateId = registryTemplateIdForDraftEvent.value
+  if (!draftTemplateId || !registryTemplateId) return false
+  return draftTemplateId === registryTemplateId
+})
+
+const campaignStatusItems: Array<{ label: string, value: CampaignDraft['status'] }> = [
+  { label: 'draft', value: 'draft' },
+  { label: 'sent', value: 'sent' },
+  { label: 'archived', value: 'archived' }
+]
+
+const renderModeItems: Array<{ label: string, value: CampaignDraft['renderMode'] }> = [
+  { label: 'Editor HTML (bodyHTML)', value: 'editor_html' },
+  { label: 'SendGrid native (dynamic data JSON)', value: 'sendgrid_native' }
+]
+
+const templateSelectItems = computed(() => {
+  const mapped = templates.value
+    .map((template) => {
+      const id = String(template.id ?? '').trim()
+      if (!id) return null
+      const name = String(template.name ?? '').trim() || 'Untitled template'
+      return {
+        label: `${name}${template.active ? '' : ' (inactive)'}`,
+        value: id
+      }
+    })
+    .filter((item): item is { label: string, value: string } => Boolean(item))
+
+  return [
+    { label: 'Custom (none)', value: CUSTOM_TEMPLATE_VALUE },
+    ...mapped
+  ]
 })
 
 const campaignRows = computed(() => campaigns.value.map(campaign => ({
@@ -348,6 +484,41 @@ const campaignRows = computed(() => campaigns.value.map(campaign => ({
 const selectedCampaignRow = computed(() => {
   if (!selectedCampaignId.value) return null
   return campaignRows.value.find(campaign => campaign.id === selectedCampaignId.value) ?? null
+})
+const currentCampaignTemplateHistory = computed(() => selectedCampaignRow.value?.templateIdHistory ?? [])
+
+const campaignSelectItems = computed(() => {
+  if (campaignRows.value.length === 0) {
+    return [{ label: 'No campaigns available', value: NO_CAMPAIGN_SELECTED_VALUE, disabled: true }]
+  }
+
+  return campaignRows.value.map(campaign => ({
+    label: campaign.name,
+    value: campaign.id
+  }))
+})
+
+const campaignNavigatorValue = computed({
+  get: () => selectedCampaignId.value ?? NO_CAMPAIGN_SELECTED_VALUE,
+  set: (value: string) => {
+    const nextId = String(value ?? '')
+    if (!nextId || nextId === NO_CAMPAIGN_SELECTED_VALUE) {
+      void createCampaignDraft()
+      return
+    }
+    void selectCampaign(nextId)
+  }
+})
+
+const selectedCampaignIndex = computed(() => {
+  if (!selectedCampaignId.value) return -1
+  return campaignRows.value.findIndex(campaign => campaign.id === selectedCampaignId.value)
+})
+
+const canSelectPreviousCampaign = computed(() => selectedCampaignIndex.value > 0)
+const canSelectNextCampaign = computed(() => {
+  if (selectedCampaignIndex.value < 0) return false
+  return selectedCampaignIndex.value < campaignRows.value.length - 1
 })
 
 const editorVariableTokens = computed(() => {
@@ -468,6 +639,64 @@ function parseDynamicDataJson(text: string) {
 }
 
 const previewViewport = ref<'desktop' | 'mobile'>('desktop')
+const previewFrameSandbox = import.meta.dev ? 'allow-same-origin allow-scripts' : 'allow-same-origin'
+
+function clearSendgridLookupTimer() {
+  if (sendgridLookupTimer) {
+    clearTimeout(sendgridLookupTimer)
+    sendgridLookupTimer = null
+  }
+}
+
+async function fetchLatestSendgridTemplate(templateId: string) {
+  const normalizedTemplateId = String(templateId ?? '').trim()
+  if (!normalizedTemplateId) {
+    sendgridLookup.value = null
+    sendgridLookupError.value = null
+    sendgridLookupPending.value = false
+    return
+  }
+
+  const requestId = sendgridLookupSequence + 1
+  sendgridLookupSequence = requestId
+  sendgridLookupPending.value = true
+  sendgridLookupError.value = null
+
+  try {
+    const response = await $fetch<SendgridTemplateLookupResponse>('/api/admin/email/sendgrid-template', {
+      query: {
+        templateId: normalizedTemplateId
+      }
+    })
+
+    if (requestId !== sendgridLookupSequence) return
+    sendgridLookup.value = response
+  } catch (error: unknown) {
+    if (requestId !== sendgridLookupSequence) return
+    sendgridLookup.value = null
+    sendgridLookupError.value = readErrorMessage(error)
+  } finally {
+    if (requestId === sendgridLookupSequence) {
+      sendgridLookupPending.value = false
+    }
+  }
+}
+
+function queueSendgridTemplateLookup(templateId: string) {
+  const normalizedTemplateId = String(templateId ?? '').trim()
+  clearSendgridLookupTimer()
+  if (!normalizedTemplateId) {
+    sendgridLookup.value = null
+    sendgridLookupError.value = null
+    sendgridLookupPending.value = false
+    return
+  }
+
+  sendgridLookupTimer = setTimeout(() => {
+    sendgridLookupTimer = null
+    void fetchLatestSendgridTemplate(normalizedTemplateId)
+  }, SENDGRID_LOOKUP_DEBOUNCE_MS)
+}
 
 function resolvePathValue(source: unknown, path: string): unknown {
   if (!path) return undefined
@@ -586,9 +815,15 @@ const previewContext = computed(() => {
   }
 })
 
+const sendgridPreviewHtmlContent = computed(() => {
+  return String(sendgridLookup.value?.selectedVersion?.htmlContent ?? '').trim()
+})
+const isUsingFetchedSendgridPreview = computed(() => {
+  return draft.renderMode === 'sendgrid_native' && sendgridPreviewHtmlContent.value.length > 0
+})
 const previewHtml = computed(() => {
   const template = draft.renderMode === 'sendgrid_native'
-    ? SENDGRID_NATIVE_PREVIEW_TEMPLATE
+    ? (sendgridPreviewHtmlContent.value || SENDGRID_NATIVE_PREVIEW_TEMPLATE)
     : EDITOR_HTML_PREVIEW_TEMPLATE
   return renderHandlebarsLikeTemplate(template, previewContext.value)
 })
@@ -693,92 +928,131 @@ function setDynamicDataJson(value: Record<string, unknown>) {
 function loadWebsiteLaunchPreset() {
   setDynamicDataJson({
     hero_enabled: true,
-    hero_eyebrow: 'FO Studio',
-    hero_title: 'New Website Launch',
-    hero_copy: 'We\'ve launched a new home for everything studio-related - bookings, memberships, calendar access, and account management.',
-    hero_cta_url: 'https://fo.studio',
-    hero_cta_label: 'Go to FO Studio',
+    hero_eyebrow: '',
+    hero_title: '',
+    hero_copy: '',
+    hero_cta_url: '',
+    hero_cta_label: '',
     intro_enabled: true,
-    intro_title: 'Hi - Victor here',
-    intro_copy: 'It\'s been an amazing 2 years since FO Studio opened, and we\'re proud to have served you during that time. We\'ve built this new platform to make booking and membership management much easier moving forward.',
+    intro_title: '',
+    intro_copy: '',
     features_enabled: true,
-    features_title: 'What\'s new',
+    features_title: '',
     feature_1_enabled: true,
-    feature_1_title: 'Book in 30-minute increments',
-    feature_1_copy: 'More flexibility for short tests, quick sessions, and tighter scheduling.',
+    feature_1_title: '',
+    feature_1_copy: '',
     feature_2_enabled: true,
-    feature_2_title: 'Request overnight holds',
-    feature_2_copy: 'Leave equipment or setups in place overnight when your plan allows it.',
+    feature_2_title: '',
+    feature_2_copy: '',
     feature_3_enabled: true,
-    feature_3_title: 'Manage everything in one place',
-    feature_3_copy: 'View the calendar, book, reschedule, extend bookings, and export to your own calendar.',
+    feature_3_title: '',
+    feature_3_copy: '',
     features_image_url: '',
-    features_image_alt: 'What is new at FO Studio',
+    features_image_alt: '',
     transition_enabled: true,
-    transition_title: 'Important membership transition',
-    transition_bullet_1: 'Please cancel your current membership before April 30 and move to the new platform.',
-    transition_bullet_2: 'If you cancel sooner, we can add your remaining hours into the new system.',
-    transition_bullet_3: 'Membership spots are limited - once filled, new signups move to a waitlist.',
-    transition_primary_url: 'https://fo.studio/memberships',
-    transition_primary_label: 'View Memberships',
-    transition_secondary_url: 'https://fo.studio/faq',
-    transition_secondary_label: 'Read FAQ',
+    transition_title: '',
+    transition_bullet_1: '',
+    transition_bullet_2: '',
+    transition_bullet_3: '',
+    transition_primary_url: '',
+    transition_primary_label: '',
+    transition_secondary_url: '',
+    transition_secondary_label: '',
     transition_image_url: '',
-    transition_image_alt: 'Membership transition details',
+    transition_image_alt: '',
     credits_enabled: true,
-    credits_title: 'How the new credit system works',
-    credits_bullet_1: 'Each plan includes a monthly credit allowance.',
-    credits_bullet_2: 'Credits can roll over up to a cap.',
-    credits_bullet_3: 'You can buy more credits if you run out.',
-    credits_bullet_4: 'Peak times use more credits than off-peak.',
-    credits_bullet_5: 'Pro and Studio+ plans get better peak-time efficiency.',
+    credits_title: '',
+    credits_bullet_1: '',
+    credits_bullet_2: '',
+    credits_bullet_3: '',
+    credits_bullet_4: '',
+    credits_bullet_5: '',
     impact_enabled: true,
-    impact_title: 'What this means for current and past members',
-    impact_bullet_1: 'More usable time on the same plan, especially during off-peak hours.',
-    impact_bullet_2: 'New quarterly and annual options with added benefits.',
-    impact_bullet_3: 'Plan changes can happen after each billing cycle.',
-    impact_bullet_4: 'Updated waiver and policy flow.',
-    impact_bullet_5: 'A small price increase to support studio maintenance and improvements.',
+    impact_title: '',
+    impact_bullet_1: '',
+    impact_bullet_2: '',
+    impact_bullet_3: '',
+    impact_bullet_4: '',
+    impact_bullet_5: '',
     impact_image_url: '',
-    impact_image_alt: 'What this means for members',
+    impact_image_alt: '',
     offer_enabled: true,
-    offer_title: 'Launch Offer',
-    offer_copy_html: 'Use the code below for <strong>5% off</strong> your new membership through <strong>April 30</strong>.',
-    offer_code: 'NEWSITE',
-    offer_cta_url: 'https://fo.studio/memberships',
-    offer_cta_label: 'Start Membership',
+    offer_title: '',
+    offer_copy_html: '',
+    offer_code: '',
+    offer_cta_url: '',
+    offer_cta_label: '',
     offer_image_url: '',
-    offer_image_alt: 'Launch offer code card',
+    offer_image_alt: '',
     closing_enabled: true,
-    closing_title: 'Thanks for being part of FO Studio',
-    closing_copy: 'We\'re working to make FO Studio the best turnkey studio in Los Angeles, and this new site is a big step in that direction.',
-    footer_name: 'FO Studio',
-    footer_address_1: '3131 N. San Fernando Rd.',
-    footer_address_2: 'Los Angeles, CA 90065',
-    footer_link_home_url: 'https://fo.studio',
-    footer_link_home_label: 'fo.studio',
-    footer_link_memberships_url: 'https://fo.studio/memberships',
-    footer_link_memberships_label: 'Memberships',
-    footer_link_faq_url: 'https://fo.studio/faq',
-    footer_link_faq_label: 'FAQ',
-    footer_link_contact_url: 'https://fo.studio/contact',
-    footer_link_contact_label: 'Contact'
+    closing_title: '',
+    closing_copy: '',
+    footer_name: '',
+    footer_address_1: '',
+    footer_address_2: '',
+    footer_link_home_url: '',
+    footer_link_home_label: '',
+    footer_link_memberships_url: '',
+    footer_link_memberships_label: '',
+    footer_link_faq_url: '',
+    footer_link_faq_label: '',
+    footer_link_contact_url: '',
+    footer_link_contact_label: ''
   })
+}
+
+function resolveDefaultEventType() {
+  const preferred = eventTypeOptions.value.find(option => option.eventType === 'mailing.memberBroadcast')
+  if (preferred) return preferred.eventType
+  return eventTypeOptions.value[0]?.eventType ?? 'mailing.memberBroadcast'
+}
+
+function resolveRegistryTemplateId(eventType: string) {
+  return String(eventTypeRegistryByEvent.value.get(eventType)?.sendgridTemplateId ?? '').trim()
+}
+
+function syncTemplateIdFromRegistry(options: { silent?: boolean } = {}) {
+  const registryTemplateId = resolveRegistryTemplateId(draft.eventType)
+  if (!registryTemplateId) {
+    if (!options.silent) {
+      toast.add({
+        title: 'Registry template is missing',
+        description: 'No template id is currently mapped for this event type in the mail registry.',
+        color: 'warning'
+      })
+    }
+    return
+  }
+
+  draft.sendgridTemplateId = registryTemplateId
+  if (!options.silent) {
+    toast.add({
+      title: 'Template id synced',
+      description: `Using registry template id ${registryTemplateId}.`,
+      color: 'success'
+    })
+  }
+}
+
+function onEventTypeSelected(eventType: string) {
+  draft.eventType = eventType
+  syncTemplateIdFromRegistry({ silent: true })
 }
 
 function hydrateDraftFromCampaign(campaign: CampaignRecord | null) {
   if (!campaign) {
+    const defaultEventType = resolveDefaultEventType()
     draft.id = null
     draft.name = ''
     draft.status = 'draft'
-    draft.templateId = templates.value[0]?.id ?? null
-    draft.eventType = templates.value[0]?.eventType ?? 'mailing.memberBroadcast'
-    draft.sendgridTemplateId = templates.value[0]?.sendgridTemplateId ?? ''
-    draft.renderMode = templates.value[0]?.renderMode ?? 'editor_html'
-    draft.subjectTemplate = templates.value[0]?.subjectTemplate ?? ''
-    draft.preheaderTemplate = templates.value[0]?.preheaderTemplate ?? ''
-    draft.bodyTemplate = templates.value[0]?.bodyTemplate ?? ''
-    draft.dynamicDataJsonText = stringifyDynamicData(templates.value[0]?.dynamicDataTemplate ?? {})
+    draft.templateId = null
+    draft.eventType = defaultEventType
+    draft.sendgridTemplateId = resolveRegistryTemplateId(defaultEventType)
+    draft.renderMode = 'editor_html'
+    draft.subjectTemplate = ''
+    draft.preheaderTemplate = ''
+    draft.bodyTemplate = ''
+    draft.dynamicDataJsonText = '{}'
     draft.includeMembershipRecipients = true
     draft.additionalRecipientsText = ''
     return
@@ -799,54 +1073,110 @@ function hydrateDraftFromCampaign(campaign: CampaignRecord | null) {
   draft.additionalRecipientsText = campaign.additionalRecipients.join('\n')
 }
 
-function applySelectedTemplateToDraft() {
+function applySelectedTemplateRoutingToDraft() {
   const template = selectedTemplate.value
   if (!template) return
 
   draft.eventType = template.eventType
   draft.sendgridTemplateId = template.sendgridTemplateId ?? ''
   draft.renderMode = template.renderMode ?? 'editor_html'
+}
+
+function applySelectedTemplateContentToDraft() {
+  const template = selectedTemplate.value
+  if (!template) return
+
   draft.subjectTemplate = template.subjectTemplate ?? ''
   draft.preheaderTemplate = template.preheaderTemplate ?? ''
   draft.bodyTemplate = template.bodyTemplate ?? ''
   draft.dynamicDataJsonText = stringifyDynamicData(template.dynamicDataTemplate ?? {})
 }
 
-function onTemplateChange() {
-  selectingTemplate.value = true
-  applySelectedTemplateToDraft()
-  selectingTemplate.value = false
+function readCampaignIdFromQuery() {
+  const value = route.query.campaign
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (Array.isArray(value)) {
+    const first = value.find(item => typeof item === 'string' && item.trim())
+    if (typeof first === 'string' && first.trim()) return first.trim()
+  }
+  return null
 }
 
-function selectCampaign(campaignId: string) {
+async function syncCampaignQuery(campaignId: string | null) {
+  if (import.meta.server) return
+  const currentCampaignId = readCampaignIdFromQuery()
+  if (campaignId === currentCampaignId) return
+
+  const nextQuery = { ...route.query }
+  if (campaignId) nextQuery.campaign = campaignId
+  else delete nextQuery.campaign
+
+  syncingCampaignQuery.value = true
+  try {
+    await router.replace({ query: nextQuery })
+  } finally {
+    syncingCampaignQuery.value = false
+  }
+}
+
+async function selectCampaign(campaignId: string, options: { syncQuery?: boolean } = {}) {
+  const selected = campaigns.value.find(item => item.id === campaignId) ?? null
+  if (!selected) return
   selectedCampaignId.value = campaignId
-  hydrateDraftFromCampaign(campaigns.value.find(item => item.id === campaignId) ?? null)
+  hydrateDraftFromCampaign(selected)
+  if (options.syncQuery !== false) {
+    await syncCampaignQuery(campaignId)
+  }
 }
 
-function createCampaignDraft() {
+async function createCampaignDraft(options: { syncQuery?: boolean } = {}) {
   selectedCampaignId.value = null
   hydrateDraftFromCampaign(null)
   draft.name = `Campaign ${new Date().toLocaleDateString('en-US')}`
+  if (options.syncQuery !== false) {
+    await syncCampaignQuery(null)
+  }
+}
+
+function selectAdjacentCampaign(direction: 'prev' | 'next') {
+  const currentIndex = selectedCampaignIndex.value
+  if (currentIndex < 0) return
+  const targetIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1
+  const target = campaignRows.value[targetIndex]
+  if (!target) return
+  void selectCampaign(target.id)
 }
 
 async function reloadCampaigns(options: { preserveSelection?: boolean } = {}) {
   await refresh()
-  if (options.preserveSelection && selectedCampaignId.value) {
-    const exists = campaigns.value.some(item => item.id === selectedCampaignId.value)
+  const selectedFromQuery = readCampaignIdFromQuery()
+  const preferredCampaignId = selectedFromQuery ?? (options.preserveSelection ? selectedCampaignId.value : null)
+  if (preferredCampaignId) {
+    const exists = campaigns.value.some(item => item.id === preferredCampaignId)
     if (exists) {
-      hydrateDraftFromCampaign(campaigns.value.find(item => item.id === selectedCampaignId.value) ?? null)
+      await selectCampaign(preferredCampaignId)
       return
     }
   }
 
-  if (!selectedCampaignId.value && campaigns.value.length > 0) {
-    selectCampaign(campaigns.value[0]!.id)
-  } else if (!selectedCampaignId.value && campaigns.value.length === 0) {
-    hydrateDraftFromCampaign(null)
+  if (campaigns.value.length > 0) {
+    await selectCampaign(campaigns.value[0]!.id)
+    return
   }
+
+  await createCampaignDraft()
 }
 
 async function saveCampaign(options: { silentSuccess?: boolean } = {}) {
+  if (!isDraftEventTypeRegistered.value) {
+    toast.add({
+      title: 'Event type is not registered',
+      description: 'Select a registered mail event type before saving this campaign.',
+      color: 'warning'
+    })
+    return false
+  }
+
   let dynamicData: Record<string, unknown>
   try {
     dynamicData = parseDynamicDataJson(draft.dynamicDataJsonText)
@@ -861,7 +1191,7 @@ async function saveCampaign(options: { silentSuccess?: boolean } = {}) {
 
   saving.value = true
   try {
-    const result = await $fetch<{ campaign: CampaignRecord }>('/api/admin/email/campaigns.upsert', {
+    const result = await $fetch<{ campaign: { id: string } }>('/api/admin/email/campaigns.upsert', {
       method: 'POST',
       body: {
         id: draft.id ?? undefined,
@@ -1037,12 +1367,7 @@ function buildSuggestionItems(tokens: string[]) {
       icon: 'i-lucide-image',
       kind: 'image'
     }
-  ], tokenItems.length
-    ? [{
-        type: 'label',
-        label: 'Template Variables'
-      }, ...tokenItems]
-    : []]
+  ], tokenItems]
 }
 
 const editorSuggestionItems = computed(() => buildSuggestionItems(editorVariableTokens.value))
@@ -1280,587 +1605,784 @@ const editorBubbleToolbarItems = [[{
 }]]
 
 watch([templates, campaigns], () => {
-  if (selectedCampaignId.value) return
-  if (campaigns.value.length > 0) {
-    selectCampaign(campaigns.value[0]!.id)
-  } else {
-    hydrateDraftFromCampaign(null)
+  const selectedFromQuery = readCampaignIdFromQuery()
+  if (selectedFromQuery) {
+    const fromQuery = campaigns.value.find(item => item.id === selectedFromQuery)
+    if (fromQuery) {
+      selectedCampaignId.value = fromQuery.id
+      hydrateDraftFromCampaign(fromQuery)
+      return
+    }
   }
+
+  if (selectedCampaignId.value) {
+    const selected = campaigns.value.find(item => item.id === selectedCampaignId.value)
+    if (selected) {
+      hydrateDraftFromCampaign(selected)
+      return
+    }
+  }
+
+  if (campaigns.value.length > 0) {
+    void selectCampaign(campaigns.value[0]!.id)
+    return
+  }
+
+  void createCampaignDraft()
 }, { immediate: true })
 
-watch(() => draft.templateId, () => {
-  if (selectingTemplate.value) return
-  if (draft.id) return
-  applySelectedTemplateToDraft()
+watch(() => route.query.campaign, () => {
+  if (syncingCampaignQuery.value) return
+
+  const selectedFromQuery = readCampaignIdFromQuery()
+  if (!selectedFromQuery) return
+  if (selectedFromQuery === selectedCampaignId.value) return
+
+  const fromQuery = campaigns.value.find(item => item.id === selectedFromQuery)
+  if (fromQuery) {
+    selectedCampaignId.value = fromQuery.id
+    hydrateDraftFromCampaign(fromQuery)
+  }
+})
+
+watch(() => draft.sendgridTemplateId, (value) => {
+  queueSendgridTemplateLookup(String(value ?? ''))
+}, { immediate: true })
+
+onBeforeUnmount(() => {
+  clearSendgridLookupTimer()
 })
 </script>
 
 <template>
-  <UDashboardPanel
-    id="admin-email-campaigns"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <DashboardPageScaffold
+    panel-id="admin-email-campaigns"
+    title="Email Campaigns"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Email Campaigns"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-2' }"
-      >
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-        <template #right>
-          <UButton
-            size="sm"
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-refresh-cw"
-            :loading="pending"
-            @click="() => reloadCampaigns({ preserveSelection: true })"
-          />
-        </template>
-      </UDashboardNavbar>
+    <template #right>
+      <DashboardActionGroup
+        :primary="{
+          label: 'New draft',
+          icon: 'i-lucide-plus',
+          color: 'neutral',
+          variant: 'soft',
+          onSelect: () => { void createCampaignDraft() }
+        }"
+        :secondary="[
+          {
+            label: 'Refresh',
+            icon: 'i-lucide-refresh-cw',
+            color: 'neutral',
+            variant: 'soft',
+            loading: pending,
+            onSelect: () => reloadCampaigns({ preserveSelection: true })
+          }
+        ]"
+      />
     </template>
+    <UAlert
+      color="info"
+      variant="soft"
+      icon="i-lucide-megaphone"
+      title="Campaign workflow"
+      description="Campaigns are separate from the mail template registry. Build drafts, pick a campaign template, and send when ready."
+    />
 
-    <template #body>
-      <AdminOpsShell>
-        <UAlert
-          color="info"
-          variant="soft"
-          icon="i-lucide-megaphone"
-          title="Campaign workflow"
-          description="Campaigns are separate from the mail template registry. Build drafts, pick a campaign template, and send when ready."
-        />
+    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <UCard class="order-last xl:order-first">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <div class="text-sm font-medium">
+              Compose campaign
+            </div>
+            <div class="text-xs text-dimmed mt-0.5">
+              Draft copy, audience, and template mapping before send.
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <UBadge
+              :color="draft.status === 'draft' ? 'warning' : draft.status === 'sent' ? 'success' : 'neutral'"
+              variant="soft"
+            >
+              {{ draft.status }}
+            </UBadge>
+            <UBadge
+              v-if="selectedCampaignRow"
+              color="neutral"
+              variant="subtle"
+            >
+              {{ selectedCampaignRow.name }}
+            </UBadge>
+          </div>
+        </div>
 
-        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-          <UCard>
-            <div class="flex items-center justify-between gap-2">
-              <div>
-                <div class="text-sm font-medium">
-                  Compose campaign
-                </div>
-                <div class="text-xs text-dimmed mt-0.5">
-                  Draft copy, audience, and template mapping before send.
-                </div>
-              </div>
-              <div class="flex items-center gap-2">
-                <UBadge
-                  :color="draft.status === 'draft' ? 'warning' : draft.status === 'sent' ? 'success' : 'neutral'"
-                  variant="soft"
-                >
-                  {{ draft.status }}
-                </UBadge>
-                <UBadge
-                  v-if="selectedCampaignRow"
-                  color="neutral"
-                  variant="subtle"
-                >
-                  {{ selectedCampaignRow.name }}
-                </UBadge>
-              </div>
+        <div class="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto_auto]">
+          <UFormField
+            label="Quick campaign switcher"
+            description="Switch between drafts without scrolling to the campaign list."
+          >
+            <USelect
+              v-model="campaignNavigatorValue"
+              class="w-full"
+              :items="campaignSelectItems"
+              placeholder="Select campaign"
+              :disabled="campaignRows.length === 0"
+            />
+          </UFormField>
+
+          <div class="flex items-end">
+            <UButton
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-arrow-left"
+              :disabled="!canSelectPreviousCampaign"
+              @click="selectAdjacentCampaign('prev')"
+            >
+              Previous
+            </UButton>
+          </div>
+
+          <div class="flex items-end">
+            <UButton
+              color="neutral"
+              variant="soft"
+              trailing-icon="i-lucide-arrow-right"
+              :disabled="!canSelectNextCampaign"
+              @click="selectAdjacentCampaign('next')"
+            >
+              Next
+            </UButton>
+          </div>
+        </div>
+
+        <div class="mt-4 space-y-4">
+          <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
+            <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+              Campaign setup
+            </div>
+            <div class="grid gap-3 md:grid-cols-2">
+              <UFormField label="Campaign name">
+                <UInput
+                  v-model="draft.name"
+                  class="w-full"
+                  placeholder="April studio update"
+                />
+              </UFormField>
+
+              <UFormField label="Status">
+                <USelect
+                  v-model="draft.status"
+                  class="w-full"
+                  :items="campaignStatusItems"
+                />
+              </UFormField>
             </div>
 
-            <div class="mt-4 space-y-4">
-              <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
-                <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
-                  Campaign setup
-                </div>
-                <div class="grid gap-3 md:grid-cols-2">
-                  <UFormField label="Campaign name">
-                    <UInput
-                      v-model="draft.name"
-                      class="w-full"
-                      placeholder="April studio update"
-                    />
-                  </UFormField>
+            <div class="grid gap-3 md:grid-cols-2">
+              <UFormField
+                label="Campaign template"
+                description="Select a reusable template preset."
+              >
+                <USelect
+                  v-model="templateSelectValue"
+                  class="w-full"
+                  :items="templateSelectItems"
+                />
+              </UFormField>
 
-                  <UFormField label="Status">
-                    <select
-                      v-model="draft.status"
-                      class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
-                    >
-                      <option value="draft">
-                        draft
-                      </option>
-                      <option value="sent">
-                        sent
-                      </option>
-                      <option value="archived">
-                        archived
-                      </option>
-                    </select>
-                  </UFormField>
-                </div>
-
-                <div class="grid gap-3 md:grid-cols-2">
-                  <UFormField
-                    label="Campaign template"
-                    description="Select a reusable template preset."
-                  >
-                    <select
-                      v-model="templateSelectValue"
-                      class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
-                      @change="onTemplateChange"
-                    >
-                      <option value="">
-                        Custom (none)
-                      </option>
-                      <option
-                        v-for="template in templates"
-                        :key="template.id"
-                        :value="template.id"
-                      >
-                        {{ template.name }}{{ template.active ? '' : ' (inactive)' }}
-                      </option>
-                    </select>
-                  </UFormField>
-
-                  <div class="flex items-end">
-                    <UButton
-                      color="neutral"
-                      variant="soft"
-                      icon="i-lucide-copy-plus"
-                      @click="applySelectedTemplateToDraft"
-                    >
-                      Apply template content
-                    </UButton>
-                  </div>
-                </div>
-              </section>
-
-              <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
-                <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
-                  Delivery and rendering
-                </div>
-                <div class="grid gap-3 md:grid-cols-2">
-                  <UFormField label="Mail event type">
-                    <UInput
-                      v-model="draft.eventType"
-                      class="w-full"
-                      placeholder="mailing.memberBroadcast"
-                    />
-                  </UFormField>
-
-                  <UFormField label="SendGrid template id">
-                    <UInput
-                      v-model="draft.sendgridTemplateId"
-                      class="w-full"
-                      placeholder="d-xxxxxxxxxxxxxxxxxxxx"
-                    />
-                  </UFormField>
-                </div>
-
-                <UFormField
-                  label="Render mode"
-                  description="Editor HTML mode renders bodyHTML server-side. SendGrid native mode uses dynamic data JSON for section toggles and content."
+              <div class="flex flex-wrap items-end gap-2">
+                <UButton
+                  color="neutral"
+                  variant="soft"
+                  icon="i-lucide-route"
+                  :disabled="!selectedTemplate"
+                  @click="applySelectedTemplateRoutingToDraft"
                 >
-                  <select
-                    v-model="draft.renderMode"
-                    class="w-full rounded-md border border-default bg-elevated px-2.5 py-2 text-sm"
-                  >
-                    <option value="editor_html">
-                      Editor HTML (bodyHTML)
-                    </option>
-                    <option value="sendgrid_native">
-                      SendGrid native (dynamic data JSON)
-                    </option>
-                  </select>
-                </UFormField>
-              </section>
-
-              <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
-                <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
-                  Audience
-                </div>
-                <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2 bg-default">
-                  <div>
-                    <div class="text-sm font-medium">
-                      Include membership recipients
-                    </div>
-                    <div class="text-xs text-dimmed">
-                      Pull unique member emails from memberships/customers.
-                    </div>
-                  </div>
-                  <USwitch v-model="draft.includeMembershipRecipients" />
-                </div>
-
-                <UFormField
-                  label="Additional recipients"
-                  description="One email per line or comma-separated."
+                  Apply preset routing
+                </UButton>
+                <UButton
+                  color="neutral"
+                  variant="soft"
+                  icon="i-lucide-copy-plus"
+                  :disabled="!selectedTemplate"
+                  @click="applySelectedTemplateContentToDraft"
                 >
-                  <UTextarea
-                    v-model="draft.additionalRecipientsText"
-                    :rows="4"
+                  Apply preset content
+                </UButton>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
+            <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+              Delivery and rendering
+            </div>
+            <div class="rounded-md border border-default/80 bg-default/60 p-3 space-y-3">
+              <div class="text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                Routing
+              </div>
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField label="Mail event type">
+                  <USelect
+                    v-model="eventTypeSelectValue"
                     class="w-full"
-                    placeholder="agency@example.com&#10;collab@example.com"
+                    :items="eventTypeSelectItems"
+                    placeholder="Choose event type"
                   />
                 </UFormField>
 
-                <UFormField
-                  label="Test recipient"
-                  description="Optional. Leave blank to send to your admin account email."
-                >
+                <UFormField label="SendGrid template id">
                   <UInput
-                    v-model="testRecipient"
+                    v-model="draft.sendgridTemplateId"
                     class="w-full"
-                    placeholder="you@example.com"
+                    placeholder="d-xxxxxxxxxxxxxxxxxxxx"
                   />
                 </UFormField>
-              </section>
-
-              <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
-                <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
-                  Message copy
-                </div>
-                <div class="grid gap-3 md:grid-cols-2">
-                  <UFormField label="Subject template">
-                    <UInput
-                      v-model="draft.subjectTemplate"
-                      class="w-full"
-                      placeholder="FO Studio update for {{ customerName }}"
-                    />
-                  </UFormField>
-                  <UFormField label="Preheader template">
-                    <UInput
-                      v-model="draft.preheaderTemplate"
-                      class="w-full"
-                      placeholder="Short preview text for inbox list view."
-                    />
-                  </UFormField>
-                </div>
-              </section>
-
-              <UFormField
-                v-if="draft.renderMode === 'editor_html'"
-                label="Body template (HTML)"
-              >
-                <template #description>
-                  Use <code v-pre>{{ variableName }}</code> tokens only.
-                </template>
-                <UEditor
-                  v-slot="{ editor }"
-                  v-model="draft.bodyTemplate"
-                  content-type="html"
-                  :handlers="editorHandlers"
-                  :image="{ allowBase64: false }"
-                  :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
-                  class="campaign-editor-shell w-full rounded-md border border-default bg-default overflow-visible"
-                  :placeholder="editorPlaceholder(draft.bodyTemplate, 'Write campaign body HTML...')"
-                >
-                  <UEditorToolbar
-                    :editor="editor"
-                    :items="editorToolbarItems"
-                    class="border-b border-default sticky top-0 inset-x-0 p-1.5 z-10 bg-default/95 backdrop-blur overflow-x-auto"
-                  />
-                  <UEditorToolbar
-                    :editor="editor"
-                    :items="editorBubbleToolbarItems"
-                    layout="bubble"
-                  />
-                  <UEditorSuggestionMenu
-                    :editor="editor"
-                    :items="editorSuggestionItems"
-                  />
-                  <UEditorDragHandle
-                    v-slot="{ ui }"
-                    :editor="editor"
-                    :options="editorDragHandleOptions"
-                    :ui="{ handle: 'translate-x-1 rounded border border-default bg-default/90' }"
-                  >
-                    <UButton
-                      icon="i-lucide-grip-vertical"
-                      color="neutral"
-                      variant="ghost"
-                      size="sm"
-                      :class="ui.handle()"
-                    />
-                  </UEditorDragHandle>
-                </UEditor>
-              </UFormField>
-
-              <UFormField
-                v-else
-                label="SendGrid dynamic data (JSON)"
-              >
-                <template #description>
-                  Section toggles and content for your SendGrid template. String values can use <code v-pre>{{ variableName }}</code> tokens.
-                </template>
-                <div class="space-y-2">
-                  <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-default p-2">
-                    <div class="text-xs text-dimmed">
-                      Use your modular SendGrid layout keys like <code>hero_enabled</code>, <code>feature_1_title</code>, <code>offer_code</code>.
-                    </div>
-                    <UButton
-                      size="xs"
-                      color="neutral"
-                      variant="soft"
-                      icon="i-lucide-wand-sparkles"
-                      @click="loadWebsiteLaunchPreset"
-                    >
-                      Load website launch preset
-                    </UButton>
-                  </div>
-                  <div class="rounded-md border border-default p-2.5 space-y-2">
-                    <div class="text-xs font-medium text-highlighted">
-                      Campaign images (writes directly into JSON)
-                    </div>
-                    <div class="grid gap-2 md:grid-cols-2">
-                      <div
-                        v-for="slot in CAMPAIGN_IMAGE_SLOTS"
-                        :key="`campaign-image-${slot.id}`"
-                        class="rounded-md border border-default/80 p-2 space-y-2"
-                      >
-                        <div class="flex items-center justify-between gap-2">
-                          <div class="text-xs font-medium text-highlighted">
-                            {{ slot.label }}
-                          </div>
-                          <div class="flex items-center gap-1">
-                            <UButton
-                              size="xs"
-                              color="neutral"
-                              variant="soft"
-                              icon="i-lucide-image-up"
-                              :loading="campaignImageUploadPending[slot.id]"
-                              @click="() => { void uploadCampaignImage(slot) }"
-                            >
-                              Upload
-                            </UButton>
-                            <UButton
-                              size="xs"
-                              color="neutral"
-                              variant="ghost"
-                              icon="i-lucide-x"
-                              @click="clearCampaignImage(slot)"
-                            >
-                              Clear
-                            </UButton>
-                          </div>
-                        </div>
-                        <div class="text-[11px] text-dimmed">
-                          Keys: <code>{{ slot.urlKey }}</code>, <code>{{ slot.altKey }}</code>
-                        </div>
-                        <UInput
-                          :model-value="readDynamicDataString(slot.urlKey)"
-                          class="w-full"
-                          placeholder="https://.../image.jpg"
-                          @update:model-value="(value) => updateDynamicDataString(slot.urlKey, String(value ?? ''))"
-                        />
-                        <UInput
-                          :model-value="readDynamicDataString(slot.altKey)"
-                          class="w-full"
-                          placeholder="Alt text"
-                          @update:model-value="(value) => updateDynamicDataString(slot.altKey, String(value ?? ''))"
-                        />
-                        <img
-                          v-if="readDynamicDataString(slot.urlKey)"
-                          :src="readDynamicDataString(slot.urlKey)"
-                          :alt="readDynamicDataString(slot.altKey) || `${slot.label} preview`"
-                          class="w-full max-h-28 object-cover rounded border border-default/70"
-                        >
-                      </div>
-                    </div>
-                  </div>
-                  <UTextarea
-                    v-model="draft.dynamicDataJsonText"
-                    :rows="20"
-                    class="w-full font-mono text-xs"
-                    placeholder="{&#10;  &quot;hero_enabled&quot;: true&#10;}"
-                  />
-                </div>
-              </UFormField>
-
-              <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
-                <div class="flex items-center justify-between gap-2">
-                  <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
-                    Draft preview
-                  </div>
-                  <div class="flex items-center gap-1">
-                    <UButton
-                      size="xs"
-                      color="neutral"
-                      :variant="previewViewport === 'desktop' ? 'soft' : 'ghost'"
-                      icon="i-lucide-monitor"
-                      @click="previewViewport = 'desktop'"
-                    >
-                      Desktop
-                    </UButton>
-                    <UButton
-                      size="xs"
-                      color="neutral"
-                      :variant="previewViewport === 'mobile' ? 'soft' : 'ghost'"
-                      icon="i-lucide-smartphone"
-                      @click="previewViewport = 'mobile'"
-                    >
-                      Mobile
-                    </UButton>
-                  </div>
-                </div>
-                <div class="rounded-md border border-default bg-default p-2">
-                  <div
-                    class="mx-auto transition-all duration-150"
-                    :class="previewViewport === 'mobile' ? 'max-w-[390px]' : 'max-w-full'"
-                  >
-                    <iframe
-                      :srcdoc="previewHtml"
-                      class="w-full min-h-[760px] rounded-md border border-default/70 bg-white"
-                      sandbox="allow-same-origin"
-                      title="Campaign preview"
-                    />
-                  </div>
-                </div>
-                <p class="text-xs text-dimmed">
-                  Preview is a local renderer for template variables and <code v-pre>{{#if ...}}</code> blocks.
-                  Final client rendering can vary slightly by inbox provider.
-                </p>
-              </section>
-
-              <div class="text-xs text-dimmed rounded-md border border-primary/20 bg-primary/5 p-2.5">
-                <div class="font-medium text-highlighted mb-1.5">
-                  Available recipient/context variables
-                </div>
-                <div class="leading-relaxed break-words">
-                  <span
-                    v-for="variableName in editorVariableTokens"
-                    :key="`campaign-${variableName}`"
-                    class="inline-block mr-2 mb-1 rounded bg-default/90 px-1.5 py-0.5 ring-1 ring-primary/20"
-                  >
-                    <code>{{ formatVariableToken(variableName) }}</code>
-                  </span>
-                </div>
               </div>
-            </div>
 
-            <template #footer>
-              <div class="flex items-center justify-end gap-2">
-                <UButton
-                  color="neutral"
+              <div class="flex flex-wrap items-center gap-2">
+                <UBadge
+                  :color="isDraftEventTypeRegistered ? 'neutral' : 'warning'"
                   variant="soft"
-                  icon="i-lucide-plus"
-                  @click="createCampaignDraft"
                 >
-                  New draft
-                </UButton>
-                <UButton
-                  color="neutral"
+                  {{ isDraftEventTypeRegistered ? 'registered event' : 'legacy event' }}
+                </UBadge>
+                <UBadge
+                  v-if="registryTemplateIdForDraftEvent"
+                  :color="isDraftTemplateIdSyncedWithRegistry ? 'success' : 'warning'"
                   variant="soft"
-                  :loading="saving"
-                  :disabled="isArchivedDraft"
-                  @click="() => { void saveCampaign() }"
                 >
-                  Save draft
-                </UButton>
-                <UButton
-                  color="neutral"
-                  variant="soft"
-                  icon="i-lucide-flask-conical"
-                  :loading="sendingTest"
-                  :disabled="isArchivedDraft || !draft.sendgridTemplateId.trim()"
-                  @click="sendCampaignTest"
-                >
-                  Send test
-                </UButton>
-                <UButton
-                  icon="i-lucide-send"
-                  :loading="sending"
-                  :disabled="isArchivedDraft || !draft.sendgridTemplateId.trim() || (!draft.includeMembershipRecipients && parseRecipientsInput(draft.additionalRecipientsText).length === 0)"
-                  @click="sendCampaign"
-                >
-                  Send campaign
-                </UButton>
-              </div>
-            </template>
-          </UCard>
-
-          <aside class="space-y-4 xl:sticky xl:top-4 self-start">
-            <UCard>
-              <div class="flex items-start justify-between gap-2">
-                <div>
-                  <div class="text-sm font-medium">
-                    Campaigns
-                  </div>
-                  <div class="text-xs text-dimmed mt-0.5">
-                    {{ campaignRows.length }} total campaign{{ campaignRows.length === 1 ? '' : 's' }}
-                  </div>
-                </div>
+                  {{ isDraftTemplateIdSyncedWithRegistry ? 'registry synced' : 'manual template id override' }}
+                </UBadge>
                 <UButton
                   size="xs"
-                  icon="i-lucide-plus"
                   color="neutral"
                   variant="soft"
-                  @click="createCampaignDraft"
+                  icon="i-lucide-refresh-cw"
+                  :disabled="!registryTemplateIdForDraftEvent"
+                  @click="syncTemplateIdFromRegistry()"
                 >
-                  New Draft
+                  Sync template id from registry
                 </UButton>
               </div>
 
               <div
-                v-if="selectedCampaignRow"
-                class="mt-3 rounded-md border border-default/80 bg-default/50 p-2.5"
+                v-if="selectedEventTypeOption"
+                class="text-xs text-dimmed"
               >
-                <div class="text-xs font-medium text-highlighted">
-                  Selected
+                {{ selectedEventTypeOption.description }}
+              </div>
+              <div class="text-xs text-dimmed">
+                Registry template:
+                <code>{{ registryTemplateIdForDraftEvent || '(none configured)' }}</code>
+                <template v-if="selectedEventTypeRegistryEntry?.updatedAt">
+                  · updated {{ formatIsoDate(selectedEventTypeRegistryEntry.updatedAt) }}
+                </template>
+              </div>
+            </div>
+
+            <div class="rounded-md border border-default/80 bg-default/60 p-3 space-y-3">
+              <div class="text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                Render mode
+              </div>
+              <UFormField
+                label="Render mode"
+                description="Editor HTML mode renders bodyHTML server-side. SendGrid native mode uses dynamic data JSON for section toggles and content."
+              >
+                <USelect
+                  v-model="draft.renderMode"
+                  class="w-full"
+                  :items="renderModeItems"
+                />
+              </UFormField>
+            </div>
+
+            <div class="rounded-md border border-default/80 bg-default/60 p-3 space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <div class="text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                  Live SendGrid template lookup
                 </div>
-                <div class="mt-1 text-sm font-medium">
-                  {{ selectedCampaignRow.name }}
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  icon="i-lucide-refresh-cw"
+                  :loading="sendgridLookupPending"
+                  :disabled="!draft.sendgridTemplateId.trim()"
+                  @click="() => { void fetchLatestSendgridTemplate(draft.sendgridTemplateId) }"
+                >
+                  Refresh now
+                </UButton>
+              </div>
+              <div
+                v-if="sendgridLookupError"
+                class="text-xs text-error"
+              >
+                {{ sendgridLookupError }}
+              </div>
+              <div
+                v-else-if="sendgridLookupPending"
+                class="text-xs text-dimmed"
+              >
+                Fetching latest SendGrid template version...
+              </div>
+              <div
+                v-else-if="sendgridLookup"
+                class="space-y-1 text-xs text-dimmed"
+              >
+                <div>
+                  Template: <code>{{ sendgridLookup.templateId }}</code>
+                  <template v-if="sendgridLookup.name">
+                    · {{ sendgridLookup.name }}
+                  </template>
                 </div>
-                <div class="mt-1 text-xs text-dimmed">
-                  Updated {{ formatIsoDate(selectedCampaignRow.updatedAt) }}
+                <div>
+                  Version source: <strong>{{ sendgridLookup.resolvedFrom }}</strong>
+                  <template v-if="sendgridLookup.selectedVersion?.id">
+                    · version <code>{{ sendgridLookup.selectedVersion.id }}</code>
+                  </template>
+                </div>
+                <div>
+                  Subject: {{ sendgridLookup.selectedVersion?.subject || '(empty)' }}
+                </div>
+                <div v-if="sendgridLookup.selectedVersion?.updatedAt">
+                  Version updated {{ formatIsoDate(sendgridLookup.selectedVersion?.updatedAt ?? null) }}
+                </div>
+              </div>
+              <div
+                v-else
+                class="text-xs text-dimmed"
+              >
+                Set a SendGrid template id to fetch active/latest version details.
+              </div>
+            </div>
+
+            <div class="rounded-md border border-default/80 bg-default/60 p-3 space-y-3">
+              <div class="text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                Template id history
+              </div>
+              <div
+                v-if="currentCampaignTemplateHistory.length === 0"
+                class="text-xs text-dimmed"
+              >
+                No template-id history yet for this campaign.
+              </div>
+              <div
+                v-else
+                class="space-y-1.5"
+              >
+                <div
+                  v-for="historyEntry in currentCampaignTemplateHistory"
+                  :key="`${historyEntry.templateId}-${historyEntry.savedAt}`"
+                  class="rounded border border-default/70 bg-default px-2 py-1.5 text-xs text-dimmed"
+                >
+                  <div>
+                    <code>{{ historyEntry.templateId }}</code>
+                  </div>
+                  <div>
+                    Saved {{ formatIsoDate(historyEntry.savedAt) }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
+            <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+              Audience
+            </div>
+            <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2 bg-default">
+              <div>
+                <div class="text-sm font-medium">
+                  Include membership recipients
                 </div>
                 <div class="text-xs text-dimmed">
-                  Sent {{ formatIsoDate(selectedCampaignRow.lastSentAt) }}
+                  Pull unique member emails from memberships/customers.
                 </div>
               </div>
-            </UCard>
+              <USwitch v-model="draft.includeMembershipRecipients" />
+            </div>
 
-            <UCard>
-              <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
-                Campaign list
-              </div>
-              <div class="mt-3 max-h-[44rem] overflow-y-auto space-y-2 pr-1">
-                <button
-                  v-for="campaign in campaignRows"
-                  :key="campaign.id"
-                  type="button"
-                  class="w-full rounded-md border p-2.5 text-left transition-colors"
-                  :class="campaign.id === selectedCampaignId
-                    ? 'border-primary/60 bg-primary/10'
-                    : 'border-default/80 bg-default/40 hover:bg-default/70'"
-                  @click="selectCampaign(campaign.id)"
+            <UFormField
+              label="Additional recipients"
+              description="One email per line or comma-separated."
+            >
+              <UTextarea
+                v-model="draft.additionalRecipientsText"
+                :rows="4"
+                class="w-full"
+                placeholder="agency@example.com&#10;collab@example.com"
+              />
+            </UFormField>
+
+            <UFormField
+              label="Test recipient"
+              description="Optional. Leave blank to send to your admin account email."
+            >
+              <UInput
+                v-model="testRecipient"
+                class="w-full"
+                placeholder="you@example.com"
+              />
+            </UFormField>
+          </section>
+
+          <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
+            <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+              Message copy
+            </div>
+            <div class="grid gap-3 md:grid-cols-2">
+              <UFormField label="Subject template">
+                <UInput
+                  v-model="draft.subjectTemplate"
+                  class="w-full"
+                  placeholder="FO Studio update for {{ customerName }}"
+                />
+              </UFormField>
+              <UFormField label="Preheader template">
+                <UInput
+                  v-model="draft.preheaderTemplate"
+                  class="w-full"
+                  placeholder="Short preview text for inbox list view."
+                />
+              </UFormField>
+            </div>
+          </section>
+
+          <UFormField
+            v-if="draft.renderMode === 'editor_html'"
+            label="Body template (HTML)"
+          >
+            <template #description>
+              Use <code v-pre>{{ variableName }}</code> tokens only.
+            </template>
+            <UEditor
+              v-slot="{ editor }"
+              v-model="draft.bodyTemplate"
+              content-type="html"
+              :handlers="editorHandlers"
+              :image="{ allowBase64: false }"
+              :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
+              class="campaign-editor-shell w-full rounded-md border border-default bg-default overflow-visible"
+              :placeholder="editorPlaceholder(draft.bodyTemplate, 'Write campaign body HTML...')"
+            >
+              <UEditorToolbar
+                :editor="editor"
+                :items="editorToolbarItems"
+                class="border-b border-default sticky top-0 inset-x-0 p-1.5 z-10 bg-default/95 backdrop-blur overflow-x-auto"
+              />
+              <UEditorToolbar
+                :editor="editor"
+                :items="editorBubbleToolbarItems"
+                layout="bubble"
+              />
+              <UEditorSuggestionMenu
+                :editor="editor"
+                :items="editorSuggestionItems"
+              />
+              <UEditorDragHandle
+                v-slot="{ ui }"
+                :editor="editor"
+                :options="editorDragHandleOptions"
+                :ui="{ handle: 'translate-x-1 rounded border border-default bg-default/90' }"
+              >
+                <UButton
+                  icon="i-lucide-grip-vertical"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  :class="ui.handle()"
+                />
+              </UEditorDragHandle>
+            </UEditor>
+          </UFormField>
+
+          <UFormField
+            v-else
+            label="SendGrid dynamic data (JSON)"
+          >
+            <template #description>
+              Section toggles and content for your SendGrid template. String values can use <code v-pre>{{ variableName }}</code> tokens.
+            </template>
+            <div class="space-y-2">
+              <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-default p-2">
+                <div class="text-xs text-dimmed">
+                  Use your modular SendGrid layout keys like <code>hero_enabled</code>, <code>feature_1_title</code>, <code>offer_code</code>.
+                </div>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  icon="i-lucide-wand-sparkles"
+                  @click="loadWebsiteLaunchPreset"
                 >
-                  <div class="flex items-center justify-between gap-2">
-                    <div class="text-sm font-medium text-highlighted leading-tight">
-                      {{ campaign.name }}
+                  Load website launch preset
+                </UButton>
+              </div>
+              <div class="rounded-md border border-default p-2.5 space-y-2">
+                <div class="text-xs font-medium text-highlighted">
+                  Campaign images (writes directly into JSON)
+                </div>
+                <div class="grid gap-2 md:grid-cols-2">
+                  <div
+                    v-for="slot in CAMPAIGN_IMAGE_SLOTS"
+                    :key="`campaign-image-${slot.id}`"
+                    class="rounded-md border border-default/80 p-2 space-y-2"
+                  >
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="text-xs font-medium text-highlighted">
+                        {{ slot.label }}
+                      </div>
+                      <div class="flex items-center gap-1">
+                        <UButton
+                          size="xs"
+                          color="neutral"
+                          variant="soft"
+                          icon="i-lucide-image-up"
+                          :loading="campaignImageUploadPending[slot.id]"
+                          @click="() => { void uploadCampaignImage(slot) }"
+                        >
+                          Upload
+                        </UButton>
+                        <UButton
+                          size="xs"
+                          color="neutral"
+                          variant="ghost"
+                          icon="i-lucide-x"
+                          @click="clearCampaignImage(slot)"
+                        >
+                          Clear
+                        </UButton>
+                      </div>
                     </div>
-                    <UBadge
-                      :color="campaign.status === 'draft' ? 'warning' : campaign.status === 'sent' ? 'success' : 'neutral'"
-                      variant="soft"
-                      size="sm"
+                    <div class="text-[11px] text-dimmed">
+                      Keys: <code>{{ slot.urlKey }}</code>, <code>{{ slot.altKey }}</code>
+                    </div>
+                    <UInput
+                      :model-value="readDynamicDataString(slot.urlKey)"
+                      class="w-full"
+                      placeholder="https://.../image.jpg"
+                      @update:model-value="(value) => updateDynamicDataString(slot.urlKey, String(value ?? ''))"
+                    />
+                    <UInput
+                      :model-value="readDynamicDataString(slot.altKey)"
+                      class="w-full"
+                      placeholder="Alt text"
+                      @update:model-value="(value) => updateDynamicDataString(slot.altKey, String(value ?? ''))"
+                    />
+                    <img
+                      v-if="readDynamicDataString(slot.urlKey)"
+                      :src="readDynamicDataString(slot.urlKey)"
+                      :alt="readDynamicDataString(slot.altKey) || `${slot.label} preview`"
+                      class="w-full max-h-28 object-cover rounded border border-default/70"
                     >
-                      {{ campaign.status }}
-                    </UBadge>
                   </div>
-                  <div class="mt-1 text-[11px] text-dimmed leading-tight">
-                    Template: {{ campaign.templateName }}
-                  </div>
-                  <div class="text-[11px] text-dimmed leading-tight">
-                    Updated {{ formatIsoDate(campaign.updatedAt) }}
-                  </div>
-                </button>
-
-                <div
-                  v-if="campaignRows.length === 0"
-                  class="rounded-md border border-dashed border-default px-3 py-4 text-sm text-dimmed text-center"
-                >
-                  No campaigns yet. Create your first draft.
                 </div>
               </div>
-            </UCard>
-          </aside>
+              <UTextarea
+                v-model="draft.dynamicDataJsonText"
+                :rows="20"
+                class="w-full font-mono text-xs"
+                placeholder="{&#10;  &quot;hero_enabled&quot;: true&#10;}"
+              />
+            </div>
+          </UFormField>
+
+          <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
+            <div class="flex items-center justify-between gap-2">
+              <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+                Draft preview
+              </div>
+              <div class="flex items-center gap-1">
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  :variant="previewViewport === 'desktop' ? 'soft' : 'ghost'"
+                  icon="i-lucide-monitor"
+                  @click="previewViewport = 'desktop'"
+                >
+                  Desktop
+                </UButton>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  :variant="previewViewport === 'mobile' ? 'soft' : 'ghost'"
+                  icon="i-lucide-smartphone"
+                  @click="previewViewport = 'mobile'"
+                >
+                  Mobile
+                </UButton>
+              </div>
+            </div>
+            <div class="rounded-md border border-default bg-default p-2">
+              <div
+                class="mx-auto transition-all duration-150"
+                :class="previewViewport === 'mobile' ? 'max-w-[390px]' : 'max-w-full'"
+              >
+                <iframe
+                  :srcdoc="previewHtml"
+                  class="w-full min-h-[760px] rounded-md border border-default/70 bg-white"
+                  :sandbox="previewFrameSandbox"
+                  title="Campaign preview"
+                />
+              </div>
+            </div>
+            <p class="text-xs text-dimmed">
+              Preview is a local renderer for template variables and <code v-pre>{{#if ...}}</code> blocks.
+              <template v-if="isUsingFetchedSendgridPreview">
+                Using fetched SendGrid version HTML for the current template id.
+              </template>
+              <template v-else-if="draft.renderMode === 'sendgrid_native'">
+                Using local fallback shell because a fetched SendGrid version HTML payload is not available.
+              </template>
+              Final client rendering can vary slightly by inbox provider.
+            </p>
+          </section>
+
+          <div class="text-xs text-dimmed rounded-md border border-primary/20 bg-primary/5 p-2.5">
+            <div class="font-medium text-highlighted mb-1.5">
+              Available recipient/context variables
+            </div>
+            <div class="leading-relaxed break-words">
+              <span
+                v-for="variableName in editorVariableTokens"
+                :key="`campaign-${variableName}`"
+                class="inline-block mr-2 mb-1 rounded bg-default/90 px-1.5 py-0.5 ring-1 ring-primary/20"
+              >
+                <code>{{ formatVariableToken(variableName) }}</code>
+              </span>
+            </div>
+          </div>
         </div>
-      </AdminOpsShell>
-    </template>
-  </UDashboardPanel>
+
+        <template #footer>
+          <div class="flex items-center justify-end gap-2">
+            <UButton
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-plus"
+              @click="() => { void createCampaignDraft() }"
+            >
+              New draft
+            </UButton>
+            <UButton
+              color="neutral"
+              variant="soft"
+              :loading="saving"
+              :disabled="isArchivedDraft || !isDraftEventTypeRegistered"
+              @click="() => { void saveCampaign() }"
+            >
+              Save draft
+            </UButton>
+            <UButton
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-flask-conical"
+              :loading="sendingTest"
+              :disabled="isArchivedDraft || !isDraftEventTypeRegistered || !draft.sendgridTemplateId.trim()"
+              @click="sendCampaignTest"
+            >
+              Send test
+            </UButton>
+            <UButton
+              icon="i-lucide-send"
+              :loading="sending"
+              :disabled="isArchivedDraft || !isDraftEventTypeRegistered || !draft.sendgridTemplateId.trim() || (!draft.includeMembershipRecipients && parseRecipientsInput(draft.additionalRecipientsText).length === 0)"
+              @click="sendCampaign"
+            >
+              Send campaign
+            </UButton>
+          </div>
+        </template>
+      </UCard>
+
+      <aside class="order-first xl:order-last space-y-4 xl:sticky xl:top-4 self-start">
+        <UCard>
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div class="text-sm font-medium">
+                Campaigns
+              </div>
+              <div class="text-xs text-dimmed mt-0.5">
+                {{ campaignRows.length }} total campaign{{ campaignRows.length === 1 ? '' : 's' }}
+              </div>
+            </div>
+            <UButton
+              size="xs"
+              icon="i-lucide-plus"
+              color="neutral"
+              variant="soft"
+              @click="() => { void createCampaignDraft() }"
+            >
+              New Draft
+            </UButton>
+          </div>
+
+          <div
+            v-if="selectedCampaignRow"
+            class="mt-3 rounded-md border border-default/80 bg-default/50 p-2.5"
+          >
+            <div class="text-xs font-medium text-highlighted">
+              Selected
+            </div>
+            <div class="mt-1 text-sm font-medium">
+              {{ selectedCampaignRow.name }}
+            </div>
+            <div class="mt-1 text-xs text-dimmed">
+              Updated {{ formatIsoDate(selectedCampaignRow.updatedAt) }}
+            </div>
+            <div class="text-xs text-dimmed">
+              Sent {{ formatIsoDate(selectedCampaignRow.lastSentAt) }}
+            </div>
+          </div>
+        </UCard>
+
+        <UCard>
+          <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+            Campaign list
+          </div>
+          <div class="mt-3 max-h-[44rem] overflow-y-auto space-y-2 pr-1">
+            <button
+              v-for="campaign in campaignRows"
+              :key="campaign.id"
+              type="button"
+              class="w-full rounded-md border p-2.5 text-left transition-colors"
+              :class="campaign.id === selectedCampaignId
+                ? 'border-primary/60 bg-primary/10'
+                : 'border-default/80 bg-default/40 hover:bg-default/70'"
+              @click="selectCampaign(campaign.id)"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <div class="text-sm font-medium text-highlighted leading-tight">
+                  {{ campaign.name }}
+                </div>
+                <UBadge
+                  :color="campaign.status === 'draft' ? 'warning' : campaign.status === 'sent' ? 'success' : 'neutral'"
+                  variant="soft"
+                  size="sm"
+                >
+                  {{ campaign.status }}
+                </UBadge>
+              </div>
+              <div class="mt-1 text-[11px] text-dimmed leading-tight">
+                Template: {{ campaign.templateName }}
+              </div>
+              <div class="text-[11px] text-dimmed leading-tight">
+                Updated {{ formatIsoDate(campaign.updatedAt) }}
+              </div>
+            </button>
+
+            <div
+              v-if="campaignRows.length === 0"
+              class="rounded-md border border-dashed border-default px-3 py-4 text-sm text-dimmed text-center"
+            >
+              No campaigns yet. Create your first draft.
+            </div>
+          </div>
+        </UCard>
+      </aside>
+    </div>
+  </DashboardPageScaffold>
 </template>
 
 <style scoped>

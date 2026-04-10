@@ -1,5 +1,9 @@
 import { requireServerAdmin } from '~~/server/utils/auth'
-import { getAvailableVariablesByEvent } from '~~/server/utils/mail/templateVariables'
+import {
+  getAvailableVariablesByEvent,
+  getRegisteredMailEvents,
+  type MailTemplateCategory
+} from '~~/server/utils/mail/templateVariables'
 
 type CampaignTemplateRow = {
   id: string
@@ -39,17 +43,37 @@ type CampaignRow = {
   updated_at: string
 }
 
+type MailTemplateRegistryRow = {
+  event_type: string
+  sendgrid_template_id: string
+  category: MailTemplateCategory
+  active: boolean
+  updated_at: string
+}
+
+type TemplateIdHistoryRow = {
+  campaign_id: string
+  template_id: string
+  saved_by: string | null
+  saved_at: string
+}
+
+const MAX_TEMPLATE_ID_HISTORY_PER_CAMPAIGN = 10
+
+type QueryResult = PromiseLike<{ data: unknown, error: { message: string } | null }>
+type SelectBuilder = QueryResult & {
+  order: (column: string, options?: { ascending?: boolean }) => SelectBuilder
+}
+
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
   const db = supabase as unknown as {
     from: (table: string) => {
-      select: (columns: string) => {
-        order: (column: string, options?: { ascending?: boolean }) => PromiseLike<{ data: unknown, error: { message: string } | null }>
-      }
+      select: (columns: string) => SelectBuilder
     }
   }
 
-  const [templateResult, campaignResult] = await Promise.all([
+  const [templateResult, campaignResult, registryResult, templateHistoryResult] = await Promise.all([
     db
       .from('mail_campaign_templates')
       .select('id,slug,name,description,event_type,sendgrid_template_id,subject_template,preheader_template,body_template,render_mode,dynamic_data_template,active,updated_at,created_at')
@@ -57,7 +81,15 @@ export default defineEventHandler(async (event) => {
     db
       .from('mail_campaigns')
       .select('id,name,status,template_id,event_type,sendgrid_template_id,subject_template,preheader_template,body_template,render_mode,dynamic_data_json,include_membership_recipients,additional_recipients,last_send_summary,last_sent_at,created_by,created_at,updated_at')
-      .order('updated_at', { ascending: false })
+      .order('updated_at', { ascending: false }),
+    db
+      .from('mail_template_registry')
+      .select('event_type,sendgrid_template_id,category,active,updated_at')
+      .order('event_type', { ascending: true }),
+    db
+      .from('mail_campaign_template_id_history')
+      .select('campaign_id,template_id,saved_by,saved_at')
+      .order('saved_at', { ascending: false })
   ])
 
   if (templateResult.error) {
@@ -66,6 +98,48 @@ export default defineEventHandler(async (event) => {
 
   if (campaignResult.error) {
     throw createError({ statusCode: 500, statusMessage: `Could not load campaigns: ${campaignResult.error.message}` })
+  }
+
+  if (registryResult.error) {
+    throw createError({ statusCode: 500, statusMessage: `Could not load template registry mapping: ${registryResult.error.message}` })
+  }
+
+  if (templateHistoryResult.error) {
+    throw createError({ statusCode: 500, statusMessage: `Could not load template id history: ${templateHistoryResult.error.message}` })
+  }
+
+  const eventTypeOptions = getRegisteredMailEvents().map(item => ({
+    eventType: item.eventType,
+    category: item.category,
+    description: item.description
+  }))
+
+  const eventTypeRegistry = ((registryResult.data ?? []) as MailTemplateRegistryRow[]).map(row => ({
+    eventType: row.event_type,
+    sendgridTemplateId: row.sendgrid_template_id ?? '',
+    category: row.category,
+    active: Boolean(row.active),
+    updatedAt: row.updated_at
+  }))
+
+  const templateHistoryByCampaign = new Map<string, Array<{
+    templateId: string
+    savedBy: string | null
+    savedAt: string
+  }>>()
+  for (const row of (templateHistoryResult.data ?? []) as TemplateIdHistoryRow[]) {
+    const campaignId = String(row.campaign_id ?? '').trim()
+    const templateId = String(row.template_id ?? '').trim()
+    if (!campaignId || !templateId) continue
+
+    const existing = templateHistoryByCampaign.get(campaignId) ?? []
+    if (existing.length >= MAX_TEMPLATE_ID_HISTORY_PER_CAMPAIGN) continue
+    existing.push({
+      templateId,
+      savedBy: row.saved_by ?? null,
+      savedAt: row.saved_at
+    })
+    templateHistoryByCampaign.set(campaignId, existing)
   }
 
   const templates = ((templateResult.data ?? []) as CampaignTemplateRow[]).map(template => ({
@@ -109,12 +183,15 @@ export default defineEventHandler(async (event) => {
     lastSentAt: campaign.last_sent_at,
     createdBy: campaign.created_by,
     createdAt: campaign.created_at,
-    updatedAt: campaign.updated_at
+    updatedAt: campaign.updated_at,
+    templateIdHistory: templateHistoryByCampaign.get(campaign.id) ?? []
   }))
 
   return {
     templates,
     campaigns,
+    eventTypeOptions,
+    eventTypeRegistry,
     availableVariablesByEvent: getAvailableVariablesByEvent()
   }
 })
