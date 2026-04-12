@@ -17,6 +17,11 @@ type OpsResponse = {
     pendingLockJobs?: number
     deadLockJobs?: number
     openLockIncidents?: number
+    openAdminIncidents?: number
+    highSeverityAdminIncidents?: number
+    submittedExpenses?: number
+    approvedUnpaidExpenses?: number
+    paidExpenseCentsInRange?: number
     totalRevenueCents?: number
     membershipRevenueCents?: number
     creditTopupRevenueCents?: number
@@ -72,6 +77,33 @@ type OpsResponse = {
     booking_id: string | null
     user_id: string | null
     created_at: string
+  }>
+  recentAdminIncidents?: Array<{
+    id: string
+    title: string
+    description: string | null
+    severity: 'low' | 'medium' | 'high' | 'critical'
+    status: 'open' | 'investigating' | 'resolved' | 'closed'
+    category: string
+    member_user_id: string | null
+    occurred_at: string | null
+    updated_at: string
+  }>
+  recentExpenses?: Array<{
+    id: string
+    title: string
+    description: string | null
+    category: string
+    status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'paid'
+    amount_cents: number
+    currency: string
+    incident_id: string | null
+    member_user_id: string | null
+    incurred_on: string | null
+    submitted_at: string | null
+    approved_at: string | null
+    paid_at: string | null
+    updated_at: string
   }>
   accessStatus?: {
     pendingJobs: number
@@ -337,6 +369,8 @@ const revenueMixStyle = computed(() => {
 
 const topMembers = computed(() => data.value?.topMembers ?? [])
 const recentLockIncidents = computed(() => data.value?.recentLockIncidents ?? [])
+const recentAdminIncidents = computed(() => data.value?.recentAdminIncidents ?? [])
+const recentExpenses = computed(() => data.value?.recentExpenses ?? [])
 const usageLeaders = computed(() => (
   topMembers.value
     .filter(member => Number(member.revenueCents ?? 0) > 0)
@@ -346,13 +380,16 @@ const revenueChartMinWidth = computed(() => {
   const points = Math.max(1, revenueSeries.value.length)
   return `${Math.max(560, points * 64)}px`
 })
-const campaignReminders = computed(() => data.value?.campaignReminders ?? [])
 const criticalDetailsOpen = ref(false)
 
 const criticalPressureTotal = computed(() =>
   Number(data.value?.summary?.openLockIncidents ?? 0)
+  + Number(data.value?.summary?.openAdminIncidents ?? 0)
+  + Number(data.value?.summary?.highSeverityAdminIncidents ?? 0)
   + Number(data.value?.summary?.deadLockJobs ?? 0)
   + Number(data.value?.summary?.dueGrantCount ?? 0)
+  + Number(data.value?.summary?.submittedExpenses ?? 0)
+  + Number(data.value?.summary?.approvedUnpaidExpenses ?? 0)
 )
 
 const criticalPressureSources = computed(() => ([
@@ -369,6 +406,34 @@ const criticalPressureSources = computed(() => ([
     count: Number(data.value?.summary?.deadLockJobs ?? 0),
     description: 'Background lock jobs that exhausted retries and require retry/remediation.',
     to: '/dashboard/admin/door-codes'
+  },
+  {
+    id: 'admin-incidents',
+    title: 'Open admin incidents',
+    count: Number(data.value?.summary?.openAdminIncidents ?? 0),
+    description: 'Operational incidents requiring active follow-up.',
+    to: '/dashboard/admin/incidents'
+  },
+  {
+    id: 'high-severity-admin-incidents',
+    title: 'High severity incidents',
+    count: Number(data.value?.summary?.highSeverityAdminIncidents ?? 0),
+    description: 'Open incidents tagged high or critical.',
+    to: '/dashboard/admin/incidents'
+  },
+  {
+    id: 'submitted-expenses',
+    title: 'Submitted expenses',
+    count: Number(data.value?.summary?.submittedExpenses ?? 0),
+    description: 'Expense reports waiting for approval.',
+    to: '/dashboard/admin/expenses'
+  },
+  {
+    id: 'approved-unpaid-expenses',
+    title: 'Approved unpaid expenses',
+    count: Number(data.value?.summary?.approvedUnpaidExpenses ?? 0),
+    description: 'Approved reports still waiting for payout.',
+    to: '/dashboard/admin/expenses'
   },
   {
     id: 'due-grants',
@@ -396,6 +461,23 @@ function formatShortDate(value: string | null | undefined) {
   const parsed = DateTime.fromISO(value, { zone: 'utc' })
   if (!parsed.isValid) return value
   return parsed.setZone(OPS_TIMEZONE).toFormat('LLL d')
+}
+
+function adminIncidentSeverityColor(value: string | null | undefined) {
+  const severity = String(value ?? '').toLowerCase()
+  if (severity === 'critical') return 'error'
+  if (severity === 'high') return 'warning'
+  if (severity === 'medium') return 'neutral'
+  return 'success'
+}
+
+function expenseStatusColor(value: string | null | undefined) {
+  const status = String(value ?? '').toLowerCase()
+  if (status === 'paid') return 'success'
+  if (status === 'approved') return 'primary'
+  if (status === 'submitted') return 'warning'
+  if (status === 'rejected') return 'error'
+  return 'neutral'
 }
 
 function usageLeaderTo(userId: string) {
@@ -528,28 +610,28 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
               {{ criticalPressureTotal }}
             </div>
             <p class="mt-2 text-xs text-dimmed">
-              Incidents + dead jobs + due grants
+              Incidents + expense approvals + dead jobs + due grants
             </p>
           </OpsKpiCard>
 
           <OpsKpiCard card-class="admin-kpi-card">
             <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
-              Campaign reminders
+              Expense approvals
             </div>
             <div class="mt-2 text-3xl font-[var(--font-display)] font-light">
-              {{ campaignReminders.length }}
+              {{ (data?.summary?.submittedExpenses ?? 0) + (data?.summary?.approvedUnpaidExpenses ?? 0) }}
             </div>
             <p class="mt-2 text-xs text-dimmed">
-              {{ campaignReminders[0]?.dueLabel ?? 'No reminders queued' }}
+              {{ formatMoney(data?.summary?.paidExpenseCentsInRange) }} paid in selected range
             </p>
             <UButton
               class="mt-3 w-fit"
               size="xs"
               color="neutral"
               variant="ghost"
-              to="/dashboard/admin/email-campaigns"
+              to="/dashboard/admin/expenses"
             >
-              Open campaigns
+              Open expenses
             </UButton>
           </OpsKpiCard>
 
@@ -860,6 +942,116 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                     class="mt-1 text-xs text-dimmed"
                   >
                     {{ incident.message }}
+                  </div>
+                </div>
+              </div>
+            </UCard>
+
+            <UCard class="admin-panel-card border-0">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                    Recent admin incidents
+                  </div>
+                  <p class="mt-1 text-xs text-dimmed">
+                    Latest incident reports filed by operations.
+                  </p>
+                </div>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  to="/dashboard/admin/incidents"
+                >
+                  Open
+                </UButton>
+              </div>
+
+              <div
+                v-if="!recentAdminIncidents.length"
+                class="mt-3 rounded-lg border border-default/60 bg-elevated/45 p-3 text-xs text-dimmed"
+              >
+                No admin incidents recorded.
+              </div>
+
+              <div
+                v-else
+                class="mt-3 space-y-2"
+              >
+                <div
+                  v-for="incident in recentAdminIncidents.slice(0, 4)"
+                  :key="incident.id"
+                  class="rounded-lg border border-default/60 bg-elevated/45 p-3"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-sm font-medium text-highlighted">
+                      {{ incident.title }}
+                    </div>
+                    <UBadge
+                      size="xs"
+                      :color="adminIncidentSeverityColor(incident.severity)"
+                      variant="soft"
+                    >
+                      {{ incident.severity }}
+                    </UBadge>
+                  </div>
+                  <div class="mt-1 text-xs text-dimmed">
+                    {{ incident.category }} · {{ incident.status }} · {{ formatShortDate(incident.updated_at) }}
+                  </div>
+                </div>
+              </div>
+            </UCard>
+
+            <UCard class="admin-panel-card border-0">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <div class="text-[11px] uppercase tracking-[0.2em] text-dimmed">
+                    Recent expenses
+                  </div>
+                  <p class="mt-1 text-xs text-dimmed">
+                    Submitted, approved, and paid reports updated most recently.
+                  </p>
+                </div>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  to="/dashboard/admin/expenses"
+                >
+                  Open
+                </UButton>
+              </div>
+
+              <div
+                v-if="!recentExpenses.length"
+                class="mt-3 rounded-lg border border-default/60 bg-elevated/45 p-3 text-xs text-dimmed"
+              >
+                No expenses recorded.
+              </div>
+
+              <div
+                v-else
+                class="mt-3 space-y-2"
+              >
+                <div
+                  v-for="expense in recentExpenses.slice(0, 4)"
+                  :key="expense.id"
+                  class="rounded-lg border border-default/60 bg-elevated/45 p-3"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-sm font-medium text-highlighted">
+                      {{ expense.title }}
+                    </div>
+                    <UBadge
+                      size="xs"
+                      :color="expenseStatusColor(expense.status)"
+                      variant="soft"
+                    >
+                      {{ expense.status }}
+                    </UBadge>
+                  </div>
+                  <div class="mt-1 text-xs text-dimmed">
+                    {{ expense.category }} · {{ formatMoney(expense.amount_cents) }} · {{ formatShortDate(expense.updated_at) }}
                   </div>
                 </div>
               </div>

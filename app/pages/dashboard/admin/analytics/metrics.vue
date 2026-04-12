@@ -21,6 +21,7 @@ const metricsJsonText = computed(() => JSON.stringify(metrics.value ?? {}, null,
 
 const weekRows = computed(() => {
   const week = metrics.value?.week
+  const ops = metrics.value?.ops
   return [
     ['Revenue total', formatAnalyticsCurrency(week?.revenue_total)],
     ['Revenue WoW', formatAnalyticsSignedPct(week?.revenue_wow_pct)],
@@ -30,7 +31,12 @@ const weekRows = computed(() => {
     ['Active members', formatAnalyticsNumber(week?.active_members)],
     ['New members', formatAnalyticsNumber(week?.new_members)],
     ['Canceled members', formatAnalyticsNumber(week?.canceled_members)],
-    ['Net membership change', formatAnalyticsNumber(week?.net_members)]
+    ['Net membership change', formatAnalyticsNumber(week?.net_members)],
+    ['Open incidents', formatAnalyticsNumber(ops?.incidents_open_count)],
+    ['High severity open incidents', formatAnalyticsNumber(ops?.incidents_high_severity_open_count)],
+    ['Submitted expenses', formatAnalyticsNumber(ops?.expenses_submitted_count)],
+    ['Approved unpaid expenses', formatAnalyticsNumber(ops?.expenses_approved_unpaid_count)],
+    ['Paid expenses this week', formatAnalyticsCurrency(ops?.expenses_paid_total_week)]
   ]
 })
 

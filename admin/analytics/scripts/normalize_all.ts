@@ -1,9 +1,11 @@
 import {
+  NORMALIZED_OPS_PATH,
   NORMALIZED_ADS_PATH,
   NORMALIZED_BOOKINGS_PATH,
   NORMALIZED_MEMBERSHIPS_PATH,
   NORMALIZED_MEMBERSHIP_STATE_PATH,
   NORMALIZED_REVENUE_PATH,
+  RAW_OPS_PATH,
   RAW_ADS_PATH,
   RAW_BOOKINGS_PATH,
   RAW_MEMBERSHIPS_PATH,
@@ -14,10 +16,14 @@ import { readJsonFile, writeJsonFile } from './lib/fs'
 import { toStringOrNull } from './lib/parse'
 import type {
   MembershipStateRecord,
+  NormalizedExpenseRecord,
+  NormalizedIncidentRecord,
   NormalizedAdRecord,
   NormalizedBookingRecord,
   NormalizedMembershipRecord,
   NormalizedRevenueEventRecord,
+  RawExpenseRecord,
+  RawIncidentRecord,
   RawAdRecord,
   RawBookingRecord,
   RawMembershipRecord,
@@ -162,23 +168,76 @@ function toNormalizedAds(rows: RawAdRecord[]): NormalizedAdRecord[] {
     .sort((a, b) => a.date.localeCompare(b.date))
 }
 
+function toNormalizedIncidents(rows: RawIncidentRecord[]): NormalizedIncidentRecord[] {
+  return rows
+    .map((row) => {
+      const anchor = row.occurred_at ?? row.updated_at ?? row.created_at
+      return {
+        ...toDateDims(anchor || row.created_at),
+        incident_id: String(row.incident_id),
+        title: String(row.title ?? ''),
+        category: String(row.category ?? 'other'),
+        severity: row.severity,
+        status: row.status,
+        member_user_id: toStringOrNull(row.member_user_id),
+        occurred_at: toStringOrNull(row.occurred_at),
+        resolved_at: toStringOrNull(row.resolved_at),
+        closed_at: toStringOrNull(row.closed_at),
+        created_at: String(row.created_at),
+        updated_at: String(row.updated_at)
+      }
+    })
+    .sort((a, b) => a.date.localeCompare(b.date))
+}
+
+function toNormalizedExpenses(rows: RawExpenseRecord[]): NormalizedExpenseRecord[] {
+  return rows
+    .map((row) => {
+      const anchor = row.incurred_on ?? row.updated_at ?? row.created_at
+      return {
+        ...toDateDims(anchor || row.created_at),
+        expense_id: String(row.expense_id),
+        title: String(row.title ?? ''),
+        category: String(row.category ?? 'other'),
+        status: row.status,
+        amount_cents: Math.max(0, Number(row.amount_cents ?? 0)),
+        amount: Math.max(0, Number(row.amount_cents ?? 0) / 100),
+        currency: String(row.currency ?? 'USD'),
+        incident_id: toStringOrNull(row.incident_id),
+        member_user_id: toStringOrNull(row.member_user_id),
+        incurred_on: toStringOrNull(row.incurred_on),
+        submitted_at: toStringOrNull(row.submitted_at),
+        approved_at: toStringOrNull(row.approved_at),
+        paid_at: toStringOrNull(row.paid_at),
+        created_at: String(row.created_at),
+        updated_at: String(row.updated_at)
+      }
+    })
+    .sort((a, b) => a.date.localeCompare(b.date))
+}
+
 async function run() {
-  const [membershipsRaw, bookingsRaw, revenueRaw, adsRaw] = await Promise.all([
+  const [membershipsRaw, bookingsRaw, revenueRaw, opsRaw, adsRaw] = await Promise.all([
     readJsonFile<{ records: RawMembershipRecord[] }>(RAW_MEMBERSHIPS_PATH),
     readJsonFile<{ records: RawBookingRecord[] }>(RAW_BOOKINGS_PATH),
     readJsonFile<{ records: RawRevenueEventRecord[] }>(RAW_REVENUE_PATH),
+    readJsonFile<{ incidents: RawIncidentRecord[], expenses: RawExpenseRecord[] }>(RAW_OPS_PATH),
     readJsonFile<{ records: RawAdRecord[] }>(RAW_ADS_PATH)
   ])
 
   const membershipsRecords = membershipsRaw?.records ?? []
   const bookingRecords = bookingsRaw?.records ?? []
   const revenueRecords = revenueRaw?.records ?? []
+  const incidentRecords = opsRaw?.incidents ?? []
+  const expenseRecords = opsRaw?.expenses ?? []
   const adRecords = adsRaw?.records ?? []
 
   const normalizedMemberships = toMembershipEvents(membershipsRecords)
   const membershipState = toMembershipState(membershipsRecords)
   const normalizedBookings = toNormalizedBookings(bookingRecords)
   const normalizedRevenue = toNormalizedRevenue(revenueRecords)
+  const normalizedIncidents = toNormalizedIncidents(incidentRecords)
+  const normalizedExpenses = toNormalizedExpenses(expenseRecords)
   const normalizedAds = toNormalizedAds(adRecords)
 
   await Promise.all([
@@ -186,6 +245,10 @@ async function run() {
     writeJsonFile(NORMALIZED_MEMBERSHIP_STATE_PATH, membershipState),
     writeJsonFile(NORMALIZED_BOOKINGS_PATH, normalizedBookings),
     writeJsonFile(NORMALIZED_REVENUE_PATH, normalizedRevenue),
+    writeJsonFile(NORMALIZED_OPS_PATH, {
+      incidents: normalizedIncidents,
+      expenses: normalizedExpenses
+    }),
     writeJsonFile(NORMALIZED_ADS_PATH, normalizedAds)
   ])
 
@@ -194,6 +257,8 @@ async function run() {
     `${normalizedMemberships.length} membership events,`,
     `${normalizedBookings.length} bookings,`,
     `${normalizedRevenue.length} revenue events,`,
+    `${normalizedIncidents.length} incidents,`,
+    `${normalizedExpenses.length} expenses,`,
     `${normalizedAds.length} ad rows`
   )
 }

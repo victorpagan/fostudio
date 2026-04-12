@@ -5,11 +5,13 @@ type AvailabilityBlock = {
   memberships?: AnalyticsSource
   bookings?: AnalyticsSource
   revenue?: AnalyticsSource
+  ops?: AnalyticsSource
   ads?: AnalyticsSource
   notes?: {
     memberships?: string[]
     bookings?: string[]
     revenue?: string[]
+    ops?: string[]
     ads?: string[]
   }
 }
@@ -29,6 +31,17 @@ export type AnalyticsPayload = {
       new_members?: number | null
       canceled_members?: number | null
       net_members?: number | null
+    }
+    ops?: {
+      incidents_created_week?: number | null
+      incidents_open_count?: number | null
+      incidents_high_severity_open_count?: number | null
+      incidents_resolved_week?: number | null
+      expenses_submitted_count?: number | null
+      expenses_approved_unpaid_count?: number | null
+      expenses_submitted_total_week?: number | null
+      expenses_approved_total_week?: number | null
+      expenses_paid_total_week?: number | null
     }
     tiers?: {
       creator?: number | null
@@ -55,6 +68,10 @@ export type AnalyticsPayload = {
     revenue_by_week?: Array<{ week: string, value: number }>
     members_by_week?: Array<{ week: string, active: number, new_members?: number, canceled_members?: number }>
     utilization_by_week?: Array<{ week: string, value: number, booked_hours?: number }>
+    incidents_created_by_week?: Array<{ week: string, value: number }>
+    incidents_open_by_week?: Array<{ week: string, value: number }>
+    expenses_submitted_by_week?: Array<{ week: string, value: number, amount?: number }>
+    expenses_paid_by_week?: Array<{ week: string, value: number, amount?: number }>
   } | null
   alerts: Array<{
     severity: AnalyticsSeverity

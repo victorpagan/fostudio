@@ -22,13 +22,17 @@ const weeklyReportJson = computed(() => data.value?.weeklyReportJson)
 
 const summaryCards = computed(() => {
   const week = metrics.value?.week
+  const ops = metrics.value?.ops
   return [
     { label: 'Revenue', value: formatAnalyticsCurrency(week?.revenue_total) },
     { label: 'Revenue WoW', value: formatAnalyticsSignedPct(week?.revenue_wow_pct) },
     { label: 'Bookings', value: formatAnalyticsNumber(week?.bookings_total) },
     { label: 'Booked hours', value: formatAnalyticsHours(week?.booked_hours) },
     { label: 'Utilization', value: formatAnalyticsRatioPct(week?.utilization_rate) },
-    { label: 'Active members', value: formatAnalyticsNumber(week?.active_members) }
+    { label: 'Active members', value: formatAnalyticsNumber(week?.active_members) },
+    { label: 'Open incidents', value: formatAnalyticsNumber(ops?.incidents_open_count) },
+    { label: 'Submitted expenses', value: formatAnalyticsNumber(ops?.expenses_submitted_count) },
+    { label: 'Paid expenses (week)', value: formatAnalyticsCurrency(ops?.expenses_paid_total_week) }
   ]
 })
 

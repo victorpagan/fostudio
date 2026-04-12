@@ -35,6 +35,11 @@ export const analyticsAlertThresholds = {
   revenue: {
     wowDropPct: 0.25,
     lumpyGapRatio: 0.35
+  },
+  ops: {
+    highSeverityOpenIncidentWarnCount: 1,
+    staleSubmittedExpenseDays: 7,
+    staleApprovedExpenseDays: 5
   }
 } as const
 

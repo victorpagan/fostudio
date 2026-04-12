@@ -7,6 +7,7 @@ export type SourceNotesMap = {
   memberships: string[]
   bookings: string[]
   revenue: string[]
+  ops: string[]
   ads: string[]
 }
 
@@ -14,6 +15,7 @@ export type DataAvailability = {
   memberships: IngestSource
   bookings: IngestSource
   revenue: IngestSource
+  ops: IngestSource
   ads: IngestSource
   notes: SourceNotesMap
 }
@@ -36,6 +38,7 @@ export type DataQualityMetadata = {
     memberships: number
     bookings: number
     revenue: number
+    ops: number
     ads: number
   }
   row_counts: {
@@ -43,6 +46,8 @@ export type DataQualityMetadata = {
     membership_state: number
     bookings: number
     revenue: number
+    incidents: number
+    expenses: number
     ads: number
   }
   exclusions_applied: {
@@ -50,6 +55,8 @@ export type DataQualityMetadata = {
     membership_state: number
     bookings: number
     revenue: number
+    incidents: number
+    expenses: number
     ads: number
     accounts: number
   }
@@ -112,6 +119,37 @@ export type RawRevenueEventRecord = {
   is_internal_account: boolean
   exclude_from_kpis: boolean
   expires_at: string | null
+}
+
+export type RawIncidentRecord = {
+  incident_id: string
+  title: string
+  category: string
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  status: 'open' | 'investigating' | 'resolved' | 'closed'
+  member_user_id: string | null
+  occurred_at: string | null
+  resolved_at: string | null
+  closed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type RawExpenseRecord = {
+  expense_id: string
+  title: string
+  category: string
+  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'paid'
+  amount_cents: number
+  currency: string
+  incident_id: string | null
+  member_user_id: string | null
+  incurred_on: string | null
+  submitted_at: string | null
+  approved_at: string | null
+  paid_at: string | null
+  created_at: string
+  updated_at: string
 }
 
 export type RawAdRecord = {
@@ -197,6 +235,38 @@ export type NormalizedRevenueEventRecord = NormalizedDateDims & {
   expires_at: string | null
 }
 
+export type NormalizedIncidentRecord = NormalizedDateDims & {
+  incident_id: string
+  title: string
+  category: string
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  status: 'open' | 'investigating' | 'resolved' | 'closed'
+  member_user_id: string | null
+  occurred_at: string | null
+  resolved_at: string | null
+  closed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type NormalizedExpenseRecord = NormalizedDateDims & {
+  expense_id: string
+  title: string
+  category: string
+  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'paid'
+  amount_cents: number
+  amount: number
+  currency: string
+  incident_id: string | null
+  member_user_id: string | null
+  incurred_on: string | null
+  submitted_at: string | null
+  approved_at: string | null
+  paid_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type NormalizedAdRecord = NormalizedDateDims & {
   platform: AdPlatform
   campaign: string
@@ -256,6 +326,18 @@ export type CohortMetrics = {
   median_guest_to_member_lag_days: number | null
 }
 
+export type OpsMetrics = {
+  incidents_created_week: number | null
+  incidents_open_count: number | null
+  incidents_high_severity_open_count: number | null
+  incidents_resolved_week: number | null
+  expenses_submitted_count: number | null
+  expenses_approved_unpaid_count: number | null
+  expenses_submitted_total_week: number | null
+  expenses_approved_total_week: number | null
+  expenses_paid_total_week: number | null
+}
+
 export type PlatformSummary = {
   spend: number | null
   conversions: number | null
@@ -271,6 +353,7 @@ export type MetricsOutput = {
   member_usage: MemberUsageMetrics
   booking_segmentation: BookingSegmentation
   cohorts: CohortMetrics
+  ops: OpsMetrics
   tiers: {
     creator: number | null
     pro: number | null
@@ -284,7 +367,7 @@ export type MetricsOutput = {
 
 export type AlertsOutputItem = {
   severity: 'low' | 'medium' | 'high'
-  type: 'ads' | 'retention' | 'bookings' | 'revenue' | 'memberships' | 'channel' | 'data'
+  type: 'ads' | 'retention' | 'bookings' | 'revenue' | 'memberships' | 'channel' | 'ops' | 'data'
   title: string
   detail: string
 }
@@ -300,6 +383,10 @@ export type TrendsOutput = {
   one_time_booking_revenue_by_week: Array<{ week: string, value: number }>
   members_by_week: Array<{ week: string, active: number, new_members: number, canceled_members: number }>
   utilization_by_week: Array<{ week: string, value: number, booked_hours: number }>
+  incidents_created_by_week: Array<{ week: string, value: number }>
+  incidents_open_by_week: Array<{ week: string, value: number }>
+  expenses_submitted_by_week: Array<{ week: string, value: number, amount: number }>
+  expenses_paid_by_week: Array<{ week: string, value: number, amount: number }>
   booking_mix_by_week: Array<{
     week: string
     member_bookings: number
@@ -358,6 +445,7 @@ export type WeeklyReportJson = {
   member_usage: MemberUsageMetrics
   booking_segmentation: BookingSegmentation
   cohorts: CohortMetrics
+  ops: OpsMetrics
   weekday_focus: {
     weakest_day: string | null
     weakest_day_bookings: number | null

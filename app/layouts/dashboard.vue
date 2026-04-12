@@ -207,6 +207,18 @@ const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
         onSelect: () => { open.value = false }
       },
       {
+        label: 'Incidents',
+        icon: 'i-lucide-triangle-alert',
+        to: '/dashboard/admin/incidents',
+        onSelect: () => { open.value = false }
+      },
+      {
+        label: 'Expenses',
+        icon: 'i-lucide-receipt',
+        to: '/dashboard/admin/expenses',
+        onSelect: () => { open.value = false }
+      },
+      {
         label: 'Holds',
         icon: 'i-lucide-package-plus',
         to: '/dashboard/admin/holds',

@@ -63,16 +63,33 @@ function sourceLabel(source: IngestSource) {
   return isAvailable(source) ? 'Available' : 'Data unavailable'
 }
 
+function safeOpsMetrics(metrics: MetricsOutput): MetricsOutput['ops'] {
+  const ops = (metrics as Partial<MetricsOutput>).ops
+  return ops ?? {
+    incidents_created_week: null,
+    incidents_open_count: null,
+    incidents_high_severity_open_count: null,
+    incidents_resolved_week: null,
+    expenses_submitted_count: null,
+    expenses_approved_unpaid_count: null,
+    expenses_submitted_total_week: null,
+    expenses_approved_total_week: null,
+    expenses_paid_total_week: null
+  }
+}
+
 function safeAvailability(input: DataAvailability | undefined): DataAvailability {
   return input ?? {
     memberships: 'unavailable',
     bookings: 'unavailable',
     revenue: 'unavailable',
+    ops: 'unavailable',
     ads: 'unavailable',
     notes: {
       memberships: [],
       bookings: [],
       revenue: [],
+      ops: [],
       ads: []
     }
   }
@@ -89,6 +106,7 @@ function safeDataQuality(
       memberships: 0,
       bookings: 0,
       revenue: 0,
+      ops: 0,
       ads: 0
     },
     row_counts: {
@@ -96,6 +114,8 @@ function safeDataQuality(
       membership_state: 0,
       bookings: 0,
       revenue: 0,
+      incidents: 0,
+      expenses: 0,
       ads: 0
     },
     exclusions_applied: {
@@ -103,6 +123,8 @@ function safeDataQuality(
       membership_state: 0,
       bookings: 0,
       revenue: 0,
+      incidents: 0,
+      expenses: 0,
       ads: 0,
       accounts: 0
     },
@@ -124,6 +146,7 @@ function deriveWeekdayFocus(weakestDay: TrendsWeekday) {
 
 function buildWhatChanged(metrics: MetricsOutput, trends: TrendsOutput, dataQuality: DataQualityMetadata) {
   const items: string[] = []
+  const ops = safeOpsMetrics(metrics)
 
   if (isNumber(metrics.week.active_members) && isNumber(metrics.week.net_members)) {
     if (metrics.week.net_members > 0) {
@@ -171,6 +194,14 @@ function buildWhatChanged(metrics: MetricsOutput, trends: TrendsOutput, dataQual
     items.push('Paid-channel insights are incomplete because ads data is currently unavailable.')
   }
 
+  if (isNumber(ops.incidents_open_count) && ops.incidents_open_count > 0) {
+    items.push(`${asInt(ops.incidents_open_count)} admin incidents remain open or investigating.`)
+  }
+
+  if (isNumber(ops.expenses_approved_unpaid_count) && ops.expenses_approved_unpaid_count > 0) {
+    items.push(`${asInt(ops.expenses_approved_unpaid_count)} approved expenses are waiting for payout.`)
+  }
+
   if (dataQuality.confidence.score < 0.75) {
     items.push(`Analytics confidence is ${QUALITY_LABEL[dataQuality.confidence.label].toLowerCase()} (${(dataQuality.confidence.score * 100).toFixed(0)}%), so conclusions are directional.`)
   }
@@ -200,6 +231,7 @@ function buildRecommendedActions(
   dataQuality: DataQualityMetadata
 ) {
   const actions: string[] = []
+  const ops = safeOpsMetrics(metrics)
 
   const weakest = trends.weekday_utilization.weakest_day
   if (weakest?.weekday) {
@@ -241,6 +273,10 @@ function buildRecommendedActions(
 
   if (actions.length < 3) {
     actions.push('Promote a member-only midweek offer and track incremental booked hours week-over-week.')
+  }
+
+  if (isNumber(ops.expenses_submitted_count) && ops.expenses_submitted_count > 0) {
+    actions.push('Run a twice-weekly finance approval pass so submitted expenses do not age into payout risk.')
   }
 
   return [...new Set(actions)].slice(0, 3)
@@ -316,7 +352,7 @@ function buildEmailRecommendations(
 
 function availabilityNotes(availability: DataAvailability) {
   const lines: string[] = []
-  for (const key of ['memberships', 'bookings', 'revenue', 'ads'] as const) {
+  for (const key of ['memberships', 'bookings', 'revenue', 'ops', 'ads'] as const) {
     for (const note of availability.notes[key] ?? []) {
       lines.push(`${key}: ${note}`)
     }
@@ -346,6 +382,10 @@ async function run() {
     one_time_booking_revenue_by_week: [],
     members_by_week: [],
     utilization_by_week: [],
+    incidents_created_by_week: [],
+    incidents_open_by_week: [],
+    expenses_submitted_by_week: [],
+    expenses_paid_by_week: [],
     booking_mix_by_week: [],
     weekday_utilization: {
       lookback_weeks: analyticsMetricDefinitions.weekdayLookbackWeeks,
@@ -365,6 +405,7 @@ async function run() {
   const safeAlerts = alerts ?? []
   const availability = safeAvailability(metrics.data_availability)
   const dataQuality = safeDataQuality(metrics.data_quality, safeTrends.data_quality)
+  const ops = safeOpsMetrics(metrics)
 
   const whatChanged = buildWhatChanged(metrics, safeTrends, dataQuality)
   const recommendedActions = buildRecommendedActions(metrics, safeTrends, safeAlerts, dataQuality)
@@ -394,6 +435,7 @@ async function run() {
     member_usage: metrics.member_usage,
     booking_segmentation: metrics.booking_segmentation,
     cohorts: metrics.cohorts,
+    ops,
     weekday_focus: weekdayFocus,
     memberships: {
       creator: metrics.tiers.creator,
@@ -459,13 +501,21 @@ async function run() {
     `- Non-member bookings: ${asInt(metrics.booking_segmentation.non_member.bookings)} (${asHours(metrics.booking_segmentation.non_member.booked_hours)} hrs, ${asCurrency(metrics.booking_segmentation.non_member.revenue)})`,
     `- Weakest day: ${weekdayFocus.weakest_day ?? 'Data unavailable'}${isNumber(weekdayFocus.weakest_day_bookings) ? ` (${asInt(weekdayFocus.weakest_day_bookings)} bookings)` : ''}`,
     '',
+    '## Ops Workflow',
+    `- Incidents created this week: ${asInt(ops.incidents_created_week)}`,
+    `- Open incidents: ${asInt(ops.incidents_open_count)} (high severity ${asInt(ops.incidents_high_severity_open_count)})`,
+    `- Incidents resolved this week: ${asInt(ops.incidents_resolved_week)}`,
+    `- Submitted expenses (current): ${asInt(ops.expenses_submitted_count)} (${asCurrency(ops.expenses_submitted_total_week)} submitted this week)`,
+    `- Approved unpaid expenses (current): ${asInt(ops.expenses_approved_unpaid_count)} (${asCurrency(ops.expenses_approved_total_week)} approved this week)`,
+    `- Paid expenses this week: ${asCurrency(ops.expenses_paid_total_week)}`,
+    '',
     '## Marketing',
     `- Google Ads: ${googleAdsLine}`,
     `- Meta Ads: ${metaAdsLine}`,
     '',
     '## Data Quality',
     `- Confidence: ${QUALITY_LABEL[dataQuality.confidence.label]} (${(dataQuality.confidence.score * 100).toFixed(0)}%)`,
-    `- Source completeness: memberships ${Math.round(dataQuality.source_completeness.memberships * 100)}%, bookings ${Math.round(dataQuality.source_completeness.bookings * 100)}%, revenue ${Math.round(dataQuality.source_completeness.revenue * 100)}%, ads ${Math.round(dataQuality.source_completeness.ads * 100)}%`,
+    `- Source completeness: memberships ${Math.round(dataQuality.source_completeness.memberships * 100)}%, bookings ${Math.round(dataQuality.source_completeness.bookings * 100)}%, revenue ${Math.round(dataQuality.source_completeness.revenue * 100)}%, ops ${Math.round(dataQuality.source_completeness.ops * 100)}%, ads ${Math.round(dataQuality.source_completeness.ads * 100)}%`,
     `- Exclusions applied: memberships ${asInt(dataQuality.exclusions_applied.memberships)}, bookings ${asInt(dataQuality.exclusions_applied.bookings)}, revenue ${asInt(dataQuality.exclusions_applied.revenue)}, accounts ${asInt(dataQuality.exclusions_applied.accounts)}`,
     ...(
       qualityWarnings.length
@@ -477,6 +527,7 @@ async function run() {
     `- Memberships: ${sourceLabel(availability.memberships)}`,
     `- Bookings: ${sourceLabel(availability.bookings)}`,
     `- Revenue: ${sourceLabel(availability.revenue)}`,
+    `- Ops: ${sourceLabel(availability.ops)}`,
     `- Ads: ${sourceLabel(availability.ads)}`,
     '',
     '## What changed',

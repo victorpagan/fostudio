@@ -1,4 +1,5 @@
 import { analyticsAlertThresholds } from '../config/alert-thresholds'
+import { DateTime } from 'luxon'
 import {
   ALERTS_OUTPUT_PATH,
   METRICS_OUTPUT_PATH,
@@ -22,7 +23,7 @@ import type {
   TrendsOutput
 } from './lib/types'
 
-type AvailabilityKey = 'memberships' | 'bookings' | 'revenue' | 'ads'
+type AvailabilityKey = 'memberships' | 'bookings' | 'revenue' | 'ops' | 'ads'
 
 const severityOrder: Record<AlertsOutputItem['severity'], number> = {
   low: 1,
@@ -113,6 +114,13 @@ async function run() {
 
   const alerts: AlertsOutputItem[] = []
 
+  addUnavailableAlert(
+    alerts,
+    availability,
+    'ops',
+    'Ops data unavailable',
+    'Incident and expense workflow data is unavailable, so operations alerting is incomplete.'
+  )
   addUnavailableAlert(
     alerts,
     availability,
@@ -291,6 +299,51 @@ async function run() {
         type: 'revenue',
         title: 'Recognized revenue softened week-over-week',
         detail: `Recognized revenue is down ${Math.abs(recognizedWow).toFixed(1)}% week-over-week.`
+      })
+    }
+  }
+
+  if (isAvailable(availability.ops) && metrics?.ops) {
+    const highSeverityOpen = Number(metrics.ops.incidents_high_severity_open_count ?? 0)
+    if (highSeverityOpen >= analyticsAlertThresholds.ops.highSeverityOpenIncidentWarnCount) {
+      alerts.push({
+        severity: 'high',
+        type: 'ops',
+        title: 'High-severity incidents are open',
+        detail: `${highSeverityOpen} high/critical incidents are currently open or investigating.`
+      })
+    }
+
+    const now = DateTime.now()
+    const staleSubmittedCount = data.expenses.filter((row) => {
+      if (row.status !== 'submitted' || !row.submitted_at) return false
+      const submitted = DateTime.fromISO(row.submitted_at)
+      if (!submitted.isValid) return false
+      return now.diff(submitted, 'days').days >= analyticsAlertThresholds.ops.staleSubmittedExpenseDays
+    }).length
+
+    if (staleSubmittedCount > 0) {
+      alerts.push({
+        severity: 'medium',
+        type: 'ops',
+        title: 'Submitted expenses pending too long',
+        detail: `${staleSubmittedCount} submitted expense reports are older than ${analyticsAlertThresholds.ops.staleSubmittedExpenseDays} days.`
+      })
+    }
+
+    const staleApprovedCount = data.expenses.filter((row) => {
+      if (row.status !== 'approved' || !row.approved_at) return false
+      const approved = DateTime.fromISO(row.approved_at)
+      if (!approved.isValid) return false
+      return now.diff(approved, 'days').days >= analyticsAlertThresholds.ops.staleApprovedExpenseDays
+    }).length
+
+    if (staleApprovedCount > 0) {
+      alerts.push({
+        severity: 'medium',
+        type: 'ops',
+        title: 'Approved expenses waiting for payout',
+        detail: `${staleApprovedCount} approved expenses are older than ${analyticsAlertThresholds.ops.staleApprovedExpenseDays} days without payout.`
       })
     }
   }

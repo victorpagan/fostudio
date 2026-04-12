@@ -1,4 +1,5 @@
 import { analyticsMetricDefinitions } from '../config/metric-definitions'
+import { DateTime } from 'luxon'
 import { METRICS_OUTPUT_PATH } from './lib/constants'
 import { writeJsonFile } from './lib/fs'
 import {
@@ -93,6 +94,13 @@ function toNullCohorts(): MetricsOutput['cohorts'] {
   }
 }
 
+function isWithinRange(iso: string | null | undefined, start: DateTime, end: DateTime) {
+  if (!iso) return false
+  const parsed = DateTime.fromISO(iso, { zone: analyticsMetricDefinitions.timezone })
+  if (!parsed.isValid) return false
+  return parsed >= start && parsed <= end
+}
+
 async function run() {
   const weekOf = parseWeekOfArg()
   const context = getWeekContext(weekOf)
@@ -101,6 +109,7 @@ async function run() {
   const revenueAvailable = isAvailable(data.availability.revenue)
   const bookingsAvailable = isAvailable(data.availability.bookings)
   const membershipsAvailable = isAvailable(data.availability.memberships)
+  const opsAvailable = isAvailable(data.availability.ops)
   const adsAvailable = isAvailable(data.availability.ads)
 
   const kpiBookings = kpiEligibleRows(data.bookings)
@@ -138,6 +147,53 @@ async function run() {
   const adSummary = adsAvailable
     ? aggregateAds(adsInRange(data.ads, context.start, context.end))
     : null
+
+  const opsMetrics: MetricsOutput['ops'] = {
+    incidents_created_week: null,
+    incidents_open_count: null,
+    incidents_high_severity_open_count: null,
+    incidents_resolved_week: null,
+    expenses_submitted_count: null,
+    expenses_approved_unpaid_count: null,
+    expenses_submitted_total_week: null,
+    expenses_approved_total_week: null,
+    expenses_paid_total_week: null
+  }
+
+  if (opsAvailable) {
+    const openStatuses = new Set(['open', 'investigating'])
+    const highSeverities = new Set(['high', 'critical'])
+
+    const incidents = data.incidents
+    const expenses = data.expenses
+
+    const incidentsCreatedWeek = incidents.filter(row => isWithinRange(row.created_at, context.start, context.end)).length
+    const incidentsResolvedWeek = incidents.filter(row => isWithinRange(row.resolved_at, context.start, context.end)).length
+    const incidentsOpenCount = incidents.filter(row => openStatuses.has(String(row.status))).length
+    const incidentsHighSeverityOpenCount = incidents.filter(row => openStatuses.has(String(row.status)) && highSeverities.has(String(row.severity))).length
+
+    const submittedCurrent = expenses.filter(row => row.status === 'submitted')
+    const approvedCurrent = expenses.filter(row => row.status === 'approved')
+    const submittedTotalWeek = expenses
+      .filter(row => isWithinRange(row.submitted_at, context.start, context.end))
+      .reduce((sum, row) => sum + Number(row.amount ?? 0), 0)
+    const approvedTotalWeek = expenses
+      .filter(row => isWithinRange(row.approved_at, context.start, context.end))
+      .reduce((sum, row) => sum + Number(row.amount ?? 0), 0)
+    const paidTotalWeek = expenses
+      .filter(row => isWithinRange(row.paid_at, context.start, context.end))
+      .reduce((sum, row) => sum + Number(row.amount ?? 0), 0)
+
+    opsMetrics.incidents_created_week = incidentsCreatedWeek
+    opsMetrics.incidents_open_count = incidentsOpenCount
+    opsMetrics.incidents_high_severity_open_count = incidentsHighSeverityOpenCount
+    opsMetrics.incidents_resolved_week = incidentsResolvedWeek
+    opsMetrics.expenses_submitted_count = submittedCurrent.length
+    opsMetrics.expenses_approved_unpaid_count = approvedCurrent.length
+    opsMetrics.expenses_submitted_total_week = roundMaybe(submittedTotalWeek)
+    opsMetrics.expenses_approved_total_week = roundMaybe(approvedTotalWeek)
+    opsMetrics.expenses_paid_total_week = roundMaybe(paidTotalWeek)
+  }
 
   const ads: MetricsOutput['ads'] = {
     google: adSummary ? adSummary.google as PlatformSummary : null,
@@ -249,6 +305,7 @@ async function run() {
     member_usage: usageBlock,
     booking_segmentation: segmentation,
     cohorts,
+    ops: opsMetrics,
     tiers: {
       creator: tierCounts ? tierCounts.creator : null,
       pro: tierCounts ? tierCounts.pro : null,

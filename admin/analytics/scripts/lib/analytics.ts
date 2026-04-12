@@ -5,10 +5,12 @@ import {
   NORMALIZED_BOOKINGS_PATH,
   NORMALIZED_MEMBERSHIPS_PATH,
   NORMALIZED_MEMBERSHIP_STATE_PATH,
+  NORMALIZED_OPS_PATH,
   NORMALIZED_REVENUE_PATH,
   RAW_ADS_PATH,
   RAW_BOOKINGS_PATH,
   RAW_MEMBERSHIPS_PATH,
+  RAW_OPS_PATH,
   RAW_REVENUE_PATH
 } from './constants'
 import { weekRangeFromWeekOf } from './dates'
@@ -21,6 +23,8 @@ import type {
   MembershipStateRecord,
   NormalizedAdRecord,
   NormalizedBookingRecord,
+  NormalizedExpenseRecord,
+  NormalizedIncidentRecord,
   NormalizedMembershipRecord,
   NormalizedRevenueEventRecord,
   TierKey
@@ -175,10 +179,11 @@ async function readManifest(pathname: string, label: string) {
 }
 
 async function loadAvailability(): Promise<DataAvailability> {
-  const [memberships, bookings, revenue, ads] = await Promise.all([
+  const [memberships, bookings, revenue, ops, ads] = await Promise.all([
     readManifest(RAW_MEMBERSHIPS_PATH, 'memberships'),
     readManifest(RAW_BOOKINGS_PATH, 'bookings'),
     readManifest(RAW_REVENUE_PATH, 'revenue'),
+    readManifest(RAW_OPS_PATH, 'ops'),
     readManifest(RAW_ADS_PATH, 'ads')
   ])
 
@@ -186,11 +191,13 @@ async function loadAvailability(): Promise<DataAvailability> {
     memberships: memberships.source,
     bookings: bookings.source,
     revenue: revenue.source,
+    ops: ops.source,
     ads: ads.source,
     notes: {
       memberships: memberships.notes,
       bookings: bookings.notes,
       revenue: revenue.notes,
+      ops: ops.notes,
       ads: ads.notes
     }
   }
@@ -201,6 +208,8 @@ export type AnalyticsDataSet = {
   membershipState: MembershipStateRecord[]
   bookings: NormalizedBookingRecord[]
   revenue: NormalizedRevenueEventRecord[]
+  incidents: NormalizedIncidentRecord[]
+  expenses: NormalizedExpenseRecord[]
   ads: NormalizedAdRecord[]
   availability: DataAvailability
   data_quality: DataQualityMetadata
@@ -211,6 +220,8 @@ export function buildDataQualityMetadata(input: {
   membershipState: MembershipStateRecord[]
   bookings: NormalizedBookingRecord[]
   revenue: NormalizedRevenueEventRecord[]
+  incidents: NormalizedIncidentRecord[]
+  expenses: NormalizedExpenseRecord[]
   ads: NormalizedAdRecord[]
   availability: DataAvailability
 }): DataQualityMetadata {
@@ -218,6 +229,7 @@ export function buildDataQualityMetadata(input: {
     memberships: toSourceCompleteness(input.availability.memberships),
     bookings: toSourceCompleteness(input.availability.bookings),
     revenue: toSourceCompleteness(input.availability.revenue),
+    ops: toSourceCompleteness(input.availability.ops),
     ads: toSourceCompleteness(input.availability.ads)
   }
 
@@ -226,6 +238,8 @@ export function buildDataQualityMetadata(input: {
     membership_state: input.membershipState.length,
     bookings: input.bookings.length,
     revenue: input.revenue.length,
+    incidents: input.incidents.length,
+    expenses: input.expenses.length,
     ads: input.ads.length
   }
 
@@ -234,6 +248,8 @@ export function buildDataQualityMetadata(input: {
     membership_state: input.membershipState.filter(isKpiExcludedRow).length,
     bookings: input.bookings.filter(isKpiExcludedRow).length,
     revenue: input.revenue.filter(isKpiExcludedRow).length,
+    incidents: 0,
+    expenses: 0,
     ads: 0,
     accounts: uniqueExcludedAccounts([
       ...input.membershipState,
@@ -243,7 +259,7 @@ export function buildDataQualityMetadata(input: {
   }
 
   const warnings: string[] = []
-  for (const key of ['memberships', 'bookings', 'revenue', 'ads'] as const) {
+  for (const key of ['memberships', 'bookings', 'revenue', 'ops', 'ads'] as const) {
     if (input.availability[key] !== 'supabase') {
       const note = input.availability.notes[key]?.[0] ?? `${key} source unavailable`
       warnings.push(`${key}: ${note}`)
@@ -269,6 +285,7 @@ export function buildDataQualityMetadata(input: {
   if (input.availability.memberships !== 'supabase') score -= 0.24
   if (input.availability.bookings !== 'supabase') score -= 0.24
   if (input.availability.revenue !== 'supabase') score -= 0.24
+  if (input.availability.ops !== 'supabase') score -= 0.12
   if (input.availability.ads !== 'supabase') score -= 0.1
   if (rowCounts.bookings < 5) score -= 0.08
   if (rowCounts.revenue < 5) score -= 0.05
@@ -304,11 +321,12 @@ export function safePercentChange(current: number, previous: number) {
 }
 
 export async function loadAnalyticsData(): Promise<AnalyticsDataSet> {
-  const [memberships, membershipState, bookings, revenue, ads, availability] = await Promise.all([
+  const [memberships, membershipState, bookings, revenue, ops, ads, availability] = await Promise.all([
     readJsonFile<NormalizedMembershipRecord[]>(NORMALIZED_MEMBERSHIPS_PATH),
     readJsonFile<MembershipStateRecord[]>(NORMALIZED_MEMBERSHIP_STATE_PATH),
     readJsonFile<NormalizedBookingRecord[]>(NORMALIZED_BOOKINGS_PATH),
     readJsonFile<NormalizedRevenueEventRecord[]>(NORMALIZED_REVENUE_PATH),
+    readJsonFile<{ incidents: NormalizedIncidentRecord[], expenses: NormalizedExpenseRecord[] }>(NORMALIZED_OPS_PATH),
     readJsonFile<NormalizedAdRecord[]>(NORMALIZED_ADS_PATH),
     loadAvailability()
   ])
@@ -318,6 +336,8 @@ export async function loadAnalyticsData(): Promise<AnalyticsDataSet> {
     membershipState: membershipState ?? [],
     bookings: bookings ?? [],
     revenue: revenue ?? [],
+    incidents: ops?.incidents ?? [],
+    expenses: ops?.expenses ?? [],
     ads: ads ?? [],
     availability
   }

@@ -133,6 +133,13 @@ export default defineEventHandler(async (event) => {
     deadLockJobsRes,
     openLockIncidentsRes,
     recentLockIncidentsRes,
+    openAdminIncidentsRes,
+    highSeverityAdminIncidentsRes,
+    recentAdminIncidentsRes,
+    submittedExpensesRes,
+    approvedUnpaidExpensesRes,
+    paidExpenseRangeRes,
+    recentExpensesRes,
     membershipSessionsRes,
     variationsRes,
     creditTopupsRes,
@@ -213,6 +220,40 @@ export default defineEventHandler(async (event) => {
       .select('id,incident_type,severity,status,title,message,booking_id,user_id,created_at')
       .order('created_at', { ascending: false })
       .limit(8),
+    db
+      .from('admin_incident_reports')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['open', 'investigating']),
+    db
+      .from('admin_incident_reports')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['open', 'investigating'])
+      .in('severity', ['high', 'critical']),
+    db
+      .from('admin_incident_reports')
+      .select('id,title,description,severity,status,category,member_user_id,occurred_at,updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(8),
+    db
+      .from('admin_expense_reports')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'submitted'),
+    db
+      .from('admin_expense_reports')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'approved'),
+    db
+      .from('admin_expense_reports')
+      .select('amount_cents')
+      .eq('status', 'paid')
+      .not('paid_at', 'is', null)
+      .gte('paid_at', rangeStartIso)
+      .lte('paid_at', rangeEndIso),
+    db
+      .from('admin_expense_reports')
+      .select('id,title,description,category,status,amount_cents,currency,incident_id,member_user_id,incurred_on,submitted_at,approved_at,paid_at,updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(8),
     supabase
       .from('membership_checkout_sessions')
       .select('id,paid_at,plan_variation_id,tier,cadence,claimed_by_user_id,customer_id,claimed_membership_id,metadata,status')
@@ -272,6 +313,13 @@ export default defineEventHandler(async (event) => {
     deadLockJobsRes.error,
     openLockIncidentsRes.error,
     recentLockIncidentsRes.error,
+    openAdminIncidentsRes.error,
+    highSeverityAdminIncidentsRes.error,
+    recentAdminIncidentsRes.error,
+    submittedExpensesRes.error,
+    approvedUnpaidExpensesRes.error,
+    paidExpenseRangeRes.error,
+    recentExpensesRes.error,
     membershipSessionsRes.error,
     variationsRes.error,
     creditTopupsRes.error,
@@ -366,6 +414,8 @@ export default defineEventHandler(async (event) => {
   const creditTopupRevenueCents = revenueSeries.reduce((sum, item) => sum + item.creditTopupCents, 0)
   const holdTopupRevenueCents = revenueSeries.reduce((sum, item) => sum + item.holdTopupCents, 0)
   const totalOrders = revenueSeries.reduce((sum, item) => sum + item.orders, 0)
+  const paidExpenseCentsInRange = (paidExpenseRangeRes.data ?? [])
+    .reduce((sum: number, row: { amount_cents?: number | null }) => sum + Math.max(0, Number(row.amount_cents ?? 0)), 0)
 
   const topMembersByUser = new Map<string, TopMemberPoint>()
   for (const booking of (memberBookingsRes.data ?? [])) {
@@ -478,6 +528,30 @@ export default defineEventHandler(async (event) => {
       count: deadLockJobsRes.count ?? 0,
       to: '/dashboard/admin/door-codes',
       description: 'Failed access automation tasks.'
+    },
+    {
+      id: 'admin-incidents',
+      title: 'Open admin incidents',
+      severity: (openAdminIncidentsRes.count ?? 0) > 0 ? 'error' : 'neutral',
+      count: openAdminIncidentsRes.count ?? 0,
+      to: '/dashboard/admin/incidents',
+      description: 'Operational incidents requiring review or resolution.'
+    },
+    {
+      id: 'submitted-expenses',
+      title: 'Submitted expenses',
+      severity: (submittedExpensesRes.count ?? 0) > 0 ? 'warning' : 'neutral',
+      count: submittedExpensesRes.count ?? 0,
+      to: '/dashboard/admin/expenses',
+      description: 'Expense reports waiting for approval.'
+    },
+    {
+      id: 'approved-unpaid-expenses',
+      title: 'Approved unpaid expenses',
+      severity: (approvedUnpaidExpensesRes.count ?? 0) > 0 ? 'warning' : 'neutral',
+      count: approvedUnpaidExpensesRes.count ?? 0,
+      to: '/dashboard/admin/expenses',
+      description: 'Approved expense reports waiting for payout.'
     }
   ]
 
@@ -511,6 +585,11 @@ export default defineEventHandler(async (event) => {
       pendingLockJobs: pendingLockJobsRes.count ?? 0,
       deadLockJobs: deadLockJobsRes.count ?? 0,
       openLockIncidents: openLockIncidentsRes.count ?? 0,
+      openAdminIncidents: openAdminIncidentsRes.count ?? 0,
+      highSeverityAdminIncidents: highSeverityAdminIncidentsRes.count ?? 0,
+      submittedExpenses: submittedExpensesRes.count ?? 0,
+      approvedUnpaidExpenses: approvedUnpaidExpensesRes.count ?? 0,
+      paidExpenseCentsInRange,
       totalRevenueCents,
       membershipRevenueCents,
       creditTopupRevenueCents,
@@ -535,6 +614,8 @@ export default defineEventHandler(async (event) => {
     membershipsNeedingAttention: membershipsAttentionRes.data ?? [],
     membershipsMissingFutureSchedule,
     recentGuestBookings: recentGuestBookingsRes.data ?? [],
-    recentLockIncidents: recentLockIncidentsRes.data ?? []
+    recentLockIncidents: recentLockIncidentsRes.data ?? [],
+    recentAdminIncidents: recentAdminIncidentsRes.data ?? [],
+    recentExpenses: recentExpensesRes.data ?? []
   }
 })

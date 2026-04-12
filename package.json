@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "typecheck": "nuxt typecheck",
     "analytics:ads:sync": "pnpm exec tsx admin/analytics/scripts/sync_ads_platforms.ts",
-    "analytics:ingest": "pnpm exec tsx admin/analytics/scripts/ingest_memberships.ts && pnpm exec tsx admin/analytics/scripts/ingest_bookings.ts && pnpm analytics:ads:sync && pnpm exec tsx admin/analytics/scripts/ingest_ads.ts && pnpm exec tsx admin/analytics/scripts/normalize_all.ts",
+    "analytics:ingest": "pnpm exec tsx admin/analytics/scripts/ingest_memberships.ts && pnpm exec tsx admin/analytics/scripts/ingest_bookings.ts && pnpm exec tsx admin/analytics/scripts/ingest_ops.ts && pnpm analytics:ads:sync && pnpm exec tsx admin/analytics/scripts/ingest_ads.ts && pnpm exec tsx admin/analytics/scripts/normalize_all.ts",
     "analytics:compute": "pnpm exec tsx admin/analytics/scripts/compute_metrics.ts && pnpm exec tsx admin/analytics/scripts/compute_trends.ts && pnpm exec tsx admin/analytics/scripts/compute_alerts.ts",
     "analytics:report": "pnpm exec tsx admin/analytics/scripts/build_weekly_report.ts",
     "analytics:refresh": "pnpm analytics:compute && pnpm analytics:report && pnpm analytics:publish",

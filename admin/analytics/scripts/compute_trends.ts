@@ -1,4 +1,5 @@
 import { analyticsMetricDefinitions } from '../config/metric-definitions'
+import { DateTime } from 'luxon'
 import { TRENDS_OUTPUT_PATH } from './lib/constants'
 import { writeJsonFile } from './lib/fs'
 import {
@@ -23,6 +24,21 @@ function isAvailable(source: IngestSource) {
   return source === 'supabase'
 }
 
+function isWithinRange(iso: string | null | undefined, start: DateTime, end: DateTime) {
+  if (!iso) return false
+  const parsed = DateTime.fromISO(iso, { zone: analyticsMetricDefinitions.timezone })
+  if (!parsed.isValid) return false
+  return parsed >= start && parsed <= end
+}
+
+function parseIsoInZone(iso: string | null | undefined) {
+  if (!iso) return null
+  const local = DateTime.fromISO(iso, { zone: analyticsMetricDefinitions.timezone })
+  if (local.isValid) return local
+  const utc = DateTime.fromISO(iso, { zone: 'utc' })
+  return utc.isValid ? utc.setZone(analyticsMetricDefinitions.timezone) : null
+}
+
 async function run() {
   const weekOf = parseWeekOfArg()
   const context = getWeekContext(weekOf)
@@ -41,11 +57,16 @@ async function run() {
   const oneTimeByWeek: TrendsOutput['one_time_booking_revenue_by_week'] = []
   const membersByWeek: TrendsOutput['members_by_week'] = []
   const utilizationByWeek: TrendsOutput['utilization_by_week'] = []
+  const incidentsCreatedByWeek: TrendsOutput['incidents_created_by_week'] = []
+  const incidentsOpenByWeek: TrendsOutput['incidents_open_by_week'] = []
+  const expensesSubmittedByWeek: TrendsOutput['expenses_submitted_by_week'] = []
+  const expensesPaidByWeek: TrendsOutput['expenses_paid_by_week'] = []
   const bookingMixByWeek: TrendsOutput['booking_mix_by_week'] = []
 
   const revenueAvailable = isAvailable(data.availability.revenue)
   const membershipsAvailable = isAvailable(data.availability.memberships)
   const bookingsAvailable = isAvailable(data.availability.bookings)
+  const opsAvailable = isAvailable(data.availability.ops)
 
   for (const weekStart of weekStarts) {
     const weekEnd = weekStart.endOf('week')
@@ -108,6 +129,34 @@ async function run() {
         non_member_revenue: Number(nonMemberRows.reduce((sum, row) => sum + Number(row.revenue ?? 0), 0).toFixed(2))
       })
     }
+
+    if (opsAvailable) {
+      const incidentsCreated = data.incidents.filter(row => isWithinRange(row.created_at, weekStart, weekEnd)).length
+      const incidentsOpen = data.incidents.filter((row) => {
+        const openedAt = parseIsoInZone(row.occurred_at ?? row.created_at)
+        if (!openedAt || openedAt > weekEnd) return false
+
+        const closedAt = parseIsoInZone(row.closed_at ?? row.resolved_at)
+        if (closedAt && closedAt <= weekEnd) return false
+
+        return true
+      }).length
+      const submittedRows = data.expenses.filter(row => isWithinRange(row.submitted_at, weekStart, weekEnd))
+      const paidRows = data.expenses.filter(row => isWithinRange(row.paid_at, weekStart, weekEnd))
+
+      incidentsCreatedByWeek.push({ week: weekKey, value: incidentsCreated })
+      incidentsOpenByWeek.push({ week: weekKey, value: incidentsOpen })
+      expensesSubmittedByWeek.push({
+        week: weekKey,
+        value: submittedRows.length,
+        amount: Number(submittedRows.reduce((sum, row) => sum + Number(row.amount ?? 0), 0).toFixed(2))
+      })
+      expensesPaidByWeek.push({
+        week: weekKey,
+        value: paidRows.length,
+        amount: Number(paidRows.reduce((sum, row) => sum + Number(row.amount ?? 0), 0).toFixed(2))
+      })
+    }
   }
 
   const weekdayLookbackStart = context.start
@@ -133,6 +182,10 @@ async function run() {
     one_time_booking_revenue_by_week: oneTimeByWeek,
     members_by_week: membersByWeek,
     utilization_by_week: utilizationByWeek,
+    incidents_created_by_week: incidentsCreatedByWeek,
+    incidents_open_by_week: incidentsOpenByWeek,
+    expenses_submitted_by_week: expensesSubmittedByWeek,
+    expenses_paid_by_week: expensesPaidByWeek,
     booking_mix_by_week: bookingMixByWeek,
     weekday_utilization: {
       lookback_weeks: analyticsMetricDefinitions.weekdayLookbackWeeks,
