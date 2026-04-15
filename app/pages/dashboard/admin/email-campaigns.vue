@@ -308,32 +308,6 @@ const SENDGRID_NATIVE_PREVIEW_TEMPLATE = `<!doctype html>
 </body>
 </html>`
 
-const EDITOR_HTML_PREVIEW_TEMPLATE = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    body { margin:0; padding:24px 0; background:#f5f5f5; font-family:Arial,Helvetica,sans-serif; color:#111; }
-    .main { width:100%; max-width:640px; margin:0 auto; background:#fff; border:1px solid #ececec; border-radius:14px; overflow:hidden; }
-    .header { background:#111; color:#fff; padding:22px 24px; }
-    .header h1 { margin:0; font-size:20px; line-height:1.3; }
-    .header p { margin:8px 0 0; font-size:13px; color:#d7d7d7; }
-    .body { padding:22px 24px; line-height:1.6; font-size:14px; color:#222; }
-    img { max-width:100%; height:auto; display:block; }
-  </style>
-</head>
-<body>
-  <div class="main">
-    <div class="header">
-      <h1>{{subject}}</h1>
-      <p>{{preheader}}</p>
-    </div>
-    <div class="body">{{{bodyHTML}}}</div>
-  </div>
-</body>
-</html>`
-
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
@@ -577,11 +551,13 @@ function onCampaignTemplateIdCreate(value: string | SendgridTemplateSelectItem) 
   const normalized = normalizeTemplateId(value)
   if (!normalized) return
   draft.sendgridTemplateId = normalized
+  queueSendgridTemplateLookup(normalized)
 }
 
 function onCampaignTemplateIdSelect(value: unknown) {
   const normalized = normalizeTemplateId(value)
   draft.sendgridTemplateId = normalized
+  queueSendgridTemplateLookup(normalized)
 }
 
 const campaignRows = computed(() => campaigns.value.map(campaign => ({
@@ -926,8 +902,6 @@ const sendgridPreviewHtmlContent = computed(() => {
   return String(sendgridLookup.value?.selectedVersion?.htmlContent ?? '').trim()
 })
 const campaignPreviewShell = computed<'base' | 'document'>(() => {
-  if (draft.renderMode !== 'sendgrid_native') return 'base'
-
   const body = sendgridLookup.value?.selectedVersion?.htmlContent
     ? String(sendgridLookup.value?.selectedVersion?.htmlContent ?? '')
     : String(draft.bodyTemplate ?? '')
@@ -938,20 +912,16 @@ const campaignPreviewShell = computed<'base' | 'document'>(() => {
 })
 
 const previewHtml = computed(() => {
-  if (draft.renderMode === 'sendgrid_native') {
-    const sendgridTemplateHtml = sendgridPreviewHtmlContent.value
-    if (sendgridTemplateHtml.length > 0) {
-      return renderHandlebarsLikeTemplate(sendgridTemplateHtml, previewContext.value)
-    }
-
-    if (campaignPreviewShell.value === 'document') {
-      return renderHandlebarsLikeTemplate(String(draft.bodyTemplate ?? ''), previewContext.value)
-    }
-
-    return renderHandlebarsLikeTemplate(SENDGRID_NATIVE_PREVIEW_TEMPLATE, previewContext.value)
+  const sendgridTemplateHtml = sendgridPreviewHtmlContent.value
+  if (sendgridTemplateHtml.length > 0) {
+    return renderHandlebarsLikeTemplate(sendgridTemplateHtml, previewContext.value)
   }
 
-  return renderHandlebarsLikeTemplate(EDITOR_HTML_PREVIEW_TEMPLATE, previewContext.value)
+  if (campaignPreviewShell.value === 'document') {
+    return renderHandlebarsLikeTemplate(String(draft.bodyTemplate ?? ''), previewContext.value)
+  }
+
+  return renderHandlebarsLikeTemplate(SENDGRID_NATIVE_PREVIEW_TEMPLATE, previewContext.value)
 })
 
 const parsedDynamicData = computed<Record<string, unknown> | null>(() => {
@@ -1783,7 +1753,7 @@ watch(() => route.query.campaign, () => {
   }
 })
 
-watch(() => draft.sendgridTemplateId, (value) => {
+watch(draftSendgridTemplateId, (value) => {
   queueSendgridTemplateLookup(value)
 }, { immediate: true })
 
@@ -2384,20 +2354,14 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <p class="text-xs text-dimmed">
-              <template v-if="draft.renderMode === 'sendgrid_native'">
-                Preview is using the fetched SendGrid template HTML for the current template id.
-                <template v-if="sendgridLookup?.selectedVersion">
-                  (version <code>{{ sendgridLookup.selectedVersion.id }}</code>)
-                </template>
-                <template v-else>
-                  (fallback shell from local template draft).
-                </template>
-                Template id: <code>{{ draftSendgridTemplateId || '(not set)' }}</code>.
+              Preview is using the fetched SendGrid template HTML for the current template id.
+              <template v-if="sendgridLookup?.selectedVersion">
+                (version <code>{{ sendgridLookup.selectedVersion.id }}</code>)
               </template>
               <template v-else>
-                Preview is a local renderer that applies campaign variables and simple
-                <code v-pre>{{#if ...}}</code> blocks.
+                (fallback shell from local template draft).
               </template>
+              Template id: <code>{{ draftSendgridTemplateId || '(not set)' }}</code>.
               Final client rendering can vary slightly by inbox provider.
             </p>
           </section>
