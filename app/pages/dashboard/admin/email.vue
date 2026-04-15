@@ -45,6 +45,18 @@ type SendgridTemplateLookupResponse = {
   } | null
 }
 
+type SendgridTemplateCatalogItem = {
+  templateId: string
+  name: string
+  generation: string
+  updatedAt: string | null
+}
+
+type SendgridTemplateSelectItem = {
+  label: string
+  value: string
+}
+
 const BROADCAST_EVENT_TYPE = 'mailing.memberBroadcast'
 const FULL_HTML_DOCUMENT_PATTERN = /<html[\s>]|<body[\s>]|<!doctype/i
 
@@ -87,6 +99,10 @@ const templateDraft = ref<AdminMailTemplate | null>(null)
 const sendgridLookupPending = ref(false)
 const sendgridLookupError = ref<string | null>(null)
 const sendgridLookup = ref<SendgridTemplateLookupResponse | null>(null)
+const { data: sendgridTemplateCatalogData } = await useAsyncData('admin:email:sendgrid-templates', async () => {
+  return await $fetch<{ templates: SendgridTemplateCatalogItem[] }>('/api/admin/email/sendgrid-templates')
+})
+const sendgridTemplateCatalog = computed(() => sendgridTemplateCatalogData.value?.templates ?? [])
 
 const adminCopies = reactive({
   criticalEnabled: true,
@@ -219,24 +235,46 @@ const templateCategoryItems: Array<{ label: string, value: MailTemplateCategory 
 ]
 
 const sendgridTemplateIdItems = computed(() => {
-  const values = new Set<string>()
+  const labelById = new Map<string, string>()
+
+  for (const template of sendgridTemplateCatalog.value) {
+    const templateId = String(template?.templateId ?? '').trim()
+    if (!templateId) continue
+    const name = String(template?.name ?? '').trim()
+    labelById.set(templateId, name)
+  }
 
   for (const template of templates.value) {
     const templateId = String(template.sendgridTemplateId ?? '').trim()
-    if (templateId) values.add(templateId)
+    if (templateId && !labelById.has(templateId)) {
+      labelById.set(templateId, '')
+    }
   }
 
   const draftId = String(templateDraft.value?.sendgridTemplateId ?? '').trim()
-  if (draftId) values.add(draftId)
+  if (draftId && !labelById.has(draftId)) {
+    labelById.set(draftId, '')
+  }
 
-  return [...values].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  const values: SendgridTemplateSelectItem[] = []
+  for (const [templateId, name] of labelById.entries()) {
+    const safeName = name.trim()
+    const label = safeName.length > 0 && safeName !== templateId
+      ? `${safeName} (${templateId})`
+      : templateId
+    values.push({ label, value: templateId })
+  }
+
+  return values.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
 })
 
-function onTemplateDraftCreateTemplateId(value: string) {
+function onTemplateDraftCreateTemplateId(value: string | SendgridTemplateSelectItem) {
   const draft = templateDraft.value
   if (!draft) return
 
-  const normalized = String(value ?? '').trim()
+  const normalized = (typeof value === 'string'
+    ? value
+    : String((value as SendgridTemplateSelectItem | null)?.value ?? '')).trim()
   if (!normalized) return
   draft.sendgridTemplateId = normalized
 }
@@ -1128,7 +1166,7 @@ onBeforeUnmount(() => {
                     create-item="always"
                     search-input
                     placeholder="Search or enter template id"
-                    @create="(item) => { onTemplateDraftCreateTemplateId(String(item ?? '')) }"
+                    @create="(item: string | SendgridTemplateSelectItem) => { onTemplateDraftCreateTemplateId(item) }"
                   />
                 </UFormField>
               </div>
