@@ -97,6 +97,7 @@ type SendgridTemplateCatalogItem = {
 type SendgridTemplateSelectItem = {
   label: string
   value: string
+  description: string
 }
 
 type CampaignDraft = {
@@ -525,10 +526,9 @@ const sendgridTemplateIdSelectItems = computed(() => {
   const values: SendgridTemplateSelectItem[] = []
   for (const [templateId, name] of labelById.entries()) {
     const safeName = name.trim()
-    const label = safeName.length > 0 && safeName !== templateId
-      ? `${safeName} (${templateId})`
-      : templateId
-    values.push({ label, value: templateId })
+    const label = safeName.length > 0 && safeName !== templateId ? safeName : templateId
+    const description = `Template ID: ${templateId}`
+    values.push({ label, value: templateId, description })
   }
 
   return values.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
@@ -1915,9 +1915,22 @@ onBeforeUnmount(() => {
                     :items="sendgridTemplateIdSelectItems"
                     create-item="always"
                     search-input
+                    :ui="{
+                      item: 'items-start',
+                      itemLabel: '!overflow-visible !whitespace-normal !break-words',
+                      itemDescription: '!overflow-visible !whitespace-normal !break-words',
+                      value: '!overflow-visible !whitespace-normal !break-words'
+                    }"
                     placeholder="Search or enter template id"
                     @create="(item: string | SendgridTemplateSelectItem) => { onCampaignTemplateIdCreate(item) }"
-                  />
+                  >
+                    <template #item-label="{ item }">
+                      {{ (item as SendgridTemplateSelectItem).label }}
+                    </template>
+                    <template #item-description="{ item }">
+                      {{ (item as SendgridTemplateSelectItem).description }}
+                    </template>
+                  </USelectMenu>
                 </UFormField>
               </div>
 
