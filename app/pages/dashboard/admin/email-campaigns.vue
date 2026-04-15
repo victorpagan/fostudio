@@ -409,6 +409,30 @@ const selectedTemplate = computed(() => {
   return templates.value.find(template => template.id === draft.templateId) ?? null
 })
 
+function normalizeTemplateId(value: unknown) {
+  if (value == null) return ''
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number') return String(value).trim()
+  if (typeof value === 'object') {
+    if ('value' in value && typeof value.value === 'string') {
+      return value.value.trim()
+    }
+    if ('sendgridTemplateId' in value && typeof value.sendgridTemplateId === 'string') {
+      return value.sendgridTemplateId.trim()
+    }
+  }
+  return String(value).trim()
+}
+
+const draftSendgridTemplateId = computed(() => normalizeTemplateId(draft.sendgridTemplateId))
+
+const draftTemplateIdModel = computed({
+  get: () => draftSendgridTemplateId.value,
+  set: (value: unknown) => {
+    draft.sendgridTemplateId = normalizeTemplateId(value)
+  }
+})
+
 const CUSTOM_TEMPLATE_VALUE = '__custom__'
 const NO_CAMPAIGN_SELECTED_VALUE = '__none__'
 const LEGACY_EVENT_LABEL_PREFIX = 'Legacy (unregistered): '
@@ -458,7 +482,7 @@ const registryTemplateIdForDraftEvent = computed(() => {
   return String(selectedEventTypeRegistryEntry.value?.sendgridTemplateId ?? '').trim()
 })
 const isDraftTemplateIdSyncedWithRegistry = computed(() => {
-  const draftTemplateId = String(draft.sendgridTemplateId ?? '').trim()
+  const draftTemplateId = draftSendgridTemplateId.value
   const registryTemplateId = registryTemplateIdForDraftEvent.value
   if (!draftTemplateId || !registryTemplateId) return false
   return draftTemplateId === registryTemplateId
@@ -518,7 +542,7 @@ const sendgridTemplateIdSelectItems = computed(() => {
     }
   }
 
-  const draftTemplateId = String(draft.sendgridTemplateId ?? '').trim()
+  const draftTemplateId = draftSendgridTemplateId.value
   if (draftTemplateId && !labelById.has(draftTemplateId)) {
     labelById.set(draftTemplateId, '')
   }
@@ -534,10 +558,8 @@ const sendgridTemplateIdSelectItems = computed(() => {
   return values.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
 })
 
-function onCampaignTemplateIdCreate(value: string | SendgridTemplateSelectItem) {
-  const normalized = (typeof value === 'string'
-    ? value
-    : String((value as SendgridTemplateSelectItem | null)?.value ?? '')).trim()
+function onCampaignTemplateIdCreate(value: unknown) {
+  const normalized = normalizeTemplateId(value)
   if (!normalized) return
   draft.sendgridTemplateId = normalized
 }
@@ -704,7 +726,7 @@ function parseDynamicDataJson(text: string) {
 }
 
 const previewViewport = ref<'desktop' | 'mobile'>('desktop')
-const previewFrameSandbox = import.meta.dev ? 'allow-same-origin allow-scripts' : 'allow-same-origin'
+const previewFrameSandbox = 'allow-scripts'
 
 function clearSendgridLookupTimer() {
   if (sendgridLookupTimer) {
@@ -1140,7 +1162,7 @@ function hydrateDraftFromCampaign(campaign: CampaignRecord | null) {
   draft.status = campaign.status
   draft.templateId = campaign.templateId
   draft.eventType = campaign.eventType
-  draft.sendgridTemplateId = campaign.sendgridTemplateId
+  draft.sendgridTemplateId = normalizeTemplateId(campaign.sendgridTemplateId)
   draft.renderMode = campaign.renderMode
   draft.subjectTemplate = campaign.subjectTemplate
   draft.preheaderTemplate = campaign.preheaderTemplate
@@ -1155,7 +1177,7 @@ function applySelectedTemplateRoutingToDraft() {
   if (!template) return
 
   draft.eventType = template.eventType
-  draft.sendgridTemplateId = template.sendgridTemplateId ?? ''
+  draft.sendgridTemplateId = normalizeTemplateId(template.sendgridTemplateId)
   draft.renderMode = template.renderMode ?? 'editor_html'
 }
 
@@ -1276,7 +1298,7 @@ async function saveCampaign(options: { silentSuccess?: boolean } = {}) {
         status: draft.status,
         templateId: draft.templateId,
         eventType: draft.eventType,
-        sendgridTemplateId: draft.sendgridTemplateId,
+        sendgridTemplateId: draftSendgridTemplateId.value,
         renderMode: draft.renderMode,
         subjectTemplate: draft.subjectTemplate,
         preheaderTemplate: draft.preheaderTemplate,
@@ -1307,7 +1329,7 @@ async function saveCampaign(options: { silentSuccess?: boolean } = {}) {
 }
 
 async function sendCampaign() {
-  if (!draft.sendgridTemplateId.trim()) {
+  if (!draftSendgridTemplateId.value) {
     toast.add({
       title: 'Template id required',
       description: 'Set a SendGrid template id before sending.',
@@ -1347,7 +1369,7 @@ async function sendCampaign() {
 }
 
 async function sendCampaignTest() {
-  if (!draft.sendgridTemplateId.trim()) {
+  if (!draftSendgridTemplateId.value) {
     toast.add({
       title: 'Template id required',
       description: 'Set a SendGrid template id before sending a test.',
@@ -1722,8 +1744,8 @@ watch(() => route.query.campaign, () => {
   }
 })
 
-watch(() => draft.sendgridTemplateId, (value) => {
-  queueSendgridTemplateLookup(String(value ?? ''))
+watch(() => draft.sendgridTemplateId, () => {
+  queueSendgridTemplateLookup(draftSendgridTemplateId.value)
 }, { immediate: true })
 
 onBeforeUnmount(() => {
@@ -1910,7 +1932,7 @@ onBeforeUnmount(() => {
 
                 <UFormField label="SendGrid template id">
                   <USelectMenu
-                    v-model="draft.sendgridTemplateId"
+                    v-model="draftTemplateIdModel"
                     class="w-full"
                     :items="sendgridTemplateIdSelectItems"
                     create-item="always"
@@ -1922,7 +1944,7 @@ onBeforeUnmount(() => {
                       value: '!overflow-visible !whitespace-normal !break-words'
                     }"
                     placeholder="Search or enter template id"
-                    @create="(item: string | SendgridTemplateSelectItem) => { onCampaignTemplateIdCreate(item) }"
+                    @create="(item: unknown) => { onCampaignTemplateIdCreate(item) }"
                   >
                     <template #item-label="{ item }">
                       {{ (item as SendgridTemplateSelectItem).label }}
@@ -2002,8 +2024,8 @@ onBeforeUnmount(() => {
                   variant="soft"
                   icon="i-lucide-refresh-cw"
                   :loading="sendgridLookupPending"
-                  :disabled="!draft.sendgridTemplateId.trim()"
-                  @click="() => { void fetchLatestSendgridTemplate(draft.sendgridTemplateId) }"
+                  :disabled="!draftSendgridTemplateId"
+                  @click="() => { void fetchLatestSendgridTemplate(draftSendgridTemplateId) }"
                 >
                   Refresh now
                 </UButton>
@@ -2373,7 +2395,7 @@ onBeforeUnmount(() => {
               variant="soft"
               icon="i-lucide-flask-conical"
               :loading="sendingTest"
-              :disabled="isArchivedDraft || !isDraftEventTypeRegistered || !draft.sendgridTemplateId.trim()"
+              :disabled="isArchivedDraft || !isDraftEventTypeRegistered || !draftSendgridTemplateId"
               @click="sendCampaignTest"
             >
               Send test
@@ -2381,7 +2403,7 @@ onBeforeUnmount(() => {
             <UButton
               icon="i-lucide-send"
               :loading="sending"
-              :disabled="isArchivedDraft || !isDraftEventTypeRegistered || !draft.sendgridTemplateId.trim() || (!draft.includeMembershipRecipients && parseRecipientsInput(draft.additionalRecipientsText).length === 0)"
+              :disabled="isArchivedDraft || !isDraftEventTypeRegistered || !draftSendgridTemplateId || (!draft.includeMembershipRecipients && parseRecipientsInput(draft.additionalRecipientsText).length === 0)"
               @click="sendCampaign"
             >
               Send campaign
