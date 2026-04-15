@@ -167,10 +167,14 @@ export default defineEventHandler(async (event) => {
       id: `x_${block.id}`,
       start: normalizeIso(block.start_time),
       end: normalizeIso(block.end_time),
-      title: block.reason || 'Studio block',
-      display: 'background',
-      color: '#dc2626',
-      extendedProps: { type: 'hold' }
+      title: block.reason || 'Studio blocked off',
+      display: 'auto',
+      color: '#111111',
+      extendedProps: {
+        type: 'block',
+        blockId: block.id,
+        notes: block.reason ?? null
+      }
     })),
     ...externalEvents.map(ext => ({
       id: `g_${ext.id}`,

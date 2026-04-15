@@ -100,7 +100,7 @@ const templateDraft = ref<AdminMailTemplate | null>(null)
 const sendgridLookupPending = ref(false)
 const sendgridLookupError = ref<string | null>(null)
 const sendgridLookup = ref<SendgridTemplateLookupResponse | null>(null)
-const { data: sendgridTemplateCatalogData } = await useAsyncData('admin:email:sendgrid-templates', async () => {
+const { data: sendgridTemplateCatalogData, refresh: refreshSendgridTemplateCatalog } = await useAsyncData('admin:email:sendgrid-templates', async () => {
   return await $fetch<{ templates: SendgridTemplateCatalogItem[] }>('/api/admin/email/sendgrid-templates')
 })
 const sendgridTemplateCatalog = computed(() => sendgridTemplateCatalogData.value?.templates ?? [])
@@ -113,6 +113,40 @@ const SENDGRID_LOOKUP_DEBOUNCE_MS = 450
 let sendgridLookupTimer: ReturnType<typeof setTimeout> | null = null
 let sendgridLookupSequence = 0
 
+function normalizeTemplateId(value: unknown): string {
+  if (value == null) return ''
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number') return String(value).trim()
+  if (typeof value === 'boolean') return ''
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const normalized = normalizeTemplateId(entry)
+      if (normalized) return normalized
+    }
+    return ''
+  }
+
+  if (typeof value === 'object') {
+    const candidate = value as Record<string, unknown>
+    const directCandidates: Array<unknown> = [
+      candidate.value,
+      candidate.templateId,
+      candidate.sendgridTemplateId,
+      candidate.sendgrid_template_id,
+      candidate.template_id,
+      candidate.id
+    ]
+
+    for (const directCandidate of directCandidates) {
+      const normalized = normalizeTemplateId(directCandidate)
+      if (normalized) return normalized
+    }
+    return ''
+  }
+
+  return ''
+}
+
 function clearSendgridLookupTimer() {
   if (sendgridLookupTimer) {
     clearTimeout(sendgridLookupTimer)
@@ -120,8 +154,8 @@ function clearSendgridLookupTimer() {
   }
 }
 
-async function fetchLatestSendgridTemplate(templateId: string) {
-  const normalizedTemplateId = String(templateId ?? '').trim()
+async function fetchLatestSendgridTemplate(templateId: unknown) {
+  const normalizedTemplateId = normalizeTemplateId(templateId)
   if (!normalizedTemplateId) {
     sendgridLookup.value = null
     sendgridLookupError.value = null
@@ -154,8 +188,8 @@ async function fetchLatestSendgridTemplate(templateId: string) {
   }
 }
 
-function queueSendgridTemplateLookup(templateId: string) {
-  const normalizedTemplateId = String(templateId ?? '').trim()
+function queueSendgridTemplateLookup(templateId: unknown) {
+  const normalizedTemplateId = normalizeTemplateId(templateId)
   clearSendgridLookupTimer()
   if (!normalizedTemplateId) {
     sendgridLookup.value = null
@@ -176,7 +210,7 @@ function applySettings(res: AdminEmailSettingsResponse) {
   recipientsInput.value = (res.adminCopies.recipients ?? []).join('\n')
   templates.value = (res.templates ?? []).map(template => ({
     eventType: template.eventType,
-    sendgridTemplateId: template.sendgridTemplateId,
+    sendgridTemplateId: normalizeTemplateId(template.sendgridTemplateId),
     category: template.category,
     active: Boolean(template.active),
     description: template.description ?? '',
@@ -218,7 +252,10 @@ async function loadSettings(options: { silent?: boolean } = {}) {
 }
 
 onMounted(() => {
-  void loadSettings({ silent: true })
+  void Promise.all([
+    loadSettings({ silent: true }),
+    refreshSendgridTemplateCatalog()
+  ])
 })
 
 const selectedTemplateVariables = computed(() => {
@@ -252,7 +289,7 @@ const sendgridTemplateIdItems = computed(() => {
     }
   }
 
-  const draftId = String(templateDraft.value?.sendgridTemplateId ?? '').trim()
+  const draftId = normalizeTemplateId(templateDraft.value?.sendgridTemplateId)
   if (draftId && !labelById.has(draftId)) {
     labelById.set(draftId, '')
   }
@@ -272,12 +309,18 @@ function onTemplateDraftCreateTemplateId(value: string | SendgridTemplateSelectI
   const draft = templateDraft.value
   if (!draft) return
 
-  const normalized = (typeof value === 'string'
-    ? value
-    : String((value as SendgridTemplateSelectItem | null)?.value ?? '')).trim()
+  const normalized = normalizeTemplateId(value)
   if (!normalized) return
   draft.sendgridTemplateId = normalized
 }
+
+function onTemplateDraftSelectTemplateId(value: unknown) {
+  const draft = templateDraft.value
+  if (!draft) return
+  draft.sendgridTemplateId = normalizeTemplateId(value)
+}
+
+const templateDraftSendgridTemplateId = computed(() => normalizeTemplateId(templateDraft.value?.sendgridTemplateId))
 
 const broadcastTemplateIndex = computed(() => {
   return templates.value.findIndex(template => template.eventType === BROADCAST_EVENT_TYPE)
@@ -879,11 +922,11 @@ function editorPlaceholder(value: string | null | undefined, fallback: string) {
 }
 
 function hasTemplateId(template: AdminMailTemplate) {
-  return template.sendgridTemplateId.trim().length > 0
+  return normalizeTemplateId(template.sendgridTemplateId).length > 0
 }
 
 const previewViewport = ref<'desktop' | 'mobile'>('desktop')
-const registryPreviewFrameSandbox = import.meta.dev ? 'allow-same-origin allow-scripts' : 'allow-same-origin'
+const registryPreviewFrameSandbox = 'allow-scripts'
 
 const registryPreviewContext = computed(() => {
   const draft = templateDraft.value
@@ -927,7 +970,7 @@ const registryPreviewShell = computed<'base' | 'document'>(() => {
 
   // Registry rows map to specific SendGrid template IDs. For standard base templates,
   // we wrap bodyHTML into the expected subject/preheader/body shell.
-  if (draft?.sendgridTemplateId?.trim()) return 'base'
+  if (templateDraftSendgridTemplateId.value) return 'base'
   return 'base'
 })
 
@@ -965,7 +1008,7 @@ async function saveSettings(options: { silentSuccessToast?: boolean } = {}): Pro
       templates: templates.value
         .map(template => ({
           eventType: template.eventType.trim(),
-          sendgridTemplateId: template.sendgridTemplateId.trim(),
+          sendgridTemplateId: normalizeTemplateId(template.sendgridTemplateId),
           category: template.category,
           active: Boolean(template.active),
           description: template.description.trim(),
@@ -1067,7 +1110,7 @@ watch(templates, (nextTemplates) => {
 }, { immediate: true })
 
 watch(() => templateDraft.value?.sendgridTemplateId, (value) => {
-  queueSendgridTemplateLookup(String(value ?? ''))
+  queueSendgridTemplateLookup(value)
 }, { immediate: true })
 
 onBeforeUnmount(() => {
@@ -1160,7 +1203,7 @@ onBeforeUnmount(() => {
                 </UFormField>
                 <UFormField label="SendGrid template id">
                   <USelectMenu
-                    v-model="templateDraft.sendgridTemplateId"
+                    :model-value="templateDraftSendgridTemplateId as any"
                     class="w-full"
                     :items="sendgridTemplateIdItems"
                     create-item="always"
@@ -1172,6 +1215,7 @@ onBeforeUnmount(() => {
                       value: '!overflow-visible !whitespace-normal !break-words'
                     }"
                     placeholder="Search or enter template id"
+                    @update:model-value="onTemplateDraftSelectTemplateId"
                     @create="(item: string | SendgridTemplateSelectItem) => { onTemplateDraftCreateTemplateId(item) }"
                   >
                     <template #item-label="{ item }">
@@ -1297,8 +1341,8 @@ onBeforeUnmount(() => {
                       variant="soft"
                       icon="i-lucide-refresh-cw"
                       :loading="sendgridLookupPending"
-                      :disabled="!templateDraft?.sendgridTemplateId?.trim()"
-                      @click="() => { void fetchLatestSendgridTemplate(templateDraft?.sendgridTemplateId ?? '') }"
+                      :disabled="!templateDraftSendgridTemplateId"
+                      @click="() => { void fetchLatestSendgridTemplate(templateDraftSendgridTemplateId) }"
                     >
                       Refresh now
                     </UButton>
@@ -1395,7 +1439,7 @@ onBeforeUnmount(() => {
                   <template v-else>
                     (fallback shell from local template draft).
                   </template>
-                  Template id: <code>{{ templateDraft?.sendgridTemplateId || '(not set)' }}</code>.
+                  Template id: <code>{{ templateDraftSendgridTemplateId || '(not set)' }}</code>.
                 </p>
               </section>
 

@@ -591,6 +591,36 @@ function loadBlockForm(block: CalendarBlock) {
   blockForm.notes = block.reason ?? ''
 }
 
+async function openBlockWindowFromCalendar(payload: {
+  blockId: string
+  start: string
+  end: string
+  notes?: string
+}) {
+  await refreshBlocks()
+
+  const existingBlock = blocks.value.find(block => block.id === payload.blockId) ?? null
+  if (existingBlock) {
+    loadBlockForm(existingBlock)
+    blockOffOpen.value = true
+    return
+  }
+
+  const start = parseBookingTime(payload.start)?.setZone('America/Los_Angeles')
+  const end = parseBookingTime(payload.end)?.setZone('America/Los_Angeles')
+  const startSlot = start?.isValid ? start.toFormat('HH:mm') : ''
+  const endSlot = end?.isValid ? end.toFormat('HH:mm') : ''
+  const hasStartSlot = halfHourSlotItems.some(item => item.value === startSlot)
+  const hasEndSlot = halfHourSlotItems.some(item => item.value === endSlot)
+
+  blockForm.id = payload.blockId
+  blockForm.date = start?.isValid ? (start.toISODate() ?? defaultCreateDate) : defaultCreateDate
+  blockForm.startSlot = hasStartSlot ? startSlot : ''
+  blockForm.endSlot = hasEndSlot ? endSlot : ''
+  blockForm.notes = String(payload.notes ?? '').trim()
+  blockOffOpen.value = true
+}
+
 async function saveBlockWindow() {
   const startIso = toIsoFromDateAndSlot(blockForm.date, blockForm.startSlot)
   const endIso = toIsoFromDateAndSlot(blockForm.date, blockForm.endSlot)
@@ -1014,6 +1044,7 @@ async function createBookingOnBehalf() {
                   endpoint="/api/admin/calendar/bookings"
                   :full-day="true"
                   :admin-view="true"
+                  @block-click="(payload) => { void openBlockWindowFromCalendar(payload) }"
                 />
                 <DashboardSectionState
                   v-else

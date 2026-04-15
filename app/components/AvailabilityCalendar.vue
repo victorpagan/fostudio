@@ -16,10 +16,11 @@ type CalendarEvent = EventInput & {
   end?: string
   title?: string
   extendedProps?: {
-    type?: 'booking' | 'hold' | 'external'
+    type?: 'booking' | 'hold' | 'external' | 'block'
     isOwn?: boolean
     status?: string
     bookingId?: string
+    blockId?: string
     notes?: string
     provider?: string
     location?: string
@@ -54,6 +55,12 @@ const emit = defineEmits<{
     start: string
     end: string
     status?: string
+    notes?: string
+  }): void
+  (e: 'block-click', payload: {
+    blockId: string
+    start: string
+    end: string
     notes?: string
   }): void
 }>()
@@ -222,6 +229,9 @@ function eventClassNames(arg: { event: { display: string, end?: Date | null, ext
   if (type === 'external') {
     classes.push('fc-event-external')
   }
+  if (type === 'block') {
+    classes.push('fc-event-blockoff')
+  }
   if (type === 'booking') {
     classes.push('fc-event-booked')
     if (props.adminView) classes.push('fc-event-admin-booking')
@@ -238,6 +248,7 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
   const ext = arg.event.extendedProps ?? {}
   const isHold = ext.type === 'hold'
   const isExternal = ext.type === 'external'
+  const isBlock = ext.type === 'block'
   const isOwnBooking = ext.type === 'booking' && ext.isOwn
   const isUnownedBooking = ext.type === 'booking' && !ext.isOwn
   const showAdminDetail = props.adminView
@@ -256,6 +267,8 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
   let label = ''
   if (isHold) {
     label = '<div class="fc-event-label">Equipement Hold</div>'
+  } else if (isBlock) {
+    label = '<div class="fc-event-label">Studio blocked off</div>'
   } else if (isExternal) {
     label = showAdminDetail
       ? '<div class="fc-event-label">External booking</div>'
@@ -285,6 +298,8 @@ function eventDidMount(arg: { el: HTMLElement, event: { end?: Date | null, exten
   } else if (type === 'external') {
     harness.classList.add('fc-booking-harness')
     harness.classList.add('fc-external-harness')
+  } else if (type === 'block') {
+    harness.classList.add('fc-booking-harness')
   } else if (type === 'booking') {
     harness.classList.add('fc-booking-harness')
   }
@@ -476,9 +491,19 @@ const calendarOptions = computed(() => ({
   },
   eventClick: (info: { event: { extendedProps?: CalendarEvent['extendedProps'], start: Date | null, end: Date | null } }) => {
     const ext = info.event.extendedProps
-    if (ext?.type !== 'booking' || !ext.isOwn || !ext.bookingId) return
     const start = info.event.start ? calendarDateToStudioDate(info.event.start).toISOString() : null
     const end = info.event.end ? calendarDateToStudioDate(info.event.end).toISOString() : null
+    if (props.adminView && ext?.type === 'block' && ext.blockId && start) {
+      emit('block-click', {
+        blockId: ext.blockId,
+        start,
+        end: end ?? start,
+        notes: ext.notes
+      })
+      return
+    }
+
+    if (ext?.type !== 'booking' || !ext.isOwn || !ext.bookingId) return
     if (!start) return
     emit('booking-click', {
       bookingId: ext.bookingId,

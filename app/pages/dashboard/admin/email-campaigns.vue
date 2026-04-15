@@ -931,7 +931,7 @@ const previewHtml = computed(() => {
   if (draft.renderMode === 'sendgrid_native') {
     const sendgridTemplateHtml = sendgridPreviewHtmlContent.value
     if (sendgridTemplateHtml.length > 0) {
-      return sendgridTemplateHtml
+      return renderHandlebarsLikeTemplate(sendgridTemplateHtml, previewContext.value)
     }
 
     return renderHandlebarsLikeTemplate(SENDGRID_NATIVE_PREVIEW_TEMPLATE, previewContext.value)
@@ -1957,7 +1957,7 @@ onBeforeUnmount(() => {
 
                 <UFormField label="SendGrid template id">
                   <USelectMenu
-                    :model-value="draft.sendgridTemplateId"
+                    :model-value="draftSendgridTemplateId as any"
                     class="w-full"
                     :items="sendgridTemplateIdSelectItems"
                     create-item="always"
