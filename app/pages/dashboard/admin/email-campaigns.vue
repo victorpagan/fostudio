@@ -409,29 +409,43 @@ const selectedTemplate = computed(() => {
   return templates.value.find(template => template.id === draft.templateId) ?? null
 })
 
-function normalizeTemplateId(value: unknown) {
+function normalizeTemplateId(value: unknown): string {
   if (value == null) return ''
   if (typeof value === 'string') return value.trim()
   if (typeof value === 'number') return String(value).trim()
-  if (typeof value === 'object') {
-    if ('value' in value && typeof value.value === 'string') {
-      return value.value.trim()
+  if (typeof value === 'boolean') return ''
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const normalized: string = normalizeTemplateId(entry)
+      if (normalized) return normalized
     }
-    if ('sendgridTemplateId' in value && typeof value.sendgridTemplateId === 'string') {
-      return value.sendgridTemplateId.trim()
-    }
+    return ''
   }
-  return String(value).trim()
+
+  if (typeof value === 'object') {
+    const candidate = value as Record<string, unknown>
+
+    const directCandidates: Array<unknown> = [
+      candidate.value,
+      candidate.templateId,
+      candidate.sendgridTemplateId,
+      candidate.sendgrid_template_id,
+      candidate.template_id,
+      candidate.id
+    ]
+
+    for (const directCandidate of directCandidates) {
+      const normalized: string = normalizeTemplateId(directCandidate)
+      if (normalized) return normalized
+    }
+
+    return ''
+  }
+
+  return ''
 }
 
 const draftSendgridTemplateId = computed(() => normalizeTemplateId(draft.sendgridTemplateId))
-
-const draftTemplateIdModel = computed({
-  get: () => draftSendgridTemplateId.value,
-  set: (value: unknown) => {
-    draft.sendgridTemplateId = normalizeTemplateId(value)
-  }
-})
 
 const CUSTOM_TEMPLATE_VALUE = '__custom__'
 const NO_CAMPAIGN_SELECTED_VALUE = '__none__'
@@ -558,9 +572,14 @@ const sendgridTemplateIdSelectItems = computed(() => {
   return values.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
 })
 
-function onCampaignTemplateIdCreate(value: unknown) {
+function onCampaignTemplateIdCreate(value: string | SendgridTemplateSelectItem) {
   const normalized = normalizeTemplateId(value)
   if (!normalized) return
+  draft.sendgridTemplateId = normalized
+}
+
+function onCampaignTemplateIdSelect(value: unknown) {
+  const normalized = normalizeTemplateId(value)
   draft.sendgridTemplateId = normalized
 }
 
@@ -735,8 +754,8 @@ function clearSendgridLookupTimer() {
   }
 }
 
-async function fetchLatestSendgridTemplate(templateId: string) {
-  const normalizedTemplateId = String(templateId ?? '').trim()
+async function fetchLatestSendgridTemplate(templateId: unknown) {
+  const normalizedTemplateId = normalizeTemplateId(templateId)
   if (!normalizedTemplateId) {
     sendgridLookup.value = null
     sendgridLookupError.value = null
@@ -769,8 +788,8 @@ async function fetchLatestSendgridTemplate(templateId: string) {
   }
 }
 
-function queueSendgridTemplateLookup(templateId: string) {
-  const normalizedTemplateId = String(templateId ?? '').trim()
+function queueSendgridTemplateLookup(templateId: unknown) {
+  const normalizedTemplateId = normalizeTemplateId(templateId)
   clearSendgridLookupTimer()
   if (!normalizedTemplateId) {
     sendgridLookup.value = null
@@ -909,10 +928,16 @@ const isUsingFetchedSendgridPreview = computed(() => {
   return draft.renderMode === 'sendgrid_native' && sendgridPreviewHtmlContent.value.length > 0
 })
 const previewHtml = computed(() => {
-  const template = draft.renderMode === 'sendgrid_native'
-    ? (sendgridPreviewHtmlContent.value || SENDGRID_NATIVE_PREVIEW_TEMPLATE)
-    : EDITOR_HTML_PREVIEW_TEMPLATE
-  return renderHandlebarsLikeTemplate(template, previewContext.value)
+  if (draft.renderMode === 'sendgrid_native') {
+    const sendgridTemplateHtml = sendgridPreviewHtmlContent.value
+    if (sendgridTemplateHtml.length > 0) {
+      return sendgridTemplateHtml
+    }
+
+    return renderHandlebarsLikeTemplate(SENDGRID_NATIVE_PREVIEW_TEMPLATE, previewContext.value)
+  }
+
+  return renderHandlebarsLikeTemplate(EDITOR_HTML_PREVIEW_TEMPLATE, previewContext.value)
 })
 
 const parsedDynamicData = computed<Record<string, unknown> | null>(() => {
@@ -1744,8 +1769,8 @@ watch(() => route.query.campaign, () => {
   }
 })
 
-watch(() => draft.sendgridTemplateId, () => {
-  queueSendgridTemplateLookup(draftSendgridTemplateId.value)
+watch(() => draft.sendgridTemplateId, (value) => {
+  queueSendgridTemplateLookup(value)
 }, { immediate: true })
 
 onBeforeUnmount(() => {
@@ -1932,7 +1957,7 @@ onBeforeUnmount(() => {
 
                 <UFormField label="SendGrid template id">
                   <USelectMenu
-                    v-model="draftTemplateIdModel"
+                    :model-value="draft.sendgridTemplateId"
                     class="w-full"
                     :items="sendgridTemplateIdSelectItems"
                     create-item="always"
@@ -1944,7 +1969,8 @@ onBeforeUnmount(() => {
                       value: '!overflow-visible !whitespace-normal !break-words'
                     }"
                     placeholder="Search or enter template id"
-                    @create="(item: unknown) => { onCampaignTemplateIdCreate(item) }"
+                    @update:model-value="onCampaignTemplateIdSelect"
+                    @create="(item: string | SendgridTemplateSelectItem) => { onCampaignTemplateIdCreate(item) }"
                   >
                     <template #item-label="{ item }">
                       {{ (item as SendgridTemplateSelectItem).label }}
@@ -2025,7 +2051,7 @@ onBeforeUnmount(() => {
                   icon="i-lucide-refresh-cw"
                   :loading="sendgridLookupPending"
                   :disabled="!draftSendgridTemplateId"
-                  @click="() => { void fetchLatestSendgridTemplate(draftSendgridTemplateId) }"
+                  @click="() => { void fetchLatestSendgridTemplate(draft.sendgridTemplateId) }"
                 >
                   Refresh now
                 </UButton>
@@ -2344,12 +2370,17 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <p class="text-xs text-dimmed">
-              Preview is a local renderer for template variables and <code v-pre>{{#if ...}}</code> blocks.
-              <template v-if="isUsingFetchedSendgridPreview">
-                Using fetched SendGrid version HTML for the current template id.
+              <template v-if="draft.renderMode === 'sendgrid_native'">
+                <span v-if="isUsingFetchedSendgridPreview">
+                  Rendering fetched SendGrid HTML for the selected template id.
+                </span>
+                <span v-else>
+                  Rendering local fallback shell because a SendGrid version HTML payload is not available.
+                </span>
               </template>
-              <template v-else-if="draft.renderMode === 'sendgrid_native'">
-                Using local fallback shell because a fetched SendGrid version HTML payload is not available.
+              <template v-else>
+                Preview is a local renderer that applies campaign variables and simple
+                <code v-pre>{{#if ...}}</code> blocks.
               </template>
               Final client rendering can vary slightly by inbox provider.
             </p>
