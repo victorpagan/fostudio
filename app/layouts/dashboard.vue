@@ -32,6 +32,12 @@ type SidebarMembershipRow = {
   canceled_at: string | null
 }
 
+type SidebarLinkGroup = {
+  id: string
+  label: string
+  items: NavigationMenuItem[]
+}
+
 const { data: sidebarMembership } = await useAsyncData('dash:sidebar:membership', async () => {
   if (!user.value?.sub) return null
   const { data, error } = await supabase
@@ -117,174 +123,229 @@ const isAdminSidebarMode = computed(() =>
   isAdmin.value && route.path.startsWith('/dashboard/admin')
 )
 
-const adminLinks = computed<NavigationMenuItem[]>(() => (isAdmin.value
-  ? [
-      {
-        label: 'Back to Dashboard',
-        icon: 'i-lucide-arrow-left',
-        to: '/dashboard',
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Ops Overview',
-        icon: 'i-lucide-layout-dashboard',
-        to: '/dashboard/admin',
-        exact: true,
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Analytics',
-        icon: 'i-lucide-chart-column',
-        to: '/dashboard/admin/analytics',
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Subscriptions',
-        icon: 'i-lucide-badge-check',
-        to: '/dashboard/admin/subscriptions',
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Credits',
-        icon: 'i-lucide-wallet-cards',
-        to: '/dashboard/admin/credits',
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Promo Codes',
-        icon: 'i-lucide-ticket-percent',
-        to: '/dashboard/admin/promos',
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Members',
-        icon: 'i-lucide-users',
-        to: '/dashboard/admin/members',
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Door Codes',
-        icon: 'i-lucide-key-round',
-        to: '/dashboard/admin/door-codes',
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Waiver Templates',
-        icon: 'i-lucide-file-signature',
-        to: '/dashboard/admin/waiver',
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Bookings',
-        icon: 'i-lucide-calendar-range',
-        to: '/dashboard/admin/bookings',
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Calendar Settings',
-        icon: 'i-lucide-calendar-clock',
-        to: '/dashboard/admin/calendar',
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Google Calendar',
-        icon: 'i-lucide-calendar-sync',
-        to: '/dashboard/admin/google-calendar',
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Email',
-        icon: 'i-lucide-mail',
-        to: '/dashboard/admin/email',
-        exact: true,
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Email Campaigns',
-        icon: 'i-lucide-megaphone',
-        to: '/dashboard/admin/email-campaigns',
-        exact: true,
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Incidents',
-        icon: 'i-lucide-triangle-alert',
-        to: '/dashboard/admin/incidents',
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Expenses',
-        icon: 'i-lucide-receipt',
-        to: '/dashboard/admin/expenses',
-        onSelect: () => { open.value = false }
-      },
-      {
-        label: 'Holds',
-        icon: 'i-lucide-package-plus',
-        to: '/dashboard/admin/holds',
-        onSelect: () => { open.value = false }
-      }
-    ]
-  : []))
+const memberLinkGroups = computed<SidebarLinkGroup[]>(() => {
+  const groups: SidebarLinkGroup[] = [
+    {
+      id: 'member-workspace',
+      label: 'Workspace',
+      items: [
+        {
+          label: 'Dashboard',
+          icon: 'i-lucide-house',
+          to: '/dashboard',
+          exact: true,
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Book Studio',
+          icon: 'i-lucide-calendar-plus',
+          to: '/dashboard/book',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Bookings',
+          icon: 'i-lucide-list-checks',
+          to: '/dashboard/bookings',
+          onSelect: () => { open.value = false }
+        }
+      ]
+    },
+    {
+      id: 'member-account',
+      label: 'Account',
+      items: [
+        {
+          label: 'Membership',
+          icon: 'i-lucide-badge-check',
+          to: '/dashboard/membership',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Credits',
+          icon: 'i-lucide-wallet-cards',
+          to: '/dashboard/credits',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Waiver',
+          icon: 'i-lucide-file-signature',
+          to: '/dashboard/waiver',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Profile',
+          icon: 'i-lucide-user',
+          to: '/dashboard/profile',
+          onSelect: () => { open.value = false }
+        }
+      ]
+    }
+  ]
 
-const primaryLinks = computed<NavigationMenuItem[]>(() => [
-  {
-    label: 'Dashboard',
-    icon: 'i-lucide-house',
-    to: '/dashboard',
-    exact: true,
-    onSelect: () => { open.value = false }
-  },
-  {
-    label: 'Book Studio',
-    icon: 'i-lucide-calendar-plus',
-    to: '/dashboard/book',
-    onSelect: () => { open.value = false }
-  },
-  {
-    label: 'Bookings',
-    icon: 'i-lucide-list-checks',
-    to: '/dashboard/bookings',
-    onSelect: () => { open.value = false }
-  },
-  {
-    label: 'Membership',
-    icon: 'i-lucide-badge-check',
-    to: '/dashboard/membership',
-    onSelect: () => { open.value = false }
-  },
-  {
-    label: 'Credits',
-    icon: 'i-lucide-wallet-cards',
-    to: '/dashboard/credits',
-    onSelect: () => { open.value = false }
-  },
-  {
-    label: 'Waiver',
-    icon: 'i-lucide-file-signature',
-    to: '/dashboard/waiver',
-    onSelect: () => { open.value = false }
-  },
-  {
-    label: 'Profile',
-    icon: 'i-lucide-user',
-    to: '/dashboard/profile',
-    onSelect: () => { open.value = false }
-  },
-  ...(isAdmin.value
-    ? [{
-        label: 'Admin',
-        icon: 'i-lucide-shield',
-        to: '/dashboard/admin',
-        onSelect: () => { open.value = false }
-      }]
-    : [])
-])
+  if (isAdmin.value) {
+    groups.push({
+      id: 'member-admin',
+      label: 'Admin',
+      items: [
+        {
+          label: 'Admin',
+          icon: 'i-lucide-shield',
+          to: '/dashboard/admin',
+          onSelect: () => { open.value = false }
+        }
+      ]
+    })
+  }
 
-const sidebarLinks = computed<NavigationMenuItem[]>(() =>
+  return groups
+})
+
+const adminLinkGroups = computed<SidebarLinkGroup[]>(() => {
+  if (!isAdmin.value) return []
+
+  return [
+    {
+      id: 'admin-home',
+      label: 'Overview',
+      items: [
+        {
+          label: 'Back to Dashboard',
+          icon: 'i-lucide-arrow-left',
+          to: '/dashboard',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Ops Overview',
+          icon: 'i-lucide-layout-dashboard',
+          to: '/dashboard/admin',
+          exact: true,
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Analytics',
+          icon: 'i-lucide-chart-column',
+          to: '/dashboard/admin/analytics',
+          onSelect: () => { open.value = false }
+        }
+      ]
+    },
+    {
+      id: 'admin-operations',
+      label: 'Operations',
+      items: [
+        {
+          label: 'Members',
+          icon: 'i-lucide-users',
+          to: '/dashboard/admin/members',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Bookings',
+          icon: 'i-lucide-calendar-range',
+          to: '/dashboard/admin/bookings',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Incidents',
+          icon: 'i-lucide-triangle-alert',
+          to: '/dashboard/admin/incidents',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Expenses',
+          icon: 'i-lucide-receipt',
+          to: '/dashboard/admin/expenses',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Holds',
+          icon: 'i-lucide-package-plus',
+          to: '/dashboard/admin/holds',
+          onSelect: () => { open.value = false }
+        }
+      ]
+    },
+    {
+      id: 'admin-commerce',
+      label: 'Commerce',
+      items: [
+        {
+          label: 'Subscriptions',
+          icon: 'i-lucide-badge-check',
+          to: '/dashboard/admin/subscriptions',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Credits',
+          icon: 'i-lucide-wallet-cards',
+          to: '/dashboard/admin/credits',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Promo Codes',
+          icon: 'i-lucide-ticket-percent',
+          to: '/dashboard/admin/promos',
+          onSelect: () => { open.value = false }
+        }
+      ]
+    },
+    {
+      id: 'admin-comms',
+      label: 'Communications',
+      items: [
+        {
+          label: 'Email',
+          icon: 'i-lucide-mail',
+          to: '/dashboard/admin/email',
+          exact: true,
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Email Campaigns',
+          icon: 'i-lucide-megaphone',
+          to: '/dashboard/admin/email-campaigns',
+          exact: true,
+          onSelect: () => { open.value = false }
+        }
+      ]
+    },
+    {
+      id: 'admin-platform',
+      label: 'Platform',
+      items: [
+        {
+          label: 'Door Codes',
+          icon: 'i-lucide-key-round',
+          to: '/dashboard/admin/door-codes',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Waiver Templates',
+          icon: 'i-lucide-file-signature',
+          to: '/dashboard/admin/waiver',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Calendar Settings',
+          icon: 'i-lucide-calendar-clock',
+          to: '/dashboard/admin/calendar',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Google Calendar',
+          icon: 'i-lucide-calendar-sync',
+          to: '/dashboard/admin/google-calendar',
+          onSelect: () => { open.value = false }
+        }
+      ]
+    }
+  ]
+})
+
+const sidebarLinkGroups = computed<SidebarLinkGroup[]>(() =>
   isAdminSidebarMode.value
-    ? adminLinks.value
-    : primaryLinks.value
+    ? adminLinkGroups.value
+    : memberLinkGroups.value
 )
 
 const sidebarClass = computed(() => 'dashboard-sidebar-admin !border-0 shadow-none')
@@ -302,14 +363,26 @@ const supportLinks = [{
 }] satisfies NavigationMenuItem[]
 
 const searchItems = computed<CommandPaletteItem[]>(() => {
-  const all = [...primaryLinks.value, ...adminLinks.value, ...supportLinks]
-    .filter(item => typeof item.to === 'string')
-  return all.map(item => ({
-    label: item.label,
-    icon: item.icon,
-    to: item.to,
-    onSelect: item.onSelect
-  }))
+  const seen = new Set<string>()
+  const all = [
+    ...memberLinkGroups.value.flatMap(group => group.items),
+    ...adminLinkGroups.value.flatMap(group => group.items),
+    ...supportLinks
+  ]
+
+  return all
+    .filter((item) => {
+      if (typeof item.to !== 'string') return false
+      if (seen.has(item.to)) return false
+      seen.add(item.to)
+      return true
+    })
+    .map(item => ({
+      label: item.label,
+      icon: item.icon,
+      to: item.to,
+      onSelect: item.onSelect
+    }))
 })
 
 const groups = computed<CommandPaletteGroup[]>(() => [{
@@ -561,13 +634,28 @@ onBeforeUnmount(() => {
           class="bg-transparent ring-default"
         />
 
-        <UNavigationMenu
-          :collapsed="collapsed"
-          :items="sidebarLinks"
-          orientation="vertical"
-          tooltip
-          popover
-        />
+        <div class="mt-1 space-y-1">
+          <section
+            v-for="(group, index) in sidebarLinkGroups"
+            :key="group.id"
+            :class="index > 0 ? 'border-t border-default/70 pt-2' : ''"
+          >
+            <div
+              v-if="!collapsed"
+              class="px-2 pb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-dimmed"
+            >
+              {{ group.label }}
+            </div>
+
+            <UNavigationMenu
+              :collapsed="collapsed"
+              :items="group.items"
+              orientation="vertical"
+              tooltip
+              popover
+            />
+          </section>
+        </div>
 
         <UCard
           v-if="!collapsed && !isAdminSidebarMode"

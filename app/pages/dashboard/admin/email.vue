@@ -27,6 +27,24 @@ type AdminEmailSettingsResponse = {
   availableVariablesByEvent: Record<string, string[]>
 }
 
+type SendgridTemplateLookupResponse = {
+  templateId: string
+  name: string
+  generation: string
+  updatedAt: string | null
+  resolvedFrom: 'active' | 'latest' | 'none'
+  selectedVersion: {
+    id: string
+    name: string
+    active: boolean
+    subject: string
+    htmlContent: string
+    plainContent: string
+    updatedAt: string | null
+    createdAt: string | null
+  } | null
+}
+
 const BROADCAST_EVENT_TYPE = 'mailing.memberBroadcast'
 const FULL_HTML_DOCUMENT_PATTERN = /<html[\s>]|<body[\s>]|<!doctype/i
 
@@ -66,11 +84,74 @@ const templates = ref<AdminMailTemplate[]>([])
 const availableVariablesByEvent = ref<Record<string, string[]>>({ '*': [] })
 const selectedTemplateIndex = ref(0)
 const templateDraft = ref<AdminMailTemplate | null>(null)
+const sendgridLookupPending = ref(false)
+const sendgridLookupError = ref<string | null>(null)
+const sendgridLookup = ref<SendgridTemplateLookupResponse | null>(null)
 
 const adminCopies = reactive({
   criticalEnabled: true,
   nonCriticalEnabled: false
 })
+const SENDGRID_LOOKUP_DEBOUNCE_MS = 450
+let sendgridLookupTimer: ReturnType<typeof setTimeout> | null = null
+let sendgridLookupSequence = 0
+
+function clearSendgridLookupTimer() {
+  if (sendgridLookupTimer) {
+    clearTimeout(sendgridLookupTimer)
+    sendgridLookupTimer = null
+  }
+}
+
+async function fetchLatestSendgridTemplate(templateId: string) {
+  const normalizedTemplateId = String(templateId ?? '').trim()
+  if (!normalizedTemplateId) {
+    sendgridLookup.value = null
+    sendgridLookupError.value = null
+    sendgridLookupPending.value = false
+    return
+  }
+
+  const requestId = sendgridLookupSequence + 1
+  sendgridLookupSequence = requestId
+  sendgridLookupPending.value = true
+  sendgridLookupError.value = null
+
+  try {
+    const response = await $fetch<SendgridTemplateLookupResponse>('/api/admin/email/sendgrid-template', {
+      query: {
+        templateId: normalizedTemplateId
+      }
+    })
+
+    if (requestId !== sendgridLookupSequence) return
+    sendgridLookup.value = response
+  } catch (error: unknown) {
+    if (requestId !== sendgridLookupSequence) return
+    sendgridLookup.value = null
+    sendgridLookupError.value = readErrorMessage(error)
+  } finally {
+    if (requestId === sendgridLookupSequence) {
+      sendgridLookupPending.value = false
+    }
+  }
+}
+
+function queueSendgridTemplateLookup(templateId: string) {
+  const normalizedTemplateId = String(templateId ?? '').trim()
+  clearSendgridLookupTimer()
+  if (!normalizedTemplateId) {
+    sendgridLookup.value = null
+    sendgridLookupError.value = null
+    sendgridLookupPending.value = false
+    return
+  }
+
+  sendgridLookupTimer = setTimeout(() => {
+    sendgridLookupTimer = null
+    void fetchLatestSendgridTemplate(normalizedTemplateId)
+  }, SENDGRID_LOOKUP_DEBOUNCE_MS)
+}
 
 function applySettings(res: AdminEmailSettingsResponse) {
   adminCopies.criticalEnabled = Boolean(res.adminCopies.criticalEnabled)
@@ -136,6 +217,29 @@ const templateCategoryItems: Array<{ label: string, value: MailTemplateCategory 
   { label: 'critical', value: 'critical' },
   { label: 'non_critical', value: 'non_critical' }
 ]
+
+const sendgridTemplateIdItems = computed(() => {
+  const values = new Set<string>()
+
+  for (const template of templates.value) {
+    const templateId = String(template.sendgridTemplateId ?? '').trim()
+    if (templateId) values.add(templateId)
+  }
+
+  const draftId = String(templateDraft.value?.sendgridTemplateId ?? '').trim()
+  if (draftId) values.add(draftId)
+
+  return [...values].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+})
+
+function onTemplateDraftCreateTemplateId(value: string) {
+  const draft = templateDraft.value
+  if (!draft) return
+
+  const normalized = String(value ?? '').trim()
+  if (!normalized) return
+  draft.sendgridTemplateId = normalized
+}
 
 const broadcastTemplateIndex = computed(() => {
   return templates.value.findIndex(template => template.eventType === BROADCAST_EVENT_TYPE)
@@ -777,7 +881,10 @@ const registryPreviewContext = computed(() => {
 
 const registryPreviewShell = computed<'base' | 'document'>(() => {
   const draft = templateDraft.value
-  const body = String(draft?.bodyTemplate ?? '')
+  const body = sendgridLookup.value?.selectedVersion?.htmlContent
+    ? String(sendgridLookup.value?.selectedVersion?.htmlContent ?? '')
+    : String(draft?.bodyTemplate ?? '')
+
   if (FULL_HTML_DOCUMENT_PATTERN.test(body)) return 'document'
 
   // Registry rows map to specific SendGrid template IDs. For standard base templates,
@@ -788,6 +895,11 @@ const registryPreviewShell = computed<'base' | 'document'>(() => {
 
 const registryPreviewHtml = computed(() => {
   const context = registryPreviewContext.value
+  const sendgridTemplateHtml = String(sendgridLookup.value?.selectedVersion?.htmlContent ?? '').trim()
+  if (sendgridTemplateHtml.length > 0) {
+    return renderHandlebarsLikeTemplate(sendgridTemplateHtml, context)
+  }
+
   if (registryPreviewShell.value === 'document') {
     return renderHandlebarsLikeTemplate(String(templateDraft.value?.bodyTemplate ?? ''), context)
   }
@@ -915,6 +1027,14 @@ watch(templates, (nextTemplates) => {
     templateDraft.value = { ...nextTemplates[selectedTemplateIndex.value]! }
   }
 }, { immediate: true })
+
+watch(() => templateDraft.value?.sendgridTemplateId, (value) => {
+  queueSendgridTemplateLookup(String(value ?? ''))
+}, { immediate: true })
+
+onBeforeUnmount(() => {
+  clearSendgridLookupTimer()
+})
 </script>
 
 <template>
@@ -1001,10 +1121,14 @@ watch(templates, (nextTemplates) => {
                   />
                 </UFormField>
                 <UFormField label="SendGrid template id">
-                  <UInput
+                  <USelectMenu
                     v-model="templateDraft.sendgridTemplateId"
                     class="w-full"
-                    placeholder="d-xxxxxxxxxxxxxxxxxxxx"
+                    :items="sendgridTemplateIdItems"
+                    create-item="always"
+                    search-input
+                    placeholder="Search or enter template id"
+                    @create="(item) => { onTemplateDraftCreateTemplateId(String(item ?? '')) }"
                   />
                 </UFormField>
               </div>
@@ -1068,13 +1192,13 @@ watch(templates, (nextTemplates) => {
                   :image="{ allowBase64: false }"
                   :mention="{ HTMLAttributes: { class: 'mention' } }"
                   :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
-                  class="email-editor-shell w-full rounded-md border border-default bg-default overflow-visible"
+                  class="email-editor-shell w-full rounded-md border border-slate-200/80 bg-white overflow-visible dark:border-slate-700/80 dark:bg-slate-900"
                   :placeholder="editorPlaceholder(templateDraft.bodyTemplate, 'Write HTML body content. Example: <p>Your {{ tierName }} membership is active.</p>')"
                 >
                   <UEditorToolbar
                     :editor="editor"
                     :items="emailEditorToolbarItems"
-                    class="border-b border-default sticky top-0 inset-x-0 p-1.5 z-10 bg-default/95 backdrop-blur overflow-x-auto"
+                    class="border-b border-slate-200/80 dark:border-slate-700/80 sticky top-0 inset-x-0 p-1.5 z-10 bg-white/95 dark:bg-slate-900/95 backdrop-blur overflow-x-auto"
                   />
                   <UEditorToolbar
                     :editor="editor"
@@ -1097,7 +1221,7 @@ watch(templates, (nextTemplates) => {
                     v-slot="{ ui }"
                     :editor="editor"
                     :options="emailEditorDragHandleOptions"
-                    :ui="{ handle: 'translate-x-1 rounded border border-default bg-default/90' }"
+                    :ui="{ handle: '-translate-x-2 rounded border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/95' }"
                   >
                     <UButton
                       icon="i-lucide-grip-vertical"
@@ -1114,6 +1238,19 @@ watch(templates, (nextTemplates) => {
                 <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
                     High-fidelity preview
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <UButton
+                      size="xs"
+                      color="neutral"
+                      variant="soft"
+                      icon="i-lucide-refresh-cw"
+                      :loading="sendgridLookupPending"
+                      :disabled="!templateDraft?.sendgridTemplateId?.trim()"
+                      @click="() => { void fetchLatestSendgridTemplate(templateDraft?.sendgridTemplateId ?? '') }"
+                    >
+                      Refresh now
+                    </UButton>
                   </div>
                   <div class="flex items-center gap-1">
                     <UButton
@@ -1137,6 +1274,54 @@ watch(templates, (nextTemplates) => {
                   </div>
                 </div>
 
+                <div
+                  v-if="sendgridLookupError"
+                  class="text-xs text-error"
+                >
+                  {{ sendgridLookupError }}
+                </div>
+                <div
+                  v-else-if="sendgridLookupPending"
+                  class="text-xs text-dimmed"
+                >
+                  Fetching latest SendGrid template version...
+                </div>
+                <div
+                  v-else-if="sendgridLookup"
+                  class="space-y-1 text-xs text-dimmed"
+                >
+                  <div>
+                    Template: <code>{{ sendgridLookup.templateId }}</code>
+                    <template v-if="sendgridLookup.name">
+                      · {{ sendgridLookup.name }}
+                    </template>
+                  </div>
+                  <div>
+                    Version source: <strong>{{ sendgridLookup.resolvedFrom }}</strong>
+                    <template v-if="sendgridLookup.selectedVersion?.id">
+                      · version <code>{{ sendgridLookup.selectedVersion.id }}</code>
+                    </template>
+                  </div>
+                  <div>
+                    Subject: {{ sendgridLookup.selectedVersion?.subject || '(empty)' }}
+                  </div>
+                  <div v-if="sendgridLookup.selectedVersion?.updatedAt">
+                    Version updated {{ new Date(sendgridLookup.selectedVersion.updatedAt).toLocaleString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit'
+                    }) }}
+                  </div>
+                </div>
+                <div
+                  v-else
+                  class="text-xs text-dimmed"
+                >
+                  Set a SendGrid template id to fetch active/latest version details.
+                </div>
+
                 <div class="rounded-md border border-default bg-default p-2">
                   <div
                     class="mx-auto transition-all duration-150"
@@ -1152,9 +1337,14 @@ watch(templates, (nextTemplates) => {
                 </div>
 
                 <p class="text-xs text-dimmed">
-                  Preview shell inferred from template ID
-                  <code>{{ templateDraft.sendgridTemplateId || '(not set)' }}</code>:
-                  {{ registryPreviewShell === 'document' ? 'full HTML document' : 'base subject/preheader/bodyHTML shell' }}.
+                  Preview is using the fetched SendGrid template HTML for the current template id.
+                  <template v-if="sendgridLookup?.selectedVersion">
+                    (version <code>{{ sendgridLookup.selectedVersion.id }}</code>)
+                  </template>
+                  <template v-else>
+                    (fallback shell from local template draft).
+                  </template>
+                  Template id: <code>{{ templateDraft?.sendgridTemplateId || '(not set)' }}</code>.
                 </p>
               </section>
 
@@ -1333,7 +1523,7 @@ watch(templates, (nextTemplates) => {
   min-height: 24rem;
   max-height: 36rem;
   overflow-y: auto;
-  padding: 0.95rem 1rem 0.95rem 2rem;
+  padding: 0.95rem 1rem 0.95rem 2.4rem;
   line-height: 1.55;
 }
 
@@ -1418,7 +1608,7 @@ watch(templates, (nextTemplates) => {
   .email-editor-shell :deep(.ProseMirror) {
     min-height: 16rem;
     max-height: 24rem;
-    padding: 0.8rem 0.8rem 0.8rem 1.2rem;
+    padding: 0.8rem 0.8rem 0.8rem 1.5rem;
   }
 }
 </style>

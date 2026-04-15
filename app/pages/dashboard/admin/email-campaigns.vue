@@ -477,6 +477,31 @@ const templateSelectItems = computed(() => {
   ]
 })
 
+const sendgridTemplateIdSelectItems = computed(() => {
+  const values = new Set<string>()
+
+  for (const template of templates.value) {
+    const templateId = String(template.sendgridTemplateId ?? '').trim()
+    if (templateId) values.add(templateId)
+  }
+
+  for (const entry of eventTypeRegistry.value) {
+    const templateId = String(entry.sendgridTemplateId ?? '').trim()
+    if (templateId) values.add(templateId)
+  }
+
+  const draftTemplateId = String(draft.sendgridTemplateId ?? '').trim()
+  if (draftTemplateId) values.add(draftTemplateId)
+
+  return [...values].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+})
+
+function onCampaignTemplateIdCreate(value: string) {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) return
+  draft.sendgridTemplateId = normalized
+}
+
 const campaignRows = computed(() => campaigns.value.map(campaign => ({
   ...campaign,
   templateName: templates.value.find(template => template.id === campaign.templateId)?.name ?? 'Custom / none'
@@ -1014,12 +1039,24 @@ function resolveRegistryTemplateId(eventType: string) {
 function syncTemplateIdFromRegistry(options: { silent?: boolean } = {}) {
   const registryTemplateId = resolveRegistryTemplateId(draft.eventType)
   if (!registryTemplateId) {
+    if (knownEventTypeSet.value.has(draft.eventType)) {
+      draft.sendgridTemplateId = ''
+    }
+
     if (!options.silent) {
-      toast.add({
-        title: 'Registry template is missing',
-        description: 'No template id is currently mapped for this event type in the mail registry.',
-        color: 'warning'
-      })
+      if (knownEventTypeSet.value.has(draft.eventType)) {
+        toast.add({
+          title: 'Registry template is missing',
+          description: 'No template id is currently mapped for this event type in the mail registry.',
+          color: 'warning'
+        })
+      } else {
+        toast.add({
+          title: 'Legacy event selected',
+          description: 'This campaign event is not in the registry; keeping the current SendGrid template id.',
+          color: 'neutral'
+        })
+      }
     }
     return
   }
@@ -1832,10 +1869,14 @@ onBeforeUnmount(() => {
                 </UFormField>
 
                 <UFormField label="SendGrid template id">
-                  <UInput
+                  <USelectMenu
                     v-model="draft.sendgridTemplateId"
                     class="w-full"
-                    placeholder="d-xxxxxxxxxxxxxxxxxxxx"
+                    :items="sendgridTemplateIdSelectItems"
+                    create-item="always"
+                    search-input
+                    placeholder="Search or enter template id"
+                    @create="(item) => { onCampaignTemplateIdCreate(String(item ?? '')) }"
                   />
                 </UFormField>
               </div>
@@ -2063,13 +2104,13 @@ onBeforeUnmount(() => {
               :handlers="editorHandlers"
               :image="{ allowBase64: false }"
               :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
-              class="campaign-editor-shell w-full rounded-md border border-default bg-default overflow-visible"
+              class="campaign-editor-shell w-full rounded-md border border-slate-200/80 bg-white overflow-visible dark:border-slate-700/80 dark:bg-slate-900"
               :placeholder="editorPlaceholder(draft.bodyTemplate, 'Write campaign body HTML...')"
             >
               <UEditorToolbar
                 :editor="editor"
                 :items="editorToolbarItems"
-                class="border-b border-default sticky top-0 inset-x-0 p-1.5 z-10 bg-default/95 backdrop-blur overflow-x-auto"
+                class="border-b border-slate-200/80 dark:border-slate-700/80 sticky top-0 inset-x-0 p-1.5 z-10 bg-white/95 dark:bg-slate-900/95 backdrop-blur overflow-x-auto"
               />
               <UEditorToolbar
                 :editor="editor"
@@ -2084,7 +2125,7 @@ onBeforeUnmount(() => {
                 v-slot="{ ui }"
                 :editor="editor"
                 :options="editorDragHandleOptions"
-                :ui="{ handle: 'translate-x-1 rounded border border-default bg-default/90' }"
+                :ui="{ handle: '-translate-x-2 rounded border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/95' }"
               >
                 <UButton
                   icon="i-lucide-grip-vertical"
@@ -2391,7 +2432,7 @@ onBeforeUnmount(() => {
   min-height: 22rem;
   max-height: 38rem;
   overflow-y: auto;
-  padding: 0.95rem 1rem 0.95rem 2rem;
+  padding: 0.95rem 1rem 0.95rem 2.4rem;
   line-height: 1.55;
 }
 
