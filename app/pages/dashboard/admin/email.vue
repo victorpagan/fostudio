@@ -1192,13 +1192,13 @@ onBeforeUnmount(() => {
                   :image="{ allowBase64: false }"
                   :mention="{ HTMLAttributes: { class: 'mention' } }"
                   :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
-                  class="email-editor-shell w-full rounded-md border border-slate-200/80 bg-white overflow-visible dark:border-slate-700/80 dark:bg-slate-900"
+                  class="email-editor-shell w-full rounded-md border border-zinc-200/80 bg-white overflow-visible dark:border-zinc-700/80 dark:bg-zinc-900"
                   :placeholder="editorPlaceholder(templateDraft.bodyTemplate, 'Write HTML body content. Example: <p>Your {{ tierName }} membership is active.</p>')"
                 >
                   <UEditorToolbar
                     :editor="editor"
                     :items="emailEditorToolbarItems"
-                    class="border-b border-slate-200/80 dark:border-slate-700/80 sticky top-0 inset-x-0 p-1.5 z-10 bg-white/95 dark:bg-slate-900/95 backdrop-blur overflow-x-auto"
+                    class="border-b border-zinc-200/80 dark:border-zinc-700/80 sticky top-0 inset-x-0 p-1.5 z-10 bg-white/95 dark:bg-zinc-900/95 backdrop-blur overflow-x-auto"
                   />
                   <UEditorToolbar
                     :editor="editor"
@@ -1221,7 +1221,7 @@ onBeforeUnmount(() => {
                     v-slot="{ ui }"
                     :editor="editor"
                     :options="emailEditorDragHandleOptions"
-                    :ui="{ handle: '-translate-x-2 rounded border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/95' }"
+                    :ui="{ handle: '-translate-x-2 rounded border border-zinc-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-900/95' }"
                   >
                     <UButton
                       icon="i-lucide-grip-vertical"
