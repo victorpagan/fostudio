@@ -337,6 +337,7 @@ const EDITOR_HTML_PREVIEW_TEMPLATE = `<!doctype html>
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const FULL_HTML_DOCUMENT_PATTERN = /<html[\s>]|<body[\s>]|<!doctype/i
 const saving = ref(false)
 const sending = ref(false)
 const sendingTest = ref(false)
@@ -924,14 +925,27 @@ const previewContext = computed(() => {
 const sendgridPreviewHtmlContent = computed(() => {
   return String(sendgridLookup.value?.selectedVersion?.htmlContent ?? '').trim()
 })
-const isUsingFetchedSendgridPreview = computed(() => {
-  return draft.renderMode === 'sendgrid_native' && sendgridPreviewHtmlContent.value.length > 0
+const campaignPreviewShell = computed<'base' | 'document'>(() => {
+  if (draft.renderMode !== 'sendgrid_native') return 'base'
+
+  const body = sendgridLookup.value?.selectedVersion?.htmlContent
+    ? String(sendgridLookup.value?.selectedVersion?.htmlContent ?? '')
+    : String(draft.bodyTemplate ?? '')
+
+  if (FULL_HTML_DOCUMENT_PATTERN.test(body)) return 'document'
+  if (draftSendgridTemplateId.value) return 'base'
+  return 'base'
 })
+
 const previewHtml = computed(() => {
   if (draft.renderMode === 'sendgrid_native') {
     const sendgridTemplateHtml = sendgridPreviewHtmlContent.value
     if (sendgridTemplateHtml.length > 0) {
       return renderHandlebarsLikeTemplate(sendgridTemplateHtml, previewContext.value)
+    }
+
+    if (campaignPreviewShell.value === 'document') {
+      return renderHandlebarsLikeTemplate(String(draft.bodyTemplate ?? ''), previewContext.value)
     }
 
     return renderHandlebarsLikeTemplate(SENDGRID_NATIVE_PREVIEW_TEMPLATE, previewContext.value)
@@ -2333,7 +2347,7 @@ onBeforeUnmount(() => {
           <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
             <div class="flex items-center justify-between gap-2">
               <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
-                Draft preview
+                High-fidelity preview
               </div>
               <div class="flex items-center gap-1">
                 <UButton
@@ -2371,12 +2385,14 @@ onBeforeUnmount(() => {
             </div>
             <p class="text-xs text-dimmed">
               <template v-if="draft.renderMode === 'sendgrid_native'">
-                <span v-if="isUsingFetchedSendgridPreview">
-                  Rendering fetched SendGrid HTML for the selected template id.
-                </span>
-                <span v-else>
-                  Rendering local fallback shell because a SendGrid version HTML payload is not available.
-                </span>
+                Preview is using the fetched SendGrid template HTML for the current template id.
+                <template v-if="sendgridLookup?.selectedVersion">
+                  (version <code>{{ sendgridLookup.selectedVersion.id }}</code>)
+                </template>
+                <template v-else>
+                  (fallback shell from local template draft).
+                </template>
+                Template id: <code>{{ draftSendgridTemplateId || '(not set)' }}</code>.
               </template>
               <template v-else>
                 Preview is a local renderer that applies campaign variables and simple
