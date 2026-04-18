@@ -1168,7 +1168,7 @@ function hydrateDraftFromCampaign(campaign: CampaignRecord | null) {
     draft.status = 'draft'
     draft.templateId = null
     draft.eventType = defaultEventType
-    draft.sendgridTemplateId = resolveRegistryTemplateId(defaultEventType)
+    draft.sendgridTemplateId = ''
     draft.renderMode = 'editor_html'
     draft.subjectTemplate = ''
     draft.preheaderTemplate = ''
