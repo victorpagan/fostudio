@@ -611,6 +611,19 @@ const editorVariableTokens = computed(() => {
 })
 
 const isArchivedDraft = computed(() => draft.status === 'archived')
+const alternativeRecipientsOnly = computed({
+  get: () => !draft.includeMembershipRecipients,
+  set: (value: boolean) => {
+    draft.includeMembershipRecipients = !value
+  }
+})
+const canSendCampaign = computed(() => {
+  if (isArchivedDraft.value) return false
+  if (!isDraftEventTypeRegistered.value) return false
+  if (!draftSendgridTemplateId.value) return false
+  if (draft.includeMembershipRecipients) return true
+  return parseRecipientsInput(draft.additionalRecipientsText).length > 0
+})
 
 function parseRecipientsInput(input: string) {
   return [...new Set(
@@ -2126,7 +2139,22 @@ onBeforeUnmount(() => {
                   Pull unique member emails from memberships/customers.
                 </div>
               </div>
-              <USwitch v-model="draft.includeMembershipRecipients" />
+              <USwitch
+                v-model="draft.includeMembershipRecipients"
+                :disabled="alternativeRecipientsOnly"
+              />
+            </div>
+
+            <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2 bg-default">
+              <div>
+                <div class="text-sm font-medium">
+                  Alternative recipients only
+                </div>
+                <div class="text-xs text-dimmed">
+                  Send only to listed alternate recipients, not to all members.
+                </div>
+              </div>
+              <USwitch v-model="alternativeRecipientsOnly" />
             </div>
 
             <UFormField
@@ -2414,7 +2442,7 @@ onBeforeUnmount(() => {
             <UButton
               icon="i-lucide-send"
               :loading="sending"
-              :disabled="isArchivedDraft || !isDraftEventTypeRegistered || !draftSendgridTemplateId || (!draft.includeMembershipRecipients && parseRecipientsInput(draft.additionalRecipientsText).length === 0)"
+              :disabled="!canSendCampaign"
               @click="sendCampaign"
             >
               Send campaign
@@ -2522,8 +2550,88 @@ onBeforeUnmount(() => {
   line-height: 1.55;
 }
 
+.campaign-editor-shell :deep(p) {
+  margin: 0 0 0.75rem;
+}
+
+.campaign-editor-shell :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.campaign-editor-shell :deep(ul) {
+  list-style: disc;
+  margin: 0 0 0.9rem;
+  padding-left: 1.25rem;
+}
+
+.campaign-editor-shell :deep(ol) {
+  list-style: decimal;
+  margin: 0 0 0.9rem;
+  padding-left: 1.25rem;
+}
+
+.campaign-editor-shell :deep(li) {
+  margin: 0.2rem 0;
+}
+
 .campaign-editor-shell :deep(img) {
   max-width: 100%;
   height: auto;
+}
+
+.campaign-editor-shell :deep(h1),
+.campaign-editor-shell :deep(h2),
+.campaign-editor-shell :deep(h3),
+.campaign-editor-shell :deep(h4) {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1rem 0 0.55rem;
+}
+
+.campaign-editor-shell :deep(h1) {
+  font-size: 1.45rem;
+}
+
+.campaign-editor-shell :deep(h2) {
+  font-size: 1.2rem;
+}
+
+.campaign-editor-shell :deep(h3) {
+  font-size: 1.05rem;
+}
+
+.campaign-editor-shell :deep(h4) {
+  font-size: 0.95rem;
+}
+
+.campaign-editor-shell :deep(blockquote) {
+  border-left: 3px solid var(--ui-border-muted);
+  margin: 0 0 0.9rem;
+  padding-left: 0.85rem;
+  color: var(--ui-text-muted);
+}
+
+.campaign-editor-shell :deep(pre) {
+  overflow-x: auto;
+  border-radius: 0.375rem;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg-elevated);
+  padding: 0.75rem;
+  margin: 0 0 0.9rem;
+}
+
+.campaign-editor-shell :deep(hr) {
+  border: 0;
+  border-top: 1px solid var(--ui-border);
+  margin: 0.9rem 0;
+}
+
+@media (max-width: 767.98px) {
+  .campaign-editor-shell :deep(.tiptap.ProseMirror),
+  .campaign-editor-shell :deep(.ProseMirror) {
+    min-height: 16rem;
+    max-height: 24rem;
+    padding: 0.8rem 0.8rem 0.8rem 1.5rem;
+  }
 }
 </style>
