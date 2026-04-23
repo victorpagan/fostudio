@@ -22,9 +22,9 @@ CREATE TABLE IF NOT EXISTS public.activity_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+DROP INDEX IF EXISTS public.activity_events_dedupe_key_unique;
 CREATE UNIQUE INDEX IF NOT EXISTS activity_events_dedupe_key_unique
-  ON public.activity_events (dedupe_key)
-  WHERE dedupe_key IS NOT NULL;
+  ON public.activity_events (dedupe_key);
 
 CREATE INDEX IF NOT EXISTS activity_events_scope_occurred_idx
   ON public.activity_events (scope, occurred_at DESC);
