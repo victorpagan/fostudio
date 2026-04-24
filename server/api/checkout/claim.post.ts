@@ -132,7 +132,8 @@ async function createOrderTemplateIdForPlanVariation(
   square: any,
   planVariationId: string,
   locationId: string,
-  cadence: CheckoutSessionRow['cadence']
+  cadence: CheckoutSessionRow['cadence'],
+  discountCatalogObjectIds: string[] = []
 ) {
   const variationRes = await square.catalog.object.get({
     objectId: planVariationId,
@@ -172,6 +173,15 @@ async function createOrderTemplateIdForPlanVariation(
   if (!itemVariationId) throw new Error(`Square item ${eligibleItemId} has no item variation id`)
 
   const cadenceQuantity = cadenceQuantityForSubscription(cadence)
+  const discounts = Array.from(new Set(
+    discountCatalogObjectIds
+      .map(discountId => discountId.trim())
+      .filter(Boolean)
+  )).map((catalogObjectId, index) => ({
+    uid: `discount_${index}`,
+    catalogObjectId,
+    scope: 'ORDER'
+  }))
 
   const orderRes = await square.orders.create({
     idempotencyKey: randomUUID(),
@@ -183,7 +193,8 @@ async function createOrderTemplateIdForPlanVariation(
           catalogObjectId: itemVariationId,
           quantity: String(cadenceQuantity)
         }
-      ]
+      ],
+      ...(discounts.length ? { discounts } : {})
     }
   } as never)
 
@@ -757,8 +768,28 @@ export default defineEventHandler(async (event) => {
           }
         })
 
+        if (attachedToRelativePhase) {
+          const orderTemplateId = await createOrderTemplateIdForPlanVariation(
+            square,
+            session.plan_variation_id,
+            locationId,
+            session.cadence,
+            requiredPhaseDiscountIds
+          )
+          subscriptionPhases = (subscriptionPhases ?? []).map((phase) => {
+            const p = asRecord(phase) ?? {}
+            const pricing = asRecord(p.pricing)
+            const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
+            if (pricingType !== 'RELATIVE') return p
+            return {
+              ...p,
+              orderTemplateId
+            }
+          })
+        }
+
         if (!attachedToRelativePhase) {
-          const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, session.plan_variation_id, locationId, session.cadence)
+          const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, session.plan_variation_id, locationId, session.cadence, requiredPhaseDiscountIds)
           const cadenceMap: Record<CheckoutSessionRow['cadence'], string> = {
             daily: 'DAILY',
             weekly: 'WEEKLY',

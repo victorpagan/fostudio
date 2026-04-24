@@ -94,7 +94,8 @@ async function createOrderTemplateIdForPlanVariation(
   square: any,
   planVariationId: string,
   locationId: string,
-  cadence?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
+  cadence?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual',
+  discountCatalogObjectIds: string[] = []
 ) {
   const variationRes = await square.catalog.object.get({
     objectId: planVariationId,
@@ -141,6 +142,15 @@ async function createOrderTemplateIdForPlanVariation(
       : cadence === 'annual'
         ? 12
         : 1
+  const discounts = Array.from(new Set(
+    discountCatalogObjectIds
+      .map(discountId => discountId.trim())
+      .filter(Boolean)
+  )).map((catalogObjectId, index) => ({
+    uid: `discount_${index}`,
+    catalogObjectId,
+    scope: 'ORDER'
+  }))
 
   const orderRes = await square.orders.create({
     idempotencyKey: randomUUID(),
@@ -152,7 +162,8 @@ async function createOrderTemplateIdForPlanVariation(
           catalogObjectId: itemVariationId,
           quantity: String(cadenceQuantity)
         }
-      ]
+      ],
+      ...(discounts.length ? { discounts } : {})
     }
   } as never)
 
@@ -493,9 +504,42 @@ export default defineEventHandler(async (event) => {
         }
       })
 
+      if (attachedToRelativePhase) {
+        try {
+          const orderTemplateId = await createOrderTemplateIdForPlanVariation(
+            square,
+            planVariationId,
+            locationId,
+            session.cadence,
+            normalizedRequiredDiscountIds
+          )
+          subscriptionPhases = (subscriptionPhases ?? []).map((phase) => {
+            const p = asRecord(phase) ?? {}
+            const pricing = asRecord(p.pricing)
+            const pricingType = typeof pricing?.type === 'string' ? pricing.type.toUpperCase() : null
+            if (pricingType !== 'RELATIVE') return p
+            return {
+              ...p,
+              orderTemplateId
+            }
+          })
+          console.info(logPrefix, 'discounted-order-template-applied', {
+            sessionId: session.id,
+            planVariationId,
+            orderTemplateId,
+            discountCount: normalizedRequiredDiscountIds.length
+          })
+        } catch (error) {
+          throw createError({
+            statusCode: 409,
+            statusMessage: `Discounts could not be applied to this plan: ${readSquareErrorMessage(error)}`
+          })
+        }
+      }
+
       if (!attachedToRelativePhase) {
         try {
-          const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId, session.cadence)
+          const orderTemplateId = await createOrderTemplateIdForPlanVariation(square, planVariationId, locationId, session.cadence, normalizedRequiredDiscountIds)
           const cadenceMap: Record<Cadence, string> = {
             daily: 'DAILY',
             weekly: 'WEEKLY',
