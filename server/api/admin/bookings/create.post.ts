@@ -374,10 +374,15 @@ export default defineEventHandler(async (event) => {
       p_request_hold: body.requestHold,
       p_credits_needed: creditsNeeded,
       p_consume_paid_hold: consumePaidHold,
-      p_hold_credit_cost: holdCreditCharge
+      p_hold_credit_cost: holdCreditCharge,
+      p_booking_kind: 'standard',
+      p_workshop_title: null,
+      p_workshop_description: null,
+      p_workshop_link: null,
+      p_workshop_liability_accepted_at: null
     }
 
-    const { data: rawResult, error: rpcErr } = await supabase.rpc('create_confirmed_booking_with_burn', rpcBody)
+    const { data: rawResult, error: rpcErr } = await supabase.rpc('create_confirmed_booking_with_burn' as never, rpcBody as never)
     if (rpcErr) {
       const msg = rpcErr.message || 'Booking failed'
       if (msg.toLowerCase().includes('insufficient credits')) {
