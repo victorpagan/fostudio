@@ -5,11 +5,15 @@ import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booki
 import { getExternalCalendarEventsInRange } from '~~/server/utils/booking/externalCalendar'
 import { maybeAutoSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
+import { getUpcomingWorkshopPromo } from '~~/server/utils/booking/workshopPromo'
 
 const qSchema = z.object({
   from: z.string().optional(),
-  to: z.string().optional()
+  to: z.string().optional(),
+  booking_kind: z.enum(['standard', 'workshop']).optional().default('standard')
 })
+
+const WORKSHOP_BOOKING_WINDOW_DAYS = 92
 
 function durationHours(startIso: string, endIso: string) {
   const start = new Date(startIso).getTime()
@@ -25,6 +29,13 @@ function normalizeIso(value: string) {
   const sqlParsed = DateTime.fromSQL(value, { zone: 'utc' })
   if (sqlParsed.isValid) return sqlParsed.toUTC().toISO()
   return value
+}
+
+type HoldRow = {
+  id: string
+  hold_start: string
+  hold_end: string
+  bookings: { user_id: string | null } | Array<{ user_id: string | null }> | null
 }
 
 export default defineEventHandler(async (event) => {
@@ -53,8 +64,9 @@ export default defineEventHandler(async (event) => {
   let remainingCredits = 0
   try {
     remainingCredits = await resolveAvailableCreditBalance(supabase, user.sub)
-  } catch (error: any) {
-    throw createError({ statusCode: 500, statusMessage: error?.message ?? 'Failed to load credits' })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to load credits'
+    throw createError({ statusCode: 500, statusMessage: message })
   }
 
   const hasActiveMembership = (membership?.status || '').toLowerCase() === 'active'
@@ -67,7 +79,9 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
-  const windowDays = Number(tierRow?.booking_window_days ?? 30)
+  const windowDays = q.booking_kind === 'workshop'
+    ? WORKSHOP_BOOKING_WINDOW_DAYS
+    : Number(tierRow?.booking_window_days ?? 30)
 
   // Use caller-supplied range if provided, clamped to the booking window
   const now = new Date()
@@ -119,19 +133,22 @@ export default defineEventHandler(async (event) => {
     provider: string
     calendar_id: string
   }> = []
+  let workshopPromo: Awaited<ReturnType<typeof getUpcomingWorkshopPromo>> = null
 
   try {
-    const serviceRole = serverSupabaseServiceRole(event) as any
+    const serviceRole = serverSupabaseServiceRole(event)
     externalEvents = await getExternalCalendarEventsInRange(
       serviceRole,
       from.toISOString(),
       to.toISOString()
     )
+    workshopPromo = await getUpcomingWorkshopPromo(serviceRole, from.toISOString())
   } catch (error) {
     console.error('[calendar/member] failed to load external calendar events', error)
   }
 
   // Shape events for FullCalendar — distinguish own bookings from others
+  const holdRows = (holds ?? []) as HoldRow[]
   const events = [
     ...(bookings ?? []).map((b) => {
       const isOwn = b.user_id === user.sub
@@ -153,21 +170,21 @@ export default defineEventHandler(async (event) => {
         }
       }
     }),
-    ...(holds ?? []).map((h: any) => {
+    ...holdRows.map((h) => {
       const bookingRel = h?.bookings
       const holdOwnerId = Array.isArray(bookingRel) ? bookingRel[0]?.user_id : bookingRel?.user_id
-      return ({
-      id: `h_${h.id}`,
-      start: normalizeIso(h.hold_start),
-      end: normalizeIso(h.hold_end),
-      title: 'Hold',
-      display: 'auto',
-      color: '#f59e0b',
-      extendedProps: {
-        type: 'hold',
-        isOwn: holdOwnerId === user.sub
+      return {
+        id: `h_${h.id}`,
+        start: normalizeIso(h.hold_start),
+        end: normalizeIso(h.hold_end),
+        title: 'Hold',
+        display: 'auto',
+        color: '#f59e0b',
+        extendedProps: {
+          type: 'hold',
+          isOwn: holdOwnerId === user.sub
+        }
       }
-      })
     }),
     ...(blocks ?? []).map(block => ({
       id: `x_${block.id}`,
@@ -178,7 +195,7 @@ export default defineEventHandler(async (event) => {
       color: '#dc2626',
       extendedProps: { type: 'hold' }
     })),
-    ...externalEvents.map((ext) => ({
+    ...externalEvents.map(ext => ({
       id: `g_${ext.id}`,
       start: normalizeIso(ext.start_time),
       end: normalizeIso(ext.end_time),
@@ -201,6 +218,7 @@ export default defineEventHandler(async (event) => {
     hasActiveMembership,
     remainingCredits,
     peakWindow: toPeakWindowPayload(peakWindowConfig, Number(tierRow?.peak_multiplier ?? 1.5)),
+    workshopPromo,
     events
   }
 })

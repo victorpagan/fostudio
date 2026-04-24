@@ -46,6 +46,7 @@ const waitlistSubmitting = ref(false)
 const promoApplying = ref(false)
 const errorMsg = ref<string | null>(null)
 const promoCode = ref('')
+const referralCode = ref('')
 const appliedPromo = ref<{
   code: string
   discountCents: number
@@ -263,7 +264,8 @@ async function beginCheckout(options?: { useNewCard?: boolean }) {
         cadence: selectedPlan.value!.cadence,
         returnTo: returnTo.value,
         guest_email: guestEmailForCheckout || undefined,
-        promo_code: appliedPromo.value?.code || undefined
+        promo_code: appliedPromo.value?.code || undefined,
+        referral_code: referralCode.value.trim().toUpperCase() || undefined
       }
     })
 
@@ -837,6 +839,18 @@ async function submitWaitlist() {
                 </UButton>
               </div>
             </UFormField>
+            <UFormField
+              class="mt-3"
+              label="Referral code (optional)"
+              description="Applied on successful first membership activation."
+            >
+              <UInput
+                v-model="referralCode"
+                placeholder="FRIEND123"
+                autocomplete="off"
+                class="max-w-sm"
+              />
+            </UFormField>
           </div>
           <div
             v-if="isPlanSwitchMode"
@@ -849,9 +863,9 @@ async function submitWaitlist() {
             <UButton
               v-if="!tierAtCapacity"
               :loading="loading"
-                :disabled="loading || !selectedPlan || (!user && isPlanSwitchMode) || (!isPlanSwitchMode && !user && !guestEmail.trim())"
-                @click="beginCheckoutDefault"
-              >
+              :disabled="loading || !selectedPlan || (!user && isPlanSwitchMode) || (!isPlanSwitchMode && !user && !guestEmail.trim())"
+              @click="beginCheckoutDefault"
+            >
               {{ isPlanSwitchMode
                 ? 'Schedule plan change'
                 : (isTestTier ? 'Activate test membership' : (hasSavedCards && user ? 'Pay membership' : 'Continue to payment')) }}

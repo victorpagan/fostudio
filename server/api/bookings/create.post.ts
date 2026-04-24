@@ -23,16 +23,34 @@ const schema = z.object({
   start_time: z.string(),
   end_time: z.string(),
   notes: z.string().optional().nullable(),
+  booking_kind: z.enum(['standard', 'workshop']).optional().default('standard'),
+  workshop_title: z.string().max(160).optional().nullable(),
+  workshop_description: z.string().max(2000).optional().nullable(),
+  workshop_link: z.string().max(500).optional().nullable(),
+  workshop_liability_acknowledged: z.boolean().optional().default(false),
   request_hold: z.boolean().optional().default(false),
   hold_payment_method: z.enum(['auto', 'token', 'credits']).optional().default('auto')
 })
 
 const TEST_TIER_ID = 'test'
+const WORKSHOP_BOOKING_WINDOW_MONTHS = 3
 type TierRules = {
   booking_window_days: number
   peak_multiplier: number
   holds_included: number
   active_hold_cap: number
+}
+
+type TierRow = {
+  booking_window_days: number | null
+  peak_multiplier: number | null
+  holds_included: number | null
+  active_hold_cap?: number | null
+}
+
+type CustomerWorkshopRow = {
+  id: string
+  workshop_booking_enabled: boolean | null
 }
 
 function isThirtyMinuteAligned(dateTime: DateTime) {
@@ -81,14 +99,20 @@ export default defineEventHandler(async (event) => {
   }
 
   const supabase = serverSupabaseServiceRole(event)
-  const db = supabase as any
   const body = schema.parse(await readBody(event))
   const peakWindow = await loadPeakWindowConfig(event)
+  const bookingKind = body.booking_kind ?? 'standard'
+  const workshopTitle = typeof body.workshop_title === 'string' ? body.workshop_title.trim() : ''
+  const workshopDescription = typeof body.workshop_description === 'string' ? body.workshop_description.trim() : ''
+  const workshopLink = typeof body.workshop_link === 'string' ? body.workshop_link.trim() : ''
+  const workshopLiabilityAcceptedAt = bookingKind === 'workshop' && body.workshop_liability_acknowledged
+    ? new Date().toISOString()
+    : null
 
   const { data: holdConfigRows, error: holdConfigErr } = await supabase
     .from('system_config')
     .select('key,value')
-    .in('key', ['hold_credit_cost', 'min_hold_booking_hours', 'hold_min_end_hour', 'hold_end_hour'])
+    .in('key', ['hold_credit_cost', 'min_hold_booking_hours', 'hold_min_end_hour', 'hold_end_hour', 'workshop_credit_multiplier'])
 
   if (holdConfigErr) throw createError({ statusCode: 500, statusMessage: holdConfigErr.message })
   const holdConfig = new Map((holdConfigRows ?? []).map(row => [String(row.key), row.value]))
@@ -96,6 +120,16 @@ export default defineEventHandler(async (event) => {
   const minHoldBookingHours = Math.max(1, Number(holdConfig.get('min_hold_booking_hours') ?? DEFAULT_MIN_HOLD_BOOKING_HOURS))
   const holdMinEndHour = Math.max(0, Math.min(23, Math.floor(Number(holdConfig.get('hold_min_end_hour') ?? DEFAULT_HOLD_MIN_END_HOUR))))
   const holdEndHour = Math.max(0, Math.min(23, Math.floor(Number(holdConfig.get('hold_end_hour') ?? DEFAULT_HOLD_END_HOUR))))
+  const workshopCreditMultiplier = Math.max(1, Number(holdConfig.get('workshop_credit_multiplier') ?? 2))
+
+  if (bookingKind === 'workshop') {
+    if (!body.workshop_liability_acknowledged) {
+      throw createError({ statusCode: 400, statusMessage: 'You must acknowledge workshop liability before booking.' })
+    }
+    if (workshopLink && !/^https?:\/\//i.test(workshopLink)) {
+      throw createError({ statusCode: 400, statusMessage: 'Workshop link must start with http:// or https://.' })
+    }
+  }
 
   // Membership + tier id (membership can be missing for legacy/admin accounts with credits)
   const { data: membership, error: memErr } = await supabase
@@ -108,8 +142,9 @@ export default defineEventHandler(async (event) => {
   let remainingCredits = 0
   try {
     remainingCredits = await resolveAvailableCreditBalance(supabase, user.sub)
-  } catch (error: any) {
-    throw createError({ statusCode: 500, statusMessage: error?.message ?? 'Failed to load credits' })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to load credits'
+    throw createError({ statusCode: 500, statusMessage: message })
   }
   const hasActiveMembership = (membership?.status || '').toLowerCase() === 'active'
   if (!hasActiveMembership && remainingCredits <= 0) {
@@ -119,20 +154,22 @@ export default defineEventHandler(async (event) => {
   // Tier rules (DB catalog)
   const selectWithCap = 'booking_window_days, peak_multiplier, holds_included, active_hold_cap'
   const selectLegacy = 'booking_window_days, peak_multiplier, holds_included'
-  let { data: tierRow, error: tierErr } = await db
+  const tierWithCapResult = await supabase
     .from('membership_tiers')
     .select(selectWithCap)
     .eq('id', membership?.tier ?? '')
     .maybeSingle()
+  let tierRow = tierWithCapResult.data as unknown as TierRow | null
+  let tierErr = tierWithCapResult.error
 
   if (tierErr && isSchemaMissingColumnError(tierErr.message)) {
-    const fallback = await db
+    const fallbackResult = await supabase
       .from('membership_tiers')
       .select(selectLegacy)
       .eq('id', membership?.tier ?? '')
       .maybeSingle()
-    tierRow = fallback.data
-    tierErr = fallback.error
+    tierRow = fallbackResult.data as unknown as TierRow | null
+    tierErr = fallbackResult.error
   }
 
   if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
@@ -188,16 +225,23 @@ export default defineEventHandler(async (event) => {
   }
 
   // Booking window enforcement
-  const maxStart = now.plus({ days: effectiveTier.booking_window_days })
+  const maxStart = bookingKind === 'workshop'
+    ? now.plus({ months: WORKSHOP_BOOKING_WINDOW_MONTHS })
+    : now.plus({ days: effectiveTier.booking_window_days })
   if (start > maxStart) {
     throw createError({
       statusCode: 403,
-      statusMessage: `Your plan allows booking up to ${effectiveTier.booking_window_days} days ahead.`
+      statusMessage: bookingKind === 'workshop'
+        ? 'Workshop bookings can only be made up to 3 months ahead.'
+        : `Your plan allows booking up to ${effectiveTier.booking_window_days} days ahead.`
     })
   }
 
   // Compute credits
-  const creditsNeeded = computeCredits(body.start_time, body.end_time, effectiveTier.peak_multiplier, peakWindow)
+  const baseCreditsNeeded = computeCredits(body.start_time, body.end_time, effectiveTier.peak_multiplier, peakWindow)
+  const creditsNeeded = bookingKind === 'workshop'
+    ? Math.round(baseCreditsNeeded * workshopCreditMultiplier * 100) / 100
+    : baseCreditsNeeded
 
   const { data: blockConflicts, error: blockErr } = await supabase
     .from('calendar_blocks')
@@ -369,14 +413,18 @@ export default defineEventHandler(async (event) => {
   }
 
   // Customer id for linkage
-  const { data: cust, error: custErr } = await supabase
-    .from('customers')
-    .select('id')
+  const { data: custRaw, error: custErr } = await supabase
+    .from('customers' as never)
+    .select('id,workshop_booking_enabled')
     .eq('user_id', user.sub)
     .maybeSingle()
+  const cust = custRaw as unknown as CustomerWorkshopRow | null
 
   if (custErr) throw createError({ statusCode: 500, statusMessage: custErr.message })
   if (!cust?.id) throw createError({ statusCode: 400, statusMessage: 'Customer profile missing' })
+  if (bookingKind === 'workshop' && !cust.workshop_booking_enabled) {
+    throw createError({ statusCode: 403, statusMessage: 'Workshop booking is not enabled for your account.' })
+  }
 
   const rpcName = membership ? 'create_confirmed_booking_with_burn' : 'create_confirmed_booking_with_burn_no_membership'
   const rpcBody = membership
@@ -389,7 +437,12 @@ export default defineEventHandler(async (event) => {
         p_request_hold: body.request_hold ?? false,
         p_credits_needed: creditsNeeded,
         p_consume_paid_hold: consumePaidHold,
-        p_hold_credit_cost: holdCreditCharge
+        p_hold_credit_cost: holdCreditCharge,
+        p_booking_kind: bookingKind,
+        p_workshop_title: workshopTitle || null,
+        p_workshop_description: workshopDescription || null,
+        p_workshop_link: workshopLink || null,
+        p_workshop_liability_accepted_at: workshopLiabilityAcceptedAt
       }
     : {
         p_user_id: user.sub,
@@ -397,11 +450,22 @@ export default defineEventHandler(async (event) => {
         p_start_time: startIso,
         p_end_time: endIso,
         p_notes: (body.notes ?? '') as string,
-        p_credits_needed: creditsNeeded
+        p_credits_needed: creditsNeeded,
+        p_booking_kind: bookingKind,
+        p_workshop_title: workshopTitle || null,
+        p_workshop_description: workshopDescription || null,
+        p_workshop_link: workshopLink || null,
+        p_workshop_liability_accepted_at: workshopLiabilityAcceptedAt
       }
 
   // Call atomic RPC (booking + burn + optional hold)
-  const { data: result, error: rpcErr } = await supabase.rpc(rpcName as any, rpcBody as any)
+  const { data: resultRaw, error: rpcErr } = await supabase.rpc(rpcName as never, rpcBody as never)
+  const result = resultRaw as unknown as Array<{
+    booking_id: string | null
+    hold_id: string | null
+    credits_burned: number | null
+    new_balance: number | null
+  }> | null
 
   if (rpcErr) {
     // Constraint overlap or insufficient credits or hold overlap errors surface here
@@ -417,6 +481,9 @@ export default defineEventHandler(async (event) => {
     }
     if (msg.toLowerCase().includes('does not include overnight equipment holds')) {
       throw createError({ statusCode: 403, statusMessage: msg })
+    }
+    if (msg.toLowerCase().includes('workshop liability acknowledgement is required')) {
+      throw createError({ statusCode: 400, statusMessage: msg })
     }
     if (rpcErr.code === '23P01') {
       throw createError({ statusCode: 409, statusMessage: 'Time slot not available' })
@@ -459,6 +526,8 @@ export default defineEventHandler(async (event) => {
   return {
     ok: true,
     creditsNeeded,
+    bookingKind,
+    workshopCreditMultiplier: bookingKind === 'workshop' ? workshopCreditMultiplier : 1,
     burned: result?.[0]?.credits_burned ?? null,
     newBalance: result?.[0]?.new_balance ?? null,
     booking_id: bookingId,

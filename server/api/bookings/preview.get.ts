@@ -19,8 +19,11 @@ import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils
 const qSchema = z.object({
   start: z.string(),
   end: z.string(),
-  mode: z.enum(['member', 'guest']).optional()
+  mode: z.enum(['member', 'guest']).optional(),
+  booking_kind: z.enum(['standard', 'workshop']).optional().default('standard')
 })
+
+const WORKSHOP_BOOKING_WINDOW_MONTHS = 3
 
 function isThirtyMinuteAligned(dateTime: DateTime) {
   if (!dateTime.isValid) return false
@@ -70,6 +73,7 @@ function formatHourLabel(hour: number) {
 export default defineEventHandler(async (event) => {
   const q = qSchema.parse(getQuery(event))
   const peakWindow = await loadPeakWindowConfig(event)
+  const supabase = serverSupabaseServiceRole(event)
 
   const start = DateTime.fromISO(q.start, { zone: STUDIO_TZ })
   const end = DateTime.fromISO(q.end, { zone: STUDIO_TZ })
@@ -90,18 +94,19 @@ export default defineEventHandler(async (event) => {
     'guest_booking_rate_per_credit_cents',
     'guest_booking_window_days',
     'guest_booking_start_hour',
-    'guest_booking_end_hour'
+    'guest_booking_end_hour',
+    'workshop_credit_multiplier'
   ])
 
   let mode = q.mode ?? (user ? 'member' : 'guest')
+  const bookingKind = q.booking_kind ?? 'standard'
+  let workshopMultiplier = 1
 
   let peakMultiplier: number = 1.5 // safe default; overwritten below
   let ratePerCreditCents: number | null = null
   let tierName: string | null = null
 
   if (mode === 'member' && user) {
-    const supabase = serverSupabaseServiceRole(event)
-
     const { data: membership } = await supabase
       .from('memberships')
       .select('tier, status')
@@ -171,6 +176,31 @@ export default defineEventHandler(async (event) => {
     ratePerCreditCents = Number(cfg.guest_booking_rate_per_credit_cents ?? 3500)
   }
 
+  if (bookingKind === 'workshop') {
+    if (!user) {
+      throw createError({ statusCode: 401, statusMessage: 'Workshop bookings require an authenticated member account.' })
+    }
+    if (mode !== 'member') {
+      throw createError({ statusCode: 403, statusMessage: 'Workshop bookings require member credit access.' })
+    }
+
+    const { data: customerRow, error: customerErr } = await supabase
+      .from('customers')
+      .select('workshop_booking_enabled')
+      .eq('user_id', user.sub)
+      .maybeSingle()
+    if (customerErr) throw createError({ statusCode: 500, statusMessage: customerErr.message })
+    if (!(customerRow as { workshop_booking_enabled?: boolean } | null)?.workshop_booking_enabled) {
+      throw createError({ statusCode: 403, statusMessage: 'Workshop booking is not enabled for your account.' })
+    }
+
+    workshopMultiplier = Math.max(1, Number(cfg.workshop_credit_multiplier ?? 2))
+    const maxWorkshopStart = DateTime.now().setZone(STUDIO_TZ).plus({ months: WORKSHOP_BOOKING_WINDOW_MONTHS })
+    if (start > maxWorkshopStart) {
+      throw createError({ statusCode: 400, statusMessage: 'Workshop bookings can only be made up to 3 months ahead.' })
+    }
+  }
+
   if (mode === 'member') {
     if (!isThirtyMinuteAligned(start) || !isThirtyMinuteAligned(end)) {
       throw createError({
@@ -183,7 +213,10 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const creditsNeeded = computeCredits(q.start, q.end, peakMultiplier!, peakWindow)
+  const baseCreditsNeeded = computeCredits(q.start, q.end, peakMultiplier!, peakWindow)
+  const creditsNeeded = bookingKind === 'workshop'
+    ? Math.round(baseCreditsNeeded * workshopMultiplier * 100) / 100
+    : baseCreditsNeeded
   const totalCents = ratePerCreditCents !== null ? Math.ceil(creditsNeeded * ratePerCreditCents) : null
 
   return {
@@ -191,6 +224,8 @@ export default defineEventHandler(async (event) => {
     end: end.toISO(),
     durationHours,
     creditsNeeded,
+    bookingKind,
+    workshopMultiplier: bookingKind === 'workshop' ? workshopMultiplier : 1,
     peakMultiplier,
     mode,
     tierName,

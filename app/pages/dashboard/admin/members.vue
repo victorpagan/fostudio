@@ -18,6 +18,7 @@ type MemberRecord = {
   customer_first_name: string | null
   customer_last_name: string | null
   door_code: string | null
+  workshop_booking_enabled: boolean
   door_code_request_status: string | null
   door_code_last_request_at: string | null
   credit_balance: number | null
@@ -35,6 +36,7 @@ const memberStatusFilter = ref<'all' | 'active' | 'past_due' | 'pending_checkout
 const updatingStatus = ref(false)
 const adjustingCredits = ref(false)
 const updatingDoorCode = ref(false)
+const updatingWorkshopAccess = ref(false)
 const dashboardHydrated = ref(false)
 
 const statusForm = reactive({
@@ -49,6 +51,10 @@ const creditForm = reactive({
 
 const doorCodeForm = reactive({
   value: ''
+})
+
+const workshopAccessForm = reactive({
+  enabled: false
 })
 
 const { data: memberRows, refresh, pending } = await useAsyncData('admin:members', async () => {
@@ -118,6 +124,7 @@ function applySelectedMember(next: MemberRecord[]) {
   selectedMemberId.value = target.membership_id
   statusForm.status = target.status ?? 'active'
   doorCodeForm.value = target.door_code ?? ''
+  workshopAccessForm.enabled = Boolean(target.workshop_booking_enabled)
 }
 
 watch(
@@ -132,6 +139,7 @@ function selectMember(member: MemberRecord) {
   selectedMemberId.value = member.membership_id
   statusForm.status = member.status ?? 'active'
   doorCodeForm.value = member.door_code ?? ''
+  workshopAccessForm.enabled = Boolean(member.workshop_booking_enabled)
 
   void router.replace({
     path: route.path,
@@ -156,6 +164,7 @@ watch(filteredMembers, (next) => {
   selectedMemberId.value = target.membership_id
   statusForm.status = target.status ?? 'active'
   doorCodeForm.value = target.door_code ?? ''
+  workshopAccessForm.enabled = Boolean(target.workshop_booking_enabled)
 })
 
 function memberLabel(member: MemberRecord) {
@@ -273,6 +282,30 @@ async function saveDoorCode() {
     })
   } finally {
     updatingDoorCode.value = false
+  }
+}
+
+async function saveWorkshopAccess() {
+  if (!selectedMember.value || updatingWorkshopAccess.value) return
+  updatingWorkshopAccess.value = true
+  try {
+    await $fetch('/api/admin/members/workshop-access', {
+      method: 'POST',
+      body: {
+        userId: selectedMember.value.user_id,
+        workshopBookingEnabled: workshopAccessForm.enabled
+      }
+    })
+    toast.add({ title: 'Workshop access updated' })
+    await refresh()
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not update workshop access',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    updatingWorkshopAccess.value = false
   }
 }
 
@@ -549,6 +582,27 @@ onMounted(() => {
                 @click="saveMembershipStatus"
               >
                 Save status
+              </UButton>
+            </div>
+          </UCard>
+
+          <UCard class="admin-panel-card border-0">
+            <div class="font-medium">
+              Workshop booking access
+            </div>
+            <p class="mt-1 text-xs text-dimmed">
+              Enable the dedicated workshop booking mode for this member account.
+            </p>
+            <div class="mt-3 flex flex-wrap items-center gap-3">
+              <UCheckbox
+                v-model="workshopAccessForm.enabled"
+                label="Workshop booking enabled"
+              />
+              <UButton
+                :loading="updatingWorkshopAccess"
+                @click="saveWorkshopAccess"
+              >
+                Save workshop access
               </UButton>
             </div>
           </UCard>

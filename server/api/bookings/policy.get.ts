@@ -17,7 +17,8 @@ export default defineEventHandler(async (event) => {
       'min_hold_booking_hours',
       'hold_min_end_hour',
       'hold_end_hour',
-      'peak_start_hour'
+      'peak_start_hour',
+      'workshop_credit_multiplier'
     ])
 
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
@@ -30,6 +31,7 @@ export default defineEventHandler(async (event) => {
     minHoldBookingHours: Number(map.get('min_hold_booking_hours') ?? DEFAULT_MIN_HOLD_BOOKING_HOURS),
     holdMinEndHour: Number(map.get('hold_min_end_hour') ?? DEFAULT_HOLD_MIN_END_HOUR),
     holdEndHour: Number(map.get('hold_end_hour') ?? DEFAULT_HOLD_END_HOUR),
-    peakStartHour: Number(map.get('peak_start_hour') ?? DEFAULT_PEAK_START_HOUR)
+    peakStartHour: Number(map.get('peak_start_hour') ?? DEFAULT_PEAK_START_HOUR),
+    workshopCreditMultiplier: Number(map.get('workshop_credit_multiplier') ?? 2)
   }
 })

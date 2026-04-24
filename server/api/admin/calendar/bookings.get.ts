@@ -4,6 +4,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { getExternalCalendarEventsInRange } from '~~/server/utils/booking/externalCalendar'
 import { maybeAutoSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
+import { getUpcomingWorkshopPromo } from '~~/server/utils/booking/workshopPromo'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -115,6 +116,7 @@ export default defineEventHandler(async (event) => {
     provider: string
     calendar_id: string
   }> = []
+  let workshopPromo: Awaited<ReturnType<typeof getUpcomingWorkshopPromo>> = null
 
   try {
     const serviceRole = serverSupabaseServiceRole(event)
@@ -123,6 +125,7 @@ export default defineEventHandler(async (event) => {
       from.toISOString(),
       to.toISOString()
     )
+    workshopPromo = await getUpcomingWorkshopPromo(serviceRole, from.toISOString())
   } catch (error) {
     console.error('[admin/calendar/bookings] failed to load external calendar events', error)
   }
@@ -196,6 +199,7 @@ export default defineEventHandler(async (event) => {
   return {
     from: from.toISOString(),
     to: to.toISOString(),
+    workshopPromo,
     events
   }
 })

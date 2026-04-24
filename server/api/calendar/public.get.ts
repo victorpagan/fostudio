@@ -5,6 +5,7 @@ import { getServerConfigMap } from '~~/server/utils/config/secret'
 import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
 import { getExternalCalendarEventsInRange } from '~~/server/utils/booking/externalCalendar'
 import { maybeAutoSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
+import { getUpcomingWorkshopPromo } from '~~/server/utils/booking/workshopPromo'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -93,6 +94,7 @@ export default defineEventHandler(async (event) => {
     provider: string
     calendar_id: string
   }> = []
+  let workshopPromo: Awaited<ReturnType<typeof getUpcomingWorkshopPromo>> = null
 
   try {
     const serviceRole = serverSupabaseServiceRole(event)
@@ -101,6 +103,7 @@ export default defineEventHandler(async (event) => {
       from.toISOString(),
       to.toISOString()
     )
+    workshopPromo = await getUpcomingWorkshopPromo(serviceRole, from.toISOString())
   } catch (error) {
     console.error('[calendar/public] failed to load external calendar events', error)
   }
@@ -162,6 +165,7 @@ export default defineEventHandler(async (event) => {
     guestBookingStartHour,
     guestBookingEndHour,
     peakWindow: toPeakWindowPayload(peakWindowConfig, null),
+    workshopPromo,
     events
   }
 })

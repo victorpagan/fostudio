@@ -15,6 +15,7 @@ type MemberRow = {
   customer_first_name: string | null
   customer_last_name: string | null
   door_code: string | null
+  workshop_booking_enabled: boolean
   door_code_request_status: string | null
   door_code_last_request_at: string | null
   credit_balance: number | null
@@ -71,6 +72,7 @@ export default defineEventHandler(async (event) => {
     first_name: string | null
     last_name: string | null
     door_code: string | null
+    workshop_booking_enabled: boolean | null
   }
   type DoorCodeRequestRow = {
     user_id: string
@@ -100,7 +102,7 @@ export default defineEventHandler(async (event) => {
     const [customersRes, balancesRes, doorCodeRequestsRes, waiverSignaturesRes] = await Promise.all([
       supabase
         .from('customers')
-        .select('user_id,email,first_name,last_name,door_code')
+        .select('user_id,email,first_name,last_name,door_code,workshop_booking_enabled')
         .in('user_id', userIds),
       supabase
         .from('credit_balance')
@@ -182,6 +184,7 @@ export default defineEventHandler(async (event) => {
       customer_first_name: customer?.first_name ?? null,
       customer_last_name: customer?.last_name ?? null,
       door_code: customer?.door_code ?? null,
+      workshop_booking_enabled: Boolean(customer?.workshop_booking_enabled),
       door_code_request_status: latestDoorCodeRequest?.status ?? null,
       door_code_last_request_at: latestDoorCodeRequest?.requested_at ?? null,
       credit_balance: balancesByUserId.get(membership.user_id) ?? null,

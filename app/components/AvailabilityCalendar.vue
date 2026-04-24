@@ -39,6 +39,15 @@ type PeakWindow = {
   multiplier: number | null
 }
 
+type WorkshopPromo = {
+  bookingId: string
+  startsAt: string
+  endsAt: string
+  title: string | null
+  description: string | null
+  link: string | null
+}
+
 const props = withDefaults(defineProps<{
   endpoint: string // '/api/calendar/public' or '/api/calendar/member'
   fullDay?: boolean
@@ -74,6 +83,7 @@ const bookingWindowDays = ref<number | null>(null)
 const guestBookingStartHour = ref<number | null>(null)
 const guestBookingEndHour = ref<number | null>(null)
 const peakWindow = ref<PeakWindow | null>(null)
+const workshopPromo = ref<WorkshopPromo | null>(null)
 const nowTickMs = ref(Date.now())
 let nowTickTimer: ReturnType<typeof setInterval> | null = null
 const instance = getCurrentInstance()
@@ -86,6 +96,7 @@ type CalendarResponse = {
   guestBookingStartHour?: number
   guestBookingEndHour?: number
   peakWindow?: PeakWindow | null
+  workshopPromo?: WorkshopPromo | null
   events: CalendarEvent[]
 }
 
@@ -198,6 +209,7 @@ async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
       ? Number(res.guestBookingEndHour)
       : null
     peakWindow.value = res.peakWindow ?? null
+    workshopPromo.value = res.workshopPromo ?? null
     lastRefreshedAt.value = new Date().toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
@@ -336,6 +348,17 @@ function hourToTimeLabel(hour: number) {
   const safe = Math.max(0, Math.min(24, Math.floor(hour)))
   return `${safe.toString().padStart(2, '0')}:00:00`
 }
+
+function formatWorkshopPromoDate(value: string) {
+  const parsed = DateTime.fromISO(value, { setZone: true })
+  if (!parsed.isValid) return null
+  return parsed.setZone('America/Los_Angeles').toFormat('ccc, LLL d · h:mm a')
+}
+
+const workshopPromoDateLabel = computed(() => {
+  if (!workshopPromo.value?.startsAt) return null
+  return formatWorkshopPromoDate(workshopPromo.value.startsAt)
+})
 
 function toHourValue(dateTime: DateTime) {
   return dateTime.hour + (dateTime.minute / 60) + (dateTime.second / 3600)
@@ -585,6 +608,40 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <UAlert
+      v-if="workshopPromo"
+      class="mb-3"
+      color="warning"
+      variant="soft"
+      icon="i-lucide-megaphone"
+      :title="workshopPromo.title || 'Upcoming workshop'"
+      :description="workshopPromo.description || undefined"
+    >
+      <template #actions>
+        <div class="flex flex-wrap items-center gap-2">
+          <UBadge
+            v-if="workshopPromoDateLabel"
+            color="neutral"
+            variant="soft"
+            size="sm"
+          >
+            {{ workshopPromoDateLabel }}
+          </UBadge>
+          <UButton
+            v-if="workshopPromo.link"
+            color="warning"
+            variant="soft"
+            size="xs"
+            :to="workshopPromo.link"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open workshop link
+          </UButton>
+        </div>
+      </template>
+    </UAlert>
 
     <div class="relative">
       <FullCalendar :options="calendarOptions" />

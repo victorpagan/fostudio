@@ -5,6 +5,7 @@ import { resolveServerUserRole } from '~~/server/utils/auth'
 import { getSingleTierCapacity, isPriorityMemberForWaitlist } from '~~/server/utils/membership/capacity'
 import { normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
 import { computeCyclePriceCents } from '~~/server/utils/membership/cadencePricing'
+import { normalizeReferralCode } from '~~/server/utils/referrals'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 
 const bodySchema = z.object({
@@ -15,7 +16,8 @@ const bodySchema = z.object({
   guest_first_name: z.string().max(100).optional(),
   guest_last_name: z.string().max(100).optional(),
   guest_phone: z.string().max(30).optional(),
-  promo_code: z.string().min(2).max(64).optional()
+  promo_code: z.string().min(2).max(64).optional(),
+  referral_code: z.string().min(4).max(32).optional()
 })
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -56,6 +58,8 @@ function buildCheckoutSessionMetadata(input: {
   promoId: string | null
   promoDiscountCents: number
   promoSquareDiscountId: string | null
+  referralCode: string | null
+  referrerUserId: string | null
   guestFirstName: string | null
   guestLastName: string | null
   guestPhone: string | null
@@ -67,6 +71,8 @@ function buildCheckoutSessionMetadata(input: {
     ...(input.promoId ? { promo_id: input.promoId } : {}),
     ...(input.promoDiscountCents > 0 ? { promo_discount_cents: input.promoDiscountCents } : {}),
     ...(input.promoSquareDiscountId ? { promo_square_discount_id: input.promoSquareDiscountId } : {}),
+    ...(input.referralCode ? { referral_code: input.referralCode } : {}),
+    ...(input.referrerUserId ? { referral_referrer_user_id: input.referrerUserId } : {}),
     ...(input.guestFirstName ? { guest_first_name: input.guestFirstName } : {}),
     ...(input.guestLastName ? { guest_last_name: input.guestLastName } : {}),
     ...(input.guestPhone ? { guest_phone: input.guestPhone } : {})
@@ -89,8 +95,32 @@ export default defineEventHandler(async (event) => {
   const guestLastName = (parsed.guest_last_name ?? '').trim() || null
   const guestPhone = (parsed.guest_phone ?? '').trim() || null
   const promoCode = normalizePromoCode(parsed.promo_code)
+  const referralCode = normalizeReferralCode(parsed.referral_code)
+  const rawReferralCode = (parsed.referral_code ?? '').trim()
 
   const { isAdmin } = await resolveServerUserRole(event, user)
+
+  let referrerUserId: string | null = null
+  if (rawReferralCode && !referralCode) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid referral code format.' })
+  }
+  if (referralCode) {
+    const { data: referralRow, error: referralErr } = await db
+      .from('member_referral_codes')
+      .select('user_id,active')
+      .eq('code', referralCode)
+      .eq('active', true)
+      .maybeSingle()
+
+    if (referralErr) throw createError({ statusCode: 500, statusMessage: referralErr.message })
+    if (!referralRow?.user_id) {
+      throw createError({ statusCode: 400, statusMessage: 'Referral code not found.' })
+    }
+    if (userId && referralRow.user_id === userId) {
+      throw createError({ statusCode: 400, statusMessage: 'You cannot use your own referral code.' })
+    }
+    referrerUserId = String(referralRow.user_id)
+  }
 
   // ── 1) Validate tier exists and is accessible ──────────────────────────
   const { data: tier, error: tierErr } = await db
@@ -246,6 +276,8 @@ export default defineEventHandler(async (event) => {
       promoId: promoPricing?.promoId ?? null,
       promoDiscountCents: promoPricing?.discountCents ?? 0,
       promoSquareDiscountId: promoPricing?.squareDiscountId ?? null,
+      referralCode,
+      referrerUserId,
       guestFirstName,
       guestLastName,
       guestPhone
@@ -343,6 +375,8 @@ export default defineEventHandler(async (event) => {
       promoId: promoPricing?.promoId ?? null,
       promoDiscountCents: promoPricing?.discountCents ?? 0,
       promoSquareDiscountId: promoPricing?.squareDiscountId ?? null,
+      referralCode,
+      referrerUserId,
       guestFirstName,
       guestLastName,
       guestPhone

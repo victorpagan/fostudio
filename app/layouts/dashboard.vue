@@ -143,6 +143,12 @@ const memberLinkGroups = computed<SidebarLinkGroup[]>(() => {
           onSelect: () => { open.value = false }
         },
         {
+          label: 'Workshops',
+          icon: 'i-lucide-presentation',
+          to: '/dashboard/workshops',
+          onSelect: () => { open.value = false }
+        },
+        {
           label: 'Bookings',
           icon: 'i-lucide-list-checks',
           to: '/dashboard/bookings',

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { extractSquareCards } from '~~/server/utils/square/cards'
@@ -11,6 +12,8 @@ import { buildSubscriptionCreatePhasesFromPlanVariation } from '~~/server/utils/
 import { resolveOrCreateSquareCadenceDiscountId } from '~~/server/utils/square/cadenceDiscount'
 import { parseDiscountLabel } from '~~/app/utils/membershipDiscount'
 import { markPromoRedemption } from '~~/server/utils/promos'
+import { buildExpiryIsoFromDays, resolveTopoffCreditExpiryDays } from '~~/server/utils/credits/buckets'
+import { normalizeReferralCode, resolveReferralCredits } from '~~/server/utils/referrals'
 
 const bodySchema = z.object({
   token: z.string().uuid()
@@ -1025,12 +1028,37 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  let referralOutcome: {
+    status: 'awarded' | 'rejected' | 'skipped'
+    reason: string | null
+  } = { status: 'skipped', reason: null }
+
+  if (claimedMembership.status === 'active') {
+    try {
+      referralOutcome = await processReferralForClaim({
+        supabase: supabase as unknown as SupabaseClient,
+        session,
+        claimedMembershipId: claimedMembership.id,
+        claimedMembershipStatus: claimedMembership.status ?? null,
+        userId: user.sub,
+        isFirstActivation
+      })
+    } catch (referralError) {
+      console.error('[checkout-claim] referral processing failed', referralError)
+    }
+  }
+
   const checkoutMetadata = (() => {
     const base = (session.metadata && typeof session.metadata === 'object')
       ? { ...session.metadata }
       : {}
     if (claimedMembership.status === 'active' && readPromoId(session.metadata)) {
       base.promo_redeemed_at = nowIso
+    }
+    if (referralOutcome.status !== 'skipped') {
+      base.referral_status = referralOutcome.status
+      if (referralOutcome.reason) base.referral_reason = referralOutcome.reason
+      base.referral_processed_at = nowIso
     }
     return Object.keys(base).length ? base : null
   })()
@@ -1081,6 +1109,212 @@ export default defineEventHandler(async (event) => {
     newCustomer: isFirstActivation
   }
 })
+
+type ReferralClaimParams = {
+  supabase: SupabaseClient
+  session: CheckoutSessionRow
+  claimedMembershipId: string
+  claimedMembershipStatus: string | null
+  userId: string
+  isFirstActivation: boolean
+}
+
+type ReferralClaimResult = {
+  status: 'awarded' | 'rejected' | 'skipped'
+  reason: string | null
+}
+
+async function processReferralForClaim(params: ReferralClaimParams): Promise<ReferralClaimResult> {
+  const referralCode = normalizeReferralCode(readString(params.session.metadata, 'referral_code'))
+  if (!referralCode) return { status: 'skipped', reason: null }
+  if ((params.claimedMembershipStatus ?? '').toLowerCase() !== 'active') return { status: 'skipped', reason: null }
+
+  const { supabase, session, userId, claimedMembershipId } = params
+  const nowIso = new Date().toISOString()
+
+  const getOrCreateReferralAudit = async () => {
+    const { data: existing, error: existingErr } = await supabase
+      .from('membership_referrals')
+      .select('id,status,checkout_session_id,referred_user_id')
+      .eq('checkout_session_id', session.id)
+      .maybeSingle()
+
+    if (existingErr) throw createError({ statusCode: 500, statusMessage: existingErr.message })
+    if (existing?.id) return existing
+
+    const { data: inserted, error: insertErr } = await supabase
+      .from('membership_referrals')
+      .insert({
+        checkout_session_id: session.id,
+        referral_code: referralCode,
+        referred_user_id: userId,
+        status: 'pending'
+      })
+      .select('id,status,checkout_session_id,referred_user_id')
+      .single()
+
+    if (insertErr) throw createError({ statusCode: 500, statusMessage: insertErr.message })
+    return inserted
+  }
+
+  const rejectReferral = async (auditId: string, reason: string, referrerUserId?: string | null) => {
+    const { error } = await supabase
+      .from('membership_referrals')
+      .update({
+        status: 'rejected',
+        rejection_reason: reason,
+        referred_user_id: userId,
+        referrer_user_id: referrerUserId ?? null
+      })
+      .eq('id', auditId)
+    if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+    return { status: 'rejected' as const, reason }
+  }
+
+  const auditRow = await getOrCreateReferralAudit()
+  const currentAuditStatus = String(auditRow?.status ?? '').toLowerCase()
+  if (currentAuditStatus === 'awarded') return { status: 'awarded', reason: null }
+  if (currentAuditStatus === 'rejected') {
+    return { status: 'rejected', reason: 'already_rejected' }
+  }
+
+  if (!params.isFirstActivation) {
+    return await rejectReferral(auditRow.id, 'not_new_member')
+  }
+
+  const { data: referrerCodeRow, error: referrerCodeErr } = await supabase
+    .from('member_referral_codes')
+    .select('user_id,active')
+    .eq('code', referralCode)
+    .eq('active', true)
+    .maybeSingle()
+
+  if (referrerCodeErr) throw createError({ statusCode: 500, statusMessage: referrerCodeErr.message })
+  if (!referrerCodeRow?.user_id) {
+    return await rejectReferral(auditRow.id, 'invalid_code')
+  }
+
+  const referrerUserId = String(referrerCodeRow.user_id)
+  if (referrerUserId === userId) {
+    return await rejectReferral(auditRow.id, 'self_referral', referrerUserId)
+  }
+
+  const { data: existingAward, error: existingAwardErr } = await supabase
+    .from('membership_referrals')
+    .select('id,checkout_session_id')
+    .eq('referred_user_id', userId)
+    .eq('status', 'awarded')
+    .neq('checkout_session_id', session.id)
+    .limit(1)
+    .maybeSingle()
+
+  if (existingAwardErr) throw createError({ statusCode: 500, statusMessage: existingAwardErr.message })
+  if (existingAward?.id) {
+    return await rejectReferral(auditRow.id, 'already_rewarded', referrerUserId)
+  }
+
+  const { data: referrerMembership, error: referrerMembershipErr } = await supabase
+    .from('memberships')
+    .select('id,status')
+    .eq('user_id', referrerUserId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (referrerMembershipErr) throw createError({ statusCode: 500, statusMessage: referrerMembershipErr.message })
+  const referrerMembershipStatus = String(referrerMembership?.status ?? '').toLowerCase()
+  if (referrerMembershipStatus !== 'active' && referrerMembershipStatus !== 'past_due') {
+    return await rejectReferral(auditRow.id, 'referrer_inactive', referrerUserId)
+  }
+
+  const credits = await resolveReferralCredits(supabase, session.tier, session.cadence)
+  const referredCredits = Math.max(0, Number(credits.referredCredits ?? 0))
+  const referrerCredits = Math.max(0, Number(credits.referrerCredits ?? 0))
+
+  const referredExpiryDays = await resolveTopoffCreditExpiryDays(supabase, userId, claimedMembershipId)
+  const referrerExpiryDays = await resolveTopoffCreditExpiryDays(supabase, referrerUserId, referrerMembership?.id ?? null)
+
+  const referredExternalRef = `referral:${session.id}:referred`
+  const referrerExternalRef = `referral:${session.id}:referrer`
+
+  const { data: referredExistingLedger, error: referredExistingLedgerErr } = await supabase
+    .from('credits_ledger')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('reason', 'topoff')
+    .eq('external_ref', referredExternalRef)
+    .maybeSingle()
+  if (referredExistingLedgerErr) throw createError({ statusCode: 500, statusMessage: referredExistingLedgerErr.message })
+
+  const { data: referrerExistingLedger, error: referrerExistingLedgerErr } = await supabase
+    .from('credits_ledger')
+    .select('id')
+    .eq('user_id', referrerUserId)
+    .eq('reason', 'topoff')
+    .eq('external_ref', referrerExternalRef)
+    .maybeSingle()
+  if (referrerExistingLedgerErr) throw createError({ statusCode: 500, statusMessage: referrerExistingLedgerErr.message })
+
+  if (!referredExistingLedger?.id && referredCredits > 0) {
+    const { error: referredInsertErr } = await supabase
+      .from('credits_ledger')
+      .insert({
+        user_id: userId,
+        membership_id: claimedMembershipId,
+        delta: referredCredits,
+        reason: 'topoff',
+        external_ref: referredExternalRef,
+        expires_at: buildExpiryIsoFromDays(referredExpiryDays),
+        metadata: {
+          source: 'referral_reward',
+          role: 'referred',
+          referral_code: referralCode,
+          checkout_session_id: session.id,
+          counterpart_user_id: referrerUserId,
+          topoff_credit_expiry_days: referredExpiryDays
+        }
+      })
+    if (referredInsertErr) throw createError({ statusCode: 500, statusMessage: referredInsertErr.message })
+  }
+
+  if (!referrerExistingLedger?.id && referrerCredits > 0) {
+    const { error: referrerInsertErr } = await supabase
+      .from('credits_ledger')
+      .insert({
+        user_id: referrerUserId,
+        membership_id: referrerMembership?.id ?? null,
+        delta: referrerCredits,
+        reason: 'topoff',
+        external_ref: referrerExternalRef,
+        expires_at: buildExpiryIsoFromDays(referrerExpiryDays),
+        metadata: {
+          source: 'referral_reward',
+          role: 'referrer',
+          referral_code: referralCode,
+          checkout_session_id: session.id,
+          counterpart_user_id: userId,
+          topoff_credit_expiry_days: referrerExpiryDays
+        }
+      })
+    if (referrerInsertErr) throw createError({ statusCode: 500, statusMessage: referrerInsertErr.message })
+  }
+
+  const { error: auditUpdateErr } = await supabase
+    .from('membership_referrals')
+    .update({
+      status: 'awarded',
+      rejection_reason: null,
+      referrer_user_id: referrerUserId,
+      referred_user_id: userId,
+      referrer_credits_awarded: referrerCredits,
+      referred_credits_awarded: referredCredits,
+      awarded_at: nowIso
+    })
+    .eq('id', auditRow.id)
+  if (auditUpdateErr) throw createError({ statusCode: 500, statusMessage: auditUpdateErr.message })
+
+  return { status: 'awarded', reason: null }
+}
 
 function normalizeEmail(value: string | null | undefined) {
   const normalized = (value ?? '').trim().toLowerCase()
