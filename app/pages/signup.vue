@@ -319,9 +319,6 @@ async function handleSignup() {
               <div class="text-lg font-semibold">
                 Account details
               </div>
-              <div class="text-sm text-dimmed">
-                Phone is required for booking access and studio operations.
-              </div>
             </div>
             <UBadge
               v-if="isCheckoutLinkedSignup"
