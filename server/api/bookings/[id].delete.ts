@@ -23,6 +23,16 @@ import { sendMemberBookingLifecycleMail } from '~~/server/utils/mail/memberBooki
 const TZ = 'America/Los_Angeles'
 const REFUND_WINDOW_HOURS = 24
 
+type BookingRow = {
+  id: string
+  user_id: string | null
+  start_time: string
+  end_time: string
+  status: string
+  credits_burned: number | null
+  booking_rate_kind?: string | null
+}
+
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
   if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
@@ -39,18 +49,22 @@ export default defineEventHandler(async (event) => {
     : await serverSupabaseClient(event)
 
   // 1. Fetch the booking
-  const { data: booking, error: fetchErr } = await supabase
+  const { data: rawBooking, error: fetchErr } = await supabase
     .from('bookings')
-    .select('id, user_id, start_time, end_time, status, credits_burned')
+    .select('id, user_id, start_time, end_time, status, credits_burned, booking_rate_kind')
     .eq('id', bookingId)
     .maybeSingle()
 
   if (fetchErr) throw createError({ statusCode: 500, statusMessage: fetchErr.message })
+  const booking = rawBooking as unknown as BookingRow | null
   if (!booking) throw createError({ statusCode: 404, statusMessage: 'Booking not found' })
 
   // 2. Ownership check (non-admin)
   if (!isAdmin && booking.user_id !== user.sub) {
     throw createError({ statusCode: 403, statusMessage: 'Not your booking' })
+  }
+  if (!isAdmin && String(booking.booking_rate_kind ?? 'standard') === 'standby') {
+    throw createError({ statusCode: 409, statusMessage: 'Standby bookings cannot be canceled.' })
   }
 
   // 3. Only cancel active bookings

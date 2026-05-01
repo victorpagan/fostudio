@@ -23,6 +23,7 @@ export type CreditBucketSummary = {
 
 export const DEFAULT_MEMBERSHIP_CREDIT_EXPIRY_DAYS = 90
 export const DEFAULT_TOPUP_CREDIT_EXPIRY_DAYS = 30
+export const DEFAULT_GUEST_CREDIT_EXPIRY_DAYS = 30
 
 function asNumber(value: number | string | null | undefined) {
   if (typeof value === 'number' && Number.isFinite(value)) return value
@@ -144,18 +145,32 @@ export function computeCreditBucketSummary(
 }
 
 export async function resolveTopoffCreditExpiryDays(
-  supabase: any,
+  supabase: unknown,
   userId: string,
   membershipId: string | null | undefined
 ) {
+  type QueryResult<T = Record<string, unknown>> = {
+    data?: T[] | null
+    error?: { message: string } | null
+  }
+  type SingleResult<T = Record<string, unknown>> = {
+    data?: T | null
+    error?: { message: string } | null
+  }
+  type QueryBuilder<T = Record<string, unknown>> = PromiseLike<QueryResult<T>> & {
+    eq: (column: string, value: unknown) => QueryBuilder<T>
+    maybeSingle: () => PromiseLike<SingleResult<T>>
+    select: (columns?: string, options?: Record<string, unknown>) => QueryBuilder<T>
+  }
+  const db = supabase as { from: <T = Record<string, unknown>>(table: string) => QueryBuilder<T> }
   let tierId: string | null = null
   const trimmedMembershipId = typeof membershipId === 'string' && membershipId.trim()
     ? membershipId.trim()
     : null
 
   if (trimmedMembershipId) {
-    const { data } = await supabase
-      .from('memberships')
+    const { data } = await db
+      .from<{ tier: string | null }>('memberships')
       .select('tier')
       .eq('id', trimmedMembershipId)
       .maybeSingle()
@@ -163,8 +178,8 @@ export async function resolveTopoffCreditExpiryDays(
   }
 
   if (!tierId) {
-    const { data } = await supabase
-      .from('memberships')
+    const { data } = await db
+      .from<{ tier: string | null, status: string | null }>('memberships')
       .select('tier,status')
       .eq('user_id', userId)
       .maybeSingle()
@@ -173,10 +188,18 @@ export async function resolveTopoffCreditExpiryDays(
     }
   }
 
-  if (!tierId) return DEFAULT_TOPUP_CREDIT_EXPIRY_DAYS
+  if (!tierId) {
+    const { data: configRow } = await db
+      .from<{ value: string | number | null }>('system_config')
+      .select('value')
+      .eq('key', 'guest_credit_expiry_days')
+      .maybeSingle()
+    const parsed = Number(configRow?.value ?? DEFAULT_GUEST_CREDIT_EXPIRY_DAYS)
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_GUEST_CREDIT_EXPIRY_DAYS
+  }
 
-  const { data: tierRow } = await supabase
-    .from('membership_tiers')
+  const { data: tierRow } = await db
+    .from<{ topoff_credit_expiry_days?: number | string | null }>('membership_tiers')
     .select('topoff_credit_expiry_days')
     .eq('id', tierId)
     .maybeSingle()
@@ -190,4 +213,3 @@ export function buildExpiryIsoFromDays(days: number, baseMs = Date.now()) {
   const safeDays = Number.isFinite(days) && days > 0 ? Math.floor(days) : DEFAULT_TOPUP_CREDIT_EXPIRY_DAYS
   return new Date(baseMs + safeDays * 24 * 60 * 60 * 1000).toISOString()
 }
-

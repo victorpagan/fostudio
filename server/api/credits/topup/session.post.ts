@@ -17,6 +17,7 @@ export default defineEventHandler(async (event) => {
   const body = bodySchema.parse(await readBody(event))
 
   const supabase = serverSupabaseServiceRole(event)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
 
   const { data: rawOption, error: optionErr } = await db
@@ -41,12 +42,7 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
-  if (!membership || (membership.status ?? '').toLowerCase() !== 'active') {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'An active membership is required before purchasing additional credits.'
-    })
-  }
+  const hasActiveMembership = Boolean(membership && (membership.status ?? '').toLowerCase() === 'active')
 
   const promoPricing = await resolvePromoPricing({
     supabase,
@@ -63,7 +59,7 @@ export default defineEventHandler(async (event) => {
     .insert({
       token,
       user_id: user.sub,
-      membership_id: membership.id,
+      membership_id: hasActiveMembership && membership ? membership.id : null,
       credits: mappedOption.credits,
       amount_cents: effectivePriceCents,
       currency: 'USD',
@@ -79,7 +75,8 @@ export default defineEventHandler(async (event) => {
         promo_code: promoPricing?.code ?? null,
         promo_id: promoPricing?.promoId ?? null,
         promo_discount_cents: promoPricing?.discountCents ?? null,
-        promo_square_discount_id: promoPricing?.squareDiscountId ?? null
+        promo_square_discount_id: promoPricing?.squareDiscountId ?? null,
+        account_state: hasActiveMembership ? 'active_member' : 'guest'
       }
     })
     .select('id,token')

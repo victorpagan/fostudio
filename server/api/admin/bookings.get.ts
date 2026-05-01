@@ -8,9 +8,12 @@ const querySchema = z.object({
   status: z.string().optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
+  bookingId: z.string().uuid().optional(),
   includeExternal: z.coerce.boolean().optional().default(true),
   limit: z.coerce.number().int().min(1).max(300).optional().default(120)
 })
+
+const bookingSelect = 'id,user_id,customer_id,start_time,end_time,status,credits_burned,guest_name,guest_email,notes,created_at,updated_at,booking_holds(id,hold_start,hold_end,hold_type)'
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
@@ -18,7 +21,7 @@ export default defineEventHandler(async (event) => {
 
   let builder = supabase
     .from('bookings')
-    .select('id,user_id,customer_id,start_time,end_time,status,credits_burned,guest_name,guest_email,notes,created_at,updated_at,booking_holds(id,hold_start,hold_end,hold_type)')
+    .select(bookingSelect)
     .order('start_time', { ascending: false })
     .limit(query.limit)
 
@@ -26,8 +29,19 @@ export default defineEventHandler(async (event) => {
   if (query.from) builder = builder.gte('start_time', query.from)
   if (query.to) builder = builder.lte('start_time', query.to)
 
-  const { data: bookings, error: bookingsErr } = await builder
+  const { data: initialBookings, error: bookingsErr } = await builder
   if (bookingsErr) throw createError({ statusCode: 500, statusMessage: bookingsErr.message })
+
+  let bookings = initialBookings ?? []
+  if (query.bookingId && !bookings.some(booking => booking.id === query.bookingId)) {
+    const { data: linkedBooking, error: linkedBookingErr } = await supabase
+      .from('bookings')
+      .select(bookingSelect)
+      .eq('id', query.bookingId)
+      .maybeSingle()
+    if (linkedBookingErr) throw createError({ statusCode: 500, statusMessage: linkedBookingErr.message })
+    if (linkedBooking) bookings = [linkedBooking, ...bookings]
+  }
 
   const userIds = [...new Set((bookings ?? [])
     .map(row => row.user_id)

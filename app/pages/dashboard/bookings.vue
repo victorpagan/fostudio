@@ -38,6 +38,7 @@ type Booking = {
   status: string
   notes: string | null
   credits_burned: number | null
+  booking_rate_kind?: string | null
   created_at: string
   booking_holds?: {
     id: string
@@ -122,33 +123,35 @@ const { data: membershipData } = await useAsyncData('bookings:membership', async
 const hasMembership = computed(() =>
   isAdmin.value || resolveMembershipUiState(membershipData.value) === 'active'
 )
+const hasBookingAccess = computed(() => Boolean(user.value) || isAdmin.value)
+const bookingIncrementMinutes = computed(() => hasMembership.value ? 30 : 60)
 
 // Only fetch bookings when membership is confirmed
 const { data: upcoming, refresh: refreshUpcoming } = await useAsyncData('bookings:upcoming', async () => {
-  if (!user.value || !hasMembership.value) return []
+  if (!user.value || !hasBookingAccess.value) return []
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, start_time, end_time, status, notes, credits_burned, created_at, booking_holds(id,hold_start,hold_end,hold_type)')
+    .select('id, start_time, end_time, status, notes, credits_burned, booking_rate_kind, created_at, booking_holds(id,hold_start,hold_end,hold_type)')
     .eq('user_id', user.value.sub)
     .gt('end_time', nowIso.value)
     .in('status', ['confirmed', 'requested'])
     .order('start_time', { ascending: true })
     .limit(20)
   if (error) throw error
-  return (data ?? []) as Booking[]
+  return (data ?? []) as unknown as Booking[]
 })
 
 const { data: past, refresh: refreshPast } = await useAsyncData('bookings:past', async () => {
-  if (!user.value || !hasMembership.value) return []
+  if (!user.value || !hasBookingAccess.value) return []
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, start_time, end_time, status, notes, credits_burned, created_at, booking_holds(id,hold_start,hold_end,hold_type)')
+    .select('id, start_time, end_time, status, notes, credits_burned, booking_rate_kind, created_at, booking_holds(id,hold_start,hold_end,hold_type)')
     .eq('user_id', user.value.sub)
     .lte('end_time', nowIso.value)
     .order('start_time', { ascending: false })
     .limit(200)
   if (error) throw error
-  return (data ?? []) as Booking[]
+  return (data ?? []) as unknown as Booking[]
 })
 
 // Fetch tiers for upsell panel (only loaded when no active membership)
@@ -518,6 +521,7 @@ function hasEnded(booking: Booking) {
 }
 
 function canCancel(booking: Booking) {
+  if (booking.booking_rate_kind === 'standby') return false
   const status = String(booking.status ?? '').toLowerCase()
   if (!['confirmed', 'requested', 'pending_payment'].includes(status)) return false
   return hoursUntilStart(booking) >= 24
@@ -528,6 +532,7 @@ function hasHold(booking: Booking) {
 }
 
 function canCancelHoldOnly(booking: Booking) {
+  if (booking.booking_rate_kind === 'standby') return false
   const status = String(booking.status ?? '').toLowerCase()
   if (!['confirmed', 'requested', 'pending_payment'].includes(status)) return false
   if (!hasHold(booking)) return false
@@ -545,16 +550,19 @@ function isRefundEligible(booking: Booking) {
 }
 
 function canReschedule(booking: Booking) {
+  if (booking.booking_rate_kind === 'standby') return false
   if (!['confirmed', 'requested', 'pending_payment'].includes(String(booking.status ?? '').toLowerCase())) return false
   return hoursUntilStart(booking) >= memberRescheduleNoticeHours.value
 }
 
 function canExtend(booking: Booking) {
+  if (booking.booking_rate_kind === 'standby') return false
   if (!['confirmed', 'requested', 'pending_payment'].includes(String(booking.status ?? '').toLowerCase())) return false
   return hasPassed(booking) && !hasEnded(booking)
 }
 
 function rescheduleLockReason(booking: Booking) {
+  if (booking.booking_rate_kind === 'standby') return 'Standby bookings cannot be rescheduled, canceled, or extended.'
   if (hasPassed(booking)) {
     if (!hasEnded(booking) && canExtend(booking)) return 'This booking has already started. It can only be extended'
     return 'Reschedule unavailable: booking has already started/passed.'
@@ -563,6 +571,7 @@ function rescheduleLockReason(booking: Booking) {
 }
 
 function extendLockReason(booking: Booking) {
+  if (booking.booking_rate_kind === 'standby') return 'Standby bookings cannot be extended.'
   const status = String(booking.status ?? '').toLowerCase()
   if (!['confirmed', 'requested', 'pending_payment'].includes(status)) {
     return `Extension unavailable for booking status "${booking.status}".`
@@ -644,7 +653,7 @@ function openReschedule(booking: Booking, mode: RescheduleMode = 'reschedule') {
   if (mode === 'extend') {
     const proposedEnd = DateTime.fromISO(booking.end_time, { setZone: true })
       .setZone(STUDIO_TZ)
-      .plus({ minutes: 30 })
+      .plus({ minutes: bookingIncrementMinutes.value })
     if (proposedEnd.isValid) {
       rescheduleForm.endTime = proposedEnd.toFormat('yyyy-LL-dd\'T\'HH:mm')
     }
@@ -1027,7 +1036,7 @@ function getOpenWindowsFromIntervals(intervals: Array<{ startMinute: number, end
   if (cursor < 24 * 60) {
     windows.push({ startMinute: cursor, endMinute: 24 * 60 })
   }
-  return windows.filter(window => (window.endMinute - window.startMinute) >= 30)
+  return windows.filter(window => (window.endMinute - window.startMinute) >= bookingIncrementMinutes.value)
 }
 
 function getOpenWindowsForDay(key: string) {
@@ -1035,7 +1044,8 @@ function getOpenWindowsForDay(key: string) {
 }
 
 function minuteToAligned30(minute: number) {
-  return Math.ceil(minute / 30) * 30
+  const increment = Math.max(1, bookingIncrementMinutes.value)
+  return Math.ceil(minute / increment) * increment
 }
 
 function possibleStartMinutesForDay(key: string) {
@@ -1059,11 +1069,13 @@ function possibleStartMinutesForDay(key: string) {
     }
     while (slot <= maxStart) {
       starts.push(slot)
-      slot += 30
+      slot += bookingIncrementMinutes.value
     }
 
     const fallback = maxStart
-    if (fallback >= minStart && !starts.includes(fallback)) starts.push(fallback)
+    if (fallback >= minStart && fallback % bookingIncrementMinutes.value === 0 && !starts.includes(fallback)) {
+      starts.push(fallback)
+    }
   }
 
   const unique = Array.from(new Set(starts)).sort((a, b) => a - b)
@@ -1273,12 +1285,13 @@ const selectedDayEndOptions = computed(() => {
     if (params.toMinute <= params.fromMinute) return [] as Array<{ label: string, value: string }>
 
     const values: number[] = []
-    let minute = minuteToAligned30(params.fromMinute + 30)
+    const increment = Math.max(1, bookingIncrementMinutes.value)
+    let minute = minuteToAligned30(params.fromMinute + increment)
     while (minute <= params.toMinute) {
       values.push(minute)
-      minute += 30
+      minute += increment
     }
-    if (!values.includes(params.toMinute)) {
+    if (params.toMinute % increment === 0 && !values.includes(params.toMinute)) {
       values.push(params.toMinute)
     }
 
@@ -1536,12 +1549,12 @@ watch(
               variant: 'ghost',
               onSelect: refreshAll
             },
-            ...(hasMembership
+            ...(hasBookingAccess
               ? [{
                 label: 'Book studio',
                 icon: 'i-lucide-calendar-plus',
-                color: 'primary',
-                variant: 'solid',
+                color: 'primary' as const,
+                variant: 'solid' as const,
                 to: '/dashboard/book'
               }]
               : [])
@@ -1550,7 +1563,7 @@ watch(
       </template>
 
       <template #default>
-        <!-- ── No active membership: show tier upsell ── -->
+        <!-- ── No active membership: show guest mode + tier upsell ── -->
         <div
           v-if="!hasMembership"
           class="space-y-6"
@@ -1562,7 +1575,7 @@ watch(
                   You don't have an active membership
                 </p>
                 <p class="mt-1 text-sm text-dimmed">
-                  Choose a plan below to unlock studio booking, credits, and priority access.
+                  You can still book as a guest with premium credits. Choose a plan below for lower credit costs, longer booking windows, 30-minute slots, and overnight holds.
                 </p>
               </div>
               <UBadge
@@ -1675,9 +1688,8 @@ watch(
           </div>
         </div>
 
-        <!-- ── Active membership: show bookings ── -->
+        <!-- ── Authenticated booking history ── -->
         <div
-          v-else
           class="space-y-6"
         >
           <UAlert
@@ -1751,6 +1763,14 @@ watch(
                           size="sm"
                         >
                           {{ formatStatus(booking.status) }}
+                        </UBadge>
+                        <UBadge
+                          v-if="booking.booking_rate_kind === 'standby'"
+                          color="success"
+                          variant="soft"
+                          size="sm"
+                        >
+                          Standby
                         </UBadge>
                         <span class="text-sm font-medium">{{ formatRange(booking.start_time, booking.end_time).dateStr }}</span>
                       </div>
@@ -1895,6 +1915,14 @@ watch(
                             size="sm"
                           >
                             {{ formatStatus(booking.status) }}
+                          </UBadge>
+                          <UBadge
+                            v-if="booking.booking_rate_kind === 'standby'"
+                            color="success"
+                            variant="soft"
+                            size="sm"
+                          >
+                            Standby
                           </UBadge>
                           <span class="text-sm font-medium">{{ formatRange(booking.start_time, booking.end_time).dateStr }}</span>
                         </div>

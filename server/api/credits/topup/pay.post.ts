@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
@@ -64,8 +63,29 @@ function readPromoId(source: Record<string, unknown> | null | undefined) {
   return value ?? null
 }
 
-async function readBalance(supabase: any, userId: string) {
-  const { data, error } = await supabase
+type QueryResult<T = Record<string, unknown>> = {
+  data?: T[] | null
+  error?: { message: string } | null
+}
+
+type SingleResult<T = Record<string, unknown>> = {
+  data?: T | null
+  error?: { message: string } | null
+}
+
+type QueryBuilder<T = Record<string, unknown>> = PromiseLike<QueryResult<T>> & {
+  eq: (column: string, value: unknown) => QueryBuilder<T>
+  maybeSingle: () => PromiseLike<SingleResult<T>>
+  select: (columns?: string, options?: Record<string, unknown>) => QueryBuilder<T>
+}
+
+type UntypedSupabaseClient = {
+  from: <T = Record<string, unknown>>(table: string) => QueryBuilder<T>
+}
+
+async function readBalance(supabase: unknown, userId: string) {
+  const db = supabase as UntypedSupabaseClient
+  const { data, error } = await db
     .from('credit_balance')
     .select('balance')
     .eq('user_id', userId)
@@ -73,8 +93,8 @@ async function readBalance(supabase: any, userId: string) {
 
   if (!error) return asNumber(data?.balance) ?? 0
 
-  const { data: ledgerRows, error: ledgerErr } = await supabase
-    .from('credits_ledger')
+  const { data: ledgerRows, error: ledgerErr } = await db
+    .from<{ delta: number | string | null, expires_at: string | null }>('credits_ledger')
     .select('delta,expires_at')
     .eq('user_id', userId)
 
@@ -96,6 +116,7 @@ export default defineEventHandler(async (event) => {
 
   const body = bodySchema.parse(await readBody(event))
   const supabase = serverSupabaseServiceRole(event)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
 
   const { data: rawSession, error: sessionErr } = await supabase
@@ -128,12 +149,7 @@ export default defineEventHandler(async (event) => {
     .eq('user_id', user.sub)
     .maybeSingle()
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
-  if (!membership || (membership.status ?? '').toLowerCase() !== 'active') {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'An active membership is required before purchasing additional credits.'
-    })
-  }
+  const hasActiveMembership = Boolean(membership && (membership.status ?? '').toLowerCase() === 'active')
 
   const squareCustomerId = await ensureSquareCustomerForUser(event, {
     userId: user.sub,
@@ -212,7 +228,8 @@ export default defineEventHandler(async (event) => {
           option_label: optionLabel,
           option_key: optionKey,
           topoff_credit_expiry_days: topoffExpiryDays,
-          payment_id: paymentId
+          payment_id: paymentId,
+          account_state: hasActiveMembership ? 'active_member' : 'guest'
         }
       })
       .select('id')

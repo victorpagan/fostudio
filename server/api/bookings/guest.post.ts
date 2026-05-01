@@ -1,50 +1,49 @@
 /**
  * POST /api/bookings/guest
  *
- * Guest (non-member) booking flow.
- * 1. Validates the requested time window.
- * 2. Computes the cost at the guest rate (flat peak multiplier, no tier discount).
- * 3. Creates a Square payment link for the one-time studio-time purchase.
- * 4. Inserts a 'pending_payment' booking row linked to the Square order.
- * 5. Returns the Square checkout URL.
- *
- * After payment, the Square webhook (invoice.payment_completed / payment.completed)
- * is responsible for flipping the booking status to 'confirmed'.
- *
- * Guest rate is configured in system_config:
- *   key = 'guest_booking_rate_per_credit_cents'  (e.g. 3500 = $35/credit)
- *   key = 'guest_peak_multiplier'                (e.g. 2.0)
- *   key = 'SQUARE_GUEST_BOOKING_VARIATION_ID'    (optional catalog variation id)
- *
- * 1 credit = 1 off-peak hour. Peak multiplier applies the same 15-min bucket logic.
+ * Authenticated non-member booking flow.
+ * - If the guest has enough credits, confirms and burns immediately.
+ * - If credits are short, reserves the slot for a short payment window and
+ *   sends the guest to Square for the credit shortfall.
  */
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { DateTime } from 'luxon'
-import { randomUUID } from 'node:crypto'
-import { serverSupabaseClient } from '#supabase/server'
+import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
-import { getServerConfig, getServerConfigMap } from '~~/server/utils/config/secret'
+import { getServerConfig } from '~~/server/utils/config/secret'
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { ensureNoExternalCalendarConflict } from '~~/server/utils/booking/externalCalendar'
-import { ensureSquareCustomerForGuest } from '~~/server/utils/square/customer'
+import { ensureSquareCustomerForUser, getPrimaryCustomerRowForUser } from '~~/server/utils/square/customer'
 import { toSquareBuyerPhone } from '~~/server/utils/square/checkoutPrefill'
+import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
+import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
+import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
+import { sendMemberBookingLifecycleMail } from '~~/server/utils/mail/memberBookingLifecycle'
+import { assertCurrentWaiver } from '~~/server/utils/waiver/status'
+import {
+  buildRatePolicySnapshot,
+  loadGuestBookingPolicy,
+  loadStandbyBookingPolicy,
+  validateGuestBookingWindow,
+  validateStandbySelection
+} from '~~/server/utils/booking/guestPolicy'
 
 const bodySchema = z.object({
   start_time: z.string(),
   end_time: z.string(),
-  guest_name: z.string().min(1).max(100),
-  guest_email: z.string().email(),
-  notes: z.string().max(500).optional().nullable()
+  notes: z.string().max(500).optional().nullable(),
+  rate_kind: z.enum(['standard', 'standby']).optional().default('standard')
 })
 
 type PaymentLinkResult = {
   paymentLink?: {
+    id?: string | null
     url?: string | null
     orderId?: string | null
   } | null
 }
 
-// Credits in 15-min buckets with the guest peak multiplier
 function computeCredits(startIso: string, endIso: string, peakMultiplier: number, peakWindow: Awaited<ReturnType<typeof loadPeakWindowConfig>>) {
   const start = DateTime.fromISO(startIso, { zone: STUDIO_TZ })
   const end = DateTime.fromISO(endIso, { zone: STUDIO_TZ })
@@ -67,119 +66,110 @@ function computeCredits(startIso: string, endIso: string, peakMultiplier: number
   return Math.round(credits * 100) / 100
 }
 
-function toSquareQuantity(value: number) {
-  const safe = Number.isFinite(value) && value > 0 ? value : 1
-  return safe.toFixed(2).replace(/\.?0+$/, '')
+function nameFromParts(first?: string | null, last?: string | null, email?: string | null) {
+  const name = [first, last].map(value => String(value ?? '').trim()).filter(Boolean).join(' ').trim()
+  return name || email || 'Guest'
 }
 
-function toValidHour(raw: unknown, fallback: number) {
-  const parsed = Number(raw)
-  if (!Number.isFinite(parsed)) return fallback
-  const hour = Math.floor(parsed)
-  return Math.min(24, Math.max(0, hour))
-}
-
-function toHourValue(dateTime: DateTime) {
-  return dateTime.hour + (dateTime.minute / 60) + (dateTime.second / 3600)
-}
-
-function formatHourLabel(hour: number) {
-  const normalized = Math.min(24, Math.max(0, Math.floor(hour)))
-  if (normalized === 24) return '12:00 AM'
-  return DateTime.fromObject({ year: 2026, month: 1, day: 1, hour: normalized, minute: 0 }, { zone: STUDIO_TZ }).toFormat('h:mm a')
+async function hasStandbyBookingToday(supabase: unknown, userId: string, start: DateTime) {
+  type CountResult = { count?: number | null, error?: { message: string } | null }
+  type CountQuery = PromiseLike<CountResult> & {
+    eq: (column: string, value: unknown) => CountQuery
+    gte: (column: string, value: unknown) => CountQuery
+    in: (column: string, values: unknown[]) => CountQuery
+    lt: (column: string, value: unknown) => CountQuery
+    select: (columns?: string, options?: Record<string, unknown>) => CountQuery
+  }
+  const db = supabase as { from: (table: string) => CountQuery }
+  const dayStart = start.setZone(STUDIO_TZ).startOf('day').toUTC().toISO()
+  const dayEnd = start.setZone(STUDIO_TZ).startOf('day').plus({ days: 1 }).toUTC().toISO()
+  if (!dayStart || !dayEnd) return false
+  const { count, error } = await db
+    .from('bookings')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('booking_rate_kind', 'standby')
+    .in('status', ['confirmed', 'requested', 'pending_payment'])
+    .gte('start_time', dayStart)
+    .lt('start_time', dayEnd)
+  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+  return Math.max(0, count ?? 0) > 0
 }
 
 export default defineEventHandler(async (event) => {
-  const supabase = await serverSupabaseClient(event)
+  const user = await serverSupabaseUser(event)
+  if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required before booking as a guest.' })
+
   const body = bodySchema.parse(await readBody(event))
+  const supabase = serverSupabaseServiceRole(event)
   const peakWindow = await loadPeakWindowConfig(event)
+  const guestPolicy = await loadGuestBookingPolicy(event)
+  const standbyPolicy = await loadStandbyBookingPolicy(event)
+  const rateKind = body.rate_kind ?? 'standard'
+
+  const { data: membership, error: membershipErr } = await supabase
+    .from('memberships')
+    .select('id,status')
+    .eq('user_id', user.sub)
+    .maybeSingle()
+  if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
+  if (String(membership?.status ?? '').toLowerCase() === 'active') {
+    throw createError({ statusCode: 400, statusMessage: 'Active members should use the member booking flow.' })
+  }
+  await assertCurrentWaiver(event, user.sub)
 
   const start = DateTime.fromISO(body.start_time, { zone: STUDIO_TZ })
   const end = DateTime.fromISO(body.end_time, { zone: STUDIO_TZ })
-
-  if (!start.isValid || !end.isValid) {
-    throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
-  }
-  if (!(start < end)) {
-    throw createError({ statusCode: 400, statusMessage: 'End must be after start' })
+  if (!start.isValid || !end.isValid || !(start < end)) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid booking time.' })
   }
 
-  // Minimum booking: 1 hour
-  const durationHours = end.diff(start, 'hours').hours
-  if (durationHours < 1) {
-    throw createError({ statusCode: 400, statusMessage: 'Minimum booking is 1 hour' })
+  const guestValidation = validateGuestBookingWindow({ start, end, policy: guestPolicy })
+  if (!guestValidation.ok) {
+    throw createError({ statusCode: 400, statusMessage: guestValidation.message ?? 'Guest booking is not available for this time.' })
   }
 
-  // Don't allow bookings in the past
-  const now = DateTime.now().setZone(STUDIO_TZ)
-  if (start < now) {
-    throw createError({ statusCode: 400, statusMessage: 'Cannot book in the past' })
-  }
-
-  // Guest booking window (configurable)
-  const cfg = await getServerConfigMap(event, [
-    'guest_booking_rate_per_credit_cents',
-    'guest_peak_multiplier',
-    'guest_booking_window_days',
-    'guest_booking_start_hour',
-    'guest_booking_end_hour',
-    'SQUARE_GUEST_BOOKING_VARIATION_ID'
-  ])
-  const guestWindowDays = Number(cfg.guest_booking_window_days ?? 7)
-  const guestStartHour = toValidHour(cfg.guest_booking_start_hour, 11)
-  let guestEndHour = toValidHour(cfg.guest_booking_end_hour, 19)
-  if (guestEndHour <= guestStartHour) {
-    guestEndHour = Math.min(24, guestStartHour + 1)
-  }
-  const maxAhead = now.plus({ days: guestWindowDays })
-  if (start > maxAhead) {
-    throw createError({ statusCode: 400, statusMessage: `Guest bookings can only be made up to ${guestWindowDays} days ahead` })
-  }
-
-  const sameDay = start.hasSame(end, 'day')
-  const startHourValue = toHourValue(start)
-  const endHourValue = toHourValue(end)
-  if (!sameDay || startHourValue < guestStartHour || endHourValue > guestEndHour) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: `Guest bookings must start/end between ${formatHourLabel(guestStartHour)} and ${formatHourLabel(guestEndHour)} (Los Angeles time).`
+  if (rateKind === 'standby') {
+    const standbyValidation = validateStandbySelection({
+      start,
+      end,
+      accountKind: 'guest',
+      guestPolicy,
+      standbyPolicy
     })
+    if (!standbyValidation.ok) {
+      throw createError({ statusCode: 400, statusMessage: standbyValidation.message ?? 'Standby booking is not available for this time.' })
+    }
+    if (await hasStandbyBookingToday(supabase, user.sub, start)) {
+      throw createError({ statusCode: 409, statusMessage: 'Only one standby booking is allowed per day.' })
+    }
   }
 
   const startIso = start.toUTC().toISO()
   const endIso = end.toUTC().toISO()
-  if (!startIso || !endIso) {
-    throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
-  }
+  if (!startIso || !endIso) throw createError({ statusCode: 400, statusMessage: 'Invalid booking time.' })
 
+  await supabase.rpc('expire_stale_pending_guest_bookings' as never, {} as never)
   await ensureNoExternalCalendarConflict(supabase, startIso, endIso)
 
-  // Check for conflicts (confirmed bookings or holds overlapping requested window)
-  const { data: conflicts, error: conflictErr } = await supabase
+  const { data: bookingConflicts, error: bookingConflictErr } = await supabase
     .from('bookings')
     .select('id')
     .in('status', ['confirmed', 'requested', 'pending_payment'])
     .lt('start_time', endIso)
     .gt('end_time', startIso)
     .limit(1)
+  if (bookingConflictErr) throw createError({ statusCode: 500, statusMessage: bookingConflictErr.message })
+  if (bookingConflicts?.length) throw createError({ statusCode: 409, statusMessage: 'That time slot is not available.' })
 
-  if (conflictErr) throw createError({ statusCode: 500, statusMessage: conflictErr.message })
-  if (conflicts && conflicts.length > 0) {
-    throw createError({ statusCode: 409, statusMessage: 'That time slot is not available' })
-  }
-
-  // Also check holds
   const { data: holdConflicts, error: holdErr } = await supabase
     .from('booking_holds')
     .select('id')
     .lt('hold_start', endIso)
     .gt('hold_end', startIso)
     .limit(1)
-
   if (holdErr) throw createError({ statusCode: 500, statusMessage: holdErr.message })
-  if (holdConflicts && holdConflicts.length > 0) {
-    throw createError({ statusCode: 409, statusMessage: 'That time slot is not available (hold conflict)' })
-  }
+  if (holdConflicts?.length) throw createError({ statusCode: 409, statusMessage: 'That time slot is not available.' })
 
   const { data: blockConflicts, error: blockErr } = await supabase
     .from('calendar_blocks')
@@ -188,172 +178,227 @@ export default defineEventHandler(async (event) => {
     .lt('start_time', endIso)
     .gt('end_time', startIso)
     .limit(1)
-
   if (blockErr) throw createError({ statusCode: 500, statusMessage: blockErr.message })
-  if (blockConflicts && blockConflicts.length > 0) {
-    throw createError({ statusCode: 409, statusMessage: 'That time slot is blocked by studio admin' })
-  }
+  if (blockConflicts?.length) throw createError({ statusCode: 409, statusMessage: 'That time slot is blocked by studio admin.' })
 
-  const ratePerCreditCents = Number(cfg.guest_booking_rate_per_credit_cents ?? 3500) // $35/credit default
-  const peakMultiplier = Number(cfg.guest_peak_multiplier ?? 2.0)
-  const guestBookingVariationId = typeof cfg.SQUARE_GUEST_BOOKING_VARIATION_ID === 'string'
-    ? cfg.SQUARE_GUEST_BOOKING_VARIATION_ID.trim()
-    : ''
-
-  const creditsNeeded = computeCredits(body.start_time, body.end_time, peakMultiplier, peakWindow)
-  const totalCents = Math.ceil(creditsNeeded * ratePerCreditCents)
-  const totalDollars = totalCents / 100
-
-  // Create or find Square customer for this guest
-  const square = await useSquareClient(event)
-  const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
-  const { origin } = getRequestURL(event)
-  const nameParts = body.guest_name.trim().split(/\s+/).filter(Boolean)
-  const guestFirstName = nameParts[0] ?? null
-  const guestLastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null
-  const guestSquareCustomerId = await ensureSquareCustomerForGuest(event, {
-    email: body.guest_email,
-    firstName: guestFirstName,
-    lastName: guestLastName
+  const squareCustomerId = await ensureSquareCustomerForUser(event, {
+    userId: user.sub,
+    email: user.email ?? null,
+    firstName: typeof user.user_metadata?.first_name === 'string' ? user.user_metadata.first_name : null,
+    lastName: typeof user.user_metadata?.last_name === 'string' ? user.user_metadata.last_name : null
   })
-  const { data: guestCustomer } = await supabase
-    .from('customers')
-    .select('email,phone,first_name,last_name')
-    .ilike('email', body.guest_email)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  const customer = await getPrimaryCustomerRowForUser(event, user.sub)
+  if (!customer?.id) throw createError({ statusCode: 400, statusMessage: 'Customer profile missing.' })
 
-  // Insert pending booking with guest info in dedicated columns
-  const { data: booking, error: bookingErr } = await supabase
-    .from('bookings')
-    .insert({
-      start_time: start.toUTC().toISO()!,
-      end_time: end.toUTC().toISO()!,
-      status: 'pending_payment',
-      notes: body.notes ?? null,
-      credits_burned: creditsNeeded,
-      guest_name: body.guest_name,
-      guest_email: body.guest_email
-    })
-    .select('id')
-    .single()
+  const baseCreditsNeeded = computeCredits(body.start_time, body.end_time, guestPolicy.peakMultiplier, peakWindow)
+  const creditsNeeded = rateKind === 'standby'
+    ? Math.round(baseCreditsNeeded * standbyPolicy.discountMultiplier * 100) / 100
+    : baseCreditsNeeded
+  const remainingCredits = await resolveAvailableCreditBalance(supabase, user.sub)
+  const shortfallCredits = Math.max(0, Math.round((creditsNeeded - remainingCredits) * 100) / 100)
+  const ratePolicySnapshot = buildRatePolicySnapshot({
+    accountKind: 'guest',
+    rateKind,
+    guestPolicy,
+    standbyPolicy: rateKind === 'standby' ? standbyPolicy : null
+  })
 
-  if (bookingErr || !booking) {
-    throw createError({ statusCode: 500, statusMessage: bookingErr?.message ?? 'Failed to create pending booking' })
-  }
+  if (shortfallCredits <= 0) {
+    const { data: rawResult, error: rpcErr } = await supabase.rpc('create_confirmed_booking_with_burn_no_membership' as never, {
+      p_user_id: user.sub,
+      p_customer_id: customer.id,
+      p_start_time: startIso,
+      p_end_time: endIso,
+      p_notes: (body.notes ?? '') as string,
+      p_credits_needed: creditsNeeded,
+      p_booking_kind: 'standard',
+      p_workshop_title: null,
+      p_workshop_description: null,
+      p_workshop_link: null,
+      p_workshop_liability_accepted_at: null
+    } as never)
+    const result = rawResult as unknown as Array<{ booking_id: string | null, credits_burned: number | null, new_balance: number | null }> | null
+    if (rpcErr) {
+      const msg = rpcErr.message || 'Booking failed'
+      if (msg.toLowerCase().includes('insufficient credits')) {
+        throw createError({ statusCode: 402, statusMessage: 'Insufficient credits' })
+      }
+      throw createError({ statusCode: 409, statusMessage: msg })
+    }
 
-  const idempotencyKey = randomUUID()
-  const durationLabel = durationHours === Math.floor(durationHours)
-    ? `${durationHours}h`
-    : `${durationHours.toFixed(1)}h`
+    const bookingId = result?.[0]?.booking_id ?? null
+    if (bookingId) {
+      await supabase
+        .from('bookings')
+        .update({
+          booking_rate_kind: rateKind,
+          rate_policy_snapshot: ratePolicySnapshot
+        } as never)
+        .eq('id', bookingId)
 
-  const startLabel = start.toFormat('EEE MMM d h:mm a')
-  const redirectUrl = `${origin}/checkout/booking-success?booking_id=${booking.id}`
-  const orderMetadata = {
-    booking_id: booking.id,
-    booking_type: 'guest',
-    guest_name: body.guest_name,
-    guest_email: body.guest_email,
-    start_time: body.start_time,
-    end_time: body.end_time,
-    credits_needed: String(creditsNeeded)
-  }
+      await enqueueBookingAccessSync(event, { bookingId, reason: 'guest_booking_create' }).catch((error) => {
+        console.warn('[guest-booking] access sync failed', { bookingId, error })
+      })
+      await maybeForceSyncGoogleCalendar(event, 'guest_booking_create').catch((error) => {
+        console.warn('[guest-booking] google sync failed', { bookingId, error })
+      })
+      await sendMemberBookingLifecycleMail(event, {
+        eventType: 'booking.memberCreated',
+        userId: user.sub,
+        bookingId,
+        bookingStart: startIso,
+        bookingEnd: endIso,
+        creditsBurned: Number(result?.[0]?.credits_burned ?? creditsNeeded),
+        holdRequested: false,
+        holdCreated: false,
+        actionedBy: 'member'
+      })
+    }
 
-  let paymentMode: 'catalog_variation' | 'quick_pay' = 'quick_pay'
-  let createRes: PaymentLinkResult | null = null
-
-  if (guestBookingVariationId) {
-    try {
-      createRes = await square.checkout.paymentLinks.create({
-        idempotencyKey: randomUUID(),
-        checkoutOptions: { redirectUrl },
-        prePopulatedData: {
-          buyerEmail: guestCustomer?.email ?? body.guest_email,
-          buyerPhoneNumber: toSquareBuyerPhone(guestCustomer?.phone),
-          buyerAddress: {
-            firstName: guestCustomer?.first_name ?? guestFirstName ?? undefined,
-            lastName: guestCustomer?.last_name ?? guestLastName ?? undefined
-          }
-        },
-        order: {
-          locationId,
-          referenceId: booking.id,
-          customerId: guestSquareCustomerId ?? undefined,
-          metadata: orderMetadata,
-          lineItems: [
-            {
-              catalogObjectId: guestBookingVariationId,
-              quantity: toSquareQuantity(creditsNeeded),
-              note: `Studio Booking — ${startLabel} (${durationLabel})`
-            }
-          ]
-        }
-      }) as PaymentLinkResult
-      paymentMode = 'catalog_variation'
-    } catch (error) {
-      console.warn(
-        '[guest-booking] catalog variation checkout failed, falling back to quickPay',
-        { bookingId: booking.id, guestBookingVariationId, error }
-      )
+    return {
+      ok: true,
+      status: 'confirmed',
+      bookingId,
+      creditsNeeded,
+      shortfallCredits: 0,
+      amountDueCents: 0,
+      newBalance: result?.[0]?.new_balance ?? null,
+      checkoutUrl: null
     }
   }
 
-  if (!createRes) {
-    createRes = await square.checkout.paymentLinks.create({
-      idempotencyKey,
-      quickPay: {
-        name: `Studio Booking — ${startLabel} (${durationLabel})`,
-        priceMoney: {
-          amount: BigInt(totalCents),
-          currency: 'USD'
-        },
-        locationId
-      },
-      checkoutOptions: { redirectUrl },
-      prePopulatedData: {
-        buyerEmail: guestCustomer?.email ?? body.guest_email,
-        buyerPhoneNumber: toSquareBuyerPhone(guestCustomer?.phone),
-        buyerAddress: {
-          firstName: guestCustomer?.first_name ?? guestFirstName ?? undefined,
-          lastName: guestCustomer?.last_name ?? guestLastName ?? undefined
-        }
-      },
-      order: {
-        locationId,
-        referenceId: booking.id,
-        customerId: guestSquareCustomerId ?? undefined,
-        metadata: orderMetadata
+  const amountDueCents = Math.ceil(shortfallCredits * guestPolicy.ratePerCreditCents)
+  const paymentExpiresAt = DateTime.now().setZone(STUDIO_TZ).plus({ minutes: guestPolicy.pendingPaymentHoldMinutes }).toUTC().toISO()
+  const guestName = nameFromParts(customer.first_name, customer.last_name, customer.email ?? user.email ?? null)
+  const guestEmail = customer.email ?? user.email ?? null
+
+  const { data: booking, error: bookingErr } = await supabase
+    .from('bookings')
+    .insert({
+      user_id: user.sub,
+      customer_id: customer.id,
+      start_time: startIso,
+      end_time: endIso,
+      status: 'pending_payment',
+      notes: body.notes ?? null,
+      credits_estimated: creditsNeeded,
+      credits_burned: creditsNeeded,
+      guest_name: guestName,
+      guest_email: guestEmail,
+      payment_expires_at: paymentExpiresAt,
+      booking_rate_kind: rateKind,
+      rate_policy_snapshot: ratePolicySnapshot
+    } as never)
+    .select('id')
+    .single()
+  if (bookingErr || !booking) {
+    throw createError({ statusCode: 500, statusMessage: bookingErr?.message ?? 'Failed to reserve booking.' })
+  }
+
+  const token = randomUUID()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: topupSession, error: topupErr } = await (supabase as any)
+    .from('credit_topup_sessions')
+    .insert({
+      token,
+      user_id: user.sub,
+      membership_id: null,
+      credits: shortfallCredits,
+      amount_cents: amountDueCents,
+      currency: 'USD',
+      status: 'pending',
+      payment_provider: 'square',
+      metadata: {
+        source: 'guest_booking_shortfall',
+        booking_id: booking.id,
+        credits_needed: creditsNeeded,
+        existing_credit_balance: remainingCredits,
+        shortfall_credits: shortfallCredits,
+        guest_credit_expiry_days: guestPolicy.creditExpiryDays,
+        booking_rate_kind: rateKind
       }
-    }) as PaymentLinkResult
-  }
+    })
+    .select('id,token')
+    .single()
 
-  const paymentLink = createRes?.paymentLink
-  if (!paymentLink?.url) {
-    // Clean up the pending booking if Square fails
+  if (topupErr || !topupSession) {
     await supabase.from('bookings').delete().eq('id', booking.id)
-    throw createError({ statusCode: 500, statusMessage: 'Failed to create payment link' })
+    throw createError({ statusCode: 500, statusMessage: topupErr?.message ?? 'Failed to create guest payment session.' })
   }
 
-  // Store Square order reference on the booking for webhook matching
+  const square = await useSquareClient(event)
+  const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
+  const { origin } = getRequestURL(event)
+  const redirectUrl = `${origin}/checkout/booking-success?booking_id=${encodeURIComponent(booking.id)}&guest_payment=${encodeURIComponent(topupSession.token)}`
+  const startLabel = start.toFormat('EEE MMM d h:mm a')
+  const durationHours = end.diff(start, 'hours').hours
+  const durationLabel = Number.isInteger(durationHours) ? `${durationHours}h` : `${durationHours.toFixed(1)}h`
+
+  const createRes = await square.checkout.paymentLinks.create({
+    idempotencyKey: randomUUID(),
+    quickPay: {
+      name: `FO Studio guest booking credits — ${startLabel} (${durationLabel})`,
+      priceMoney: {
+        amount: BigInt(amountDueCents),
+        currency: 'USD'
+      },
+      locationId
+    },
+    checkoutOptions: { redirectUrl },
+    prePopulatedData: {
+      buyerEmail: guestEmail ?? undefined,
+      buyerPhoneNumber: toSquareBuyerPhone(customer.phone),
+      buyerAddress: {
+        firstName: customer.first_name ?? undefined,
+        lastName: customer.last_name ?? undefined
+      }
+    },
+    order: {
+      locationId,
+      referenceId: booking.id,
+      customerId: squareCustomerId ?? undefined,
+      metadata: {
+        booking_id: booking.id,
+        topup_session_id: topupSession.id,
+        topup_token: topupSession.token,
+        booking_type: 'authenticated_guest',
+        credits_needed: String(creditsNeeded),
+        shortfall_credits: String(shortfallCredits),
+        user_id: user.sub
+      }
+    }
+  } as never) as PaymentLinkResult
+
+  const paymentLink = createRes.paymentLink
+  if (!paymentLink?.url) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('credit_topup_sessions').update({ status: 'failed' }).eq('id', topupSession.id)
+    await supabase.from('bookings').delete().eq('id', booking.id)
+    throw createError({ statusCode: 500, statusMessage: 'Failed to create payment link.' })
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any)
+    .from('credit_topup_sessions')
+    .update({
+      payment_link_id: paymentLink.id ?? null,
+      order_template_id: paymentLink.orderId ?? null
+    })
+    .eq('id', topupSession.id)
   await supabase
     .from('bookings')
-    .update({ square_order_id: paymentLink.orderId ?? null })
+    .update({ square_order_id: paymentLink.orderId ?? null } as never)
     .eq('id', booking.id)
 
   return {
     ok: true,
+    status: 'pending_payment',
     bookingId: booking.id,
+    topupToken: topupSession.token,
     creditsNeeded,
-    totalCents,
-    totalDollars,
-    paymentMode,
-    checkoutUrl: paymentLink.url,
-    summary: {
-      start: start.toISO(),
-      end: end.toISO(),
-      durationHours,
-      guestName: body.guest_name
-    }
+    shortfallCredits,
+    amountDueCents,
+    paymentExpiresAt,
+    checkoutUrl: paymentLink.url
   }
 })

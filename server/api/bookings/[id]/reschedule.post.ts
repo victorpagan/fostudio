@@ -13,6 +13,7 @@ import {
   validateOvernightHoldWindow
 } from '~~/server/utils/booking/holds'
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
+import { loadGuestBookingPolicy, validateGuestBookingWindow } from '~~/server/utils/booking/guestPolicy'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 import { sendMemberBookingLifecycleMail } from '~~/server/utils/mail/memberBookingLifecycle'
@@ -28,6 +29,16 @@ const bodySchema = z.object({
 
 const DEFAULT_MEMBER_RESCHEDULE_NOTICE_HOURS = 24
 const DEFAULT_HOLD_CREDIT_COST = 2
+
+type BookingRow = {
+  id: string
+  user_id: string | null
+  status: string
+  start_time: string
+  end_time: string
+  credits_burned: number | null
+  booking_rate_kind?: string | null
+}
 
 function isThirtyMinuteAligned(dateTime: DateTime) {
   if (!dateTime.isValid) return false
@@ -69,6 +80,7 @@ export default defineEventHandler(async (event) => {
   const role = readUserRole(user as RoleCarrier)
   const isAdmin = isAdminRole(role)
   const supabase = serverSupabaseServiceRole(event)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
   const peakWindow = await loadPeakWindowConfig(event)
 
@@ -93,19 +105,23 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const { data: booking, error: bookingErr } = await supabase
+  const { data: rawBooking, error: bookingErr } = await supabase
     .from('bookings')
-    .select('id,user_id,status,start_time,end_time,credits_burned')
+    .select('id,user_id,status,start_time,end_time,credits_burned,booking_rate_kind')
     .eq('id', bookingId)
     .maybeSingle()
 
   if (bookingErr) throw createError({ statusCode: 500, statusMessage: bookingErr.message })
+  const booking = rawBooking as unknown as BookingRow | null
   if (!booking) throw createError({ statusCode: 404, statusMessage: 'Booking not found' })
   const bookingUserId = booking.user_id
   if (!bookingUserId) throw createError({ statusCode: 400, statusMessage: 'Booking has no owner' })
 
   if (!isAdmin && bookingUserId !== user.sub) {
     throw createError({ statusCode: 403, statusMessage: 'Not your booking' })
+  }
+  if (!isAdmin && String(booking.booking_rate_kind ?? 'standard') === 'standby') {
+    throw createError({ statusCode: 409, statusMessage: 'Standby bookings cannot be rescheduled or extended.' })
   }
   if (!isAdmin) {
     await assertCurrentWaiver(event, bookingUserId)
@@ -207,6 +223,24 @@ export default defineEventHandler(async (event) => {
   let peakMultiplier = 1.5
   let holdsIncluded = 0
   let activeHoldCap = 0
+  if (!hasActiveMembership) {
+    if (!isAdmin && requestNewHold) {
+      throw createError({ statusCode: 403, statusMessage: 'Overnight holds require an active membership.' })
+    }
+    const guestPolicy = await loadGuestBookingPolicy(event)
+    const guestValidation = validateGuestBookingWindow({
+      start: nextStart.setZone(STUDIO_TZ),
+      end: nextEnd.setZone(STUDIO_TZ),
+      policy: guestPolicy
+    })
+    if (!isAdmin && !guestValidation.ok) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: guestValidation.message ?? 'Guest booking changes are not available for this time.'
+      })
+    }
+    peakMultiplier = guestPolicy.peakMultiplier
+  }
   if (hasActiveMembership && membership?.tier) {
     const { data: tierWithCap, error: tierWithCapErr } = await db
       .from('membership_tiers')

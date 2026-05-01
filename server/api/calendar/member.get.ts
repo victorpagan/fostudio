@@ -6,6 +6,11 @@ import { getExternalCalendarEventsInRange } from '~~/server/utils/booking/extern
 import { maybeAutoSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
 import { getUpcomingWorkshopPromo } from '~~/server/utils/booking/workshopPromo'
+import {
+  computeStandbyOpenWindows,
+  loadGuestBookingPolicy,
+  loadStandbyBookingPolicy
+} from '~~/server/utils/booking/guestPolicy'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -38,6 +43,17 @@ type HoldRow = {
   bookings: { user_id: string | null } | Array<{ user_id: string | null }> | null
 }
 
+type CalendarBookingRow = {
+  id: string
+  start_time: string
+  end_time: string
+  status: string
+  notes: string | null
+  credits_burned: number | null
+  user_id: string | null
+  booking_rate_kind?: string | null
+}
+
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
   if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
@@ -45,6 +61,8 @@ export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient(event)
   const q = qSchema.parse(getQuery(event))
   const peakWindowConfig = await loadPeakWindowConfig(event)
+  const guestPolicy = await loadGuestBookingPolicy(event)
+  const standbyPolicy = await loadStandbyBookingPolicy(event)
 
   try {
     await maybeAutoSyncGoogleCalendar(event, 'calendar_member')
@@ -70,7 +88,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const hasActiveMembership = (membership?.status || '').toLowerCase() === 'active'
-  const canBookFromCredits = remainingCredits > 0
+  const accountKind = hasActiveMembership ? 'member' : 'guest'
 
   const { data: tierRow, error: tierErr } = await supabase
     .from('membership_tiers')
@@ -81,7 +99,9 @@ export default defineEventHandler(async (event) => {
   if (tierErr) throw createError({ statusCode: 500, statusMessage: tierErr.message })
   const windowDays = q.booking_kind === 'workshop'
     ? WORKSHOP_BOOKING_WINDOW_DAYS
-    : Number(tierRow?.booking_window_days ?? 30)
+    : hasActiveMembership
+      ? Number(tierRow?.booking_window_days ?? 30)
+      : guestPolicy.bookingWindowDays
 
   // Use caller-supplied range if provided, clamped to the booking window
   const now = new Date()
@@ -95,7 +115,7 @@ export default defineEventHandler(async (event) => {
   // All confirmed/requested bookings in the window
   const { data: bookings, error: bookErr } = await supabase
     .from('bookings')
-    .select('id, start_time, end_time, status, notes, credits_burned, user_id')
+    .select('id, start_time, end_time, status, notes, credits_burned, user_id, booking_rate_kind')
     .lt('start_time', to.toISOString())
     .gt('end_time', from.toISOString())
     .in('status', ['confirmed', 'requested'])
@@ -148,9 +168,10 @@ export default defineEventHandler(async (event) => {
   }
 
   // Shape events for FullCalendar — distinguish own bookings from others
+  const bookingRows = (bookings ?? []) as unknown as CalendarBookingRow[]
   const holdRows = (holds ?? []) as HoldRow[]
   const events = [
-    ...(bookings ?? []).map((b) => {
+    ...bookingRows.map((b) => {
       const isOwn = b.user_id === user.sub
       return {
         id: `b_${b.id}`,
@@ -166,6 +187,7 @@ export default defineEventHandler(async (event) => {
           isOwn,
           bookingId: b.id,
           status: b.status,
+          rateKind: (b as { booking_rate_kind?: string | null }).booking_rate_kind ?? 'standard',
           notes: isOwn ? b.notes : undefined
         }
       }
@@ -210,15 +232,47 @@ export default defineEventHandler(async (event) => {
     }))
   ]
 
+  const busy = [
+    ...bookingRows.map(row => ({ start: row.start_time, end: row.end_time })),
+    ...(holdRows ?? []).map(row => ({ start: row.hold_start, end: row.hold_end })),
+    ...(blocks ?? []).map(row => ({ start: row.start_time, end: row.end_time })),
+    ...externalEvents.map(row => ({ start: row.start_time, end: row.end_time }))
+  ]
+  const standbyWindows = q.booking_kind === 'standard'
+    ? computeStandbyOpenWindows({
+        accountKind,
+        guestPolicy,
+        standbyPolicy,
+        busy
+      })
+    : []
+  const standbyEvents = standbyWindows.map((window, index) => ({
+    id: `standby_${index}_${window.start}`,
+    start: normalizeIso(window.start),
+    end: normalizeIso(window.end),
+    title: 'Standby availability',
+    display: 'background',
+    color: '#16a34a',
+    extendedProps: { type: 'standby' }
+  }))
+
   return {
     from: from.toISOString(),
     to: to.toISOString(),
     bookingWindowDays: windowDays,
-    canBook: hasActiveMembership || canBookFromCredits,
+    canBook: true,
     hasActiveMembership,
     remainingCredits,
-    peakWindow: toPeakWindowPayload(peakWindowConfig, Number(tierRow?.peak_multiplier ?? 1.5)),
+    guestBookingStartHour: accountKind === 'guest' ? guestPolicy.startHour : undefined,
+    guestBookingEndHour: accountKind === 'guest' ? guestPolicy.endHour : undefined,
+    guestMinBookingHours: accountKind === 'guest' ? guestPolicy.minBookingHours : undefined,
+    guestBookingIncrementMinutes: accountKind === 'guest' ? guestPolicy.bookingIncrementMinutes : undefined,
+    standbyWindows,
+    peakWindow: toPeakWindowPayload(
+      peakWindowConfig,
+      hasActiveMembership ? Number(tierRow?.peak_multiplier ?? 1.5) : guestPolicy.peakMultiplier
+    ),
     workshopPromo,
-    events
+    events: [...events, ...standbyEvents]
   }
 })

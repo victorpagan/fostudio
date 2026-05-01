@@ -3,8 +3,8 @@
  * /book — Public booking entry point.
  *
  * - Authenticated members with active membership → redirect to /dashboard/book
- * - Authenticated users without active membership → guest flow + member upsell
- * - Anonymous / guest → guest booking flow (pay-as-you-go via Square)
+ * - Authenticated users without active membership → dashboard guest booking flow
+ * - Anonymous visitors → availability only, then sign in/create account to book
  *
  * No middleware: handles the branching here so anonymous users can land freely.
  */
@@ -68,20 +68,12 @@ const guestPreviewError = ref<string | null>(null)
 
 async function onSelect(payload: { start: Date, end: Date }) {
   selectedSlot.value = payload
-  guestModalOpen.value = true
-  guestPreview.value = null
-  guestPreviewError.value = null
-  guestPreviewLoading.value = true
-  try {
-    guestPreview.value = await $fetch('/api/bookings/preview', {
-      query: { start: payload.start.toISOString(), end: payload.end.toISOString(), mode: 'guest' }
-    })
-  } catch (error: unknown) {
-    const e = error as RequestError
-    guestPreviewError.value = e.data?.statusMessage ?? 'Could not calculate cost'
-  } finally {
-    guestPreviewLoading.value = false
+  const returnTo = '/dashboard/book'
+  if (!user.value) {
+    await router.push(`/login?returnTo=${encodeURIComponent(returnTo)}`)
+    return
   }
+  await router.push(returnTo)
 }
 
 async function submitGuestBooking() {
@@ -149,7 +141,7 @@ function formatPeakCredits(value: number) {
                     Book a one-off studio day without committing first.
                   </h1>
                   <p class="max-w-2xl text-base leading-8 text-[color:var(--gruv-ink-2)] sm:text-lg">
-                    Use the public calendar to find an open slot, price it instantly, and check out securely through Square.
+                    Use the public calendar to find an open slot. Create or sign into an account to book as a guest with premium credits.
                     If your shoots start repeating, move to a membership for better booking range, monthly credits, and included equipment plus consumables.
                   </p>
                 </div>
@@ -162,7 +154,7 @@ function formatPeakCredits(value: number) {
                   </div>
                   <div class="mt-4 space-y-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
                     <p>Guest bookings are best for single production days, client tests, or trying the room before joining.</p>
-                    <p>Open slots are available up to 7 days ahead and require payment to lock in the session.</p>
+                    <p>Guest bookings are available up to 20 days ahead, require a 2-hour minimum, and use whole-hour increments.</p>
                     <p>Members get a longer planning window, steadier costs, and included gear plus consumables like backdrop paper.</p>
                   </div>
                 </div>
@@ -176,7 +168,7 @@ function formatPeakCredits(value: number) {
                 Pick a time that works
               </h2>
               <p class="mt-3 text-sm leading-7 text-[color:var(--gruv-ink-2)] sm:text-base">
-                Booked blocks and hold windows are already accounted for below, so any open slot you select is available to price and reserve.
+                Booked blocks and hold windows are already accounted for below. Select an open slot to sign in and continue booking from your dashboard.
               </p>
             </div>
             <div class="flex items-center gap-2">
@@ -224,7 +216,7 @@ function formatPeakCredits(value: number) {
 
           <p class="text-center text-xs leading-6 text-[color:var(--gruv-ink-2)]">
             Blocked times are already booked. Select any open slot to continue.
-            Guest bookings are limited to 7 days ahead and require payment to confirm.
+            Guest bookings require an account, are limited to 20 days ahead, and require premium credits or shortfall payment to confirm.
           </p>
         </div>
       </template>

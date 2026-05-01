@@ -1,11 +1,15 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
 import { serverSupabaseClient, serverSupabaseServiceRole } from '#supabase/server'
-import { getServerConfigMap } from '~~/server/utils/config/secret'
 import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
 import { getExternalCalendarEventsInRange } from '~~/server/utils/booking/externalCalendar'
 import { maybeAutoSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 import { getUpcomingWorkshopPromo } from '~~/server/utils/booking/workshopPromo'
+import {
+  computeStandbyOpenWindows,
+  loadGuestBookingPolicy,
+  loadStandbyBookingPolicy
+} from '~~/server/utils/booking/guestPolicy'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -28,26 +32,16 @@ function normalizeIso(value: string) {
   return value
 }
 
-function toValidHour(raw: unknown, fallback: number) {
-  const parsed = Number(raw)
-  if (!Number.isFinite(parsed)) return fallback
-  const hour = Math.floor(parsed)
-  return Math.min(24, Math.max(0, hour))
-}
-
 export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient(event)
   const q = qSchema.parse(getQuery(event))
   const peakWindowConfig = await loadPeakWindowConfig(event)
-  const cfg = await getServerConfigMap(event, [
-    'guest_booking_window_days',
-    'guest_booking_start_hour',
-    'guest_booking_end_hour'
-  ])
+  const guestPolicy = await loadGuestBookingPolicy(event)
+  const standbyPolicy = await loadStandbyBookingPolicy(event)
 
   const now = new Date()
   const from = q.from ? new Date(q.from) : now
-  const to = q.to ? new Date(q.to) : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const to = q.to ? new Date(q.to) : new Date(now.getTime() + guestPolicy.bookingWindowDays * 24 * 60 * 60 * 1000)
 
   try {
     await maybeAutoSyncGoogleCalendar(event, 'calendar_public')
@@ -151,21 +145,39 @@ export default defineEventHandler(async (event) => {
     }))
   ]
 
-  const guestBookingWindowDays = Math.max(1, Number(cfg.guest_booking_window_days ?? 7))
-  const guestBookingStartHour = toValidHour(cfg.guest_booking_start_hour, 11)
-  let guestBookingEndHour = toValidHour(cfg.guest_booking_end_hour, 19)
-  if (guestBookingEndHour <= guestBookingStartHour) {
-    guestBookingEndHour = Math.min(24, guestBookingStartHour + 1)
-  }
+  const busy = [
+    ...(bookings ?? []).map(row => ({ start: row.start_time, end: row.end_time })),
+    ...(holds ?? []).map(row => ({ start: row.hold_start, end: row.hold_end })),
+    ...(blocks ?? []).map(row => ({ start: row.start_time, end: row.end_time })),
+    ...externalEvents.map(row => ({ start: row.start_time, end: row.end_time }))
+  ]
+  const standbyWindows = computeStandbyOpenWindows({
+    accountKind: 'guest',
+    guestPolicy,
+    standbyPolicy,
+    busy
+  })
+  const standbyEvents = standbyWindows.map((window, index) => ({
+    id: `standby_${index}_${window.start}`,
+    start: normalizeIso(window.start),
+    end: normalizeIso(window.end),
+    title: 'Standby availability',
+    display: 'background',
+    color: '#16a34a',
+    extendedProps: { type: 'standby' }
+  }))
 
   return {
     from: from.toISOString(),
     to: to.toISOString(),
-    bookingWindowDays: guestBookingWindowDays,
-    guestBookingStartHour,
-    guestBookingEndHour,
+    bookingWindowDays: guestPolicy.bookingWindowDays,
+    guestBookingStartHour: guestPolicy.startHour,
+    guestBookingEndHour: guestPolicy.endHour,
+    guestMinBookingHours: guestPolicy.minBookingHours,
+    guestBookingIncrementMinutes: guestPolicy.bookingIncrementMinutes,
+    standbyWindows,
     peakWindow: toPeakWindowPayload(peakWindowConfig, null),
     workshopPromo,
-    events
+    events: [...events, ...standbyEvents]
   }
 })

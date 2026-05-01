@@ -15,6 +15,7 @@ export default defineEventHandler(async (event) => {
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
 
   const supabase = serverSupabaseServiceRole(event)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
 
   const { data: membership, error: membershipErr } = await db
@@ -81,12 +82,20 @@ export default defineEventHandler(async (event) => {
 
   const summary = computeCreditBucketSummary(ledgerRows ?? [])
   const maxBank = Number(tierRow?.max_bank ?? 0)
-  const canBuyTopoff = hasActiveMembership
+  const canBuyTopoff = true
   const overCap = maxBank > 0 && summary.bankBalance > maxBank
   const atCap = maxBank > 0 && summary.bankBalance >= maxBank
 
   const membershipCreditExpiryDays = Number(tierRow?.credit_expiry_days ?? DEFAULT_MEMBERSHIP_CREDIT_EXPIRY_DAYS)
-  const topoffCreditExpiryDays = Number(tierRow?.topoff_credit_expiry_days ?? DEFAULT_TOPUP_CREDIT_EXPIRY_DAYS)
+  let topoffCreditExpiryDays = Number(tierRow?.topoff_credit_expiry_days ?? DEFAULT_TOPUP_CREDIT_EXPIRY_DAYS)
+  if (!hasActiveMembership) {
+    const { data: guestExpiryRow } = await db
+      .from('system_config')
+      .select('value')
+      .eq('key', 'guest_credit_expiry_days')
+      .maybeSingle()
+    topoffCreditExpiryDays = Number(guestExpiryRow?.value ?? DEFAULT_TOPUP_CREDIT_EXPIRY_DAYS)
+  }
 
   return {
     grantSync,
@@ -105,7 +114,8 @@ export default defineEventHandler(async (event) => {
         : DEFAULT_MEMBERSHIP_CREDIT_EXPIRY_DAYS,
       topoffCreditExpiryDays: Number.isFinite(topoffCreditExpiryDays) && topoffCreditExpiryDays > 0
         ? Math.floor(topoffCreditExpiryDays)
-        : DEFAULT_TOPUP_CREDIT_EXPIRY_DAYS
+        : DEFAULT_TOPUP_CREDIT_EXPIRY_DAYS,
+      accountState: hasActiveMembership ? 'active_member' : 'guest'
     }
   }
 })

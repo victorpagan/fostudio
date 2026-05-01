@@ -2166,15 +2166,6 @@ onBeforeUnmount(() => {
         </div>
       </UCard>
 
-      <DashboardAdminEmailHighFidelityEmailPreview
-        v-model:viewport="previewViewport"
-        :html="previewHtml"
-        :template-id="draftSendgridTemplateId"
-        :lookup="sendgridLookup"
-        :pending="sendgridLookupPending"
-        :error="sendgridLookupError"
-      />
-
       <section class="min-w-0">
         <UCard class="admin-panel-card border-0">
           <template #header>
@@ -2557,179 +2548,192 @@ onBeforeUnmount(() => {
               </UFormField>
             </div>
 
-            <div
-              v-else
-              class="space-y-4"
-            >
-              <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_16rem]">
-                <div class="grid gap-3 md:grid-cols-2">
-                  <UFormField label="Subject template">
-                    <UInput
-                      v-model="draft.subjectTemplate"
-                      class="w-full"
-                      placeholder="FO Studio update for {{ customerName }}"
-                    />
-                  </UFormField>
-                  <UFormField label="Preheader template">
-                    <UInput
-                      v-model="draft.preheaderTemplate"
-                      class="w-full"
-                      placeholder="Short preview text for inbox list view."
-                    />
-                  </UFormField>
-                </div>
-                <UFormField label="Render mode">
-                  <USelect
-                    v-model="draft.renderMode"
-                    class="w-full"
-                    :items="renderModeItems"
-                  />
-                </UFormField>
-              </div>
-
-              <UFormField
-                v-if="draft.renderMode === 'editor_html'"
-                label="Body template (HTML)"
-              >
-                <template #description>
-                  Use <code v-pre>{{ variableName }}</code> tokens only.
-                </template>
-                <UEditor
-                  v-slot="{ editor }"
-                  v-model="draft.bodyTemplate"
-                  content-type="html"
-                  :handlers="editorHandlers"
-                  :image="{ allowBase64: false }"
-                  :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
-                  class="campaign-editor-shell w-full rounded-md border border-zinc-200/80 bg-white overflow-visible dark:border-zinc-700/80 dark:bg-zinc-900"
-                  :placeholder="editorPlaceholder(draft.bodyTemplate, 'Write campaign body HTML...')"
-                >
-                  <UEditorToolbar
-                    :editor="editor"
-                    :items="editorToolbarItems"
-                    class="border-b border-zinc-200/80 dark:border-zinc-700/80 sticky top-0 inset-x-0 p-1.5 z-10 bg-white/95 dark:bg-zinc-900/95 backdrop-blur overflow-x-auto"
-                  />
-                  <UEditorToolbar
-                    :editor="editor"
-                    :items="editorBubbleToolbarItems"
-                    layout="bubble"
-                  />
-                  <UEditorSuggestionMenu
-                    :editor="editor"
-                    :items="editorSuggestionItems"
-                  />
-                  <UEditorDragHandle
-                    v-slot="{ ui }"
-                    :editor="editor"
-                    :options="editorDragHandleOptions"
-                    :ui="{ handle: '-translate-x-2 rounded border border-zinc-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-900/95' }"
-                  >
-                    <UButton
-                      icon="i-lucide-grip-vertical"
-                      color="neutral"
-                      variant="ghost"
-                      size="sm"
-                      :class="ui.handle()"
-                    />
-                  </UEditorDragHandle>
-                </UEditor>
-              </UFormField>
-
-              <UFormField
-                v-else
-                label="SendGrid dynamic data (JSON)"
-              >
-                <template #description>
-                  Section toggles and content for your SendGrid template. String values can use <code v-pre>{{ variableName }}</code> tokens.
-                </template>
-                <div class="space-y-3">
-                  <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-default p-2">
-                    <div class="text-xs text-dimmed">
-                      Use modular SendGrid keys like <code>hero_enabled</code>, <code>feature_1_title</code>, <code>offer_code</code>.
+            <div v-else>
+              <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,36rem)]">
+                <div class="min-w-0 space-y-4">
+                  <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_16rem]">
+                    <div class="grid gap-3 md:grid-cols-2">
+                      <UFormField label="Subject template">
+                        <UInput
+                          v-model="draft.subjectTemplate"
+                          class="w-full"
+                          placeholder="FO Studio update for {{ customerName }}"
+                        />
+                      </UFormField>
+                      <UFormField label="Preheader template">
+                        <UInput
+                          v-model="draft.preheaderTemplate"
+                          class="w-full"
+                          placeholder="Short preview text for inbox list view."
+                        />
+                      </UFormField>
                     </div>
-                    <UButton
-                      size="xs"
-                      color="neutral"
-                      variant="soft"
-                      icon="i-lucide-wand-sparkles"
-                      @click="loadWebsiteLaunchPreset"
-                    >
-                      Load website launch preset
-                    </UButton>
+                    <UFormField label="Render mode">
+                      <USelect
+                        v-model="draft.renderMode"
+                        class="w-full"
+                        :items="renderModeItems"
+                      />
+                    </UFormField>
                   </div>
-                  <div class="rounded-md border border-default p-2.5 space-y-2">
-                    <div class="text-xs font-medium text-highlighted">
-                      Campaign images
-                    </div>
-                    <div class="grid gap-2 md:grid-cols-2">
-                      <div
-                        v-for="slot in CAMPAIGN_IMAGE_SLOTS"
-                        :key="`campaign-image-${slot.id}`"
-                        class="rounded-md border border-default/80 p-2 space-y-2"
+
+                  <UFormField
+                    v-if="draft.renderMode === 'editor_html'"
+                    label="Body template (HTML)"
+                  >
+                    <template #description>
+                      Use <code v-pre>{{ variableName }}</code> tokens only.
+                    </template>
+                    <UEditor
+                      v-slot="{ editor }"
+                      v-model="draft.bodyTemplate"
+                      content-type="html"
+                      :handlers="editorHandlers"
+                      :image="{ allowBase64: false }"
+                      :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
+                      class="campaign-editor-shell w-full overflow-visible rounded-md border border-zinc-200/80 bg-white dark:border-zinc-700/80 dark:bg-zinc-900"
+                      :placeholder="editorPlaceholder(draft.bodyTemplate, 'Write campaign body HTML...')"
+                    >
+                      <UEditorToolbar
+                        :editor="editor"
+                        :items="editorToolbarItems"
+                        class="sticky inset-x-0 top-0 z-10 overflow-x-auto border-b border-zinc-200/80 bg-white/95 p-1.5 backdrop-blur dark:border-zinc-700/80 dark:bg-zinc-900/95"
+                      />
+                      <UEditorToolbar
+                        :editor="editor"
+                        :items="editorBubbleToolbarItems"
+                        layout="bubble"
+                      />
+                      <UEditorSuggestionMenu
+                        :editor="editor"
+                        :items="editorSuggestionItems"
+                      />
+                      <UEditorDragHandle
+                        v-slot="{ ui }"
+                        :editor="editor"
+                        :options="editorDragHandleOptions"
+                        :ui="{ handle: '-translate-x-2 rounded border border-zinc-200/80 bg-white dark:border-zinc-700/80 dark:bg-zinc-900/95' }"
                       >
-                        <div class="flex items-center justify-between gap-2">
-                          <div class="text-xs font-medium text-highlighted">
-                            {{ slot.label }}
-                          </div>
-                          <div class="flex items-center gap-1">
-                            <UButton
-                              size="xs"
-                              color="neutral"
-                              variant="soft"
-                              icon="i-lucide-image-up"
-                              :loading="campaignImageUploadPending[slot.id]"
-                              @click="() => { void uploadCampaignImage(slot) }"
-                            >
-                              Upload
-                            </UButton>
-                            <UButton
-                              size="xs"
-                              color="neutral"
-                              variant="ghost"
-                              icon="i-lucide-x"
-                              @click="clearCampaignImage(slot)"
-                            >
-                              Clear
-                            </UButton>
+                        <UButton
+                          icon="i-lucide-grip-vertical"
+                          color="neutral"
+                          variant="ghost"
+                          size="sm"
+                          :class="ui.handle()"
+                        />
+                      </UEditorDragHandle>
+                    </UEditor>
+                  </UFormField>
+
+                  <UFormField
+                    v-else
+                    label="SendGrid dynamic data (JSON)"
+                  >
+                    <template #description>
+                      Section toggles and content for your SendGrid template. String values can use <code v-pre>{{ variableName }}</code> tokens.
+                    </template>
+                    <div class="space-y-3">
+                      <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-default p-2">
+                        <div class="text-xs text-dimmed">
+                          Use modular SendGrid keys like <code>hero_enabled</code>, <code>feature_1_title</code>, <code>offer_code</code>.
+                        </div>
+                        <UButton
+                          size="xs"
+                          color="neutral"
+                          variant="soft"
+                          icon="i-lucide-wand-sparkles"
+                          @click="loadWebsiteLaunchPreset"
+                        >
+                          Load website launch preset
+                        </UButton>
+                      </div>
+                      <div class="space-y-2 rounded-md border border-default p-2.5">
+                        <div class="text-xs font-medium text-highlighted">
+                          Campaign images
+                        </div>
+                        <div class="grid gap-2 md:grid-cols-2">
+                          <div
+                            v-for="slot in CAMPAIGN_IMAGE_SLOTS"
+                            :key="`campaign-image-${slot.id}`"
+                            class="space-y-2 rounded-md border border-default/80 p-2"
+                          >
+                            <div class="flex items-center justify-between gap-2">
+                              <div class="text-xs font-medium text-highlighted">
+                                {{ slot.label }}
+                              </div>
+                              <div class="flex items-center gap-1">
+                                <UButton
+                                  size="xs"
+                                  color="neutral"
+                                  variant="soft"
+                                  icon="i-lucide-image-up"
+                                  :loading="campaignImageUploadPending[slot.id]"
+                                  @click="() => { void uploadCampaignImage(slot) }"
+                                >
+                                  Upload
+                                </UButton>
+                                <UButton
+                                  size="xs"
+                                  color="neutral"
+                                  variant="ghost"
+                                  icon="i-lucide-x"
+                                  @click="clearCampaignImage(slot)"
+                                >
+                                  Clear
+                                </UButton>
+                              </div>
+                            </div>
+                            <UInput
+                              :model-value="readDynamicDataString(slot.urlKey)"
+                              class="w-full"
+                              placeholder="https://.../image.jpg"
+                              @update:model-value="(value) => updateDynamicDataString(slot.urlKey, String(value ?? ''))"
+                            />
+                            <UInput
+                              :model-value="readDynamicDataString(slot.altKey)"
+                              class="w-full"
+                              placeholder="Alt text"
+                              @update:model-value="(value) => updateDynamicDataString(slot.altKey, String(value ?? ''))"
+                            />
                           </div>
                         </div>
-                        <UInput
-                          :model-value="readDynamicDataString(slot.urlKey)"
-                          class="w-full"
-                          placeholder="https://.../image.jpg"
-                          @update:model-value="(value) => updateDynamicDataString(slot.urlKey, String(value ?? ''))"
-                        />
-                        <UInput
-                          :model-value="readDynamicDataString(slot.altKey)"
-                          class="w-full"
-                          placeholder="Alt text"
-                          @update:model-value="(value) => updateDynamicDataString(slot.altKey, String(value ?? ''))"
-                        />
                       </div>
+                      <UTextarea
+                        v-model="draft.dynamicDataJsonText"
+                        :rows="20"
+                        class="w-full font-mono text-xs"
+                        placeholder="{&#10;  &quot;hero_enabled&quot;: true&#10;}"
+                      />
+                    </div>
+                  </UFormField>
+
+                  <div class="rounded-md border border-primary/20 bg-primary/5 p-2.5 text-xs text-dimmed">
+                    <div class="mb-1.5 font-medium text-highlighted">
+                      Available recipient/context variables
+                    </div>
+                    <div class="leading-relaxed break-words">
+                      <span
+                        v-for="variableName in editorVariableTokens"
+                        :key="`campaign-${variableName}`"
+                        class="mb-1 mr-2 inline-block rounded bg-default/90 px-1.5 py-0.5 ring-1 ring-primary/20"
+                      >
+                        <code>{{ formatVariableToken(variableName) }}</code>
+                      </span>
                     </div>
                   </div>
-                  <UTextarea
-                    v-model="draft.dynamicDataJsonText"
-                    :rows="20"
-                    class="w-full font-mono text-xs"
-                    placeholder="{&#10;  &quot;hero_enabled&quot;: true&#10;}"
-                  />
                 </div>
-              </UFormField>
 
-              <div class="text-xs text-dimmed rounded-md border border-primary/20 bg-primary/5 p-2.5">
-                <div class="font-medium text-highlighted mb-1.5">
-                  Available recipient/context variables
-                </div>
-                <div class="leading-relaxed break-words">
-                  <span
-                    v-for="variableName in editorVariableTokens"
-                    :key="`campaign-${variableName}`"
-                    class="inline-block mr-2 mb-1 rounded bg-default/90 px-1.5 py-0.5 ring-1 ring-primary/20"
-                  >
-                    <code>{{ formatVariableToken(variableName) }}</code>
-                  </span>
-                </div>
+                <aside class="min-w-0 xl:sticky xl:top-4 xl:self-start">
+                  <DashboardAdminEmailHighFidelityEmailPreview
+                    v-model:viewport="previewViewport"
+                    title="Live template preview"
+                    :html="previewHtml"
+                    :template-id="draftSendgridTemplateId"
+                    :lookup="sendgridLookup"
+                    :pending="sendgridLookupPending"
+                    :error="sendgridLookupError"
+                  />
+                </aside>
               </div>
             </div>
           </div>

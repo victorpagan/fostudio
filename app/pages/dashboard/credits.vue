@@ -531,8 +531,8 @@ watch(
           color="warning"
           variant="soft"
           icon="i-lucide-badge-x"
-          title="No active membership"
-          description="You can still use unexpired credits, but top-up purchases are locked until membership is active."
+          title="Guest credit mode"
+          description="You can buy premium guest credits and book without an active membership. Guest credits expire sooner and do not include member booking windows, 30-minute slots, or overnight holds."
         />
 
         <UCard>
@@ -706,7 +706,12 @@ watch(
                   Buy credits
                 </div>
                 <div class="mt-1 text-sm text-dimmed">
-                  Top-off credits can be purchased anytime while membership is active.
+                  <template v-if="hasActiveMembership">
+                    Top-off credits can be purchased anytime while membership is active.
+                  </template>
+                  <template v-else>
+                    Guest credit bundles use premium pricing and expire after {{ creditSummary?.topoffCreditExpiryDays ?? 30 }} days.
+                  </template>
                 </div>
                 <div
                   v-if="hasSavedCardOnFile"
@@ -748,10 +753,10 @@ watch(
             </div>
 
             <div
-              v-else-if="!canBuyTopoff || !hasActiveMembership"
+              v-else-if="!canBuyTopoff"
               class="text-sm text-dimmed"
             >
-              Top-off purchases are currently unavailable without an active membership.
+              Credit purchases are currently unavailable.
             </div>
 
             <div

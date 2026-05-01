@@ -16,9 +16,10 @@ type CalendarEvent = EventInput & {
   end?: string
   title?: string
   extendedProps?: {
-    type?: 'booking' | 'hold' | 'external' | 'block'
+    type?: 'booking' | 'hold' | 'external' | 'block' | 'standby'
     isOwn?: boolean
     status?: string
+    rateKind?: string
     bookingId?: string
     blockId?: string
     notes?: string
@@ -64,6 +65,7 @@ const emit = defineEmits<{
     start: string
     end: string
     status?: string
+    rateKind?: string
     notes?: string
   }): void
   (e: 'block-click', payload: {
@@ -82,6 +84,8 @@ const lastRefreshedAt = ref<string | null>(null)
 const bookingWindowDays = ref<number | null>(null)
 const guestBookingStartHour = ref<number | null>(null)
 const guestBookingEndHour = ref<number | null>(null)
+const guestMinBookingHours = ref<number | null>(null)
+const guestBookingIncrementMinutes = ref<number | null>(null)
 const peakWindow = ref<PeakWindow | null>(null)
 const workshopPromo = ref<WorkshopPromo | null>(null)
 const nowTickMs = ref(Date.now())
@@ -95,6 +99,8 @@ type CalendarResponse = {
   bookingWindowDays?: number
   guestBookingStartHour?: number
   guestBookingEndHour?: number
+  guestMinBookingHours?: number
+  guestBookingIncrementMinutes?: number
   peakWindow?: PeakWindow | null
   workshopPromo?: WorkshopPromo | null
   events: CalendarEvent[]
@@ -208,6 +214,12 @@ async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
     guestBookingEndHour.value = Number.isFinite(Number(res.guestBookingEndHour))
       ? Number(res.guestBookingEndHour)
       : null
+    guestMinBookingHours.value = Number.isFinite(Number(res.guestMinBookingHours))
+      ? Number(res.guestMinBookingHours)
+      : null
+    guestBookingIncrementMinutes.value = Number.isFinite(Number(res.guestBookingIncrementMinutes))
+      ? Number(res.guestBookingIncrementMinutes)
+      : null
     peakWindow.value = res.peakWindow ?? null
     workshopPromo.value = res.workshopPromo ?? null
     lastRefreshedAt.value = new Date().toLocaleTimeString('en-US', {
@@ -223,8 +235,15 @@ async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
 const ownBookingCount = computed(() =>
   events.value.filter(event => event.extendedProps?.isOwn).length
 )
+const standbyWindowCount = computed(() =>
+  events.value.filter(event => event.extendedProps?.type === 'standby').length
+)
 const isMemberFeed = computed(() => props.endpoint.includes('/member'))
 const isPublicFeed = computed(() => props.endpoint.includes('/public'))
+const isGuestConstrainedFeed = computed(() =>
+  guestBookingStartHour.value !== null && guestBookingEndHour.value !== null
+)
+const isGuestSelectionMode = computed(() => isPublicFeed.value || isGuestConstrainedFeed.value)
 
 function eventClassNames(arg: { event: { display: string, end?: Date | null, extendedProps: CalendarEvent['extendedProps'] } }) {
   const classes = ['fc-event-block']
@@ -243,6 +262,9 @@ function eventClassNames(arg: { event: { display: string, end?: Date | null, ext
   }
   if (type === 'block') {
     classes.push('fc-event-blockoff')
+  }
+  if (type === 'standby') {
+    classes.push('fc-standby-window')
   }
   if (type === 'booking') {
     classes.push('fc-event-booked')
@@ -349,6 +371,13 @@ function hourToTimeLabel(hour: number) {
   return `${safe.toString().padStart(2, '0')}:00:00`
 }
 
+function minutesToDuration(minutes: number) {
+  const safe = Math.max(1, Math.floor(minutes))
+  const hours = Math.floor(safe / 60)
+  const remainder = safe % 60
+  return `${hours.toString().padStart(2, '0')}:${remainder.toString().padStart(2, '0')}:00`
+}
+
 function formatWorkshopPromoDate(value: string) {
   const parsed = DateTime.fromISO(value, { setZone: true })
   if (!parsed.isValid) return null
@@ -364,13 +393,106 @@ function toHourValue(dateTime: DateTime) {
   return dateTime.hour + (dateTime.minute / 60) + (dateTime.second / 3600)
 }
 
+function getGuestSelectionPolicy() {
+  const minMinutes = Math.max(1, Math.round((guestMinBookingHours.value ?? 2) * 60))
+  const increment = Math.max(1, Math.round(guestBookingIncrementMinutes.value ?? 60))
+  return { minMinutes, increment }
+}
+
+function normalizeGuestSelectionEnd(start: Date, end: Date) {
+  if (!isGuestSelectionMode.value) return end
+
+  const startLA = DateTime.fromJSDate(start, { zone: STUDIO_TZ })
+  const endLA = DateTime.fromJSDate(end, { zone: STUDIO_TZ })
+  const { minMinutes, increment } = getGuestSelectionPolicy()
+  const durationMinutes = Math.max(0, Math.round(endLA.diff(startLA, 'minutes').minutes))
+
+  if (durationMinutes >= minMinutes && durationMinutes % increment === 0) return end
+
+  const normalizedMinutes = durationMinutes <= minMinutes
+    ? minMinutes
+    : Math.ceil(durationMinutes / increment) * increment
+
+  return startLA.plus({ minutes: normalizedMinutes }).toUTC().toJSDate()
+}
+
+function calendarEventDateToStudioDate(value: CalendarEvent['start'] | CalendarEvent['end']) {
+  if (!value) return null
+  if (value instanceof Date) return calendarDateToStudioDate(value)
+  if (typeof value === 'number') return calendarDateToStudioDate(new Date(value))
+  if (typeof value === 'string') {
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return null
+    return calendarDateToStudioDate(parsed)
+  }
+  return null
+}
+
+function rangeOverlapsUnavailable(start: Date, end: Date) {
+  return events.value.some((event) => {
+    const type = event.extendedProps?.type
+    if (event.display === 'background' || type === 'standby') return false
+    if (type === 'hold' && event.extendedProps?.isOwn) return false
+
+    const eventStart = calendarEventDateToStudioDate(event.start)
+    const eventEnd = calendarEventDateToStudioDate(event.end)
+    if (!eventStart || !eventEnd) return false
+    return start < eventEnd && end > eventStart
+  })
+}
+
+function selectionIsAllowed(selectionStart: Date, selectionEnd: Date, allDay?: boolean) {
+  if (selectionStart < new Date()) return false
+  if (allDay) return false
+
+  if (isGuestSelectionMode.value) {
+    const startLA = DateTime.fromJSDate(selectionStart, { zone: STUDIO_TZ })
+    const endLA = DateTime.fromJSDate(selectionEnd, { zone: STUDIO_TZ })
+    if (!startLA.hasSame(endLA, 'day')) return false
+
+    if (guestBookingStartHour.value !== null && guestBookingEndHour.value !== null) {
+      const startHourValue = toHourValue(startLA)
+      const endHourValue = toHourValue(endLA)
+      if (startHourValue < guestBookingStartHour.value || endHourValue > guestBookingEndHour.value) {
+        return false
+      }
+    }
+
+    const durationMinutes = endLA.diff(startLA, 'minutes').minutes
+    const { minMinutes, increment } = getGuestSelectionPolicy()
+    const startMinute = startLA.hour * 60 + startLA.minute
+    const endMinute = endLA.hour * 60 + endLA.minute
+    if (durationMinutes < minMinutes) return false
+    if (durationMinutes % increment !== 0 || startMinute % increment !== 0 || endMinute % increment !== 0) {
+      return false
+    }
+  }
+
+  if (rangeOverlapsUnavailable(selectionStart, selectionEnd)) return false
+
+  if (!bookingWindowDays.value) return true
+  const maxStart = new Date(Date.now() + bookingWindowDays.value * 24 * 60 * 60 * 1000)
+  return selectionStart <= maxStart
+}
+
+function emitCalendarSelection(start: Date, end: Date, allDay?: boolean) {
+  const normalizedEnd = normalizeGuestSelectionEnd(start, end)
+  if (!selectionIsAllowed(start, normalizedEnd, allDay)) return
+  emit('select', {
+    start,
+    end: normalizedEnd
+  })
+}
+
 const calendarSnapDuration = computed(() => {
   if (!canSelect.value) return '01:00:00'
+  if (isGuestConstrainedFeed.value) return minutesToDuration(guestBookingIncrementMinutes.value ?? 60)
   if (isMemberFeed.value) return '00:30:00'
   return '01:00:00'
 })
 
 const calendarSlotDuration = computed(() => {
+  if (isGuestConstrainedFeed.value) return minutesToDuration(guestBookingIncrementMinutes.value ?? 60)
   if (isMemberFeed.value) return '00:30:00'
   return '01:00:00'
 })
@@ -423,14 +545,14 @@ const memberValidRange = computed(() => {
 
 const calendarSlotMinTime = computed(() => {
   if (props.fullDay) return '00:00:00'
-  if (!isPublicFeed.value) return '00:00:00'
+  if (!isGuestConstrainedFeed.value) return '00:00:00'
   if (guestBookingStartHour.value === null) return '00:00:00'
   return hourToTimeLabel(guestBookingStartHour.value)
 })
 
 const calendarSlotMaxTime = computed(() => {
   if (props.fullDay) return '24:00:00'
-  if (!isPublicFeed.value) return '24:00:00'
+  if (!isGuestConstrainedFeed.value) return '24:00:00'
   if (guestBookingEndHour.value === null) return '24:00:00'
   return hourToTimeLabel(guestBookingEndHour.value)
 })
@@ -442,36 +564,18 @@ const calendarOptions = computed(() => ({
   selectable: canSelect.value,
   validRange: memberValidRange.value,
   selectOverlap: (event: { display: string, classNames?: string[], extendedProps?: CalendarEvent['extendedProps'] }) => {
-    // Allow selecting over visual-only peak shading; keep real booking/hold overlaps blocked.
-    if (event.display === 'background' && (event.classNames ?? []).includes('fc-peak-window')) return true
+    // Allow selecting over visual-only peak/standby shading; keep real booking/hold/block overlaps blocked.
+    if (
+      event.display === 'background'
+      && ((event.classNames ?? []).includes('fc-peak-window') || event.extendedProps?.type === 'standby')
+    ) return true
     if (event.extendedProps?.type === 'hold' && event.extendedProps?.isOwn) return true
     return false
   },
   selectAllow: (selectionInfo: { start: Date, end: Date, allDay?: boolean }) => {
     const selectionStart = calendarDateToStudioDate(selectionInfo.start)
-    const selectionEnd = calendarDateToStudioDate(selectionInfo.end)
-    if (selectionStart < new Date()) return false
-
-    // In month view, require users to pick an actual time slot in day/week view.
-    if (selectionInfo.allDay) return false
-
-    if (isPublicFeed.value) {
-      const startLA = DateTime.fromJSDate(selectionStart, { zone: STUDIO_TZ })
-      const endLA = DateTime.fromJSDate(selectionEnd, { zone: STUDIO_TZ })
-      if (!startLA.hasSame(endLA, 'day')) return false
-
-      if (guestBookingStartHour.value !== null && guestBookingEndHour.value !== null) {
-        const startHourValue = toHourValue(startLA)
-        const endHourValue = toHourValue(endLA)
-        if (startHourValue < guestBookingStartHour.value || endHourValue > guestBookingEndHour.value) {
-          return false
-        }
-      }
-    }
-
-    if (!bookingWindowDays.value) return true
-    const maxStart = new Date(Date.now() + bookingWindowDays.value * 24 * 60 * 60 * 1000)
-    return selectionStart <= maxStart
+    const selectionEnd = normalizeGuestSelectionEnd(selectionStart, calendarDateToStudioDate(selectionInfo.end))
+    return selectionIsAllowed(selectionStart, selectionEnd, selectionInfo.allDay)
   },
   selectMirror: true,
   now: studioInstantToCalendarIso(new Date(nowTickMs.value)),
@@ -508,9 +612,14 @@ const calendarOptions = computed(() => ({
   eventDidMount,
   dateClick: (info: { view: { type: string, calendar: { changeView: (viewName: string, date: Date) => void } }, date: Date }) => {
     if (!canSelect.value) return
-    if (info.view.type !== 'dayGridMonth') return
-    const calendar = info.view.calendar
-    if (calendar) calendar.changeView('timeGridDay', info.date)
+    if (info.view.type === 'dayGridMonth') {
+      const calendar = info.view.calendar
+      if (calendar) calendar.changeView('timeGridDay', info.date)
+      return
+    }
+    if (!isGuestSelectionMode.value) return
+    const start = calendarDateToStudioDate(info.date)
+    emitCalendarSelection(start, start)
   },
   eventClick: (info: { event: { extendedProps?: CalendarEvent['extendedProps'], start: Date | null, end: Date | null } }) => {
     const ext = info.event.extendedProps
@@ -533,17 +642,13 @@ const calendarOptions = computed(() => ({
       start,
       end: end ?? start,
       status: ext.status,
+      rateKind: ext.rateKind,
       notes: ext.notes
     })
   },
   select: (info: DateSelectArg) => {
-    if (info.allDay) return
     const start = calendarDateToStudioDate(info.start)
-    if (start < new Date()) return
-    emit('select', {
-      start,
-      end: calendarDateToStudioDate(info.end)
-    })
+    emitCalendarSelection(start, calendarDateToStudioDate(info.end), info.allDay)
   },
   datesSet: (info: DatesSetArg) => {
     // Called when the visible range changes
@@ -593,6 +698,13 @@ onUnmounted(() => {
         >
           <span class="availability-dot availability-dot-peak" />
           {{ peakChip }}
+        </div>
+        <div
+          v-if="standbyWindowCount"
+          class="availability-chip availability-chip-standby"
+        >
+          <span class="availability-dot availability-dot-standby" />
+          Standby available
         </div>
         <div
           v-if="loading"

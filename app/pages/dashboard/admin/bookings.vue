@@ -71,6 +71,7 @@ const PAST_BOOKINGS_PAGE_SIZE = 10
 type AdminBookingTab = 'active' | 'holds' | 'past'
 
 const toast = useToast()
+const route = useRoute()
 const statusFilter = ref<string>('all')
 const bookingSearch = ref('')
 const refundCredits = ref(true)
@@ -104,11 +105,11 @@ const blockForm = reactive({
 
 const { data: bookingRows, refresh, pending } = await useAsyncData('admin:bookings', async () => {
   const query = statusFilter.value === 'all'
-    ? {}
-    : { status: statusFilter.value }
+    ? { bookingId: readQueryValue(route.query.bookingId) ?? undefined }
+    : { status: statusFilter.value, bookingId: readQueryValue(route.query.bookingId) ?? undefined }
   const res = await $fetch<{ bookings: AdminBooking[] }>('/api/admin/bookings', { query })
   return res.bookings
-}, { watch: [statusFilter] })
+}, { watch: [statusFilter, () => route.query.bookingId] })
 
 const bookings = computed(() => bookingRows.value ?? [])
 
@@ -243,7 +244,12 @@ watch(() => blockForm.startSlot, (next) => {
 
 onMounted(async () => {
   await Promise.allSettled([refresh(), refreshMembers(), refreshBlocks()])
+  focusLinkedBooking()
 })
+
+watch([bookings, () => route.query.bookingId], () => {
+  focusLinkedBooking()
+}, { flush: 'post' })
 
 watch(createBookingOpen, async (open) => {
   if (!open) return
@@ -341,10 +347,48 @@ watch(pastTotalPages, (value) => {
   if (pastPage.value > value) pastPage.value = value
 })
 
+function readQueryValue(value: unknown) {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (Array.isArray(value)) {
+    const first = value.find(item => typeof item === 'string' && item.trim())
+    if (typeof first === 'string' && first.trim()) return first.trim()
+  }
+  return null
+}
+
 function readErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Unknown error'
   const maybe = error as { data?: { statusMessage?: string }, message?: string }
   return maybe.data?.statusMessage ?? maybe.message ?? 'Unknown error'
+}
+
+const linkedBookingId = computed(() => readQueryValue(route.query.bookingId))
+
+function focusLinkedBooking() {
+  const bookingId = linkedBookingId.value
+  if (!bookingId) return
+
+  const target = bookings.value.find(booking => booking.id === bookingId)
+  if (!target) return
+
+  if (hasHold(target) && bookingEndsAtMillis(target) >= Date.now()) {
+    bookingTab.value = 'holds'
+  } else if (target.status === 'canceled' || bookingEndsAtMillis(target) < Date.now()) {
+    bookingTab.value = 'past'
+  } else {
+    bookingTab.value = 'active'
+  }
+
+  if (bookingSearch.value && !bookingMatchesSearch(target)) {
+    bookingSearch.value = ''
+  }
+
+  nextTick(() => {
+    document.getElementById(`admin-booking-${bookingId}`)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center'
+    })
+  })
 }
 
 function bookingLabel(booking: AdminBooking) {
@@ -890,8 +934,12 @@ async function createBookingOnBehalf() {
 
                 <UCard
                   v-for="booking in group.items"
+                  :id="`admin-booking-${booking.id}`"
                   :key="`${booking.id}-${bookingTab}`"
-                  :class="isExternalBooking(booking) ? 'admin-booking-card-external' : ''"
+                  :class="[
+                    isExternalBooking(booking) ? 'admin-booking-card-external' : '',
+                    linkedBookingId === booking.id ? 'ring-2 ring-primary/60 bg-primary/5' : ''
+                  ]"
                 >
                   <div class="flex flex-wrap items-start justify-between gap-3">
                     <div class="min-w-0">

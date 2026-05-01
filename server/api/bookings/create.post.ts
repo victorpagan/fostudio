@@ -13,17 +13,24 @@ import {
   resolveHoldCycleWindow,
   validateOvernightHoldWindow
 } from '~~/server/utils/booking/holds'
-import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
 import { assertCurrentWaiver } from '~~/server/utils/waiver/status'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 import { sendMemberBookingLifecycleMail } from '~~/server/utils/mail/memberBookingLifecycle'
+import {
+  buildRatePolicySnapshot,
+  loadGuestBookingPolicy,
+  loadStandbyBookingPolicy,
+  validateGuestBookingWindow,
+  validateStandbySelection
+} from '~~/server/utils/booking/guestPolicy'
 
 const schema = z.object({
   start_time: z.string(),
   end_time: z.string(),
   notes: z.string().optional().nullable(),
   booking_kind: z.enum(['standard', 'workshop']).optional().default('standard'),
+  rate_kind: z.enum(['standard', 'standby']).optional().default('standard'),
   workshop_title: z.string().max(160).optional().nullable(),
   workshop_description: z.string().max(2000).optional().nullable(),
   workshop_link: z.string().max(500).optional().nullable(),
@@ -102,12 +109,16 @@ export default defineEventHandler(async (event) => {
   const body = schema.parse(await readBody(event))
   const peakWindow = await loadPeakWindowConfig(event)
   const bookingKind = body.booking_kind ?? 'standard'
+  const rateKind = body.rate_kind ?? 'standard'
   const workshopTitle = typeof body.workshop_title === 'string' ? body.workshop_title.trim() : ''
   const workshopDescription = typeof body.workshop_description === 'string' ? body.workshop_description.trim() : ''
   const workshopLink = typeof body.workshop_link === 'string' ? body.workshop_link.trim() : ''
   const workshopLiabilityAcceptedAt = bookingKind === 'workshop' && body.workshop_liability_acknowledged
     ? new Date().toISOString()
     : null
+
+  const guestPolicy = await loadGuestBookingPolicy(event)
+  const standbyPolicy = await loadStandbyBookingPolicy(event)
 
   const { data: holdConfigRows, error: holdConfigErr } = await supabase
     .from('system_config')
@@ -139,17 +150,8 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
-  let remainingCredits = 0
-  try {
-    remainingCredits = await resolveAvailableCreditBalance(supabase, user.sub)
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to load credits'
-    throw createError({ statusCode: 500, statusMessage: message })
-  }
   const hasActiveMembership = (membership?.status || '').toLowerCase() === 'active'
-  if (!hasActiveMembership && remainingCredits <= 0) {
-    throw createError({ statusCode: 403, statusMessage: 'Membership required' })
-  }
+  const accountKind = hasActiveMembership ? 'member' : 'guest'
 
   // Tier rules (DB catalog)
   const selectWithCap = 'booking_window_days, peak_multiplier, holds_included, active_hold_cap'
@@ -191,10 +193,10 @@ export default defineEventHandler(async (event) => {
       holds_included: 1,
       active_hold_cap: 1
     }
-  } else if (!membership && remainingCredits > 0) {
+  } else if (!hasActiveMembership) {
     effectiveTier = {
-      booking_window_days: 30,
-      peak_multiplier: 1.5,
+      booking_window_days: guestPolicy.bookingWindowDays,
+      peak_multiplier: guestPolicy.peakMultiplier,
       holds_included: 0,
       active_hold_cap: 0
     }
@@ -208,14 +210,24 @@ export default defineEventHandler(async (event) => {
   if (!(start < end)) throw createError({ statusCode: 400, statusMessage: 'Invalid time range' })
   if (!isAdmin) {
     const durationMinutes = end.diff(start, 'minutes').minutes
-    if (!isThirtyMinuteAligned(start) || !isThirtyMinuteAligned(end)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Member bookings must start and end on 30-minute increments.'
-      })
-    }
-    if (durationMinutes < 30) {
-      throw createError({ statusCode: 400, statusMessage: 'Minimum booking is 30 minutes.' })
+    if (accountKind === 'guest') {
+      const guestValidation = validateGuestBookingWindow({ start, end, policy: guestPolicy })
+      if (!guestValidation.ok) {
+        throw createError({ statusCode: 400, statusMessage: guestValidation.message ?? 'Guest booking is not available for this time.' })
+      }
+      if (body.request_hold) {
+        throw createError({ statusCode: 403, statusMessage: 'Guest bookings do not include holds.' })
+      }
+    } else {
+      if (!isThirtyMinuteAligned(start) || !isThirtyMinuteAligned(end)) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'Member bookings must start and end on 30-minute increments.'
+        })
+      }
+      if (durationMinutes < 30) {
+        throw createError({ statusCode: 400, statusMessage: 'Minimum booking is 30 minutes.' })
+      }
     }
   }
 
@@ -237,11 +249,59 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  if (rateKind === 'standby') {
+    if (bookingKind !== 'standard') {
+      throw createError({ statusCode: 400, statusMessage: 'Standby rate is only available for standard bookings.' })
+    }
+    if (body.request_hold) {
+      throw createError({ statusCode: 403, statusMessage: 'Standby bookings cannot include holds.' })
+    }
+    const standbyValidation = validateStandbySelection({
+      start,
+      end,
+      accountKind,
+      guestPolicy,
+      standbyPolicy
+    })
+    if (!standbyValidation.ok) {
+      throw createError({ statusCode: 400, statusMessage: standbyValidation.message ?? 'Standby booking is not available for this time.' })
+    }
+
+    const dayStartIso = start.setZone(STUDIO_TZ).startOf('day').toUTC().toISO()
+    const dayEndIso = start.setZone(STUDIO_TZ).startOf('day').plus({ days: 1 }).toUTC().toISO()
+    if (dayStartIso && dayEndIso) {
+      type CountResult = { count?: number | null, error?: { message: string } | null }
+      type CountQuery = PromiseLike<CountResult> & {
+        eq: (column: string, value: unknown) => CountQuery
+        gte: (column: string, value: unknown) => CountQuery
+        in: (column: string, values: unknown[]) => CountQuery
+        lt: (column: string, value: unknown) => CountQuery
+        select: (columns?: string, options?: Record<string, unknown>) => CountQuery
+      }
+      const db = supabase as unknown as { from: (table: string) => CountQuery }
+      const { count: standbyCount, error: standbyCountErr } = await db
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.sub)
+        .eq('booking_rate_kind', 'standby')
+        .in('status', ['confirmed', 'requested', 'pending_payment'])
+        .gte('start_time', dayStartIso)
+        .lt('start_time', dayEndIso)
+      if (standbyCountErr) throw createError({ statusCode: 500, statusMessage: standbyCountErr.message })
+      if (Math.max(0, standbyCount ?? 0) > 0) {
+        throw createError({ statusCode: 409, statusMessage: 'Only one standby booking is allowed per day.' })
+      }
+    }
+  }
+
   // Compute credits
   const baseCreditsNeeded = computeCredits(body.start_time, body.end_time, effectiveTier.peak_multiplier, peakWindow)
-  const creditsNeeded = bookingKind === 'workshop'
+  const bookingKindCreditsNeeded = bookingKind === 'workshop'
     ? Math.round(baseCreditsNeeded * workshopCreditMultiplier * 100) / 100
     : baseCreditsNeeded
+  const creditsNeeded = rateKind === 'standby'
+    ? Math.round(bookingKindCreditsNeeded * standbyPolicy.discountMultiplier * 100) / 100
+    : bookingKindCreditsNeeded
 
   const { data: blockConflicts, error: blockErr } = await supabase
     .from('calendar_blocks')
@@ -426,15 +486,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Workshop booking is not enabled for your account.' })
   }
 
-  const rpcName = membership ? 'create_confirmed_booking_with_burn' : 'create_confirmed_booking_with_burn_no_membership'
-  const rpcBody = membership
+  const rpcName = hasActiveMembership ? 'create_confirmed_booking_with_burn' : 'create_confirmed_booking_with_burn_no_membership'
+  const rpcBody = hasActiveMembership
     ? {
         p_user_id: user.sub,
         p_customer_id: cust.id,
         p_start_time: startIso,
         p_end_time: endIso,
         p_notes: (body.notes ?? '') as string,
-        p_request_hold: body.request_hold ?? false,
+        p_request_hold: rateKind === 'standby' ? false : (body.request_hold ?? false),
         p_credits_needed: creditsNeeded,
         p_consume_paid_hold: consumePaidHold,
         p_hold_credit_cost: holdCreditCharge,
@@ -493,9 +553,31 @@ export default defineEventHandler(async (event) => {
 
   const bookingId = result?.[0]?.booking_id ?? null
   if (bookingId) {
+    const snapshot = buildRatePolicySnapshot({
+      accountKind,
+      rateKind,
+      guestPolicy: accountKind === 'guest' ? guestPolicy : null,
+      standbyPolicy: rateKind === 'standby' ? standbyPolicy : null
+    })
+    const { error: rateUpdateErr } = await supabase
+      .from('bookings')
+      .update({
+        booking_rate_kind: rateKind,
+        rate_policy_snapshot: snapshot
+      } as never)
+      .eq('id', bookingId)
+    if (rateUpdateErr) {
+      console.warn('[booking/create] failed to persist booking rate metadata', {
+        bookingId,
+        rateKind,
+        error: rateUpdateErr.message
+      })
+    }
+  }
+  if (bookingId) {
     await enqueueBookingAccessSync(event, {
       bookingId,
-      reason: 'member_booking_create'
+      reason: accountKind === 'guest' ? 'guest_booking_create' : 'member_booking_create'
     }).catch((error) => {
       console.warn('[access/sync] failed to queue booking create sync', {
         bookingId,
@@ -503,7 +585,7 @@ export default defineEventHandler(async (event) => {
       })
     })
 
-    await maybeForceSyncGoogleCalendar(event, 'member_booking_create').catch((error) => {
+    await maybeForceSyncGoogleCalendar(event, accountKind === 'guest' ? 'guest_booking_create' : 'member_booking_create').catch((error) => {
       console.warn('[gcal-sync] failed to force sync after member booking create', {
         bookingId,
         error: (error as Error)?.message ?? String(error)
@@ -517,7 +599,7 @@ export default defineEventHandler(async (event) => {
       bookingStart: startIso,
       bookingEnd: endIso,
       creditsBurned: Number(result?.[0]?.credits_burned ?? creditsNeeded),
-      holdRequested: Boolean(body.request_hold),
+      holdRequested: Boolean(rateKind === 'standby' ? false : body.request_hold),
       holdCreated: Boolean(result?.[0]?.hold_id),
       actionedBy: 'member'
     })
@@ -531,6 +613,7 @@ export default defineEventHandler(async (event) => {
     burned: result?.[0]?.credits_burned ?? null,
     newBalance: result?.[0]?.new_balance ?? null,
     booking_id: bookingId,
-    hold_id: membership ? (result?.[0]?.hold_id ?? null) : null
+    rateKind,
+    hold_id: hasActiveMembership ? (result?.[0]?.hold_id ?? null) : null
   }
 })

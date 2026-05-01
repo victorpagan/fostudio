@@ -11,6 +11,16 @@ const bodySchema = z.object({
   guestBookingWindowDays: z.number().int().min(1).max(60),
   guestBookingStartHour: z.number().int().min(0).max(23),
   guestBookingEndHour: z.number().int().min(1).max(24),
+  guestMinBookingHours: z.number().min(0.5).max(24),
+  guestBookingIncrementMinutes: z.number().int().min(15).max(240),
+  guestCreditExpiryDays: z.number().int().min(1).max(365),
+  guestPendingPaymentHoldMinutes: z.number().int().min(1).max(120),
+  standbyEnabled: z.boolean(),
+  standbyMinOpenSlotHours: z.number().min(1).max(24),
+  standbyDiscountMultiplier: z.number().min(0.05).max(1),
+  memberStandbyStartHour: z.number().int().min(0).max(23),
+  memberStandbyWindowHours: z.number().min(1).max(24),
+  guestStandbyWindowHours: z.number().min(1).max(24),
   memberRescheduleNoticeHours: z.number().int().min(1).max(240)
 }).refine(value => value.peakEndHour > value.peakStartHour, {
   message: 'Peak end hour must be after start hour',
@@ -33,6 +43,16 @@ export default defineEventHandler(async (event) => {
     { key: 'guest_booking_window_days', value: body.guestBookingWindowDays },
     { key: 'guest_booking_start_hour', value: body.guestBookingStartHour },
     { key: 'guest_booking_end_hour', value: body.guestBookingEndHour },
+    { key: 'guest_min_booking_hours', value: body.guestMinBookingHours },
+    { key: 'guest_booking_increment_minutes', value: body.guestBookingIncrementMinutes },
+    { key: 'guest_credit_expiry_days', value: body.guestCreditExpiryDays },
+    { key: 'guest_pending_payment_hold_minutes', value: body.guestPendingPaymentHoldMinutes },
+    { key: 'standby_enabled', value: body.standbyEnabled },
+    { key: 'standby_min_open_slot_hours', value: body.standbyMinOpenSlotHours },
+    { key: 'standby_discount_multiplier', value: body.standbyDiscountMultiplier },
+    { key: 'member_standby_start_hour', value: body.memberStandbyStartHour },
+    { key: 'member_standby_window_hours', value: body.memberStandbyWindowHours },
+    { key: 'guest_standby_window_hours', value: body.guestStandbyWindowHours },
     { key: 'member_reschedule_notice_hours', value: body.memberRescheduleNoticeHours }
   ]
 

@@ -15,12 +15,22 @@ import { DateTime } from 'luxon'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 import { getServerConfigMap } from '~~/server/utils/config/secret'
 import { isPeakByConfig, loadPeakWindowConfig, STUDIO_TZ } from '~~/server/utils/booking/peak'
+import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
+import {
+  buildRatePolicySnapshot,
+  loadGuestBookingPolicy,
+  loadStandbyBookingPolicy,
+  validateGuestBookingWindow,
+  validateStandbySelection
+} from '~~/server/utils/booking/guestPolicy'
+import type { BookingRateKind } from '~~/server/utils/booking/guestPolicy'
 
 const qSchema = z.object({
   start: z.string(),
   end: z.string(),
   mode: z.enum(['member', 'guest']).optional(),
-  booking_kind: z.enum(['standard', 'workshop']).optional().default('standard')
+  booking_kind: z.enum(['standard', 'workshop']).optional().default('standard'),
+  rate_kind: z.enum(['standard', 'standby']).optional().default('standard')
 })
 
 const WORKSHOP_BOOKING_WINDOW_MONTHS = 3
@@ -53,21 +63,29 @@ function computeCredits(startIso: string, endIso: string, peakMultiplier: number
   return Math.round(credits * 100) / 100
 }
 
-function toValidHour(raw: unknown, fallback: number) {
-  const parsed = Number(raw)
-  if (!Number.isFinite(parsed)) return fallback
-  const hour = Math.floor(parsed)
-  return Math.min(24, Math.max(0, hour))
-}
-
-function toHourValue(dateTime: DateTime) {
-  return dateTime.hour + (dateTime.minute / 60) + (dateTime.second / 3600)
-}
-
-function formatHourLabel(hour: number) {
-  const normalized = Math.min(24, Math.max(0, Math.floor(hour)))
-  if (normalized === 24) return '12:00 AM'
-  return DateTime.fromObject({ year: 2026, month: 1, day: 1, hour: normalized, minute: 0 }, { zone: STUDIO_TZ }).toFormat('h:mm a')
+async function hasStandbyBookingToday(supabase: unknown, userId: string, start: DateTime) {
+  type CountResult = { count?: number | null, error?: { message: string } | null }
+  type CountQuery = PromiseLike<CountResult> & {
+    eq: (column: string, value: unknown) => CountQuery
+    gte: (column: string, value: unknown) => CountQuery
+    in: (column: string, values: unknown[]) => CountQuery
+    lt: (column: string, value: unknown) => CountQuery
+    select: (columns?: string, options?: Record<string, unknown>) => CountQuery
+  }
+  const db = supabase as unknown as { from: (table: string) => CountQuery }
+  const dayStart = start.setZone(STUDIO_TZ).startOf('day').toUTC().toISO()
+  const dayEnd = start.setZone(STUDIO_TZ).startOf('day').plus({ days: 1 }).toUTC().toISO()
+  if (!dayStart || !dayEnd) return false
+  const { count, error } = await db
+    .from('bookings')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('booking_rate_kind', 'standby')
+    .in('status', ['confirmed', 'requested', 'pending_payment'])
+    .gte('start_time', dayStart)
+    .lt('start_time', dayEnd)
+  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+  return Math.max(0, count ?? 0) > 0
 }
 
 export default defineEventHandler(async (event) => {
@@ -90,21 +108,21 @@ export default defineEventHandler(async (event) => {
   // Try to identify the user and their tier for member pricing
   const user = await serverSupabaseUser(event)
   const cfg = await getServerConfigMap(event, [
-    'guest_peak_multiplier',
-    'guest_booking_rate_per_credit_cents',
-    'guest_booking_window_days',
-    'guest_booking_start_hour',
-    'guest_booking_end_hour',
     'workshop_credit_multiplier'
   ])
+  const guestPolicy = await loadGuestBookingPolicy(event)
+  const standbyPolicy = await loadStandbyBookingPolicy(event)
 
   let mode = q.mode ?? (user ? 'member' : 'guest')
   const bookingKind = q.booking_kind ?? 'standard'
+  const rateKind = q.rate_kind ?? 'standard'
   let workshopMultiplier = 1
 
   let peakMultiplier: number = 1.5 // safe default; overwritten below
   let ratePerCreditCents: number | null = null
   let tierName: string | null = null
+  let remainingCredits = 0
+  let hasActiveMembership = false
 
   if (mode === 'member' && user) {
     const { data: membership } = await supabase
@@ -113,17 +131,12 @@ export default defineEventHandler(async (event) => {
       .eq('user_id', user.sub)
       .maybeSingle()
 
-    const { data: balanceRow } = await supabase
-      .from('credit_balance')
-      .select('balance')
-      .eq('user_id', user.sub)
-      .maybeSingle()
-    const remainingCredits = Number(balanceRow?.balance ?? 0)
+    remainingCredits = await resolveAvailableCreditBalance(supabase, user.sub)
 
-    const hasActiveMembership = (membership?.status ?? '').toLowerCase() === 'active'
+    hasActiveMembership = (membership?.status ?? '').toLowerCase() === 'active'
     const canBookFromCredits = remainingCredits > 0
 
-    if (!membership || (!hasActiveMembership && !canBookFromCredits)) {
+    if (!membership || !hasActiveMembership) {
       // Fall back to guest pricing if no active membership
       mode = 'guest'
     } else {
@@ -137,43 +150,18 @@ export default defineEventHandler(async (event) => {
       tierName = tier?.display_name ?? null
     }
 
-    if (!hasActiveMembership && canBookFromCredits && !membership?.tier) {
-      // Legacy credits-only account without a membership row/tier.
-      peakMultiplier = 1.5
-      tierName = 'Credits-only access'
-      mode = 'member'
-    }
+    if (!hasActiveMembership && canBookFromCredits) mode = 'guest'
   }
 
   if (mode === 'guest') {
-    const guestWindowDays = Math.max(1, Number(cfg.guest_booking_window_days ?? 7))
-    const guestStartHour = toValidHour(cfg.guest_booking_start_hour, 11)
-    let guestEndHour = toValidHour(cfg.guest_booking_end_hour, 19)
-    if (guestEndHour <= guestStartHour) {
-      guestEndHour = Math.min(24, guestStartHour + 1)
+    const guestValidation = validateGuestBookingWindow({ start, end, policy: guestPolicy })
+    if (!guestValidation.ok) {
+      throw createError({ statusCode: 400, statusMessage: guestValidation.message ?? 'Guest booking is not available for this time.' })
     }
 
-    const now = DateTime.now().setZone(STUDIO_TZ)
-    if (start < now) {
-      throw createError({ statusCode: 400, statusMessage: 'Cannot book in the past' })
-    }
-    const maxAhead = now.plus({ days: guestWindowDays })
-    if (start > maxAhead) {
-      throw createError({ statusCode: 400, statusMessage: `Guest bookings can only be made up to ${guestWindowDays} days ahead` })
-    }
-
-    const sameDay = start.hasSame(end, 'day')
-    const startHourValue = toHourValue(start)
-    const endHourValue = toHourValue(end)
-    if (!sameDay || startHourValue < guestStartHour || endHourValue > guestEndHour) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: `Guest bookings must start/end between ${formatHourLabel(guestStartHour)} and ${formatHourLabel(guestEndHour)} (Los Angeles time).`
-      })
-    }
-
-    peakMultiplier = Number(cfg.guest_peak_multiplier ?? 2.0)
-    ratePerCreditCents = Number(cfg.guest_booking_rate_per_credit_cents ?? 3500)
+    peakMultiplier = guestPolicy.peakMultiplier
+    ratePerCreditCents = guestPolicy.ratePerCreditCents
+    if (user?.sub) remainingCredits = await resolveAvailableCreditBalance(supabase, user.sub)
   }
 
   if (bookingKind === 'workshop') {
@@ -213,26 +201,92 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  let standby = {
+    eligible: false,
+    reason: standbyPolicy.enabled ? 'Standby applies to same-day bookings of at least 4 hours.' : 'Standby booking is not enabled.',
+    discountMultiplier: standbyPolicy.discountMultiplier,
+    minOpenSlotHours: standbyPolicy.minOpenSlotHours
+  }
+  if (bookingKind === 'standard') {
+    const standbyValidation = validateStandbySelection({
+      start,
+      end,
+      accountKind: mode === 'guest' ? 'guest' : 'member',
+      guestPolicy,
+      standbyPolicy
+    })
+    let alreadyBooked = false
+    if (user?.sub && standbyValidation.ok) {
+      alreadyBooked = await hasStandbyBookingToday(supabase, user.sub, start)
+    }
+    standby = {
+      eligible: Boolean(standbyValidation.ok && !alreadyBooked),
+      reason: alreadyBooked ? 'Only one standby booking is allowed per day.' : (standbyValidation.message ?? 'Standby rate is available for this slot.'),
+      discountMultiplier: standbyPolicy.discountMultiplier,
+      minOpenSlotHours: standbyPolicy.minOpenSlotHours
+    }
+  }
+
+  if (rateKind === 'standby') {
+    if (!standby.eligible) {
+      throw createError({ statusCode: 400, statusMessage: standby.reason })
+    }
+  }
+
   const baseCreditsNeeded = computeCredits(q.start, q.end, peakMultiplier!, peakWindow)
-  const creditsNeeded = bookingKind === 'workshop'
+  const kindAdjustedCredits = bookingKind === 'workshop'
     ? Math.round(baseCreditsNeeded * workshopMultiplier * 100) / 100
     : baseCreditsNeeded
+  const creditsNeeded = rateKind === 'standby'
+    ? Math.round(kindAdjustedCredits * standbyPolicy.discountMultiplier * 100) / 100
+    : kindAdjustedCredits
   const totalCents = ratePerCreditCents !== null ? Math.ceil(creditsNeeded * ratePerCreditCents) : null
+  const shortfallCredits = mode === 'guest'
+    ? Math.max(0, Math.round((creditsNeeded - remainingCredits) * 100) / 100)
+    : 0
+  const amountDueCents = mode === 'guest' && ratePerCreditCents !== null
+    ? Math.ceil(shortfallCredits * ratePerCreditCents)
+    : null
 
   return {
     start: start.toISO(),
     end: end.toISO(),
     durationHours,
     creditsNeeded,
+    baseCreditsNeeded,
     bookingKind,
+    rateKind,
     workshopMultiplier: bookingKind === 'workshop' ? workshopMultiplier : 1,
     peakMultiplier,
     mode,
+    accountState: mode === 'guest' ? 'guest' : 'active_member',
     tierName,
+    hasActiveMembership,
+    remainingCredits,
+    shortfallCredits,
+    amountDueCents,
+    canRequestHold: mode === 'member' && rateKind !== 'standby',
     // Guest pricing in dollars
     totalCents,
     totalDollars: totalCents !== null ? totalCents / 100 : null,
     ratePerCreditCents,
+    guestPolicy: mode === 'guest'
+      ? {
+          bookingWindowDays: guestPolicy.bookingWindowDays,
+          startHour: guestPolicy.startHour,
+          endHour: guestPolicy.endHour,
+          minBookingHours: guestPolicy.minBookingHours,
+          bookingIncrementMinutes: guestPolicy.bookingIncrementMinutes,
+          creditExpiryDays: guestPolicy.creditExpiryDays
+        }
+      : null,
+    standby,
+    ratePolicySnapshot: buildRatePolicySnapshot({
+      accountKind: mode === 'guest' ? 'guest' : 'member',
+      rateKind: rateKind as BookingRateKind,
+      guestPolicy: mode === 'guest' ? guestPolicy : null,
+      standbyPolicy: rateKind === 'standby' ? standbyPolicy : null
+    }),
     // Breakdown info for display
     breakdown: {
       isPeakWindow: isPeakByConfig(start, peakWindow) || isPeakByConfig(end.minus({ minutes: 1 }), peakWindow),

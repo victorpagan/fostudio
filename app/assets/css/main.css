@@ -2336,6 +2336,18 @@ body.dashboard-ui :where(.campaign-editor-shell, .waiver-editor-shell) :is(.tipt
   border: 1px solid rgba(232, 173, 111, 0.52);
 }
 
+.availability-chip-standby {
+  background: color-mix(in srgb, var(--gruv-aqua) 20%, transparent);
+  color: color-mix(in srgb, var(--gruv-ink-0) 88%, #123024 12%);
+  border: 1px solid color-mix(in srgb, var(--gruv-aqua) 48%, var(--gruv-line) 52%);
+}
+
+.dark .availability-chip-standby {
+  background: rgba(142, 192, 124, 0.16);
+  color: #edf4ea;
+  border: 1px solid rgba(142, 192, 124, 0.35);
+}
+
 .availability-dot {
   width: 0.5rem;
   height: 0.5rem;
@@ -2356,6 +2368,10 @@ body.dashboard-ui :where(.campaign-editor-shell, .waiver-editor-shell) :is(.tipt
 
 .availability-dot-own {
   background: #fbf1c7;
+}
+
+.availability-dot-standby {
+  background: var(--gruv-aqua);
 }
 
 .availability-shell .fc {
@@ -2468,6 +2484,32 @@ body.dashboard-ui :where(.campaign-editor-shell, .waiver-editor-shell) :is(.tipt
       rgba(193, 119, 56, 0.24) 10px,
       rgba(193, 119, 56, 0.24) 20px
     );
+}
+
+.availability-shell .fc .fc-bg-event.fc-standby-window {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(104, 157, 106, 0.2) 0,
+      rgba(104, 157, 106, 0.2) 10px,
+      rgba(104, 157, 106, 0.08) 10px,
+      rgba(104, 157, 106, 0.08) 20px
+    );
+  opacity: 1;
+  border: 1px dashed rgba(104, 157, 106, 0.52);
+  border-radius: 0.75rem;
+}
+
+.dark .availability-shell .fc .fc-bg-event.fc-standby-window {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(142, 192, 124, 0.18) 0,
+      rgba(142, 192, 124, 0.18) 10px,
+      rgba(142, 192, 124, 0.07) 10px,
+      rgba(142, 192, 124, 0.07) 20px
+    );
+  border-color: rgba(142, 192, 124, 0.48);
 }
 
 .availability-shell .fc .fc-event {

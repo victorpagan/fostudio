@@ -8,7 +8,8 @@
  * Polls the booking status until it flips from 'pending_payment' → 'confirmed'
  * (the Square webhook does this flip), then shows confirmation details.
  *
- * No auth required — this is a public page reachable by guests.
+ * Auth is optional for webhook-backed confirmations; authenticated guest redirects
+ * also try to claim the Square payment immediately.
  */
 definePageMeta({
   // Explicitly no auth middleware — guests land here after Square checkout
@@ -16,8 +17,14 @@ definePageMeta({
 
 const supabase = useSupabaseClient()
 const route = useRoute()
+const user = useSupabaseUser()
 
 const bookingId = computed(() => route.query.booking_id as string | undefined)
+const guestPaymentToken = computed(() => route.query.guest_payment as string | undefined)
+const orderId = computed(() =>
+  (route.query.orderId as string | undefined)
+  ?? (route.query.order_id as string | undefined)
+)
 
 type BookingRow = {
   id: string
@@ -63,12 +70,28 @@ async function fetchBooking() {
   }
 }
 
+async function claimGuestPaymentIfPossible() {
+  if (!user.value || !guestPaymentToken.value) return
+  try {
+    await $fetch('/api/bookings/guest/claim', {
+      method: 'POST',
+      body: {
+        token: guestPaymentToken.value,
+        orderId: orderId.value
+      }
+    })
+  } catch (error) {
+    console.warn('[booking-success] guest payment claim failed or is still pending', error)
+  }
+}
+
 onMounted(async () => {
   if (!bookingId.value) {
     status.value = 'error'
     return
   }
 
+  await claimGuestPaymentIfPossible()
   await fetchBooking()
 
   if (status.value === 'confirmed') return
@@ -76,6 +99,7 @@ onMounted(async () => {
   // Poll every 2 seconds until confirmed or max tries
   const timer = setInterval(async () => {
     tries.value++
+    await claimGuestPaymentIfPossible()
     await fetchBooking()
 
     if (status.value === 'confirmed' || tries.value >= MAX_TRIES) {
@@ -107,20 +131,32 @@ function formatTime(iso: string) {
 <template>
   <UContainer class="py-10 sm:py-14">
     <div class="mx-auto max-w-2xl space-y-6">
-
       <!-- Loading -->
-      <div v-if="status === 'loading'" class="text-center py-12">
-        <UIcon name="i-heroicons-arrow-path" class="animate-spin size-8 text-primary mx-auto" />
-        <p class="mt-3 text-sm text-muted">Looking up your booking…</p>
+      <div
+        v-if="status === 'loading'"
+        class="text-center py-12"
+      >
+        <UIcon
+          name="i-heroicons-arrow-path"
+          class="animate-spin size-8 text-primary mx-auto"
+        />
+        <p class="mt-3 text-sm text-muted">
+          Looking up your booking…
+        </p>
       </div>
 
       <!-- Confirmed -->
       <template v-else-if="status === 'confirmed' && booking">
         <div class="text-center space-y-2">
           <div class="mx-auto size-14 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-            <UIcon name="i-heroicons-check-circle-solid" class="size-8 text-green-600 dark:text-green-400" />
+            <UIcon
+              name="i-heroicons-check-circle-solid"
+              class="size-8 text-green-600 dark:text-green-400"
+            />
           </div>
-          <h1 class="text-3xl font-semibold tracking-tight">Booking Confirmed!</h1>
+          <h1 class="text-3xl font-semibold tracking-tight">
+            Booking Confirmed!
+          </h1>
           <p class="text-muted">
             Your payment was received and your studio time is reserved.
           </p>
@@ -128,7 +164,10 @@ function formatTime(iso: string) {
 
         <UCard>
           <div class="space-y-4">
-            <div v-if="booking.guest_name" class="flex justify-between text-sm">
+            <div
+              v-if="booking.guest_name"
+              class="flex justify-between text-sm"
+            >
               <span class="text-muted">Name</span>
               <span class="font-medium">{{ booking.guest_name }}</span>
             </div>
@@ -145,7 +184,10 @@ function formatTime(iso: string) {
               </span>
             </div>
 
-            <div v-if="booking.notes" class="flex justify-between text-sm">
+            <div
+              v-if="booking.notes"
+              class="flex justify-between text-sm"
+            >
               <span class="text-muted">Notes</span>
               <span class="font-medium text-right max-w-xs">{{ booking.notes }}</span>
             </div>
@@ -170,8 +212,20 @@ function formatTime(iso: string) {
         </UCard>
 
         <div class="flex flex-col sm:flex-row gap-3 justify-center">
-          <UButton to="/calendar" size="lg">View Calendar</UButton>
-          <UButton to="/" color="neutral" variant="soft" size="lg">Back to Home</UButton>
+          <UButton
+            to="/calendar"
+            size="lg"
+          >
+            View Calendar
+          </UButton>
+          <UButton
+            to="/"
+            color="neutral"
+            variant="soft"
+            size="lg"
+          >
+            Back to Home
+          </UButton>
         </div>
       </template>
 
@@ -179,9 +233,14 @@ function formatTime(iso: string) {
       <template v-else-if="status === 'pending'">
         <div class="text-center space-y-2">
           <div class="mx-auto size-14 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-            <UIcon name="i-heroicons-clock" class="size-8 text-amber-600 dark:text-amber-400" />
+            <UIcon
+              name="i-heroicons-clock"
+              class="size-8 text-amber-600 dark:text-amber-400"
+            />
           </div>
-          <h1 class="text-3xl font-semibold tracking-tight">Payment Processing</h1>
+          <h1 class="text-3xl font-semibold tracking-tight">
+            Payment Processing
+          </h1>
           <p class="text-muted">
             Your payment was received — your booking is being confirmed.
           </p>
@@ -189,9 +248,14 @@ function formatTime(iso: string) {
 
         <UCard>
           <div class="flex items-center gap-3">
-            <UIcon name="i-heroicons-arrow-path" class="animate-spin size-5 text-primary shrink-0" />
+            <UIcon
+              name="i-heroicons-arrow-path"
+              class="animate-spin size-5 text-primary shrink-0"
+            />
             <div>
-              <div class="text-sm font-medium">Waiting for confirmation…</div>
+              <div class="text-sm font-medium">
+                Waiting for confirmation…
+              </div>
               <div class="mt-0.5 text-xs text-dimmed">
                 This usually takes a few seconds. Checked {{ tries }} of {{ MAX_TRIES }} times.
               </div>
@@ -206,8 +270,20 @@ function formatTime(iso: string) {
         </UCard>
 
         <div class="flex gap-3 justify-center">
-          <UButton to="/calendar" color="neutral" variant="soft">View Calendar</UButton>
-          <UButton to="/" color="neutral" variant="ghost">Back to Home</UButton>
+          <UButton
+            to="/calendar"
+            color="neutral"
+            variant="soft"
+          >
+            View Calendar
+          </UButton>
+          <UButton
+            to="/"
+            color="neutral"
+            variant="ghost"
+          >
+            Back to Home
+          </UButton>
         </div>
       </template>
 
@@ -215,9 +291,14 @@ function formatTime(iso: string) {
       <template v-else>
         <div class="text-center space-y-2">
           <div class="mx-auto size-14 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-            <UIcon name="i-heroicons-exclamation-triangle" class="size-8 text-red-600 dark:text-red-400" />
+            <UIcon
+              name="i-heroicons-exclamation-triangle"
+              class="size-8 text-red-600 dark:text-red-400"
+            />
           </div>
-          <h1 class="text-3xl font-semibold tracking-tight">Booking Not Found</h1>
+          <h1 class="text-3xl font-semibold tracking-tight">
+            Booking Not Found
+          </h1>
           <p class="text-muted">
             We couldn't locate your booking. If you completed payment, please contact us.
           </p>
@@ -234,11 +315,22 @@ function formatTime(iso: string) {
         </UCard>
 
         <div class="flex gap-3 justify-center">
-          <UButton to="/book" color="neutral" variant="soft">Try Again</UButton>
-          <UButton to="/" color="neutral" variant="ghost">Back to Home</UButton>
+          <UButton
+            to="/book"
+            color="neutral"
+            variant="soft"
+          >
+            Try Again
+          </UButton>
+          <UButton
+            to="/"
+            color="neutral"
+            variant="ghost"
+          >
+            Back to Home
+          </UButton>
         </div>
       </template>
-
     </div>
   </UContainer>
 </template>

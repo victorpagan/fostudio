@@ -2,7 +2,7 @@
 import { DateTime } from 'luxon'
 import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
-definePageMeta({ middleware: ['auth', 'membership-required'] })
+definePageMeta({ middleware: ['auth'] })
 
 const toast = useToast()
 const router = useRouter()
@@ -77,13 +77,43 @@ const holdEndHour = computed(() => {
 
 type BookingPreview = {
   creditsNeeded: number
+  baseCreditsNeeded?: number
   peakMultiplier: number
   durationHours: number
   tierName: string | null
+  mode?: 'member' | 'guest'
+  accountState?: 'active_member' | 'guest'
+  hasActiveMembership?: boolean
+  remainingCredits?: number
+  shortfallCredits?: number
+  amountDueCents?: number | null
+  totalCents?: number | null
+  ratePerCreditCents?: number | null
+  rateKind?: 'standard' | 'standby'
+  canRequestHold?: boolean
+  guestPolicy?: {
+    bookingWindowDays: number
+    startHour: number
+    endHour: number
+    minBookingHours: number
+    bookingIncrementMinutes: number
+    creditExpiryDays: number
+  } | null
+  standby?: {
+    eligible: boolean
+    reason: string
+    discountMultiplier: number
+    minOpenSlotHours: number
+  }
   breakdown: { isPeakWindow: boolean }
 }
 
 type BookingCreateResponse = {
+  status?: string
+  bookingId?: string
+  checkoutUrl?: string
+  amountDueCents?: number
+  shortfallCredits?: number
   burned: number | null
   newBalance: number | null
 }
@@ -127,6 +157,7 @@ const clickedBooking = ref<{
   start: string
   end: string
   status?: string
+  rateKind?: string
   notes?: string
 } | null>(null)
 const clickedBookingNoteDraft = ref('')
@@ -135,7 +166,8 @@ const clickedBookingNoteDraft = ref('')
 const form = reactive({
   notes: '',
   request_hold: false,
-  holdPaymentMethod: 'auto' as 'auto' | 'token' | 'credits'
+  holdPaymentMethod: 'auto' as 'auto' | 'token' | 'credits',
+  rateKind: 'standard' as 'standard' | 'standby'
 })
 
 const holdSelectionRequired = computed(() =>
@@ -187,7 +219,13 @@ const holdSelectionEligibility = computed(() => {
   return { eligible: true, reasons: [] as string[] }
 })
 
-const canShowHoldOption = computed(() => holdSelectionEligibility.value.eligible)
+const isGuestBooking = computed(() => !hasActiveMembership.value)
+const canShowHoldOption = computed(() =>
+  hasActiveMembership.value
+  && form.rateKind !== 'standby'
+  && Boolean(preview.value?.canRequestHold ?? true)
+  && holdSelectionEligibility.value.eligible
+)
 
 watch(holdSelectionRequired, (required) => {
   if (!required) {
@@ -243,7 +281,8 @@ async function fetchPreview(start: Date, end: Date) {
       query: {
         start: start.toISOString(),
         end: end.toISOString(),
-        mode: 'member'
+        mode: hasActiveMembership.value ? 'member' : 'guest',
+        rate_kind: form.rateKind
       }
     })
     preview.value = res
@@ -260,6 +299,7 @@ function onSelect(payload: { start: Date, end: Date }) {
   form.notes = ''
   form.request_hold = false
   form.holdPaymentMethod = 'auto'
+  form.rateKind = 'standard'
   preview.value = null
   previewError.value = null
   open.value = true
@@ -275,6 +315,7 @@ function closeModal(force = false) {
   form.notes = ''
   form.request_hold = false
   form.holdPaymentMethod = 'auto'
+  form.rateKind = 'standard'
   preview.value = null
   previewError.value = null
 }
@@ -288,6 +329,7 @@ function onOwnBookingClick(payload: {
   start: string
   end: string
   status?: string
+  rateKind?: string
   notes?: string
 }) {
   clickedBooking.value = payload
@@ -312,18 +354,21 @@ const ownBookingWithinNoticeWindow = computed(() => {
 })
 
 const ownBookingCanModify = computed(() => {
+  if (clickedBooking.value?.rateKind === 'standby') return false
   if (ownBookingHasPassed.value) return false
   if (isAdmin.value) return true
   return !ownBookingWithinNoticeWindow.value
 })
 
 const ownBookingCanCancel = computed(() => {
+  if (clickedBooking.value?.rateKind === 'standby') return false
   if (ownBookingHasPassed.value) return false
   if (isAdmin.value) return true
   return !ownBookingWithinNoticeWindow.value
 })
 
 const ownBookingCanExtend = computed(() => {
+  if (clickedBooking.value?.rateKind === 'standby') return false
   if (!clickedBooking.value?.start || !clickedBooking.value?.end) return false
   const status = String(clickedBooking.value.status ?? '').toLowerCase()
   if (!['confirmed', 'requested', 'pending_payment'].includes(status)) return false
@@ -338,6 +383,9 @@ const ownBookingNoteDirty = computed(() =>
 )
 
 const ownBookingLockReason = computed(() => {
+  if (clickedBooking.value?.rateKind === 'standby') {
+    return 'Standby bookings are locked after purchase and cannot be canceled, rescheduled, or extended.'
+  }
   if (ownBookingHasPassed.value) {
     if (ownBookingCanExtend.value) return 'This booking has already started. It can only be extended'
     return 'This booking has already started or passed and can no longer be modified or canceled.'
@@ -444,7 +492,7 @@ async function extendClickedBooking() {
 
 async function confirmBooking() {
   if (!selected.value) return
-  if (hasInsufficientCredits.value) {
+  if (hasInsufficientCredits.value && hasActiveMembership.value) {
     toast.add({
       title: 'Insufficient credits',
       description: 'Please buy more credits before booking this slot.',
@@ -454,20 +502,27 @@ async function confirmBooking() {
   }
   confirming.value = true
   try {
-    const res = await $fetch<BookingCreateResponse>('/api/bookings/create', {
+    const endpoint = hasActiveMembership.value ? '/api/bookings/create' : '/api/bookings/guest'
+    const res = await $fetch<BookingCreateResponse>(endpoint, {
       method: 'POST',
       body: {
         start_time: selected.value.start.toISOString(),
         end_time: selected.value.end.toISOString(),
         notes: form.notes || null,
-        request_hold: form.request_hold,
-        hold_payment_method: holdSelectionRequired.value ? form.holdPaymentMethod : 'auto'
+        request_hold: hasActiveMembership.value ? form.request_hold : false,
+        hold_payment_method: holdSelectionRequired.value ? form.holdPaymentMethod : 'auto',
+        rate_kind: form.rateKind
       }
     })
 
+    if (res.checkoutUrl) {
+      window.location.href = res.checkoutUrl
+      return
+    }
+
     toast.add({
       title: 'Studio booked!',
-      description: `${res.burned} credits used. New balance: ${res.newBalance} credits.`,
+      description: `${res.burned ?? preview.value?.creditsNeeded ?? 0} credits used. New balance: ${res.newBalance ?? 'updated'} credits.`,
       color: 'success'
     })
     closeModal(true)
@@ -519,8 +574,34 @@ const requiredCredits = computed(() => {
 
 const hasInsufficientCredits = computed(() => {
   if (!preview.value || previewLoading.value || !!previewError.value) return false
+  if (!hasActiveMembership.value) return false
   return creditBalance.value < requiredCredits.value
 })
+
+const guestShortfallCredits = computed(() =>
+  Math.max(0, Number(preview.value?.shortfallCredits ?? 0))
+)
+
+const guestAmountDueCents = computed(() =>
+  Math.max(0, Number(preview.value?.amountDueCents ?? 0))
+)
+
+const confirmButtonLabel = computed(() => {
+  if (!preview.value) return 'Book'
+  if (!hasActiveMembership.value && guestAmountDueCents.value > 0) {
+    return `Pay · ${formatPrice(guestAmountDueCents.value)}`
+  }
+  return `Book · ${preview.value.creditsNeeded} cr`
+})
+
+watch(
+  () => form.rateKind,
+  () => {
+    if (!selected.value) return
+    form.request_hold = false
+    fetchPreview(selected.value.start, selected.value.end)
+  }
+)
 
 function _goToBuyCredits() {
   closeModal()
@@ -547,6 +628,10 @@ function formatPeakCredits(value: number) {
   if (Number.isInteger(value)) return value.toString()
   return value.toFixed(2).replace(/\.?0+$/, '')
 }
+
+function formatPrice(cents: number) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
+}
 </script>
 
 <template>
@@ -571,7 +656,12 @@ function formatPeakCredits(value: number) {
       <div class="w-full space-y-4">
         <UCard class="admin-panel-card border-0">
           <p class="text-sm text-dimmed">
-            Click and drag on the calendar to select a time slot (30-minute increments). Your tier's booking window and peak-hour credit rates apply. Reschedules require {{ memberRescheduleNoticeHours }}+ hours notice.
+            <template v-if="hasActiveMembership">
+              Click and drag on the calendar to select a time slot (30-minute increments). Your tier's booking window and peak-hour credit rates apply. Reschedules require {{ memberRescheduleNoticeHours }}+ hours notice.
+            </template>
+            <template v-else>
+              You’re booking as a guest. Guest bookings use premium credits, are limited to configured daytime hours, require a 2-hour minimum, and use whole-hour increments.
+            </template>
           </p>
         </UCard>
 
@@ -579,8 +669,9 @@ function formatPeakCredits(value: number) {
           v-if="!hasActiveMembership"
           color="warning"
           variant="soft"
-          title="No active membership"
-          description="You can still book with remaining unexpired credits. Renew or switch plans to restore full membership access."
+          icon="i-lucide-badge-alert"
+          title="Guest booking mode"
+          description="You can confirm with existing guest credits or pay only the credit shortfall at checkout. Members get lower credit costs, longer booking windows, 30-minute slots, and overnight holds."
         >
           <template #actions>
             <UButton
@@ -651,7 +742,7 @@ function formatPeakCredits(value: number) {
 
             <section class="space-y-2 rounded-lg border border-default p-3">
               <p class="text-xs uppercase tracking-wide text-dimmed">
-                Credits and hold
+                Credits and payment
               </p>
 
               <div
@@ -700,15 +791,37 @@ function formatPeakCredits(value: number) {
                 >
                   Calculated for your {{ preview.tierName }} membership
                 </div>
+                <div
+                  v-else-if="isGuestBooking"
+                  class="text-xs text-dimmed"
+                >
+                  Guest pricing uses premium credits at {{ preview.ratePerCreditCents ? `${formatPrice(preview.ratePerCreditCents)}/credit` : 'the current guest rate' }}.
+                </div>
                 <div class="mt-2 flex justify-between items-center text-xs text-dimmed">
                   <span>Available now</span>
-                  <span>{{ balanceLoading ? 'Loading…' : `${creditBalance} credits` }}</span>
+                  <span>{{ balanceLoading ? 'Loading…' : `${isGuestBooking ? (preview.remainingCredits ?? creditBalance) : creditBalance} credits` }}</span>
                 </div>
                 <div class="flex justify-between items-center text-xs text-dimmed">
                   <span>Required</span>
                   <span>{{ requiredCredits }} credits</span>
                 </div>
+                <div
+                  v-if="isGuestBooking && guestShortfallCredits > 0"
+                  class="flex justify-between items-center text-xs text-dimmed"
+                >
+                  <span>Pay today</span>
+                  <span>{{ guestShortfallCredits }} cr shortfall · {{ formatPrice(guestAmountDueCents) }}</span>
+                </div>
               </div>
+
+              <UCheckbox
+                v-if="preview?.standby?.eligible"
+                class="mt-2"
+                :model-value="form.rateKind === 'standby'"
+                label="Use same-day standby rate"
+                :description="`Standby applies a ${Math.round((1 - preview.standby.discountMultiplier) * 100)}% credit discount. Standby bookings are locked after purchase and cannot be canceled, rescheduled, extended, or held.`"
+                @update:model-value="form.rateKind = $event ? 'standby' : 'standard'"
+              />
 
               <UAlert
                 v-if="hasInsufficientCredits"
@@ -721,7 +834,17 @@ function formatPeakCredits(value: number) {
               />
 
               <UAlert
-                v-if="!canShowHoldOption"
+                v-if="isGuestBooking && guestShortfallCredits > 0"
+                class="mt-2"
+                color="info"
+                variant="soft"
+                icon="i-lucide-credit-card"
+                title="Payment required"
+                :description="`You have ${preview?.remainingCredits ?? creditBalance} credits available. Checkout will charge only the ${guestShortfallCredits} credit shortfall.`"
+              />
+
+              <UAlert
+                v-if="hasActiveMembership && !canShowHoldOption"
                 class="mt-2"
                 color="warning"
                 variant="soft"
@@ -782,7 +905,7 @@ function formatPeakCredits(value: number) {
                 :disabled="previewLoading || !!previewError || !preview || hasInsufficientCredits"
                 @click="confirmBooking"
               >
-                Book {{ preview ? `· ${preview.creditsNeeded} cr` : '' }}
+                {{ confirmButtonLabel }}
               </UButton>
             </div>
           </template>

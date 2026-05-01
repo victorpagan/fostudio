@@ -7,6 +7,7 @@ export default defineEventHandler(async (event) => {
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
 
   const supabase = serverSupabaseServiceRole(event)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
 
   const { data: membership, error: membershipErr } = await db
@@ -16,13 +17,7 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
-  if (!membership || (membership.status ?? '').toLowerCase() !== 'active') {
-    return {
-      options: [],
-      canPurchaseTopups: false,
-      lockReason: 'active_membership_required'
-    }
-  }
+  const hasActiveMembership = Boolean(membership && (membership.status ?? '').toLowerCase() === 'active')
 
   const { data, error } = await db
     .from('credit_pricing_options')
@@ -37,6 +32,7 @@ export default defineEventHandler(async (event) => {
   return {
     options,
     canPurchaseTopups: true,
-    lockReason: null
+    lockReason: null,
+    accountState: hasActiveMembership ? 'active_member' : 'guest'
   }
 })

@@ -6,7 +6,25 @@ import { getKey, getServerConfigMap, refreshServerConfig } from '~~/server/utils
 import { STUDIO_TZ } from '~~/server/utils/booking/peak'
 
 type SupabaseLike = {
-  from: (table: string) => any
+  from: <T = Record<string, unknown>>(table: string) => SupabaseQueryBuilder<T>
+}
+
+type SupabaseQueryResult<T = Record<string, unknown>> = {
+  count?: number | null
+  data?: T[] | null
+  error?: { message: string } | null
+}
+
+type SupabaseQueryBuilder<T = Record<string, unknown>> = PromiseLike<SupabaseQueryResult<T>> & {
+  delete: () => SupabaseQueryBuilder<T>
+  eq: (column: string, value: unknown) => SupabaseQueryBuilder<T>
+  gt: (column: string, value: unknown) => SupabaseQueryBuilder<T>
+  in: (column: string, values: unknown[]) => SupabaseQueryBuilder<T>
+  insert: (values: Record<string, unknown> | Array<Record<string, unknown>>) => SupabaseQueryBuilder<T>
+  lt: (column: string, value: unknown) => SupabaseQueryBuilder<T>
+  select: (columns?: string, options?: Record<string, unknown>) => SupabaseQueryBuilder<T>
+  update: (values: Record<string, unknown>) => SupabaseQueryBuilder<T>
+  upsert: (values: Record<string, unknown> | Array<Record<string, unknown>>, options?: Record<string, unknown>) => SupabaseQueryBuilder<T>
 }
 
 type GoogleServiceAccount = {
@@ -119,6 +137,10 @@ function asInteger(value: unknown, fallback: number, min: number, max: number) {
 function asString(value: unknown, fallback = '') {
   if (typeof value !== 'string') return fallback
   return value.trim() || fallback
+}
+
+function getSupabaseDb(event: H3Event): SupabaseLike {
+  return serverSupabaseServiceRole(event) as unknown as SupabaseLike
 }
 
 function isGoogleNotFoundError(error: unknown) {
@@ -445,7 +467,7 @@ async function insertGoogleCalendarEvent(
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      'Authorization': `Bearer ${accessToken}`,
       'content-type': 'application/json'
     },
     body: JSON.stringify(payload)
@@ -469,7 +491,7 @@ async function patchGoogleCalendarEvent(
   const response = await fetch(url, {
     method: 'PATCH',
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      'Authorization': `Bearer ${accessToken}`,
       'content-type': 'application/json'
     },
     body: JSON.stringify(payload)
@@ -542,11 +564,23 @@ export async function getGoogleCalendarSyncSettings(event: H3Event): Promise<Goo
   }
 }
 
-async function collectLocalBusyWindows(db: SupabaseLike, windowStartIso: string, windowEndIso: string) {
+function formatGoogleEventDateTime(value: string | null | undefined) {
+  if (!value) return 'Not set'
+  const parsed = DateTime.fromISO(value, { setZone: true })
+  if (!parsed.isValid) return value
+  return parsed.setZone(STUDIO_TZ).toFormat('ccc, LLL d, yyyy h:mm a ZZZZ')
+}
+
+function compactLine(label: string, value: unknown) {
+  const text = String(value ?? '').trim()
+  return text ? `${label}: ${text}` : null
+}
+
+async function collectLocalBusyWindows(db: SupabaseLike, windowStartIso: string, windowEndIso: string, origin: string) {
   const [bookingsRes, blocksRes, holdsRes] = await Promise.all([
     db
       .from('bookings')
-      .select('id,start_time,end_time,status,notes')
+      .select('id,user_id,customer_id,start_time,end_time,status,notes,credits_burned,guest_name,guest_email,booking_kind,workshop_title,workshop_description,workshop_link,created_at,updated_at')
       .in('status', ['confirmed', 'requested', 'pending_payment'])
       .lt('start_time', windowEndIso)
       .gt('end_time', windowStartIso),
@@ -568,21 +602,104 @@ async function collectLocalBusyWindows(db: SupabaseLike, windowStartIso: string,
   if (blocksRes.error) throw new Error(blocksRes.error.message)
   if (holdsRes.error) throw new Error(holdsRes.error.message)
 
+  type CustomerRow = {
+    id: string
+    user_id: string | null
+    email: string | null
+    phone: string | null
+    first_name: string | null
+    last_name: string | null
+  }
+
+  const bookingRows = bookingsRes.data ?? []
+  const bookingUserIds = [...new Set(bookingRows
+    .map((booking: Record<string, unknown>) => asString(booking.user_id))
+    .filter((value): value is string => Boolean(value)))]
+  const bookingCustomerIds = [...new Set(bookingRows
+    .map((booking: Record<string, unknown>) => asString(booking.customer_id))
+    .filter((value): value is string => Boolean(value)))]
+
+  const [customersByUserRes, customersByIdRes] = await Promise.all([
+    bookingUserIds.length
+      ? db
+          .from('customers')
+          .select('id,user_id,email,phone,first_name,last_name')
+          .in('user_id', bookingUserIds)
+      : Promise.resolve({ data: [] as CustomerRow[], error: null }),
+    bookingCustomerIds.length
+      ? db
+          .from('customers')
+          .select('id,user_id,email,phone,first_name,last_name')
+          .in('id', bookingCustomerIds)
+      : Promise.resolve({ data: [] as CustomerRow[], error: null })
+  ])
+
+  if (customersByUserRes.error) throw new Error(customersByUserRes.error.message)
+  if (customersByIdRes.error) throw new Error(customersByIdRes.error.message)
+
+  const customersByUserId = new Map<string, CustomerRow>()
+  const customersById = new Map<string, CustomerRow>()
+  for (const customer of [...(customersByUserRes.data ?? []), ...(customersByIdRes.data ?? [])] as CustomerRow[]) {
+    if (customer.user_id) customersByUserId.set(customer.user_id, customer)
+    if (customer.id) customersById.set(customer.id, customer)
+  }
+
   const localEvents: Array<{
     sourceKey: string
     summary: string
     description: string
     startTime: string
     endTime: string
+    privateMeta?: Record<string, string>
   }> = []
 
-  for (const booking of (bookingsRes.data ?? [])) {
+  for (const booking of bookingRows) {
+    const bookingRecord = booking as Record<string, unknown>
+    const bookingId = asString(bookingRecord.id, '')
+    const userId = asString(bookingRecord.user_id)
+    const customerId = asString(bookingRecord.customer_id)
+    const customer = (userId ? customersByUserId.get(userId) : null)
+      ?? (customerId ? customersById.get(customerId) : null)
+      ?? null
+    const memberName = [customer?.first_name, customer?.last_name]
+      .map(value => String(value ?? '').trim())
+      .filter(Boolean)
+      .join(' ')
+    const guestName = asString(bookingRecord.guest_name)
+    const displayName = memberName || guestName || asString(bookingRecord.guest_email) || asString(customer?.email) || 'Unknown guest/member'
+    const email = asString(customer?.email) || asString(bookingRecord.guest_email) || 'Not provided'
+    const phone = asString(customer?.phone) || 'Not provided'
+    const bookingKind = asString(bookingRecord.booking_kind, 'standard')
+    const adminLink = bookingId ? `${origin}/dashboard/admin/bookings?bookingId=${encodeURIComponent(bookingId)}` : origin
+    const detailLines = [
+      compactLine('Member / guest', displayName),
+      compactLine('Email', email),
+      compactLine('Phone', phone),
+      compactLine('Booking ID', bookingId),
+      compactLine('Status', bookingRecord.status),
+      compactLine('Booking kind', bookingKind),
+      compactLine('Start', formatGoogleEventDateTime(asString(bookingRecord.start_time))),
+      compactLine('End', formatGoogleEventDateTime(asString(bookingRecord.end_time))),
+      compactLine('Credits burned', bookingRecord.credits_burned),
+      compactLine('Workshop title', bookingRecord.workshop_title),
+      compactLine('Workshop link', bookingRecord.workshop_link),
+      compactLine('Admin link', adminLink),
+      '',
+      asString(bookingRecord.workshop_description) ? `Workshop description:\n${asString(bookingRecord.workshop_description)}` : null,
+      asString(bookingRecord.notes) ? `Booking notes:\n${asString(bookingRecord.notes)}` : null
+    ].filter((line): line is string => line !== null)
+
     localEvents.push({
-      sourceKey: `booking:${booking.id}`,
-      summary: 'FO Studio Booking',
-      description: booking.notes ? String(booking.notes) : 'Studio booking (managed by FO Studio)',
-      startTime: String(booking.start_time),
-      endTime: String(booking.end_time)
+      sourceKey: `booking:${bookingId}`,
+      summary: `FO Studio Booking - ${displayName}`,
+      description: detailLines.join('\n'),
+      startTime: String(bookingRecord.start_time),
+      endTime: String(bookingRecord.end_time),
+      privateMeta: {
+        fostudio_booking_id: bookingId,
+        ...(userId ? { fostudio_user_id: userId } : {}),
+        ...(customerId ? { fostudio_customer_id: customerId } : {})
+      }
     })
   }
 
@@ -624,7 +741,7 @@ export async function buildGoogleOauthConnectUrl(event: H3Event) {
   const redirectUri = `${origin}/api/admin/google-calendar/oauth/callback`
   const state = randomUUID()
   const stateExpiresAt = new Date(Date.now() + 10 * 60_000).toISOString()
-  const db = serverSupabaseServiceRole(event) as any
+  const db = getSupabaseDb(event)
   await setSystemConfigValues(db, [
     { key: 'gcal_oauth_state', value: state },
     { key: 'gcal_oauth_state_expires_at', value: stateExpiresAt }
@@ -682,7 +799,7 @@ export async function completeGoogleOauthConnect(event: H3Event, params: { code:
   const idPayload = tokenRes.id_token ? decodeJwtPayload(tokenRes.id_token) : null
   const email = asString(idPayload?.email) || null
 
-  const db = serverSupabaseServiceRole(event) as any
+  const db = getSupabaseDb(event)
   await setSystemConfigValues(db, [
     { key: 'gcal_oauth_refresh_token', value: refreshToken },
     { key: 'gcal_oauth_access_token', value: accessToken || null },
@@ -728,7 +845,7 @@ async function resolveGoogleAccessTokenForSync(event: H3Event, settings: GoogleC
     const nextExpiry = new Date(Date.now() + Math.max(60, nextExpiresIn) * 1000).toISOString()
     const nextRefreshToken = asString(refreshed.refresh_token) || refreshToken
 
-    const db = serverSupabaseServiceRole(event) as any
+    const db = getSupabaseDb(event)
     await setSystemConfigValues(db, [
       { key: 'gcal_oauth_access_token', value: nextAccessToken },
       { key: 'gcal_oauth_access_token_expires_at', value: nextExpiry },
@@ -834,10 +951,11 @@ export async function syncGoogleCalendarToExternalBlocks(
 
   let pushedRows = 0
   let deletedManagedRows = 0
-  const db = serverSupabaseServiceRole(event) as any
+  const db = getSupabaseDb(event)
+  const origin = getRequestURL(event).origin
 
   if (!dryRun && settings.pushEnabled) {
-    const localBusyWindows = await collectLocalBusyWindows(db, windowStartIso, windowEndIso)
+    const localBusyWindows = await collectLocalBusyWindows(db, windowStartIso, windowEndIso, origin)
     const sourceKeys = new Set(localBusyWindows.map(item => item.sourceKey))
 
     for (const localItem of localBusyWindows) {
@@ -850,7 +968,8 @@ export async function syncGoogleCalendarToExternalBlocks(
         extendedProperties: {
           private: {
             fostudio_managed: 'true',
-            fostudio_source_key: localItem.sourceKey
+            fostudio_source_key: localItem.sourceKey,
+            ...(localItem.privateMeta ?? {})
           }
         }
       }
@@ -980,7 +1099,7 @@ export async function maybeAutoSyncGoogleCalendar(event: H3Event, reason = 'cale
   })
     .catch(async (error: unknown) => {
       try {
-        const db = serverSupabaseServiceRole(event) as any
+        const db = getSupabaseDb(event)
         const syncedAt = new Date().toISOString()
         await writeSyncStatus(db, syncedAt, {
           ok: false,
@@ -1017,7 +1136,7 @@ export async function maybeForceSyncGoogleCalendar(event: H3Event, reason = 'cal
     }))
     .catch(async (error: unknown) => {
       try {
-        const db = serverSupabaseServiceRole(event) as any
+        const db = getSupabaseDb(event)
         const syncedAt = new Date().toISOString()
         await writeSyncStatus(db, syncedAt, {
           ok: false,
