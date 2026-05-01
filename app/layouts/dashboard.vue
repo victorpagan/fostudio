@@ -199,6 +199,12 @@ const memberLinkGroups = computed<SidebarLinkGroup[]>(() => {
           onSelect: () => { open.value = false }
         },
         {
+          label: 'Door Code',
+          icon: 'i-lucide-key-round',
+          to: '/dashboard/door-code',
+          onSelect: () => { open.value = false }
+        },
+        {
           label: 'Waiver',
           icon: 'i-lucide-file-signature',
           to: '/dashboard/waiver',

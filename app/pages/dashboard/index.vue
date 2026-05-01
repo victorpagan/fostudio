@@ -6,7 +6,6 @@ definePageMeta({ middleware: ['auth'] })
 
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
-const { isNotificationsSlideoverOpen } = useDashboard()
 const { isAdmin } = useCurrentUser()
 
 type HoldSummary = {
@@ -26,6 +25,19 @@ type WaiverDashboardState = {
   latestSignature: {
     signedAt: string
     expiresAt: string
+  } | null
+}
+
+type DoorCodeState = {
+  doorCode: string | null
+  doorCodeUpdatedAt: string | null
+  canRequestChange: boolean
+  cooldownEndsAt: string | null
+  latestRequest: {
+    id: string
+    status: string | null
+    requestedAt: string
+    resolvedAt: string | null
   } | null
 }
 
@@ -78,6 +90,11 @@ const { data: waiverState } = await useAsyncData('dash:home:waiver', async () =>
   return await $fetch<WaiverDashboardState>('/api/waiver/current')
 })
 
+const { data: doorCodeState } = await useAsyncData('dash:home:door-code', async () => {
+  if (!user.value) return null
+  return await $fetch<DoorCodeState>('/api/membership/door-code')
+})
+
 const membershipState = computed(() => {
   return resolveMembershipUiState(membership.value)
 })
@@ -99,35 +116,6 @@ const { data: subscriptionState } = await useAsyncData('dash:home:subscription-s
     } | null
   }>('/api/membership/subscription-state')
 })
-
-const headerPrimaryAction = computed(() => {
-  return {
-    label: 'Book studio',
-    to: '/dashboard/book',
-    icon: 'i-lucide-calendar-plus'
-  }
-})
-
-const headerSecondaryActions = computed(() => {
-  return [{
-    label: 'My bookings',
-    to: '/dashboard/bookings',
-    icon: 'i-lucide-list-checks'
-  }]
-})
-
-const headerTertiaryActions = computed(() => ([
-  {
-    label: 'Manage membership',
-    to: '/dashboard/membership',
-    icon: 'i-lucide-badge-check'
-  },
-  {
-    label: 'Profile',
-    to: '/dashboard/profile',
-    icon: 'i-lucide-user'
-  }
-]))
 
 const tierLabel = computed(() => {
   if (!membership.value) return null
@@ -175,6 +163,10 @@ const waiverStatusDescription = computed(() => {
   return 'No waiver signature on file yet.'
 })
 
+const doorCodeRequestPending = computed(() =>
+  String(doorCodeState.value?.latestRequest?.status ?? '').toLowerCase() === 'pending'
+)
+
 const pendingSwapSummary = computed(() => {
   const pendingSwap = subscriptionState.value?.pendingSwap
   if (!pendingSwap || !membership.value) return null
@@ -206,39 +198,6 @@ const pendingCancelSummary = computed(() => {
     panel-id="home"
     title="Dashboard"
   >
-    <template #right>
-      <DashboardActionGroup
-        :primary="headerPrimaryAction"
-        :secondary="headerSecondaryActions"
-        :tertiary="headerTertiaryActions"
-      >
-        <template #leading>
-          <UTooltip
-            text="Notifications"
-            :shortcuts="['N']"
-          >
-            <UButton
-              color="neutral"
-              variant="ghost"
-              square
-              aria-label="Open notifications"
-              @click="isNotificationsSlideoverOpen = true"
-            >
-              <UChip
-                color="error"
-                inset
-              >
-                <UIcon
-                  name="i-lucide-bell"
-                  class="size-5 shrink-0"
-                />
-              </UChip>
-            </UButton>
-          </UTooltip>
-        </template>
-      </DashboardActionGroup>
-    </template>
-
     <div class="w-full space-y-4">
       <!-- Admin bypass notice -->
       <UAlert
@@ -443,6 +402,54 @@ const pendingCancelSummary = computed(() => {
             to="/dashboard/waiver"
           >
             {{ waiverState?.status === 'current' ? 'View waiver' : 'Review and sign' }}
+          </UButton>
+        </div>
+      </UCard>
+
+      <UCard>
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="text-xs text-dimmed uppercase tracking-wide">
+              Door code
+            </div>
+            <div class="mt-2 font-mono text-3xl font-semibold tracking-[0.16em]">
+              {{ doorCodeState?.doorCode ?? '------' }}
+            </div>
+          </div>
+          <UIcon
+            name="i-lucide-key-round"
+            class="size-8 text-dimmed"
+          />
+        </div>
+        <div class="mt-1.5">
+          <UBadge
+            v-if="doorCodeRequestPending"
+            color="warning"
+            variant="soft"
+            size="sm"
+          >
+            Change requested
+          </UBadge>
+          <UBadge
+            v-else
+            color="neutral"
+            variant="soft"
+            size="sm"
+          >
+            Account code
+          </UBadge>
+        </div>
+        <div class="mt-1.5 text-xs text-dimmed">
+          Your account code works during eligible booking access windows.
+        </div>
+        <div class="mt-4">
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="soft"
+            to="/dashboard/door-code"
+          >
+            Manage door code
           </UButton>
         </div>
       </UCard>

@@ -128,19 +128,6 @@ type SubscriptionState = {
   } | null
 }
 
-type DoorCodeState = {
-  doorCode: string | null
-  doorCodeUpdatedAt: string | null
-  canRequestChange: boolean
-  cooldownEndsAt: string | null
-  latestRequest: {
-    id: string
-    status: string | null
-    requestedAt: string
-    resolvedAt: string | null
-  } | null
-}
-
 type WaiverCurrentResponse = {
   status: 'current' | 'expired' | 'missing' | 'stale_version'
   renewalNeeded: boolean
@@ -316,11 +303,6 @@ const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAs
   if (!user.value?.sub) return { methods: [] as SavedCardMethod[], defaultCardId: null }
   return await $fetch<PaymentMethodsResponse>('/api/payments/methods')
 }, { watch: [() => user.value?.sub], server: false })
-
-const { data: doorCodeState, refresh: refreshDoorCodeState } = await useAsyncData('dash:membership:door-code', async () => {
-  if (!user.value || !hasActiveMembership.value) return null
-  return await $fetch<DoorCodeState>('/api/membership/door-code')
-}, { watch: [user, membershipState] })
 
 const { data: waiverState, refresh: refreshWaiverState } = await useAsyncData('dash:membership:waiver', async () => {
   if (!user.value) return null
@@ -652,7 +634,6 @@ const purchasePromoCode = ref('')
 const planChangePromoCode = ref('')
 const membershipCancelLoading = ref(false)
 const membershipUndoCancelLoading = ref(false)
-const doorCodeRequestLoading = ref(false)
 const topupClaimInFlight = ref(false)
 const topupClaimingFromRoute = ref(false)
 const holdTopupClaiming = ref(false)
@@ -777,7 +758,6 @@ async function refreshAll() {
     refreshPaymentMethods(),
     refreshHoldSummary(),
     refreshHoldTopupOffer(),
-    refreshDoorCodeState(),
     refreshWaiverState()
   ])
 }
@@ -796,31 +776,6 @@ const waiverStatusColor = computed(() => {
   if (status === 'expired') return 'warning'
   return 'error'
 })
-
-async function requestDoorCodeChange() {
-  if (doorCodeRequestLoading.value || !doorCodeState.value?.canRequestChange) return
-
-  doorCodeRequestLoading.value = true
-  try {
-    await $fetch('/api/membership/door-code-request', { method: 'POST' })
-    toast.add({
-      title: 'Door code change requested',
-      description: 'Your request was sent to the admin team for manual update.',
-      color: 'success'
-    })
-    showRefreshPageToast()
-    await refreshDoorCodeState()
-  } catch (error: unknown) {
-    const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
-    toast.add({
-      title: 'Could not request code change',
-      description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error',
-      color: 'error'
-    })
-  } finally {
-    doorCodeRequestLoading.value = false
-  }
-}
 
 async function schedulePlanChange(tierId: string, cadence: string) {
   try {
@@ -1802,46 +1757,6 @@ onUnmounted(() => {
               <p class="text-xs text-dimmed">
                 If status looks out of sync after an update, use refresh from the top-right of this page.
               </p>
-
-              <div class="border-t border-default pt-4">
-                <div class="text-xs text-dimmed uppercase tracking-wide">
-                  Door access code
-                </div>
-                <div class="mt-1 flex items-center gap-2">
-                  <span class="font-mono text-xl font-semibold">
-                    {{ doorCodeState?.doorCode ?? 'Not assigned yet' }}
-                  </span>
-                  <UBadge
-                    v-if="doorCodeState?.latestRequest?.status === 'pending'"
-                    color="warning"
-                    variant="soft"
-                    size="xs"
-                  >
-                    Change requested
-                  </UBadge>
-                </div>
-                <p class="mt-1 text-xs text-dimmed">
-                  This code stays the same when you change plans. You can request one manual change every 30 days.
-                </p>
-                <div class="mt-2 flex flex-wrap items-center gap-2">
-                  <UButton
-                    size="xs"
-                    color="neutral"
-                    variant="soft"
-                    :loading="doorCodeRequestLoading"
-                    :disabled="!doorCodeState?.canRequestChange || doorCodeRequestLoading"
-                    @click="requestDoorCodeChange"
-                  >
-                    Request code change
-                  </UButton>
-                  <span
-                    v-if="doorCodeState?.cooldownEndsAt && !doorCodeState?.canRequestChange"
-                    class="text-xs text-dimmed"
-                  >
-                    Next request: {{ formatDateLabel(doorCodeState.cooldownEndsAt) ?? doorCodeState.cooldownEndsAt }}
-                  </span>
-                </div>
-              </div>
 
               <div class="border-t border-default pt-4">
                 <div class="flex items-center justify-between gap-2">

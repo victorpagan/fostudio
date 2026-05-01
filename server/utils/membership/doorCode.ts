@@ -27,6 +27,34 @@ function isUniqueViolation(error: unknown) {
   return code === '23505'
 }
 
+async function hasActiveBookingAccessCodeCollision(supabase: unknown, doorCode: string) {
+  const db = supabase as {
+    from: (table: string) => {
+      select: (columns: string) => {
+        eq: (column: string, value: unknown) => {
+          in: (column: string, values: unknown[]) => {
+            limit: (count: number) => PromiseLike<{ data?: Array<{ id: string }> | null, error?: { code?: string, message: string } | null }>
+          }
+        }
+      }
+    }
+  }
+
+  const { data, error } = await db
+    .from('booking_access_codes')
+    .select('id')
+    .eq('pin_code', doorCode)
+    .in('status', ['scheduled', 'active'])
+    .limit(1)
+
+  if (error) {
+    if (error.code === '42P01') return false
+    throw createError({ statusCode: 500, statusMessage: error.message })
+  }
+
+  return (data?.length ?? 0) > 0
+}
+
 export function assertDoorCodeFormat(doorCode: string) {
   if (!DOOR_CODE_REGEX.test(doorCode)) {
     throw createError({
@@ -105,6 +133,8 @@ export async function ensureDoorCodeForUser(event: H3Event, params: { userId: st
 
   for (let attempt = 0; attempt < MAX_DOOR_CODE_ATTEMPTS; attempt += 1) {
     const nextDoorCode = createDoorCode()
+    if (await hasActiveBookingAccessCodeCollision(supabase, nextDoorCode)) continue
+
     const { data: updated, error: updateErr } = await supabase
       .from('customers')
       .update({
@@ -141,6 +171,10 @@ export async function setDoorCodeForUser(event: H3Event, params: {
   const supabase = serverSupabaseServiceRole(event)
   const customer = await ensureCustomerRow(event, { userId: params.userId, email: params.email })
 
+  if (await hasActiveBookingAccessCodeCollision(supabase, params.doorCode)) {
+    throw createError({ statusCode: 409, statusMessage: 'Door code is already assigned to an active booking access window.' })
+  }
+
   const { data: updated, error: updateErr } = await supabase
     .from('customers')
     .update({
@@ -153,7 +187,7 @@ export async function setDoorCodeForUser(event: H3Event, params: {
 
   if (updateErr) {
     if (isUniqueViolation(updateErr)) {
-      throw createError({ statusCode: 409, statusMessage: 'Door code is already assigned to another member.' })
+      throw createError({ statusCode: 409, statusMessage: 'Door code is already assigned to another account.' })
     }
     throw createError({ statusCode: 500, statusMessage: updateErr.message })
   }

@@ -1,6 +1,5 @@
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { ensureDoorCodeForUser } from '~~/server/utils/membership/doorCode'
-import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
 
 function addDays(iso: string, days: number) {
   const dt = new Date(iso)
@@ -14,21 +13,6 @@ export default defineEventHandler(async (event) => {
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
 
   const supabase = serverSupabaseServiceRole(event)
-
-  const { data: membership, error: membershipErr } = await supabase
-    .from('memberships')
-    .select('id,status,current_period_end,canceled_at')
-    .eq('user_id', user.sub)
-    .maybeSingle()
-
-  if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
-  const membershipStatus = (membership?.status ?? '').toLowerCase()
-  const canRequestDoorCode = membershipStatus === 'pending_checkout'
-    || membershipStatus === 'past_due'
-    || isMembershipCurrentlyActive(membership)
-  if (!canRequestDoorCode) {
-    throw createError({ statusCode: 403, statusMessage: 'An active membership is required to request a code change.' })
-  }
 
   const { customerId, doorCode } = await ensureDoorCodeForUser(event, {
     userId: user.sub,

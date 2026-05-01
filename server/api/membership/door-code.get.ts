@@ -1,4 +1,5 @@
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
+import { ensureDoorCodeForUser } from '~~/server/utils/membership/doorCode'
 
 function addDays(iso: string, days: number) {
   const dt = new Date(iso)
@@ -12,12 +13,16 @@ export default defineEventHandler(async (event) => {
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
 
   const supabase = serverSupabaseServiceRole(event)
+  const ensuredDoorCode = await ensureDoorCodeForUser(event, {
+    userId: user.sub,
+    email: user.email ?? null
+  })
 
   const [{ data: customer, error: customerErr }, { data: latestRequest, error: requestErr }] = await Promise.all([
     supabase
       .from('customers')
       .select('id,door_code,door_code_updated_at')
-      .eq('user_id', user.sub)
+      .eq('id', ensuredDoorCode.customerId)
       .maybeSingle(),
     supabase
       .from('door_code_change_requests')
@@ -35,7 +40,7 @@ export default defineEventHandler(async (event) => {
   const canRequestChange = !cooldownEndsAt || Date.now() >= new Date(cooldownEndsAt).getTime()
 
   return {
-    doorCode: customer?.door_code ?? null,
+    doorCode: customer?.door_code ?? ensuredDoorCode.doorCode,
     doorCodeUpdatedAt: customer?.door_code_updated_at ?? null,
     canRequestChange,
     cooldownEndsAt,

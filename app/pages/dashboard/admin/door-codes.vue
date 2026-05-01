@@ -207,11 +207,11 @@ async function saveMemberDoorCode() {
         doorCode: String(memberDoorCode.value ?? '').trim()
       }
     })
-    toast.add({ title: 'Member door code updated' })
+    toast.add({ title: 'Account door code updated' })
     await refresh()
   } catch (error: unknown) {
     toast.add({
-      title: 'Could not update member door code',
+      title: 'Could not update account door code',
       description: readErrorMessage(error),
       color: 'error'
     })
@@ -338,7 +338,7 @@ function formatDateTime(value: string | null) {
       variant="soft"
       icon="i-lucide-key-round"
       title="Door code controls"
-      description="Manage member codes and permanent lock codes. Permanent codes stay active outside booking windows."
+      description="Manage account codes for members and guests, plus permanent lock codes. Permanent codes stay active outside booking windows."
     />
 
     <UCard>
@@ -372,7 +372,7 @@ function formatDateTime(value: string | null) {
         :color="doorCodesTab === 'members' ? 'primary' : 'neutral'"
         @click="doorCodesTab = 'members'"
       >
-        Member codes
+        Account codes
       </UButton>
       <UButton
         size="sm"
@@ -387,14 +387,14 @@ function formatDateTime(value: string | null) {
     <div class="space-y-4">
       <DashboardDataPanel
         v-if="doorCodesTab === 'members'"
-        list-title="Member door codes"
-        list-description="Search members first, then update their assigned code."
-        detail-title="Member code editor"
-        detail-description="Member codes are booking-window controlled by access jobs."
+        list-title="Account door codes"
+        list-description="Search member and guest accounts first, then update their assigned code."
+        detail-title="Account code editor"
+        detail-description="Account codes are booking-window controlled by access jobs."
       >
         <template #list-controls>
           <UCard class="admin-panel-card border-0">
-            <UFormField label="Search members">
+            <UFormField label="Search accounts">
               <UInput
                 v-model="memberCodeSearch"
                 icon="i-lucide-search"
@@ -408,13 +408,13 @@ function formatDateTime(value: string | null) {
           <DashboardSectionState
             v-if="pending && !members.length"
             state="loading"
-            title="Loading member codes"
-            description="Fetching membership and code assignments."
+            title="Loading account codes"
+            description="Fetching account and code assignments."
           />
           <DashboardSectionState
             v-else-if="!filteredMemberCodes.length"
             state="empty"
-            title="No members found"
+            title="No accounts found"
             description="Try a different search query."
           />
           <div
@@ -454,8 +454,8 @@ function formatDateTime(value: string | null) {
           <DashboardSectionState
             v-if="!selectedMember"
             state="empty"
-            title="No member selected"
-            description="Select a member to update the door code."
+            title="No account selected"
+            description="Select an account to update the door code."
           />
           <UCard
             v-else
@@ -481,7 +481,7 @@ function formatDateTime(value: string | null) {
                   :loading="savingMemberDoorCode"
                   @click="saveMemberDoorCode"
                 >
-                  Save member code
+                  Save account code
                 </UButton>
               </div>
             </div>
