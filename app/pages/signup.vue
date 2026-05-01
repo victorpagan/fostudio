@@ -107,7 +107,7 @@ const isCheckoutLinkedSignup = computed(() => Boolean(checkoutTokenFromReturnTo.
 const tierInfo = computed(() => {
   if (!tier.value) {
     return {
-      name: 'No membership selected',
+      name: 'FO Studio account',
       credits: 0,
       bookingWindowDays: 0
     }
@@ -294,97 +294,46 @@ async function handleSignup() {
 
 <template>
   <UContainer class="py-10 sm:py-14">
-    <div class="mx-auto grid max-w-5xl gap-8 lg:grid-cols-2 lg:items-start">
-      <!-- Left: Tier summary -->
-      <UCard>
-        <div class="text-sm text-gray-500 dark:text-gray-400">
-          You selected
+    <div class="mx-auto max-w-3xl">
+      <div class="mb-6 text-center">
+        <div class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">
+          FO Studio account
         </div>
-        <div class="mt-1 text-2xl font-semibold">
-          {{ tierInfo.name }}
-        </div>
-        <div
-          v-if="hasPlanContext"
-          class="mt-1 text-sm text-gray-600 dark:text-gray-300"
-        >
-          {{ cadenceLabel(cadence) }} billing
-        </div>
-        <div
-          v-else
-          class="mt-1 text-sm text-gray-600 dark:text-gray-300"
-        >
-          Sign up first, then select your membership plan.
-        </div>
+        <h1 class="mt-2 text-3xl font-semibold tracking-tight text-highlighted sm:text-4xl">
+          {{ isCheckoutLinkedSignup ? 'Finish your account' : 'Create your account' }}
+        </h1>
+        <p class="mx-auto mt-3 max-w-2xl text-sm leading-6 text-dimmed">
+          <template v-if="hasPlanContext">
+            Create your login, finish onboarding, and we’ll route you back to complete membership activation.
+          </template>
+          <template v-else>
+            Create an account to book as a guest, manage credits, or choose a membership when you are ready.
+          </template>
+        </p>
+      </div>
 
-        <div
-          v-if="hasPlanContext"
-          class="mt-4 grid grid-cols-3 gap-2"
-        >
-          <div class="rounded-xl border border-gray-200/60 p-3 text-center dark:border-gray-800/60">
-            <div class="text-sm font-medium">
-              {{ cadenceLabel(cadence) }}
-            </div>
-            <div class="text-xs text-gray-500 dark:text-gray-400">
-              billing
-            </div>
-          </div>
-          <div class="rounded-xl border border-gray-200/60 p-3 text-center dark:border-gray-800/60">
-            <div class="text-sm font-medium">
-              {{ tierInfo.credits > 0 ? tierInfo.credits : '—' }}
-            </div>
-            <div class="text-xs text-gray-500 dark:text-gray-400">
-              credits
-            </div>
-          </div>
-          <div class="rounded-xl border border-gray-200/60 p-3 text-center dark:border-gray-800/60">
-            <div class="text-sm font-medium">
-              {{ tierInfo.bookingWindowDays > 0 ? `${tierInfo.bookingWindowDays}d` : '—' }}
-            </div>
-            <div class="text-xs text-gray-500 dark:text-gray-400">
-              booking
-            </div>
-          </div>
-        </div>
-        <UAlert
-          v-if="missingCheckoutToken"
-          class="mt-4"
-          color="warning"
-          variant="soft"
-          icon="i-lucide-circle-alert"
-          title="Missing checkout token"
-          description="This signup link is missing checkout context. Complete checkout again or sign in to continue."
-        />
-
-        <div class="mt-5 space-y-2 text-sm text-gray-600 dark:text-gray-300">
-          <div class="font-medium">
-            What happens next
-          </div>
-          <ul class="space-y-2">
-            <li class="flex gap-2">
-              <span class="mt-1 h-1.5 w-1.5 rounded-full bg-gray-400" />
-              <span>Create your account</span>
-            </li>
-            <li class="flex gap-2">
-              <span class="mt-1 h-1.5 w-1.5 rounded-full bg-gray-400" />
-              <span>Complete onboarding (waiver + rules)</span>
-            </li>
-            <li class="flex gap-2">
-              <span class="mt-1 h-1.5 w-1.5 rounded-full bg-gray-400" />
-              <span>Complete secure checkout for your membership</span>
-            </li>
-          </ul>
-        </div>
-      </UCard>
-
-      <!-- Right: Signup form -->
       <UCard>
         <template #header>
-          <div class="text-lg font-semibold">
-            Create your account
+          <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div class="text-lg font-semibold">
+                Account details
+              </div>
+              <div class="text-sm text-dimmed">
+                Phone is required for booking access and studio operations.
+              </div>
+            </div>
+            <UBadge
+              v-if="isCheckoutLinkedSignup"
+              color="success"
+              variant="soft"
+            >
+              Checkout linked
+            </UBadge>
           </div>
         </template>
 
-        <div class="space-y-4">
+        <div class="space-y-5">
           <UAlert
             v-if="errorMsg"
             color="error"
@@ -399,56 +348,121 @@ async function handleSignup() {
           />
 
           <div
-            v-if="isCheckoutLinkedSignup"
-            class="rounded-xl border border-gray-200/60 p-3 text-sm dark:border-gray-800/60"
+            v-if="hasPlanContext"
+            class="rounded-2xl border border-default bg-elevated/60 p-4"
           >
-            <div class="font-medium">
-              Contact details from checkout
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div class="text-xs font-semibold uppercase tracking-[0.18em] text-dimmed">
+                  Selected membership
+                </div>
+                <div class="mt-1 text-xl font-semibold text-highlighted">
+                  {{ tierInfo.name }}
+                </div>
+              </div>
+              <UBadge
+                color="neutral"
+                variant="soft"
+              >
+                {{ cadenceLabel(cadence) }} billing
+              </UBadge>
             </div>
-            <div class="mt-2 space-y-1 text-gray-600 dark:text-gray-300">
-              <div><span class="text-gray-500 dark:text-gray-400">Email:</span> {{ form.email || 'Not provided' }}</div>
-              <div><span class="text-gray-500 dark:text-gray-400">Name:</span> {{ [form.firstName, form.lastName].filter(Boolean).join(' ') || 'Not provided' }}</div>
-              <div><span class="text-gray-500 dark:text-gray-400">Phone:</span> {{ form.phone || 'Not provided' }}</div>
+
+            <div class="mt-4 grid gap-2 sm:grid-cols-3">
+              <div class="rounded-xl border border-default bg-default/70 p-3">
+                <div class="text-sm font-medium text-highlighted">
+                  {{ cadenceLabel(cadence) }}
+                </div>
+                <div class="text-xs text-dimmed">
+                  billing
+                </div>
+              </div>
+              <div class="rounded-xl border border-default bg-default/70 p-3">
+                <div class="text-sm font-medium text-highlighted">
+                  {{ tierInfo.credits > 0 ? tierInfo.credits : '—' }}
+                </div>
+                <div class="text-xs text-dimmed">
+                  monthly credits
+                </div>
+              </div>
+              <div class="rounded-xl border border-default bg-default/70 p-3">
+                <div class="text-sm font-medium text-highlighted">
+                  {{ tierInfo.bookingWindowDays > 0 ? `${tierInfo.bookingWindowDays}d` : '—' }}
+                </div>
+                <div class="text-xs text-dimmed">
+                  booking reach
+                </div>
+              </div>
             </div>
           </div>
 
+          <UAlert
+            v-if="missingCheckoutToken"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-circle-alert"
+            title="Missing checkout token"
+            description="This signup link is missing checkout context. Complete checkout again or sign in to continue."
+          />
+
           <div
-            v-else
             class="grid gap-3 sm:grid-cols-2"
           >
-            <UInput
-              v-model="form.firstName"
-              placeholder="First name"
-            />
-            <UInput
-              v-model="form.lastName"
-              placeholder="Last name"
-            />
+            <UFormField label="First name">
+              <UInput
+                v-model="form.firstName"
+                placeholder="First name"
+                autocomplete="given-name"
+              />
+            </UFormField>
+            <UFormField label="Last name">
+              <UInput
+                v-model="form.lastName"
+                placeholder="Last name"
+                autocomplete="family-name"
+              />
+            </UFormField>
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2">
+            <UFormField
+              label="Email"
+              required
+              :hint="isCheckoutLinkedSignup ? 'From checkout' : undefined"
+            >
+              <UInput
+                v-model="form.email"
+                type="email"
+                placeholder="Email"
+                autocomplete="email"
+                :disabled="isCheckoutLinkedSignup"
+              />
+            </UFormField>
+            <UFormField
+              label="Phone"
+              required
+              :error="!form.phone.trim() && errorMsg?.includes('Phone') ? 'Phone is required' : undefined"
+            >
+              <UInput
+                v-model="form.phone"
+                type="tel"
+                placeholder="Phone"
+                autocomplete="tel"
+              />
+            </UFormField>
           </div>
 
           <UFormField
-            label="Phone"
+            label="Password"
             required
-            :error="!form.phone.trim() && errorMsg?.includes('Phone') ? 'Phone is required' : undefined"
           >
             <UInput
-              v-model="form.phone"
-              type="tel"
-              placeholder="Phone"
-              autocomplete="tel"
+              v-model="form.password"
+              type="password"
+              placeholder="Password"
+              autocomplete="new-password"
             />
           </UFormField>
-          <UInput
-            v-if="!isCheckoutLinkedSignup"
-            v-model="form.email"
-            type="email"
-            placeholder="Email"
-          />
-          <UInput
-            v-model="form.password"
-            type="password"
-            placeholder="Password"
-          />
 
           <div class="text-xs text-gray-500 dark:text-gray-400">
             By continuing, you agree to the studio rules and policies.
@@ -461,8 +475,19 @@ async function handleSignup() {
               class="w-full"
               @click="handleSignup"
             >
-              Continue
+              Create account
             </UButton>
+          </div>
+
+          <div class="rounded-2xl border border-default bg-muted/40 p-4 text-sm text-dimmed">
+            <div class="font-medium text-highlighted">
+              What happens next
+            </div>
+            <div class="mt-2 grid gap-2 sm:grid-cols-3">
+              <div>Create your login</div>
+              <div>Complete waiver and rules</div>
+              <div>{{ hasPlanContext ? 'Finish membership checkout' : 'Book as guest or join' }}</div>
+            </div>
           </div>
         </div>
       </UCard>

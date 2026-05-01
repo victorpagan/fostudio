@@ -46,6 +46,7 @@ type MembershipSummary = {
   cadence: string | null
   status: string | null
   current_period_end: string | null
+  canceled_at: string | null
   billing_provider: string | null
 }
 type WaiverCurrentResponse = {
@@ -89,7 +90,7 @@ const { data: membershipSummary, refresh: refreshMembershipSummary } = await use
   if (!user.value?.sub) return null
   const { data, error } = await supabase
     .from('memberships')
-    .select('tier,cadence,status,current_period_end,billing_provider')
+    .select('tier,cadence,status,current_period_end,canceled_at,billing_provider')
     .eq('user_id', user.value.sub)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -227,8 +228,11 @@ const isDirty = computed(() =>
 )
 const savedCards = computed(() => paymentMethodsData.value?.methods ?? [])
 const defaultCardId = computed(() => paymentMethodsData.value?.defaultCardId ?? null)
-const membershipTierLabel = computed(() => formatMembershipTierLabel(membershipSummary.value?.tier) ?? null)
 const membershipUiState = computed(() => resolveMembershipUiState(membershipSummary.value))
+const membershipTierLabel = computed(() => {
+  if (!['active', 'past_due', 'pending_checkout'].includes(membershipUiState.value)) return null
+  return formatMembershipTierLabel(membershipSummary.value?.tier) ?? null
+})
 const membershipUiStatusLabel = computed(() => membershipUiState.value.replace(/_/g, ' '))
 const membershipUiStatusColor = computed(() => {
   if (membershipUiState.value === 'active') return 'success'

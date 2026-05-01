@@ -17,14 +17,13 @@ export function resolveMembershipUiState(row: MembershipLike | null | undefined,
   if (!raw) return 'none'
   if (raw === 'pending_checkout') return 'pending_checkout'
   if (raw === 'canceled') return 'canceled'
-  if (raw === 'past_due') return 'past_due'
 
-  if (raw === 'active') {
+  if (raw === 'active' || raw === 'past_due') {
     const periodEndMs = toTimeMs(row?.current_period_end)
     if (!Number.isNaN(periodEndMs) && periodEndMs <= nowMs) {
       return row?.canceled_at ? 'canceled' : 'inactive'
     }
-    return 'active'
+    return raw
   }
 
   return 'inactive'
@@ -33,4 +32,3 @@ export function resolveMembershipUiState(row: MembershipLike | null | undefined,
 export function hasActiveMembershipUi(row: MembershipLike | null | undefined, nowMs = Date.now()) {
   return resolveMembershipUiState(row, nowMs) === 'active'
 }
-

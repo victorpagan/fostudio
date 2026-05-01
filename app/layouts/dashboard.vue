@@ -79,6 +79,7 @@ const sidebarMembershipState = computed(() => resolveMembershipUiState(sidebarMe
 const sidebarTierLabel = computed(() => {
   const row = sidebarMembership.value
   if (!row) return null
+  if (!['active', 'past_due', 'pending_checkout'].includes(sidebarMembershipState.value)) return null
   const tierLabel = formatMembershipTierLabel(row.tier)
   const cadence = row.cadence ?? null
   return [tierLabel, cadence].filter(Boolean).join(' · ')

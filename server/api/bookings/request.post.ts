@@ -17,6 +17,7 @@ import { resolveAvailableCreditBalance } from '~~/server/utils/credits/available
 import { assertCurrentWaiver } from '~~/server/utils/waiver/status'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
 
 const schema = z.object({
   start_time: z.string(),
@@ -38,6 +39,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const supabase = serverSupabaseServiceRole(event)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
   const body = schema.parse(await readBody(event))
 
@@ -58,17 +60,20 @@ export default defineEventHandler(async (event) => {
   // membership/credits access check
   const { data: membership } = await supabase
     .from('memberships')
-    .select('status,tier,current_period_start,current_period_end')
+    .select('status,tier,current_period_start,current_period_end,canceled_at')
     .eq('user_id', user.sub)
     .maybeSingle()
 
   let remainingCredits = 0
   try {
     remainingCredits = await resolveAvailableCreditBalance(supabase, user.sub)
-  } catch (error: any) {
-    throw createError({ statusCode: 500, statusMessage: error?.message ?? 'Failed to load credits' })
+  } catch (error: unknown) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: error instanceof Error ? error.message : 'Failed to load credits'
+    })
   }
-  const hasActiveMembership = (membership?.status || '').toLowerCase() === 'active'
+  const hasActiveMembership = isMembershipCurrentlyActive(membership)
   if (!hasActiveMembership && remainingCredits <= 0) {
     throw createError({ statusCode: 403, statusMessage: 'Membership required' })
   }

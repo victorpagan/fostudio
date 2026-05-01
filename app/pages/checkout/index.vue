@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { normalizeDiscountLabel, parseDiscountLabel } from '~~/app/utils/membershipDiscount'
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
 type Cadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
 type PlanOption = {
@@ -124,15 +125,15 @@ const { data: currentMembership } = await useAsyncData('checkout:membership-stat
   if (!user.value?.sub) return null
   const { data, error } = await supabase
     .from('memberships')
-    .select('status')
+    .select('status,current_period_end,canceled_at')
     .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
-  return data as { status: string | null } | null
+  return data as { status: string | null, current_period_end: string | null, canceled_at: string | null } | null
 }, { watch: [() => user.value?.sub] })
 
 const isPriorityMember = computed(() => {
-  const status = (currentMembership.value?.status ?? '').toLowerCase()
+  const status = resolveMembershipUiState(currentMembership.value)
   return status === 'active' || status === 'past_due'
 })
 

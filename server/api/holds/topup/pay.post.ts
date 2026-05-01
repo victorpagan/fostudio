@@ -5,6 +5,7 @@ import { extractSquareCards } from '~~/server/utils/square/cards'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
 import { markPromoRedemption } from '~~/server/utils/promos'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
 
 const bodySchema = z.object({
   token: z.string().uuid(),
@@ -61,6 +62,7 @@ function readSquareErrorMessage(error: unknown) {
   return 'Square request failed'
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function readHoldBalance(supabase: any, userId: string) {
   const { data, error } = await supabase
     .from('hold_balance')
@@ -120,11 +122,11 @@ export default defineEventHandler(async (event) => {
 
   const { data: membership, error: membershipErr } = await supabase
     .from('memberships')
-    .select('id,status')
+    .select('id,status,current_period_end,canceled_at')
     .eq('user_id', user.sub)
     .maybeSingle()
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
-  if (!membership || (membership.status ?? '').toLowerCase() !== 'active') {
+  if (!isMembershipCurrentlyActive(membership)) {
     throw createError({ statusCode: 403, statusMessage: 'An active membership is required before purchasing holds.' })
   }
 

@@ -9,6 +9,8 @@
  * No middleware: handles the branching here so anonymous users can land freely.
  */
 
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
+
 const user = useSupabaseUser()
 const supabase = useSupabaseClient()
 const router = useRouter()
@@ -45,11 +47,11 @@ onMounted(async () => {
   }
   const { data } = await supabase
     .from('memberships')
-    .select('status')
+    .select('status,current_period_end,canceled_at')
     .eq('user_id', user.value.sub)
     .maybeSingle()
 
-  membershipStatus.value = data?.status ?? null
+  membershipStatus.value = resolveMembershipUiState(data)
   checking.value = false
 
   if (membershipStatus.value === 'active') {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { DateTime } from 'luxon'
+import ManualBookingTimeModal from '~~/app/components/booking/ManualBookingTimeModal.vue'
 
 definePageMeta({ middleware: ['auth', 'membership-required'] })
 
@@ -94,6 +95,7 @@ const holdEndHour = computed(() => {
 })
 
 const open = ref(false)
+const manualWorkshopOpen = ref(false)
 const confirming = ref(false)
 const selected = ref<{ start: Date, end: Date } | null>(null)
 const preview = ref<BookingPreview | null>(null)
@@ -241,6 +243,22 @@ function onSelect(payload: { start: Date, end: Date }) {
   fetchPreview(payload.start, payload.end)
 }
 
+function openManualWorkshopModal() {
+  if (!workshopAccess.value?.workshopBookingEnabled) {
+    toast.add({
+      title: 'Workshop booking is disabled',
+      description: 'Ask an admin to enable workshop booking on your account.',
+      color: 'warning'
+    })
+    return
+  }
+  manualWorkshopOpen.value = true
+}
+
+function onManualWorkshopSubmit(payload: { start: Date, end: Date }) {
+  onSelect(payload)
+}
+
 function closeModal(force = false) {
   if (confirming.value && !force) return
   open.value = false
@@ -355,6 +373,12 @@ function formatPeakCredits(value: number) {
     >
       <template #right>
         <DashboardActionGroup
+          :primary="{
+            label: 'Create workshop',
+            icon: 'i-lucide-calendar-plus',
+            disabled: !workshopAccess?.workshopBookingEnabled,
+            onSelect: openManualWorkshopModal
+          }"
           :secondary="[
             {
               label: 'My bookings',
@@ -409,6 +433,21 @@ function formatPeakCredits(value: number) {
         />
       </div>
     </DashboardPageScaffold>
+
+    <ManualBookingTimeModal
+      v-model:open="manualWorkshopOpen"
+      title="Create workshop booking"
+      description="Choose a workshop date and time instead of dragging on the calendar."
+      calendar-endpoint="/api/calendar/member"
+      :calendar-query="{ booking_kind: 'workshop' }"
+      :start-hour="0"
+      :end-hour="24"
+      :increment-minutes="30"
+      :min-duration-minutes="30"
+      :default-duration-minutes="120"
+      submit-label="Review workshop"
+      @submit="onManualWorkshopSubmit"
+    />
 
     <UModal
       v-model:open="open"

@@ -1,3 +1,5 @@
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
+
 export type CreditLedgerBucketRow = {
   id: string
   delta: number | string
@@ -170,20 +172,20 @@ export async function resolveTopoffCreditExpiryDays(
 
   if (trimmedMembershipId) {
     const { data } = await db
-      .from<{ tier: string | null }>('memberships')
-      .select('tier')
+      .from<{ tier: string | null, status: string | null, current_period_end: string | null, canceled_at: string | null }>('memberships')
+      .select('tier,status,current_period_end,canceled_at')
       .eq('id', trimmedMembershipId)
       .maybeSingle()
-    tierId = typeof data?.tier === 'string' ? data.tier : null
+    tierId = isMembershipCurrentlyActive(data) && typeof data?.tier === 'string' ? data.tier : null
   }
 
   if (!tierId) {
     const { data } = await db
-      .from<{ tier: string | null, status: string | null }>('memberships')
-      .select('tier,status')
+      .from<{ tier: string | null, status: string | null, current_period_end: string | null, canceled_at: string | null }>('memberships')
+      .select('tier,status,current_period_end,canceled_at')
       .eq('user_id', userId)
       .maybeSingle()
-    if ((data?.status ?? '').toLowerCase() === 'active' && typeof data?.tier === 'string') {
+    if (isMembershipCurrentlyActive(data) && typeof data?.tier === 'string') {
       tierId = data.tier
     }
   }

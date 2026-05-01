@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
+
 type Cadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
 
 type PlanOption = {
@@ -120,13 +122,15 @@ const visibleTiers = computed(() => {
 
 type MembershipStatusRow = {
   status: string | null
+  current_period_end: string | null
+  canceled_at: string | null
 }
 
 const { data: currentMembership } = await useAsyncData('memberships:current-status', async () => {
   if (!user.value?.sub) return null
   const { data, error } = await supabase
     .from('memberships')
-    .select('status')
+    .select('status,current_period_end,canceled_at')
     .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
@@ -134,7 +138,7 @@ const { data: currentMembership } = await useAsyncData('memberships:current-stat
 }, { watch: [() => user.value?.sub] })
 
 const isPriorityMember = computed(() => {
-  const status = (currentMembership.value?.status ?? '').toLowerCase()
+  const status = resolveMembershipUiState(currentMembership.value)
   return status === 'active' || status === 'past_due'
 })
 

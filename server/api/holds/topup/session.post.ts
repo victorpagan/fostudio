@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
 
 const DEFAULT_HOLD_TOPUP_LABEL = 'Overnight hold add-on'
 const DEFAULT_HOLD_TOPUP_PRICE_CENTS = 2500
@@ -20,12 +21,12 @@ export default defineEventHandler(async (event) => {
 
   const { data: membership, error: membershipErr } = await supabase
     .from('memberships')
-    .select('id,status')
+    .select('id,status,current_period_end,canceled_at')
     .eq('user_id', user.sub)
     .maybeSingle()
 
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
-  if (!membership || (membership.status ?? '').toLowerCase() !== 'active') {
+  if (!membership || !isMembershipCurrentlyActive(membership)) {
     throw createError({ statusCode: 403, statusMessage: 'An active membership is required before purchasing holds.' })
   }
 

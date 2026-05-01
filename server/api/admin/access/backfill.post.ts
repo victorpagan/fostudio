@@ -3,6 +3,7 @@ import { DateTime } from 'luxon'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { enqueueBookingAccessSync, enqueueMemberActiveRefresh } from '~~/server/utils/access/jobs'
+import { hasCurrentMembershipEntitlement } from '~~/server/utils/membership/status'
 
 const bodySchema = z.object({
   fromIso: z.string().datetime().optional(),
@@ -48,7 +49,7 @@ export default defineEventHandler(async (event) => {
   if (includeMembers) {
     const { data: members, error: memberErr } = await db
       .from('memberships')
-      .select('user_id,status')
+      .select('user_id,status,current_period_end,canceled_at')
       .in('status', ['active', 'past_due'])
       .not('user_id', 'is', null)
       .limit(memberLimit)
@@ -56,7 +57,8 @@ export default defineEventHandler(async (event) => {
     if (memberErr) throw createError({ statusCode: 500, statusMessage: memberErr.message })
 
     const uniqueUserIds = Array.from(new Set((members ?? [])
-      .map((row: { user_id?: string | null }) => (typeof row.user_id === 'string' ? row.user_id : null))
+      .map((row: { user_id?: string | null, status?: string | null, current_period_end?: string | null, canceled_at?: string | null }) =>
+        hasCurrentMembershipEntitlement(row) && typeof row.user_id === 'string' ? row.user_id : null)
       .filter(Boolean) as string[]))
 
     membersScanned = uniqueUserIds.length

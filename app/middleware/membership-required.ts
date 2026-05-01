@@ -3,6 +3,8 @@
  * Ensures the user has an active membership before accessing protected pages.
  * Admins bypass this check so they can access all dashboard pages.
  */
+import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
+
 export default defineNuxtRouteMiddleware(async (to) => {
   const user = useSupabaseUser()
   if (!user.value) return // let auth middleware handle redirect
@@ -23,7 +25,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   const { data, error } = await supabase
     .from('memberships')
-    .select('status, tier, cadence')
+    .select('status, tier, cadence, current_period_end, canceled_at')
     .eq('user_id', user.value.sub)
     .maybeSingle()
 
@@ -33,9 +35,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return navigateTo(`/memberships?returnTo=${encodeURIComponent(to.fullPath)}&reason=error`)
   }
 
-  const status = (data?.status ?? '').toLowerCase()
-
-  if (status === 'active') return
+  if (resolveMembershipUiState(data) === 'active') return
 
   const { data: balanceRow, error: balanceErr } = await supabase
     .from('credit_balance')

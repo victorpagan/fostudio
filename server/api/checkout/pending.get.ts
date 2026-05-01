@@ -1,4 +1,5 @@
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
+import { hasCurrentMembershipEntitlement } from '~~/server/utils/membership/status'
 
 type PendingSessionRow = {
   token: string
@@ -21,15 +22,14 @@ export default defineEventHandler(async (event) => {
 
   const { data: membershipRow, error: membershipErr } = await supabase
     .from('memberships')
-    .select('status')
+    .select('status,current_period_end,canceled_at')
     .eq('user_id', user.sub)
-    .in('status', ['active', 'past_due'])
     .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
-  if (membershipRow?.status) {
+  if (hasCurrentMembershipEntitlement(membershipRow)) {
     return { pending: null }
   }
 

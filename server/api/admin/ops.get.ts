@@ -5,6 +5,7 @@ import {
   type MembershipCheckoutRevenueSession,
   type MembershipVariationPriceRow
 } from '~~/server/utils/revenue/membershipCheckout'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
 
 type RevenueBucket = 'day' | 'week' | 'month'
 
@@ -339,7 +340,7 @@ export default defineEventHandler(async (event) => {
   )
 
   const membershipsMissingFutureSchedule = (activeExtendedMembershipsRes.data ?? []).filter(
-    membership => !futureGrantMembershipIds.has(membership.id)
+    membership => isMembershipCurrentlyActive(membership) && !futureGrantMembershipIds.has(membership.id)
   )
 
   const membershipRevenue = resolveMembershipCheckoutRevenue(

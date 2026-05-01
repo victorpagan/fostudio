@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
 
 export type BookingAccountState = {
   kind: 'guest' | 'active_member'
@@ -11,6 +12,7 @@ export type BookingAccountState = {
     tier?: string | null
     current_period_start?: string | null
     current_period_end?: string | null
+    canceled_at?: string | null
   } | null
   customer: {
     id: string
@@ -31,7 +33,7 @@ export async function resolveBookingAccountState(event: H3Event, user: { sub: st
   const [{ data: membership, error: membershipErr }, { data: customer, error: customerErr }, remainingCredits] = await Promise.all([
     supabase
       .from('memberships')
-      .select('id,status,tier,current_period_start,current_period_end')
+      .select('id,status,tier,current_period_start,current_period_end,canceled_at')
       .eq('user_id', user.sub)
       .maybeSingle(),
     supabase
@@ -54,7 +56,7 @@ export async function resolveBookingAccountState(event: H3Event, user: { sub: st
   if (customerErr) throw createError({ statusCode: 500, statusMessage: customerErr.message })
 
   const customerState = customer as unknown as BookingCustomerState
-  const hasActiveMembership = String(membership?.status ?? '').toLowerCase() === 'active'
+  const hasActiveMembership = isMembershipCurrentlyActive(membership)
   return {
     kind: hasActiveMembership ? 'active_member' : 'guest',
     userId: user.sub,

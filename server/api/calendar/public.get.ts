@@ -10,6 +10,10 @@ import {
   loadGuestBookingPolicy,
   loadStandbyBookingPolicy
 } from '~~/server/utils/booking/guestPolicy'
+import {
+  expireStalePendingGuestBookings,
+  isActivePendingPaymentReservation
+} from '~~/server/utils/booking/pendingPayments'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -32,8 +36,22 @@ function normalizeIso(value: string) {
   return value
 }
 
+type CalendarBookingRow = {
+  id: string
+  start_time: string
+  end_time: string
+  status: string
+  payment_expires_at?: string | null
+}
+
+function isActiveCalendarBooking(row: CalendarBookingRow, nowMs = Date.now()) {
+  if (String(row.status ?? '').toLowerCase() !== 'pending_payment') return true
+  return isActivePendingPaymentReservation(row.payment_expires_at, nowMs)
+}
+
 export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient(event)
+  const serviceRole = serverSupabaseServiceRole(event)
   const q = qSchema.parse(getQuery(event))
   const peakWindowConfig = await loadPeakWindowConfig(event)
   const guestPolicy = await loadGuestBookingPolicy(event)
@@ -44,15 +62,16 @@ export default defineEventHandler(async (event) => {
   const to = q.to ? new Date(q.to) : new Date(now.getTime() + guestPolicy.bookingWindowDays * 24 * 60 * 60 * 1000)
 
   try {
+    await expireStalePendingGuestBookings(serviceRole)
     await maybeAutoSyncGoogleCalendar(event, 'calendar_public')
   } catch (error) {
-    console.error('[calendar/public] google sync failed', error)
+    console.error('[calendar/public] calendar maintenance failed', error)
   }
 
   const { data: bookings, error } = await supabase
     .from('bookings')
-    .select('id, start_time, end_time, status')
-    .eq('status', 'confirmed')
+    .select('id, start_time, end_time, status, payment_expires_at')
+    .in('status', ['confirmed', 'pending_payment'])
     .lt('start_time', to.toISOString())
     .gt('end_time', from.toISOString())
     .order('start_time', { ascending: true })
@@ -91,7 +110,6 @@ export default defineEventHandler(async (event) => {
   let workshopPromo: Awaited<ReturnType<typeof getUpcomingWorkshopPromo>> = null
 
   try {
-    const serviceRole = serverSupabaseServiceRole(event)
     externalEvents = await getExternalCalendarEventsInRange(
       serviceRole,
       from.toISOString(),
@@ -102,16 +120,29 @@ export default defineEventHandler(async (event) => {
     console.error('[calendar/public] failed to load external calendar events', error)
   }
 
+  const bookingRows = ((bookings ?? []) as unknown as CalendarBookingRow[]).filter(row =>
+    isActiveCalendarBooking(row, now.getTime())
+  )
+
   const events = [
-    ...(bookings ?? []).map(b => ({
-      id: `b_${b.id}`,
-      start: normalizeIso(b.start_time),
-      end: normalizeIso(b.end_time),
-      title: `Member booked · ${durationHours(b.start_time, b.end_time)}h`,
-      display: 'auto',
-      color: '#64748b', // slate — neutral, no info leak
-      extendedProps: { type: 'booking' }
-    })),
+    ...bookingRows.map((b) => {
+      const isPendingPayment = String(b.status ?? '').toLowerCase() === 'pending_payment'
+      return {
+        id: `b_${b.id}`,
+        start: normalizeIso(b.start_time),
+        end: normalizeIso(b.end_time),
+        title: isPendingPayment
+          ? `Temporarily reserved · ${durationHours(b.start_time, b.end_time)}h`
+          : `Member booked · ${durationHours(b.start_time, b.end_time)}h`,
+        display: 'auto',
+        color: isPendingPayment ? '#6d28d9' : '#64748b',
+        extendedProps: {
+          type: 'booking',
+          status: b.status,
+          paymentExpiresAt: b.payment_expires_at ?? null
+        }
+      }
+    }),
     ...(holds ?? []).map(h => ({
       id: `h_${h.id}`,
       start: normalizeIso(h.hold_start),
@@ -146,7 +177,7 @@ export default defineEventHandler(async (event) => {
   ]
 
   const busy = [
-    ...(bookings ?? []).map(row => ({ start: row.start_time, end: row.end_time })),
+    ...bookingRows.map(row => ({ start: row.start_time, end: row.end_time })),
     ...(holds ?? []).map(row => ({ start: row.hold_start, end: row.hold_end })),
     ...(blocks ?? []).map(row => ({ start: row.start_time, end: row.end_time })),
     ...externalEvents.map(row => ({ start: row.start_time, end: row.end_time }))
@@ -163,7 +194,7 @@ export default defineEventHandler(async (event) => {
     end: normalizeIso(window.end),
     title: 'Standby availability',
     display: 'background',
-    color: '#16a34a',
+    color: '#d8a657',
     extendedProps: { type: 'standby' }
   }))
 

@@ -6,6 +6,7 @@ import { getSingleTierCapacity, isPriorityMemberForWaitlist } from '~~/server/ut
 import { normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
 import { computeCyclePriceCents } from '~~/server/utils/membership/cadencePricing'
 import { normalizeReferralCode } from '~~/server/utils/referrals'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 
 const bodySchema = z.object({
@@ -250,9 +251,8 @@ export default defineEventHandler(async (event) => {
     if (existingCustomer?.user_id) {
       const { data: existingMembership, error: existingMembershipErr } = await supabase
         .from('memberships')
-        .select('id,status')
+        .select('id,status,current_period_end,canceled_at')
         .eq('user_id', existingCustomer.user_id)
-        .in('status', ['active', 'pending_checkout', 'past_due'])
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -261,7 +261,12 @@ export default defineEventHandler(async (event) => {
         throw createError({ statusCode: 500, statusMessage: existingMembershipErr.message })
       }
 
-      if (existingMembership) {
+      const existingStatus = String(existingMembership?.status ?? '').toLowerCase()
+      const hasBlockingMembership = existingStatus === 'pending_checkout'
+        || existingStatus === 'past_due'
+        || isMembershipCurrentlyActive(existingMembership)
+
+      if (hasBlockingMembership) {
         throw createError({
           statusCode: 409,
           statusMessage: 'This email is already linked to a member account. Sign in to manage or change the existing membership.'
@@ -326,7 +331,7 @@ export default defineEventHandler(async (event) => {
 
   // Block duplicate active Square-managed memberships from starting a second checkout.
   // Allow active non-managed memberships (ex: admin/test tier) to transition into Square.
-  if (membership?.status?.toLowerCase() === 'active' && !isTestTier) {
+  if (membership && isMembershipCurrentlyActive(membership) && !isTestTier) {
     const billingProvider = (membership.billing_provider ?? '').toLowerCase()
     const billingSubscriptionId = typeof membership.billing_subscription_id === 'string' ? membership.billing_subscription_id.trim() : ''
     const squareSubscriptionId = typeof membership.square_subscription_id === 'string' ? membership.square_subscription_id.trim() : ''

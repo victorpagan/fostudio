@@ -28,6 +28,8 @@ import {
   validateGuestBookingWindow,
   validateStandbySelection
 } from '~~/server/utils/booking/guestPolicy'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
+import { expireStalePendingGuestBookings } from '~~/server/utils/booking/pendingPayments'
 
 const bodySchema = z.object({
   start_time: z.string(),
@@ -109,11 +111,11 @@ export default defineEventHandler(async (event) => {
 
   const { data: membership, error: membershipErr } = await supabase
     .from('memberships')
-    .select('id,status')
+    .select('id,status,current_period_end,canceled_at')
     .eq('user_id', user.sub)
     .maybeSingle()
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
-  if (String(membership?.status ?? '').toLowerCase() === 'active') {
+  if (isMembershipCurrentlyActive(membership)) {
     throw createError({ statusCode: 400, statusMessage: 'Active members should use the member booking flow.' })
   }
   await assertCurrentWaiver(event, user.sub)
@@ -149,7 +151,7 @@ export default defineEventHandler(async (event) => {
   const endIso = end.toUTC().toISO()
   if (!startIso || !endIso) throw createError({ statusCode: 400, statusMessage: 'Invalid booking time.' })
 
-  await supabase.rpc('expire_stale_pending_guest_bookings' as never, {} as never)
+  await expireStalePendingGuestBookings(supabase)
   await ensureNoExternalCalendarConflict(supabase, startIso, endIso)
 
   const { data: bookingConflicts, error: bookingConflictErr } = await supabase

@@ -6,11 +6,16 @@ import { getExternalCalendarEventsInRange } from '~~/server/utils/booking/extern
 import { maybeAutoSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
 import { getUpcomingWorkshopPromo } from '~~/server/utils/booking/workshopPromo'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
 import {
   computeStandbyOpenWindows,
   loadGuestBookingPolicy,
   loadStandbyBookingPolicy
 } from '~~/server/utils/booking/guestPolicy'
+import {
+  expireStalePendingGuestBookings,
+  isActivePendingPaymentReservation
+} from '~~/server/utils/booking/pendingPayments'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -52,6 +57,12 @@ type CalendarBookingRow = {
   credits_burned: number | null
   user_id: string | null
   booking_rate_kind?: string | null
+  payment_expires_at?: string | null
+}
+
+function isActiveCalendarBooking(row: CalendarBookingRow, nowMs = Date.now()) {
+  if (String(row.status ?? '').toLowerCase() !== 'pending_payment') return true
+  return isActivePendingPaymentReservation(row.payment_expires_at, nowMs)
 }
 
 export default defineEventHandler(async (event) => {
@@ -59,21 +70,23 @@ export default defineEventHandler(async (event) => {
   if (!user) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
 
   const supabase = await serverSupabaseClient(event)
+  const serviceRole = serverSupabaseServiceRole(event)
   const q = qSchema.parse(getQuery(event))
   const peakWindowConfig = await loadPeakWindowConfig(event)
   const guestPolicy = await loadGuestBookingPolicy(event)
   const standbyPolicy = await loadStandbyBookingPolicy(event)
 
   try {
+    await expireStalePendingGuestBookings(serviceRole)
     await maybeAutoSyncGoogleCalendar(event, 'calendar_member')
   } catch (error) {
-    console.error('[calendar/member] google sync failed', error)
+    console.error('[calendar/member] calendar maintenance failed', error)
   }
 
   // Fetch membership + tier so we can enforce booking window
   const { data: membership, error: memErr } = await supabase
     .from('memberships')
-    .select('tier, status')
+    .select('tier, status, current_period_end, canceled_at')
     .eq('user_id', user.sub)
     .maybeSingle()
 
@@ -87,7 +100,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: message })
   }
 
-  const hasActiveMembership = (membership?.status || '').toLowerCase() === 'active'
+  const hasActiveMembership = isMembershipCurrentlyActive(membership)
   const accountKind = hasActiveMembership ? 'member' : 'guest'
 
   const { data: tierRow, error: tierErr } = await supabase
@@ -115,10 +128,10 @@ export default defineEventHandler(async (event) => {
   // All confirmed/requested bookings in the window
   const { data: bookings, error: bookErr } = await supabase
     .from('bookings')
-    .select('id, start_time, end_time, status, notes, credits_burned, user_id, booking_rate_kind')
+    .select('id, start_time, end_time, status, notes, credits_burned, user_id, booking_rate_kind, payment_expires_at')
     .lt('start_time', to.toISOString())
     .gt('end_time', from.toISOString())
-    .in('status', ['confirmed', 'requested'])
+    .in('status', ['confirmed', 'requested', 'pending_payment'])
     .order('start_time', { ascending: true })
 
   if (bookErr) throw createError({ statusCode: 500, statusMessage: bookErr.message })
@@ -156,7 +169,6 @@ export default defineEventHandler(async (event) => {
   let workshopPromo: Awaited<ReturnType<typeof getUpcomingWorkshopPromo>> = null
 
   try {
-    const serviceRole = serverSupabaseServiceRole(event)
     externalEvents = await getExternalCalendarEventsInRange(
       serviceRole,
       from.toISOString(),
@@ -168,7 +180,9 @@ export default defineEventHandler(async (event) => {
   }
 
   // Shape events for FullCalendar — distinguish own bookings from others
-  const bookingRows = (bookings ?? []) as unknown as CalendarBookingRow[]
+  const bookingRows = ((bookings ?? []) as unknown as CalendarBookingRow[]).filter(row =>
+    isActiveCalendarBooking(row)
+  )
   const holdRows = (holds ?? []) as HoldRow[]
   const events = [
     ...bookingRows.map((b) => {
@@ -177,17 +191,20 @@ export default defineEventHandler(async (event) => {
         id: `b_${b.id}`,
         start: normalizeIso(b.start_time),
         end: normalizeIso(b.end_time),
-        title: isOwn
-          ? `Your booking${b.credits_burned ? ` (${b.credits_burned} cr)` : ''}`
-          : `Member booked · ${durationHours(b.start_time, b.end_time)}h`,
+        title: String(b.status ?? '').toLowerCase() === 'pending_payment'
+          ? isOwn ? 'Pending payment' : `Temporarily reserved · ${durationHours(b.start_time, b.end_time)}h`
+          : isOwn
+            ? `Your booking${b.credits_burned ? ` (${b.credits_burned} cr)` : ''}`
+            : `Member booked · ${durationHours(b.start_time, b.end_time)}h`,
         display: 'auto',
-        color: isOwn ? '#6366f1' : '#64748b',
+        color: String(b.status ?? '').toLowerCase() === 'pending_payment' ? '#6d28d9' : isOwn ? '#6366f1' : '#64748b',
         extendedProps: {
           type: 'booking',
           isOwn,
           bookingId: b.id,
           status: b.status,
           rateKind: (b as { booking_rate_kind?: string | null }).booking_rate_kind ?? 'standard',
+          paymentExpiresAt: b.payment_expires_at ?? null,
           notes: isOwn ? b.notes : undefined
         }
       }
@@ -252,7 +269,7 @@ export default defineEventHandler(async (event) => {
     end: normalizeIso(window.end),
     title: 'Standby availability',
     display: 'background',
-    color: '#16a34a',
+    color: '#d8a657',
     extendedProps: { type: 'standby' }
   }))
 

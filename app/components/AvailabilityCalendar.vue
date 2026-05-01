@@ -27,6 +27,7 @@ type CalendarEvent = EventInput & {
     location?: string
     isGuest?: boolean
     calendarId?: string
+    paymentExpiresAt?: string | null
   }
 }
 
@@ -67,6 +68,7 @@ const emit = defineEmits<{
     status?: string
     rateKind?: string
     notes?: string
+    paymentExpiresAt?: string | null
   }): void
   (e: 'block-click', payload: {
     blockId: string
@@ -89,6 +91,8 @@ const guestBookingIncrementMinutes = ref<number | null>(null)
 const peakWindow = ref<PeakWindow | null>(null)
 const workshopPromo = ref<WorkshopPromo | null>(null)
 const nowTickMs = ref(Date.now())
+const lastLoadRangeStart = ref<Date | null>(null)
+const lastLoadRangeEnd = ref<Date | null>(null)
 let nowTickTimer: ReturnType<typeof setInterval> | null = null
 const instance = getCurrentInstance()
 const STUDIO_TZ = 'America/Los_Angeles'
@@ -200,6 +204,8 @@ function formatNoteHtml(value: string) {
 
 async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
   loading.value = true
+  lastLoadRangeStart.value = rangeStart ?? null
+  lastLoadRangeEnd.value = rangeEnd ?? null
   try {
     const q: Record<string, string> = {}
     if (rangeStart) q.from = calendarDateToStudioDate(rangeStart).toISOString()
@@ -232,11 +238,24 @@ async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
   }
 }
 
+function isExpiredPendingPaymentEvent(event: CalendarEvent, nowMs = nowTickMs.value) {
+  if (event.extendedProps?.type !== 'booking') return false
+  if (event.extendedProps?.status !== 'pending_payment') return false
+  const expiresAt = event.extendedProps.paymentExpiresAt
+  if (!expiresAt) return true
+  const expiresAtMs = Date.parse(expiresAt)
+  return !Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs
+}
+
+const activeEvents = computed(() =>
+  events.value.filter(event => !isExpiredPendingPaymentEvent(event))
+)
+
 const ownBookingCount = computed(() =>
-  events.value.filter(event => event.extendedProps?.isOwn).length
+  activeEvents.value.filter(event => event.extendedProps?.isOwn).length
 )
 const standbyWindowCount = computed(() =>
-  events.value.filter(event => event.extendedProps?.type === 'standby').length
+  activeEvents.value.filter(event => event.extendedProps?.type === 'standby').length
 )
 const isMemberFeed = computed(() => props.endpoint.includes('/member'))
 const isPublicFeed = computed(() => props.endpoint.includes('/public'))
@@ -268,6 +287,7 @@ function eventClassNames(arg: { event: { display: string, end?: Date | null, ext
   }
   if (type === 'booking') {
     classes.push('fc-event-booked')
+    if (arg.event.extendedProps?.status === 'pending_payment') classes.push('fc-event-pending-payment')
     if (props.adminView) classes.push('fc-event-admin-booking')
     if (arg.event.extendedProps?.isOwn) classes.push('fc-event-own')
     else classes.push('fc-event-member')
@@ -285,6 +305,7 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
   const isBlock = ext.type === 'block'
   const isOwnBooking = ext.type === 'booking' && ext.isOwn
   const isUnownedBooking = ext.type === 'booking' && !ext.isOwn
+  const isPendingPayment = ext.type === 'booking' && ext.status === 'pending_payment'
   const showAdminDetail = props.adminView
 
   const ownNoteRaw = isOwnBooking ? (ext.notes ?? '').trim() : ''
@@ -299,8 +320,12 @@ function eventContent(arg: { event: { display: string, title: string, extendedPr
   const externalMetaHtml = externalMeta ? `<div class="fc-event-note">${escapeHtml(externalMeta)}</div>` : ''
 
   let label = ''
-  if (isHold) {
-    label = '<div class="fc-event-label">Equipement Hold</div>'
+  if (isPendingPayment) {
+    label = ext.isOwn || showAdminDetail
+      ? '<div class="fc-event-label">Pending payment</div>'
+      : '<div class="fc-event-label">Temporarily reserved</div>'
+  } else if (isHold) {
+    label = '<div class="fc-event-label">Equipment hold</div>'
   } else if (isBlock) {
     label = '<div class="fc-event-label">Studio blocked off</div>'
   } else if (isExternal) {
@@ -416,7 +441,7 @@ function normalizeGuestSelectionEnd(start: Date, end: Date) {
   return startLA.plus({ minutes: normalizedMinutes }).toUTC().toJSDate()
 }
 
-function calendarEventDateToStudioDate(value: CalendarEvent['start'] | CalendarEvent['end']) {
+function calendarEventDateToStudioDate(value: unknown) {
   if (!value) return null
   if (value instanceof Date) return calendarDateToStudioDate(value)
   if (typeof value === 'number') return calendarDateToStudioDate(new Date(value))
@@ -523,7 +548,7 @@ const peakEvents = computed<CalendarEvent[]>(() => {
 })
 
 const calendarEvents = computed<CalendarEvent[]>(() => [
-  ...events.value,
+  ...activeEvents.value,
   ...peakEvents.value
 ])
 
@@ -643,7 +668,8 @@ const calendarOptions = computed(() => ({
       end: end ?? start,
       status: ext.status,
       rateKind: ext.rateKind,
-      notes: ext.notes
+      notes: ext.notes,
+      paymentExpiresAt: ext.paymentExpiresAt ?? null
     })
   },
   select: (info: DateSelectArg) => {
@@ -661,7 +687,11 @@ const calendarOptions = computed(() => ({
 onMounted(() => {
   loadEvents()
   nowTickTimer = setInterval(() => {
-    nowTickMs.value = Date.now()
+    const nowMs = Date.now()
+    nowTickMs.value = nowMs
+    if (events.value.some(event => isExpiredPendingPaymentEvent(event, nowMs))) {
+      void loadEvents(lastLoadRangeStart.value ?? undefined, lastLoadRangeEnd.value ?? undefined)
+    }
   }, 60_000)
 })
 
@@ -673,7 +703,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="availability-shell">
+  <div
+    class="availability-shell"
+    :class="{ 'availability-shell--guest-compact': isGuestConstrainedFeed }"
+  >
     <div class="availability-toolbar">
       <div>
         <div class="studio-display text-2xl text-[color:var(--gruv-ink-0)]">
@@ -704,7 +737,7 @@ onUnmounted(() => {
           class="availability-chip availability-chip-standby"
         >
           <span class="availability-dot availability-dot-standby" />
-          Standby available
+          Standby rate window
         </div>
         <div
           v-if="loading"

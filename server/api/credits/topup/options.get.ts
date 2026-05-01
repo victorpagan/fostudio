@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { mapCreditOption } from '~~/server/utils/credits/topup'
 import type { CreditPricingOptionRow } from '~~/server/utils/credits/topup'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
 
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
@@ -12,12 +13,12 @@ export default defineEventHandler(async (event) => {
 
   const { data: membership, error: membershipErr } = await db
     .from('memberships')
-    .select('id,status,tier')
+    .select('id,status,tier,current_period_end,canceled_at')
     .eq('user_id', user.sub)
     .maybeSingle()
 
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
-  const hasActiveMembership = Boolean(membership && (membership.status ?? '').toLowerCase() === 'active')
+  const hasActiveMembership = isMembershipCurrentlyActive(membership)
 
   const { data, error } = await db
     .from('credit_pricing_options')

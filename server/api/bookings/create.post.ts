@@ -24,6 +24,8 @@ import {
   validateGuestBookingWindow,
   validateStandbySelection
 } from '~~/server/utils/booking/guestPolicy'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
+import { expireStalePendingGuestBookings } from '~~/server/utils/booking/pendingPayments'
 
 const schema = z.object({
   start_time: z.string(),
@@ -145,12 +147,12 @@ export default defineEventHandler(async (event) => {
   // Membership + tier id (membership can be missing for legacy/admin accounts with credits)
   const { data: membership, error: memErr } = await supabase
     .from('memberships')
-    .select('status,tier,current_period_start,current_period_end')
+    .select('status,tier,current_period_start,current_period_end,canceled_at')
     .eq('user_id', user.sub)
     .maybeSingle()
 
   if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
-  const hasActiveMembership = (membership?.status || '').toLowerCase() === 'active'
+  const hasActiveMembership = isMembershipCurrentlyActive(membership)
   const accountKind = hasActiveMembership ? 'member' : 'guest'
 
   // Tier rules (DB catalog)
@@ -320,6 +322,7 @@ export default defineEventHandler(async (event) => {
   const endIso = end.toUTC().toISO()
   if (!startIso || !endIso) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
 
+  await expireStalePendingGuestBookings(supabase)
   await ensureNoExternalCalendarConflict(supabase, startIso, endIso)
 
   const { data: bookingConflicts, error: bookingConflictErr } = await supabase

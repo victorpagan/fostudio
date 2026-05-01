@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { DateTime } from 'luxon'
 import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
+import ManualBookingTimeModal from '~~/app/components/booking/ManualBookingTimeModal.vue'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -27,6 +28,11 @@ type BookingPolicy = {
   minHoldBookingHours: number
   holdMinEndHour: number
   holdEndHour: number
+  guestBookingWindowDays?: number
+  guestBookingStartHour?: number
+  guestBookingEndHour?: number
+  guestMinBookingHours?: number
+  guestBookingIncrementMinutes?: number
 }
 
 type HoldSummary = {
@@ -146,6 +152,7 @@ function isHoldError(message: string) {
 
 // Modal state
 const open = ref(false)
+const manualBookingOpen = ref(false)
 const confirming = ref(false)
 const ownBookingActionOpen = ref(false)
 const ownBookingActionLoading = ref(false)
@@ -159,6 +166,7 @@ const clickedBooking = ref<{
   status?: string
   rateKind?: string
   notes?: string
+  paymentExpiresAt?: string | null
 } | null>(null)
 const clickedBookingNoteDraft = ref('')
 
@@ -220,6 +228,21 @@ const holdSelectionEligibility = computed(() => {
 })
 
 const isGuestBooking = computed(() => !hasActiveMembership.value)
+const manualBookingIncrementMinutes = computed(() =>
+  hasActiveMembership.value ? 30 : Math.max(15, Number(bookingPolicy.value?.guestBookingIncrementMinutes ?? 60))
+)
+const manualBookingMinDurationMinutes = computed(() =>
+  hasActiveMembership.value ? 30 : Math.max(30, Number(bookingPolicy.value?.guestMinBookingHours ?? 2) * 60)
+)
+const manualBookingDefaultDurationMinutes = computed(() =>
+  hasActiveMembership.value ? 60 : manualBookingMinDurationMinutes.value
+)
+const manualBookingStartHour = computed(() =>
+  hasActiveMembership.value ? 0 : Math.max(0, Math.min(23, Number(bookingPolicy.value?.guestBookingStartHour ?? 11)))
+)
+const manualBookingEndHour = computed(() =>
+  hasActiveMembership.value ? 24 : Math.max(manualBookingStartHour.value + 1, Math.min(24, Number(bookingPolicy.value?.guestBookingEndHour ?? 19)))
+)
 const canShowHoldOption = computed(() =>
   hasActiveMembership.value
   && form.rateKind !== 'standby'
@@ -308,6 +331,14 @@ function onSelect(payload: { start: Date, end: Date }) {
   fetchPreview(payload.start, payload.end)
 }
 
+function openManualBookingModal() {
+  manualBookingOpen.value = true
+}
+
+function onManualBookingSubmit(payload: { start: Date, end: Date }) {
+  onSelect(payload)
+}
+
 function closeModal(force = false) {
   if (confirming.value && !force) return
   open.value = false
@@ -331,6 +362,7 @@ function onOwnBookingClick(payload: {
   status?: string
   rateKind?: string
   notes?: string
+  paymentExpiresAt?: string | null
 }) {
   clickedBooking.value = payload
   clickedBookingNoteDraft.value = payload.notes ?? ''
@@ -353,9 +385,14 @@ const ownBookingWithinNoticeWindow = computed(() => {
   return Number.isFinite(hours) && hours < memberRescheduleNoticeHours.value
 })
 
+const ownBookingIsPendingPayment = computed(() =>
+  String(clickedBooking.value?.status ?? '').toLowerCase() === 'pending_payment'
+)
+
 const ownBookingCanModify = computed(() => {
   if (clickedBooking.value?.rateKind === 'standby') return false
   if (ownBookingHasPassed.value) return false
+  if (ownBookingIsPendingPayment.value) return true
   if (isAdmin.value) return true
   return !ownBookingWithinNoticeWindow.value
 })
@@ -363,6 +400,7 @@ const ownBookingCanModify = computed(() => {
 const ownBookingCanCancel = computed(() => {
   if (clickedBooking.value?.rateKind === 'standby') return false
   if (ownBookingHasPassed.value) return false
+  if (ownBookingIsPendingPayment.value) return true
   if (isAdmin.value) return true
   return !ownBookingWithinNoticeWindow.value
 })
@@ -383,6 +421,7 @@ const ownBookingNoteDirty = computed(() =>
 )
 
 const ownBookingLockReason = computed(() => {
+  if (ownBookingIsPendingPayment.value) return ''
   if (clickedBooking.value?.rateKind === 'standby') {
     return 'Standby bookings are locked after purchase and cannot be canceled, rescheduled, or extended.'
   }
@@ -392,6 +431,18 @@ const ownBookingLockReason = computed(() => {
   }
   if (!isAdmin.value && ownBookingWithinNoticeWindow.value) return `Members cannot modify/cancel within ${memberRescheduleNoticeHours.value} hours of start.`
   return ''
+})
+
+const ownBookingPendingExpiresLabel = computed(() => {
+  const value = clickedBooking.value?.paymentExpiresAt
+  if (!value) return null
+  const expiresAt = new Date(value)
+  if (Number.isNaN(expiresAt.getTime())) return null
+  return expiresAt.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/Los_Angeles'
+  })
 })
 
 async function refreshSidebarMembershipCredits() {
@@ -452,7 +503,7 @@ async function cancelClickedBooking() {
   ownBookingActionLoading.value = true
   try {
     await $fetch(`/api/bookings/${clickedBooking.value.bookingId}`, { method: 'DELETE' })
-    toast.add({ title: 'Booking canceled', color: 'success' })
+    toast.add({ title: ownBookingIsPendingPayment.value ? 'Pending reservation released' : 'Booking canceled', color: 'success' })
     closeOwnBookingActions({ force: true })
     calendarKey.value++
     await Promise.allSettled([
@@ -474,6 +525,42 @@ async function cancelClickedBooking() {
 
 async function manageClickedBooking() {
   if (!clickedBooking.value?.bookingId) return
+  if (ownBookingIsPendingPayment.value) {
+    const target = clickedBooking.value
+    const start = new Date(target.start)
+    const end = new Date(target.end)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      toast.add({
+        title: 'Cannot restart reservation',
+        description: 'The pending reservation has an invalid time range.',
+        color: 'warning'
+      })
+      return
+    }
+
+    ownBookingActionLoading.value = true
+    try {
+      await $fetch(`/api/bookings/${target.bookingId}`, { method: 'DELETE' })
+      closeOwnBookingActions({ force: true })
+      calendarKey.value++
+      onSelect({ start, end })
+      toast.add({
+        title: 'Reservation released',
+        description: 'Review the same time again or close the modal and choose a different slot.',
+        color: 'success'
+      })
+    } catch (error: unknown) {
+      const maybe = error as ApiErrorLike
+      toast.add({
+        title: 'Could not release reservation',
+        description: maybe.data?.statusMessage ?? maybe.message ?? 'Unknown error',
+        color: 'error'
+      })
+    } finally {
+      ownBookingActionLoading.value = false
+    }
+    return
+  }
   if (!ownBookingCanModify.value) {
     toast.add({ title: 'Cannot reschedule booking', description: ownBookingLockReason.value || 'Booking is locked', color: 'warning' })
     return
@@ -642,6 +729,11 @@ function formatPrice(cents: number) {
     >
       <template #right>
         <DashboardActionGroup
+          :primary="{
+            label: 'Create booking',
+            icon: 'i-lucide-calendar-plus',
+            onSelect: openManualBookingModal
+          }"
           :secondary="[
             {
               label: 'My bookings',
@@ -654,14 +746,12 @@ function formatPrice(cents: number) {
         />
       </template>
       <div class="w-full space-y-4">
-        <UCard class="admin-panel-card border-0">
+        <UCard
+          v-if="hasActiveMembership"
+          class="admin-panel-card border-0"
+        >
           <p class="text-sm text-dimmed">
-            <template v-if="hasActiveMembership">
-              Click and drag on the calendar to select a time slot (30-minute increments). Your tier's booking window and peak-hour credit rates apply. Reschedules require {{ memberRescheduleNoticeHours }}+ hours notice.
-            </template>
-            <template v-else>
-              You’re booking as a guest. Guest bookings use premium credits, are limited to configured daytime hours, require a 2-hour minimum, and use whole-hour increments.
-            </template>
+            Click and drag on the calendar to select a time slot (30-minute increments). Your tier's booking window and peak-hour credit rates apply. Reschedules require {{ memberRescheduleNoticeHours }}+ hours notice.
           </p>
         </UCard>
 
@@ -670,8 +760,8 @@ function formatPrice(cents: number) {
           color="warning"
           variant="soft"
           icon="i-lucide-badge-alert"
-          title="Guest booking mode"
-          description="You can confirm with existing guest credits or pay only the credit shortfall at checkout. Members get lower credit costs, longer booking windows, 30-minute slots, and overnight holds."
+          title="Booking as a guest"
+          description="Guest bookings use premium credits, configured daytime hours, a 2-hour minimum, and whole-hour increments. You can confirm with existing guest credits or pay only the credit shortfall at checkout. Members get lower credit costs, longer booking windows, 30-minute slots, and overnight holds."
         >
           <template #actions>
             <UButton
@@ -693,6 +783,20 @@ function formatPrice(cents: number) {
         />
       </div>
     </DashboardPageScaffold>
+
+    <ManualBookingTimeModal
+      v-model:open="manualBookingOpen"
+      title="Create booking"
+      description="Choose a date and time instead of dragging on the calendar."
+      calendar-endpoint="/api/calendar/member"
+      :start-hour="manualBookingStartHour"
+      :end-hour="manualBookingEndHour"
+      :increment-minutes="manualBookingIncrementMinutes"
+      :min-duration-minutes="manualBookingMinDurationMinutes"
+      :default-duration-minutes="manualBookingDefaultDurationMinutes"
+      submit-label="Review booking"
+      @submit="onManualBookingSubmit"
+    />
 
     <!-- Booking confirmation modal -->
     <UModal
@@ -926,7 +1030,7 @@ function formatPrice(cents: number) {
           <template #header>
             <div class="flex items-center justify-between gap-3">
               <h3 class="font-semibold text-base">
-                Manage booking
+                {{ ownBookingIsPendingPayment ? 'Pending payment reservation' : 'Manage booking' }}
               </h3>
               <UButton
                 icon="i-lucide-x"
@@ -940,6 +1044,14 @@ function formatPrice(cents: number) {
           </template>
 
           <div class="space-y-2 pr-1 text-sm">
+            <UAlert
+              v-if="ownBookingIsPendingPayment"
+              color="info"
+              variant="soft"
+              icon="i-lucide-clock"
+              :title="ownBookingPendingExpiresLabel ? `Held until ${ownBookingPendingExpiresLabel}` : 'Payment is pending'"
+              description="This slot is temporarily held while checkout is pending. Restarting releases the hold and opens this time for review again."
+            />
             <UAlert
               v-if="ownBookingLockReason"
               color="warning"
@@ -986,7 +1098,7 @@ function formatPrice(cents: number) {
                 :disabled="ownBookingActionLoading || !ownBookingCanModify"
                 @click="manageClickedBooking"
               >
-                Modify / reschedule
+                {{ ownBookingIsPendingPayment ? 'Restart / edit time' : 'Modify / reschedule' }}
               </UButton>
               <UButton
                 v-if="ownBookingCanExtend"
@@ -1005,7 +1117,7 @@ function formatPrice(cents: number) {
                 :disabled="!ownBookingCanCancel"
                 @click="cancelClickedBooking"
               >
-                Cancel booking
+                {{ ownBookingIsPendingPayment ? 'Release reservation' : 'Cancel booking' }}
               </UButton>
             </div>
           </template>

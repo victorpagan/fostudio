@@ -68,8 +68,10 @@ export default defineEventHandler(async (event) => {
   }
 
   // 3. Only cancel active bookings
-  const cancelableStatuses = ['confirmed', 'requested']
-  if (!cancelableStatuses.includes(booking.status)) {
+  const status = String(booking.status ?? '').toLowerCase()
+  const isPendingPayment = status === 'pending_payment'
+  const cancelableStatuses = ['confirmed', 'requested', 'pending_payment']
+  if (!cancelableStatuses.includes(status)) {
     throw createError({
       statusCode: 409,
       statusMessage: `Cannot cancel a booking with status '${booking.status}'`
@@ -89,8 +91,8 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'This booking has already started or passed and can no longer be canceled.'
     })
   }
-  const eligibleForRefund = hoursUntilStart >= REFUND_WINDOW_HOURS
-  if (!isAdmin && !eligibleForRefund) {
+  const eligibleForRefund = !isPendingPayment && hoursUntilStart >= REFUND_WINDOW_HOURS
+  if (!isAdmin && !isPendingPayment && !eligibleForRefund) {
     throw createError({
       statusCode: 409,
       statusMessage: `This booking is within ${REFUND_WINDOW_HOURS} hours of start and can no longer be canceled.`
@@ -124,6 +126,32 @@ export default defineEventHandler(async (event) => {
       .delete()
       .eq('booking_id', bookingId)
     if (holdDeleteErr) throw createError({ statusCode: 500, statusMessage: holdDeleteErr.message })
+  }
+
+  if (isPendingPayment) {
+    const db = serviceSupabase as unknown as {
+      from: (table: string) => {
+        update: (values: Record<string, unknown>) => {
+          eq: (column: string, value: unknown) => {
+            eq: (column: string, value: unknown) => {
+              eq: (column: string, value: unknown) => PromiseLike<{ error?: { message?: string } | null }>
+            }
+          }
+        }
+      }
+    }
+    const { error: topupCancelErr } = await db
+      .from('credit_topup_sessions')
+      .update({
+        status: 'expired'
+      })
+      .eq('user_id', booking.user_id)
+      .eq('status', 'pending')
+      .eq('metadata->>booking_id', bookingId)
+
+    if (topupCancelErr) {
+      console.warn('[cancel] failed to mark pending guest payment session canceled:', topupCancelErr)
+    }
   }
 
   // 6. Refund credits if eligible
@@ -166,7 +194,7 @@ export default defineEventHandler(async (event) => {
     })
   })
 
-  if (booking.user_id) {
+  if (booking.user_id && !isPendingPayment) {
     await sendMemberBookingLifecycleMail(event, {
       eventType: 'booking.memberCanceled',
       userId: booking.user_id,

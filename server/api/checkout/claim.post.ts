@@ -14,6 +14,7 @@ import { parseDiscountLabel } from '~~/app/utils/membershipDiscount'
 import { markPromoRedemption } from '~~/server/utils/promos'
 import { buildExpiryIsoFromDays, resolveTopoffCreditExpiryDays } from '~~/server/utils/credits/buckets'
 import { normalizeReferralCode, resolveReferralCredits } from '~~/server/utils/referrals'
+import { hasCurrentMembershipEntitlement } from '~~/server/utils/membership/status'
 
 const bodySchema = z.object({
   token: z.string().uuid()
@@ -597,9 +598,8 @@ export default defineEventHandler(async (event) => {
 
       const { data: conflictingMembership, error: conflictingMembershipErr } = await supabase
         .from('memberships')
-        .select('id,status,square_customer_id')
+        .select('id,status,square_customer_id,current_period_end,canceled_at')
         .eq('user_id', customerBySquare.user_id)
-        .in('status', ['active', 'past_due'])
         .limit(1)
         .maybeSingle()
 
@@ -607,7 +607,7 @@ export default defineEventHandler(async (event) => {
         throw createError({ statusCode: 500, statusMessage: conflictingMembershipErr.message })
       }
 
-      if (conflictingMembership) {
+      if (hasCurrentMembershipEntitlement(conflictingMembership)) {
         throw createError({ statusCode: 409, statusMessage: 'This membership payment is already linked to another account.' })
       }
     }
@@ -1246,15 +1246,14 @@ async function processReferralForClaim(params: ReferralClaimParams): Promise<Ref
 
   const { data: referrerMembership, error: referrerMembershipErr } = await supabase
     .from('memberships')
-    .select('id,status')
+    .select('id,status,current_period_end,canceled_at')
     .eq('user_id', referrerUserId)
     .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
   if (referrerMembershipErr) throw createError({ statusCode: 500, statusMessage: referrerMembershipErr.message })
-  const referrerMembershipStatus = String(referrerMembership?.status ?? '').toLowerCase()
-  if (referrerMembershipStatus !== 'active' && referrerMembershipStatus !== 'past_due') {
+  if (!hasCurrentMembershipEntitlement(referrerMembership)) {
     return await rejectReferral(auditRow.id, 'referrer_inactive', referrerUserId)
   }
 

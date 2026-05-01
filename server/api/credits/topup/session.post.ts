@@ -4,6 +4,7 @@ import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { getCreditOptionEffectivePriceCents, mapCreditOption } from '~~/server/utils/credits/topup'
 import { normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
 import type { CreditPricingOptionRow } from '~~/server/utils/credits/topup'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
 
 const bodySchema = z.object({
   optionKey: z.string().min(1),
@@ -37,12 +38,12 @@ export default defineEventHandler(async (event) => {
 
   const { data: membership, error: membershipErr } = await supabase
     .from('memberships')
-    .select('id,status,tier')
+    .select('id,status,tier,current_period_end,canceled_at')
     .eq('user_id', user.sub)
     .maybeSingle()
 
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
-  const hasActiveMembership = Boolean(membership && (membership.status ?? '').toLowerCase() === 'active')
+  const hasActiveMembership = isMembershipCurrentlyActive(membership)
 
   const promoPricing = await resolvePromoPricing({
     supabase,

@@ -5,6 +5,7 @@ import {
   DEFAULT_TOPUP_CREDIT_EXPIRY_DAYS
 } from '~~/server/utils/credits/buckets'
 import { syncMembershipCreditGrantsForUser } from '~~/server/utils/membership/grantsSync'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
 
 function isSchemaMissingColumnError(message: string) {
   return /column .* does not exist/i.test(message) || /relation .* does not exist/i.test(message)
@@ -20,12 +21,12 @@ export default defineEventHandler(async (event) => {
 
   const { data: membership, error: membershipErr } = await db
     .from('memberships')
-    .select('id,status,tier')
+    .select('id,status,tier,current_period_end,canceled_at')
     .eq('user_id', user.sub)
     .maybeSingle()
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
 
-  const hasActiveMembership = Boolean(membership && (membership.status ?? '').toLowerCase() === 'active')
+  const hasActiveMembership = isMembershipCurrentlyActive(membership)
   let grantSync: { ranAt: string | null, ok: boolean, membershipsChecked: number } | null = null
 
   if (hasActiveMembership) {
@@ -49,7 +50,7 @@ export default defineEventHandler(async (event) => {
   let tierRow: { max_bank?: number, credit_expiry_days?: number, topoff_credit_expiry_days?: number } | null = null
   let tierErr: { message: string } | null = null
 
-  if (membership?.tier) {
+  if (hasActiveMembership && membership?.tier) {
     const tierRes = await db
       .from('membership_tiers')
       .select('max_bank,credit_expiry_days,topoff_credit_expiry_days')

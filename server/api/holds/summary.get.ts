@@ -1,5 +1,6 @@
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { resolveHoldCycleWindow } from '~~/server/utils/booking/holds'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
 
 function asNumber(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) return value
@@ -19,16 +20,17 @@ export default defineEventHandler(async (event) => {
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
 
   const supabase = serverSupabaseServiceRole(event)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
 
   const { data: membership, error: membershipErr } = await supabase
     .from('memberships')
-    .select('tier,status,current_period_start,current_period_end')
+    .select('tier,status,current_period_start,current_period_end,canceled_at')
     .eq('user_id', user.sub)
     .maybeSingle()
 
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
-  if (!membership || (membership.status ?? '').toLowerCase() !== 'active') {
+  if (!membership || !isMembershipCurrentlyActive(membership)) {
     return {
       holdsIncluded: 0,
       activeHoldCap: 0,

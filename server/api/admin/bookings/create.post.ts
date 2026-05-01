@@ -16,6 +16,7 @@ import { resolveAvailableCreditBalance } from '~~/server/utils/credits/available
 import { enqueueBookingAccessSync, processDueAccessJobs } from '~~/server/utils/access/jobs'
 import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 import { sendMemberBookingLifecycleMail } from '~~/server/utils/mail/memberBookingLifecycle'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
 
 const schema = z.object({
   userId: z.string().uuid(),
@@ -87,7 +88,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: membership, error: membershipErr } = await supabase
     .from('memberships')
-    .select('status,tier,current_period_start,current_period_end')
+    .select('status,tier,current_period_start,current_period_end,canceled_at')
     .eq('user_id', body.userId)
     .maybeSingle()
 
@@ -101,7 +102,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: message })
   }
 
-  const hasActiveMembership = (membership?.status ?? '').toLowerCase() === 'active'
+  const hasActiveMembership = isMembershipCurrentlyActive(membership)
 
   const { data: tierRow, error: tierErr } = await supabase
     .from('membership_tiers')

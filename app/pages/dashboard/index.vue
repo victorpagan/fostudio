@@ -147,6 +147,7 @@ const headerTertiaryActions = computed(() => ([
 
 const tierLabel = computed(() => {
   if (!membership.value) return null
+  if (!['active', 'past_due', 'pending_checkout'].includes(membershipState.value)) return null
   const tierName = formatMembershipTierLabel(membership.value.tier)
   return [tierName, membership.value.cadence].filter(Boolean).join(' · ')
 })

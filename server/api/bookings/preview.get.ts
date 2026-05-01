@@ -24,6 +24,8 @@ import {
   validateStandbySelection
 } from '~~/server/utils/booking/guestPolicy'
 import type { BookingRateKind } from '~~/server/utils/booking/guestPolicy'
+import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
+import { expireStalePendingGuestBookings } from '~~/server/utils/booking/pendingPayments'
 
 const qSchema = z.object({
   start: z.string(),
@@ -92,6 +94,7 @@ export default defineEventHandler(async (event) => {
   const q = qSchema.parse(getQuery(event))
   const peakWindow = await loadPeakWindowConfig(event)
   const supabase = serverSupabaseServiceRole(event)
+  await expireStalePendingGuestBookings(supabase)
 
   const start = DateTime.fromISO(q.start, { zone: STUDIO_TZ })
   const end = DateTime.fromISO(q.end, { zone: STUDIO_TZ })
@@ -127,13 +130,13 @@ export default defineEventHandler(async (event) => {
   if (mode === 'member' && user) {
     const { data: membership } = await supabase
       .from('memberships')
-      .select('tier, status')
+      .select('tier,status,current_period_end,canceled_at')
       .eq('user_id', user.sub)
       .maybeSingle()
 
     remainingCredits = await resolveAvailableCreditBalance(supabase, user.sub)
 
-    hasActiveMembership = (membership?.status ?? '').toLowerCase() === 'active'
+    hasActiveMembership = isMembershipCurrentlyActive(membership)
     const canBookFromCredits = remainingCredits > 0
 
     if (!membership || !hasActiveMembership) {

@@ -1,3 +1,5 @@
+import { hasCurrentMembershipEntitlement } from '~~/server/utils/membership/status'
+
 type MembershipStatus = 'active' | 'past_due'
 
 const OCCUPIED_STATUSES: MembershipStatus[] = ['active', 'past_due']
@@ -11,6 +13,7 @@ export type TierCapacity = {
 }
 
 export async function getTierCapMap(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   tierIds: string[]
 ): Promise<Record<string, TierCapacity>> {
@@ -28,7 +31,7 @@ export async function getTierCapMap(
 
   const { data: memberships, error: membershipsErr } = await supabase
     .from('memberships')
-    .select('tier,status')
+    .select('tier,status,current_period_end,canceled_at')
     .in('tier', uniqueTierIds)
     .in('status', OCCUPIED_STATUSES)
 
@@ -40,6 +43,7 @@ export async function getTierCapMap(
   for (const row of memberships ?? []) {
     const tierId = typeof row.tier === 'string' ? row.tier : null
     if (!tierId) continue
+    if (!hasCurrentMembershipEntitlement(row)) continue
     activeByTier[tierId] = (activeByTier[tierId] ?? 0) + 1
   }
 
@@ -74,7 +78,11 @@ export async function getTierCapMap(
   return result
 }
 
-export async function getSingleTierCapacity(supabase: any, tierId: string): Promise<TierCapacity> {
+export async function getSingleTierCapacity(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  tierId: string
+): Promise<TierCapacity> {
   const map = await getTierCapMap(supabase, [tierId])
   return map[tierId] ?? {
     tierId,
@@ -85,10 +93,14 @@ export async function getSingleTierCapacity(supabase: any, tierId: string): Prom
   }
 }
 
-export async function isPriorityMemberForWaitlist(supabase: any, userId: string): Promise<boolean> {
+export async function isPriorityMemberForWaitlist(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string
+): Promise<boolean> {
   const { data, error } = await supabase
     .from('memberships')
-    .select('status')
+    .select('status,current_period_end,canceled_at')
     .eq('user_id', userId)
     .maybeSingle()
 
@@ -96,6 +108,5 @@ export async function isPriorityMemberForWaitlist(supabase: any, userId: string)
     throw createError({ statusCode: 500, statusMessage: error.message })
   }
 
-  const status = String(data?.status ?? '').toLowerCase()
-  return status === 'active' || status === 'past_due'
+  return hasCurrentMembershipEntitlement(data)
 }
