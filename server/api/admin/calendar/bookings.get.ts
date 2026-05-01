@@ -38,27 +38,76 @@ function parseQueryDate(value: string | undefined, fallback: Date) {
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
+  const serviceRole = serverSupabaseServiceRole(event)
   const q = qSchema.parse(getQuery(event))
 
   const now = new Date()
   const from = parseQueryDate(q.from, new Date(now.getTime() - 24 * 60 * 60 * 1000))
   const to = parseQueryDate(q.to, new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000))
 
-  try {
-    await maybeAutoSyncGoogleCalendar(event, 'calendar_admin')
-  } catch (error) {
+  void maybeAutoSyncGoogleCalendar(event, 'calendar_admin').catch((error) => {
     console.error('[admin/calendar/bookings] google sync failed', error)
+  })
+
+  const [
+    bookingsResult,
+    holdsResult,
+    blocksResult,
+    externalEventsResult,
+    workshopPromoResult
+  ] = await Promise.allSettled([
+    supabase
+      .from('bookings')
+      .select('id,user_id,guest_name,guest_email,start_time,end_time,status,credits_burned,notes')
+      .in('status', ['confirmed', 'requested', 'pending_payment'])
+      .lt('start_time', to.toISOString())
+      .gt('end_time', from.toISOString())
+      .order('start_time', { ascending: true }),
+    supabase
+      .from('booking_holds')
+      .select('id, hold_start, hold_end')
+      .lt('hold_start', to.toISOString())
+      .gt('hold_end', from.toISOString())
+      .order('hold_start', { ascending: true }),
+    supabase
+      .from('calendar_blocks')
+      .select('id,start_time,end_time,reason')
+      .eq('active', true)
+      .lt('start_time', to.toISOString())
+      .gt('end_time', from.toISOString())
+      .order('start_time', { ascending: true }),
+    getExternalCalendarEventsInRange(
+      serviceRole,
+      from.toISOString(),
+      to.toISOString()
+    ),
+    getUpcomingWorkshopPromo(serviceRole, from.toISOString())
+  ])
+
+  if (bookingsResult.status === 'rejected') {
+    throw createError({ statusCode: 500, statusMessage: bookingsResult.reason?.message ?? 'Failed to load bookings' })
+  }
+  if (bookingsResult.value.error) {
+    throw createError({ statusCode: 500, statusMessage: bookingsResult.value.error.message })
   }
 
-  const { data: bookings, error: bookingsErr } = await supabase
-    .from('bookings')
-    .select('id,user_id,guest_name,guest_email,start_time,end_time,status,credits_burned,notes')
-    .in('status', ['confirmed', 'requested', 'pending_payment'])
-    .lt('start_time', to.toISOString())
-    .gt('end_time', from.toISOString())
-    .order('start_time', { ascending: true })
+  if (holdsResult.status === 'rejected') {
+    throw createError({ statusCode: 500, statusMessage: holdsResult.reason?.message ?? 'Failed to load holds' })
+  }
+  if (holdsResult.value.error) {
+    throw createError({ statusCode: 500, statusMessage: holdsResult.value.error.message })
+  }
 
-  if (bookingsErr) throw createError({ statusCode: 500, statusMessage: bookingsErr.message })
+  if (blocksResult.status === 'rejected') {
+    throw createError({ statusCode: 500, statusMessage: blocksResult.reason?.message ?? 'Failed to load calendar blocks' })
+  }
+  if (blocksResult.value.error) {
+    throw createError({ statusCode: 500, statusMessage: blocksResult.value.error.message })
+  }
+
+  const bookings = bookingsResult.value.data
+  const holds = holdsResult.value.data
+  const blocks = blocksResult.value.data
 
   const userIds = [...new Set((bookings ?? [])
     .map(row => row.user_id)
@@ -87,25 +136,6 @@ export default defineEventHandler(async (event) => {
     if (customer.user_id) customersByUserId.set(customer.user_id, customer)
   }
 
-  const { data: holds, error: holdsErr } = await supabase
-    .from('booking_holds')
-    .select('id, hold_start, hold_end')
-    .lt('hold_start', to.toISOString())
-    .gt('hold_end', from.toISOString())
-    .order('hold_start', { ascending: true })
-
-  if (holdsErr) throw createError({ statusCode: 500, statusMessage: holdsErr.message })
-
-  const { data: blocks, error: blocksErr } = await supabase
-    .from('calendar_blocks')
-    .select('id,start_time,end_time,reason')
-    .eq('active', true)
-    .lt('start_time', to.toISOString())
-    .gt('end_time', from.toISOString())
-    .order('start_time', { ascending: true })
-
-  if (blocksErr) throw createError({ statusCode: 500, statusMessage: blocksErr.message })
-
   let externalEvents: Array<{
     id: string
     title: string | null
@@ -118,16 +148,16 @@ export default defineEventHandler(async (event) => {
   }> = []
   let workshopPromo: Awaited<ReturnType<typeof getUpcomingWorkshopPromo>> = null
 
-  try {
-    const serviceRole = serverSupabaseServiceRole(event)
-    externalEvents = await getExternalCalendarEventsInRange(
-      serviceRole,
-      from.toISOString(),
-      to.toISOString()
-    )
-    workshopPromo = await getUpcomingWorkshopPromo(serviceRole, from.toISOString())
-  } catch (error) {
-    console.error('[admin/calendar/bookings] failed to load external calendar events', error)
+  if (externalEventsResult.status === 'fulfilled') {
+    externalEvents = externalEventsResult.value
+  } else {
+    console.error('[admin/calendar/bookings] failed to load external calendar events', externalEventsResult.reason)
+  }
+
+  if (workshopPromoResult.status === 'fulfilled') {
+    workshopPromo = workshopPromoResult.value
+  } else {
+    console.error('[admin/calendar/bookings] failed to load workshop promo', workshopPromoResult.reason)
   }
 
   const events = [

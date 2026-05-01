@@ -53,49 +53,78 @@ export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient(event)
   const serviceRole = serverSupabaseServiceRole(event)
   const q = qSchema.parse(getQuery(event))
-  const peakWindowConfig = await loadPeakWindowConfig(event)
-  const guestPolicy = await loadGuestBookingPolicy(event)
-  const standbyPolicy = await loadStandbyBookingPolicy(event)
+  const [peakWindowConfig, guestPolicy, standbyPolicy] = await Promise.all([
+    loadPeakWindowConfig(event),
+    loadGuestBookingPolicy(event),
+    loadStandbyBookingPolicy(event)
+  ])
 
   const now = new Date()
   const from = q.from ? new Date(q.from) : now
   const to = q.to ? new Date(q.to) : new Date(now.getTime() + guestPolicy.bookingWindowDays * 24 * 60 * 60 * 1000)
 
-  try {
-    await expireStalePendingGuestBookings(serviceRole)
-    await maybeAutoSyncGoogleCalendar(event, 'calendar_public')
-  } catch (error) {
-    console.error('[calendar/public] calendar maintenance failed', error)
+  void expireStalePendingGuestBookings(serviceRole).catch((error) => {
+    console.error('[calendar/public] pending-payment cleanup failed', error)
+  })
+  void maybeAutoSyncGoogleCalendar(event, 'calendar_public').catch((error) => {
+    console.error('[calendar/public] google auto-sync failed', error)
+  })
+
+  const [
+    bookingsResult,
+    holdsResult,
+    blocksResult,
+    externalEventsResult,
+    workshopPromoResult
+  ] = await Promise.allSettled([
+    supabase
+      .from('bookings')
+      .select('id, start_time, end_time, status, payment_expires_at')
+      .in('status', ['confirmed', 'pending_payment'])
+      .lt('start_time', to.toISOString())
+      .gt('end_time', from.toISOString())
+      .order('start_time', { ascending: true }),
+    supabase
+      .from('booking_holds')
+      .select('id, hold_start, hold_end')
+      .lt('hold_start', to.toISOString())
+      .gt('hold_end', from.toISOString())
+      .order('hold_start', { ascending: true }),
+    supabase
+      .from('calendar_blocks')
+      .select('id,start_time,end_time,reason')
+      .eq('active', true)
+      .lt('start_time', to.toISOString())
+      .gt('end_time', from.toISOString())
+      .order('start_time', { ascending: true }),
+    getExternalCalendarEventsInRange(
+      serviceRole,
+      from.toISOString(),
+      to.toISOString()
+    ),
+    getUpcomingWorkshopPromo(serviceRole, from.toISOString())
+  ])
+
+  if (bookingsResult.status === 'rejected') {
+    throw createError({ statusCode: 500, statusMessage: bookingsResult.reason?.message ?? 'Failed to load bookings' })
+  }
+  if (bookingsResult.value.error) {
+    throw createError({ statusCode: 500, statusMessage: bookingsResult.value.error.message })
   }
 
-  const { data: bookings, error } = await supabase
-    .from('bookings')
-    .select('id, start_time, end_time, status, payment_expires_at')
-    .in('status', ['confirmed', 'pending_payment'])
-    .lt('start_time', to.toISOString())
-    .gt('end_time', from.toISOString())
-    .order('start_time', { ascending: true })
+  if (holdsResult.status === 'rejected') {
+    throw createError({ statusCode: 500, statusMessage: holdsResult.reason?.message ?? 'Failed to load holds' })
+  }
+  if (holdsResult.value.error) {
+    throw createError({ statusCode: 500, statusMessage: holdsResult.value.error.message })
+  }
 
-  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
-
-  const { data: holds, error: holdsErr } = await supabase
-    .from('booking_holds')
-    .select('id, hold_start, hold_end')
-    .lt('hold_start', to.toISOString())
-    .gt('hold_end', from.toISOString())
-    .order('hold_start', { ascending: true })
-
-  if (holdsErr) throw createError({ statusCode: 500, statusMessage: holdsErr.message })
-
-  const { data: blocks, error: blocksErr } = await supabase
-    .from('calendar_blocks')
-    .select('id,start_time,end_time,reason')
-    .eq('active', true)
-    .lt('start_time', to.toISOString())
-    .gt('end_time', from.toISOString())
-    .order('start_time', { ascending: true })
-
-  if (blocksErr) throw createError({ statusCode: 500, statusMessage: blocksErr.message })
+  if (blocksResult.status === 'rejected') {
+    throw createError({ statusCode: 500, statusMessage: blocksResult.reason?.message ?? 'Failed to load calendar blocks' })
+  }
+  if (blocksResult.value.error) {
+    throw createError({ statusCode: 500, statusMessage: blocksResult.value.error.message })
+  }
 
   let externalEvents: Array<{
     id: string
@@ -109,16 +138,21 @@ export default defineEventHandler(async (event) => {
   }> = []
   let workshopPromo: Awaited<ReturnType<typeof getUpcomingWorkshopPromo>> = null
 
-  try {
-    externalEvents = await getExternalCalendarEventsInRange(
-      serviceRole,
-      from.toISOString(),
-      to.toISOString()
-    )
-    workshopPromo = await getUpcomingWorkshopPromo(serviceRole, from.toISOString())
-  } catch (error) {
-    console.error('[calendar/public] failed to load external calendar events', error)
+  if (externalEventsResult.status === 'fulfilled') {
+    externalEvents = externalEventsResult.value
+  } else {
+    console.error('[calendar/public] failed to load external calendar events', externalEventsResult.reason)
   }
+
+  if (workshopPromoResult.status === 'fulfilled') {
+    workshopPromo = workshopPromoResult.value
+  } else {
+    console.error('[calendar/public] failed to load workshop promo', workshopPromoResult.reason)
+  }
+
+  const bookings = bookingsResult.value.data
+  const holds = holdsResult.value.data
+  const blocks = blocksResult.value.data
 
   const bookingRows = ((bookings ?? []) as unknown as CalendarBookingRow[]).filter(row =>
     isActiveCalendarBooking(row, now.getTime())

@@ -84,7 +84,7 @@ const fallbackLanding: SiteLandingContent = {
     secondaryCta: { label: 'Explore Memberships', to: '/memberships' },
     waitlistCtaLabel: 'Join the waitlist',
     chips: ['24/7 member access', 'Gear + consumables included', 'No startup fees'],
-    campaignHint: 'Campaign: use NEWSITE for 5% off new memberships.'
+    campaignHint: ''
   },
   infoCard: {
     title: 'FO Studio at a glance',
@@ -233,8 +233,8 @@ const landingContent = computed<SiteLandingContent>(() => {
         ? sourceHero.waitlistCtaLabel
         : fallback.hero.waitlistCtaLabel,
       chips: normalizeStringArray(sourceHero.chips, fallback.hero.chips),
-      campaignHint: typeof sourceHero.campaignHint === 'string' && sourceHero.campaignHint.trim()
-        ? sourceHero.campaignHint
+      campaignHint: typeof sourceHero.campaignHint === 'string'
+        ? sourceHero.campaignHint.trim()
         : fallback.hero.campaignHint
     },
     infoCard: {
@@ -377,7 +377,10 @@ function tierAccentClass(tierId: string, index: number) {
           </NuxtLink>
           <span class="landing-hero-cta-arrow">↗</span>
         </div>
-        <p class="landing-hero-campaign-hint">
+        <p
+          v-if="landingContent.hero.campaignHint"
+          class="landing-hero-campaign-hint"
+        >
           {{ landingContent.hero.campaignHint }}
         </p>
       </div>

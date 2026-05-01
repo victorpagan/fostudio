@@ -273,8 +273,11 @@ const previewError = ref<string | null>(null)
 const balanceLoading = ref(false)
 const creditBalance = ref<number>(0)
 
-// Bump this key to force calendar to remount + reload events after a booking
-const calendarKey = ref(0)
+const calendarRef = ref<{ refresh: () => Promise<void> | void } | null>(null)
+
+function refreshCalendar() {
+  void calendarRef.value?.refresh()
+}
 
 async function refreshCreditBalance() {
   if (!currentUserId.value) return
@@ -481,7 +484,7 @@ async function saveClickedBookingNote() {
       notes: result.notes ?? ''
     }
     clickedBookingNoteDraft.value = result.notes ?? ''
-    calendarKey.value++
+    refreshCalendar()
     toast.add({ title: 'Booking note updated', color: 'success' })
   } catch (error: unknown) {
     const maybe = error as ApiErrorLike
@@ -506,7 +509,7 @@ async function cancelClickedBooking() {
     await $fetch(`/api/bookings/${clickedBooking.value.bookingId}`, { method: 'DELETE' })
     toast.add({ title: ownBookingIsPendingPayment.value ? 'Pending reservation released' : 'Booking canceled', color: 'success' })
     closeOwnBookingActions({ force: true })
-    calendarKey.value++
+    refreshCalendar()
     await Promise.allSettled([
       refreshCreditBalance(),
       refreshHoldSummary(),
@@ -543,7 +546,7 @@ async function manageClickedBooking() {
     try {
       await $fetch(`/api/bookings/${target.bookingId}`, { method: 'DELETE' })
       closeOwnBookingActions({ force: true })
-      calendarKey.value++
+      refreshCalendar()
       onSelect({ start, end })
       toast.add({
         title: 'Reservation released',
@@ -614,7 +617,7 @@ async function confirmBooking() {
       color: 'success'
     })
     closeModal(true)
-    calendarKey.value++ // refresh calendar events
+    refreshCalendar()
     await Promise.allSettled([
       refreshCreditBalance(),
       refreshHoldSummary(),
@@ -810,7 +813,7 @@ function formatPrice(cents: number) {
         </DashboardDismissibleIntro>
 
         <AvailabilityCalendar
-          :key="calendarKey"
+          ref="calendarRef"
           endpoint="/api/calendar/member"
           @select="onSelect"
           @booking-click="onOwnBookingClick"

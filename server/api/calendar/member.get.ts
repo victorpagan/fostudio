@@ -72,33 +72,42 @@ export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient(event)
   const serviceRole = serverSupabaseServiceRole(event)
   const q = qSchema.parse(getQuery(event))
-  const peakWindowConfig = await loadPeakWindowConfig(event)
-  const guestPolicy = await loadGuestBookingPolicy(event)
-  const standbyPolicy = await loadStandbyBookingPolicy(event)
+  const [peakWindowConfig, guestPolicy, standbyPolicy] = await Promise.all([
+    loadPeakWindowConfig(event),
+    loadGuestBookingPolicy(event),
+    loadStandbyBookingPolicy(event)
+  ])
 
-  try {
-    await expireStalePendingGuestBookings(serviceRole)
-    await maybeAutoSyncGoogleCalendar(event, 'calendar_member')
-  } catch (error) {
-    console.error('[calendar/member] calendar maintenance failed', error)
+  void expireStalePendingGuestBookings(serviceRole).catch((error) => {
+    console.error('[calendar/member] pending-payment cleanup failed', error)
+  })
+  void maybeAutoSyncGoogleCalendar(event, 'calendar_member').catch((error) => {
+    console.error('[calendar/member] google auto-sync failed', error)
+  })
+
+  // Fetch membership + balance in parallel so calendar reads are not serialized on account metadata.
+  const [membershipResult, balanceResult] = await Promise.allSettled([
+    supabase
+      .from('memberships')
+      .select('tier, status, current_period_end, canceled_at')
+      .eq('user_id', user.sub)
+      .maybeSingle(),
+    resolveAvailableCreditBalance(supabase, user.sub)
+  ])
+
+  if (membershipResult.status === 'rejected') {
+    throw createError({ statusCode: 500, statusMessage: membershipResult.reason?.message ?? 'Failed to load membership' })
   }
-
-  // Fetch membership + tier so we can enforce booking window
-  const { data: membership, error: memErr } = await supabase
-    .from('memberships')
-    .select('tier, status, current_period_end, canceled_at')
-    .eq('user_id', user.sub)
-    .maybeSingle()
-
-  if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
-
-  let remainingCredits = 0
-  try {
-    remainingCredits = await resolveAvailableCreditBalance(supabase, user.sub)
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to load credits'
+  if (membershipResult.value.error) {
+    throw createError({ statusCode: 500, statusMessage: membershipResult.value.error.message })
+  }
+  if (balanceResult.status === 'rejected') {
+    const message = balanceResult.reason instanceof Error ? balanceResult.reason.message : 'Failed to load credits'
     throw createError({ statusCode: 500, statusMessage: message })
   }
+
+  const membership = membershipResult.value.data
+  const remainingCredits = balanceResult.value
 
   const hasActiveMembership = isMembershipCurrentlyActive(membership)
   const accountKind = hasActiveMembership ? 'member' : 'guest'
@@ -125,36 +134,61 @@ export default defineEventHandler(async (event) => {
   const rawTo = q.to ? new Date(q.to) : maxTo
   const to = rawTo > maxTo ? maxTo : rawTo
 
-  // All confirmed/requested bookings in the window
-  const { data: bookings, error: bookErr } = await supabase
-    .from('bookings')
-    .select('id, start_time, end_time, status, notes, credits_burned, user_id, booking_rate_kind, payment_expires_at')
-    .lt('start_time', to.toISOString())
-    .gt('end_time', from.toISOString())
-    .in('status', ['confirmed', 'requested', 'pending_payment'])
-    .order('start_time', { ascending: true })
+  const [
+    bookingsResult,
+    holdsResult,
+    blocksResult,
+    externalEventsResult,
+    workshopPromoResult
+  ] = await Promise.allSettled([
+    supabase
+      .from('bookings')
+      .select('id, start_time, end_time, status, notes, credits_burned, user_id, booking_rate_kind, payment_expires_at')
+      .lt('start_time', to.toISOString())
+      .gt('end_time', from.toISOString())
+      .in('status', ['confirmed', 'requested', 'pending_payment'])
+      .order('start_time', { ascending: true }),
+    supabase
+      .from('booking_holds')
+      .select('id, hold_start, hold_end, bookings!inner(user_id)')
+      .lt('hold_start', to.toISOString())
+      .gt('hold_end', from.toISOString())
+      .order('hold_start', { ascending: true }),
+    supabase
+      .from('calendar_blocks')
+      .select('id,start_time,end_time,reason')
+      .eq('active', true)
+      .lt('start_time', to.toISOString())
+      .gt('end_time', from.toISOString())
+      .order('start_time', { ascending: true }),
+    getExternalCalendarEventsInRange(
+      serviceRole,
+      from.toISOString(),
+      to.toISOString()
+    ),
+    getUpcomingWorkshopPromo(serviceRole, from.toISOString())
+  ])
 
-  if (bookErr) throw createError({ statusCode: 500, statusMessage: bookErr.message })
+  if (bookingsResult.status === 'rejected') {
+    throw createError({ statusCode: 500, statusMessage: bookingsResult.reason?.message ?? 'Failed to load bookings' })
+  }
+  if (bookingsResult.value.error) {
+    throw createError({ statusCode: 500, statusMessage: bookingsResult.value.error.message })
+  }
 
-  // All holds in the window
-  const { data: holds, error: holdsErr } = await supabase
-    .from('booking_holds')
-    .select('id, hold_start, hold_end, bookings!inner(user_id)')
-    .lt('hold_start', to.toISOString())
-    .gt('hold_end', from.toISOString())
-    .order('hold_start', { ascending: true })
+  if (holdsResult.status === 'rejected') {
+    throw createError({ statusCode: 500, statusMessage: holdsResult.reason?.message ?? 'Failed to load holds' })
+  }
+  if (holdsResult.value.error) {
+    throw createError({ statusCode: 500, statusMessage: holdsResult.value.error.message })
+  }
 
-  if (holdsErr) throw createError({ statusCode: 500, statusMessage: holdsErr.message })
-
-  const { data: blocks, error: blocksErr } = await supabase
-    .from('calendar_blocks')
-    .select('id,start_time,end_time,reason')
-    .eq('active', true)
-    .lt('start_time', to.toISOString())
-    .gt('end_time', from.toISOString())
-    .order('start_time', { ascending: true })
-
-  if (blocksErr) throw createError({ statusCode: 500, statusMessage: blocksErr.message })
+  if (blocksResult.status === 'rejected') {
+    throw createError({ statusCode: 500, statusMessage: blocksResult.reason?.message ?? 'Failed to load calendar blocks' })
+  }
+  if (blocksResult.value.error) {
+    throw createError({ statusCode: 500, statusMessage: blocksResult.value.error.message })
+  }
 
   let externalEvents: Array<{
     id: string
@@ -168,18 +202,23 @@ export default defineEventHandler(async (event) => {
   }> = []
   let workshopPromo: Awaited<ReturnType<typeof getUpcomingWorkshopPromo>> = null
 
-  try {
-    externalEvents = await getExternalCalendarEventsInRange(
-      serviceRole,
-      from.toISOString(),
-      to.toISOString()
-    )
-    workshopPromo = await getUpcomingWorkshopPromo(serviceRole, from.toISOString())
-  } catch (error) {
-    console.error('[calendar/member] failed to load external calendar events', error)
+  if (externalEventsResult.status === 'fulfilled') {
+    externalEvents = externalEventsResult.value
+  } else {
+    console.error('[calendar/member] failed to load external calendar events', externalEventsResult.reason)
+  }
+
+  if (workshopPromoResult.status === 'fulfilled') {
+    workshopPromo = workshopPromoResult.value
+  } else {
+    console.error('[calendar/member] failed to load workshop promo', workshopPromoResult.reason)
   }
 
   // Shape events for FullCalendar — distinguish own bookings from others
+  const bookings = bookingsResult.value.data
+  const holds = holdsResult.value.data
+  const blocks = blocksResult.value.data
+
   const bookingRows = ((bookings ?? []) as unknown as CalendarBookingRow[]).filter(row =>
     isActiveCalendarBooking(row)
   )

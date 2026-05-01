@@ -102,8 +102,11 @@ const activeLegendPopup = ref<'peak' | 'standby' | null>(null)
 const peakZonesHighlighted = ref(false)
 const standbyZonesHighlighted = ref(false)
 let nowTickTimer: ReturnType<typeof setInterval> | null = null
+let loadRequestId = 0
+const responseCache = new Map<string, { storedAt: number, response: CalendarResponse }>()
 const instance = getCurrentInstance()
 const STUDIO_TZ = 'America/Los_Angeles'
+const CALENDAR_CACHE_TTL_MS = 30_000
 
 type CalendarResponse = {
   from?: string
@@ -196,6 +199,30 @@ function mapApiEventsToCalendar(events: CalendarEvent[]) {
   }))
 }
 
+function applyCalendarResponse(res: CalendarResponse) {
+  events.value = mapApiEventsToCalendar(res.events ?? [])
+  bookingWindowDays.value = res.bookingWindowDays ?? null
+  guestBookingStartHour.value = Number.isFinite(Number(res.guestBookingStartHour))
+    ? Number(res.guestBookingStartHour)
+    : null
+  guestBookingEndHour.value = Number.isFinite(Number(res.guestBookingEndHour))
+    ? Number(res.guestBookingEndHour)
+    : null
+  guestMinBookingHours.value = Number.isFinite(Number(res.guestMinBookingHours))
+    ? Number(res.guestMinBookingHours)
+    : null
+  guestBookingIncrementMinutes.value = Number.isFinite(Number(res.guestBookingIncrementMinutes))
+    ? Number(res.guestBookingIncrementMinutes)
+    : null
+  peakWindow.value = res.peakWindow ?? null
+  workshopPromo.value = res.workshopPromo ?? null
+  lastRefreshedAt.value = new Date().toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/Los_Angeles'
+  })
+}
+
 function escapeHtml(value: string) {
   return value
     .replaceAll('&', '&amp;')
@@ -210,40 +237,38 @@ function formatNoteHtml(value: string) {
   return escapeHtml(normalized).replaceAll('\n', '<br />')
 }
 
-async function loadEvents(rangeStart?: Date, rangeEnd?: Date) {
-  loading.value = true
+async function loadEvents(rangeStart?: Date, rangeEnd?: Date, options?: { force?: boolean }) {
+  const requestId = ++loadRequestId
   lastLoadRangeStart.value = rangeStart ?? null
   lastLoadRangeEnd.value = rangeEnd ?? null
-  try {
-    const q: Record<string, string> = {}
-    if (rangeStart) q.from = calendarDateToStudioDate(rangeStart).toISOString()
-    if (rangeEnd) q.to = calendarDateToStudioDate(rangeEnd).toISOString()
+  const q: Record<string, string> = {}
+  if (rangeStart) q.from = calendarDateToStudioDate(rangeStart).toISOString()
+  if (rangeEnd) q.to = calendarDateToStudioDate(rangeEnd).toISOString()
+  const cacheKey = `${props.endpoint}:${q.from ?? ''}:${q.to ?? ''}`
+  const cached = responseCache.get(cacheKey)
 
-    const res = await $fetch<CalendarResponse>(props.endpoint, { query: q })
-    events.value = mapApiEventsToCalendar(res.events ?? [])
-    bookingWindowDays.value = res.bookingWindowDays ?? null
-    guestBookingStartHour.value = Number.isFinite(Number(res.guestBookingStartHour))
-      ? Number(res.guestBookingStartHour)
-      : null
-    guestBookingEndHour.value = Number.isFinite(Number(res.guestBookingEndHour))
-      ? Number(res.guestBookingEndHour)
-      : null
-    guestMinBookingHours.value = Number.isFinite(Number(res.guestMinBookingHours))
-      ? Number(res.guestMinBookingHours)
-      : null
-    guestBookingIncrementMinutes.value = Number.isFinite(Number(res.guestBookingIncrementMinutes))
-      ? Number(res.guestBookingIncrementMinutes)
-      : null
-    peakWindow.value = res.peakWindow ?? null
-    workshopPromo.value = res.workshopPromo ?? null
-    lastRefreshedAt.value = new Date().toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZone: 'America/Los_Angeles'
-    })
-  } finally {
-    loading.value = false
+  if (!options?.force && cached && Date.now() - cached.storedAt < CALENDAR_CACHE_TTL_MS) {
+    applyCalendarResponse(cached.response)
+    return
   }
+
+  loading.value = true
+  try {
+    const res = await $fetch<CalendarResponse>(props.endpoint, { query: q })
+    if (requestId !== loadRequestId) return
+    responseCache.set(cacheKey, { storedAt: Date.now(), response: res })
+    if (responseCache.size > 12) {
+      const oldestKey = responseCache.keys().next().value
+      if (oldestKey) responseCache.delete(oldestKey)
+    }
+    applyCalendarResponse(res)
+  } finally {
+    if (requestId === loadRequestId) loading.value = false
+  }
+}
+
+async function refresh() {
+  await loadEvents(lastLoadRangeStart.value ?? undefined, lastLoadRangeEnd.value ?? undefined, { force: true })
 }
 
 function isExpiredPendingPaymentEvent(event: CalendarEvent, nowMs = nowTickMs.value) {
@@ -791,17 +816,16 @@ const calendarOptions = computed(() => ({
     // Called when the visible range changes
     visibleTitle.value = info.view.title
     visibleRange.value = formatRange(info.start, info.end)
-    loadEvents(info.start, info.end)
+    void loadEvents(info.start, info.end)
   }
 }))
 
 onMounted(() => {
-  loadEvents()
   nowTickTimer = setInterval(() => {
     const nowMs = Date.now()
     nowTickMs.value = nowMs
     if (events.value.some(event => isExpiredPendingPaymentEvent(event, nowMs))) {
-      void loadEvents(lastLoadRangeStart.value ?? undefined, lastLoadRangeEnd.value ?? undefined)
+      void refresh()
     }
   }, 60_000)
 })
@@ -811,6 +835,8 @@ onUnmounted(() => {
   clearInterval(nowTickTimer)
   nowTickTimer = null
 })
+
+defineExpose({ refresh })
 </script>
 
 <template>
