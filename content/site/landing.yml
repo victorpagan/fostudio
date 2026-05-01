@@ -30,7 +30,7 @@ hero:
     label: Explore Memberships
     to: /memberships
   waitlistCtaLabel: Join the waitlist
-  campaignHint: "Campaign: use NEWSITE for 5% off new memberships."
+  campaignHint: ""
   chips:
     - 24/7 photo studio access
     - Gear + consumables included
