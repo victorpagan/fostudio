@@ -81,6 +81,7 @@ const { data: waiverState } = await useAsyncData('dash:home:waiver', async () =>
 const membershipState = computed(() => {
   return resolveMembershipUiState(membership.value)
 })
+const isGuestAccount = computed(() => membershipState.value !== 'active' && !isAdmin.value)
 
 const { data: subscriptionState } = await useAsyncData('dash:home:subscription-state', async () => {
   if (!user.value) return null
@@ -99,23 +100,7 @@ const { data: subscriptionState } = await useAsyncData('dash:home:subscription-s
   }>('/api/membership/subscription-state')
 })
 
-const needsMembership = computed(() => membershipState.value !== 'active' && !isAdmin.value)
-
-const membershipCta = computed(() => {
-  if (membershipState.value === 'pending_checkout') return { label: 'Finish checkout', to: '/dashboard/memberships' }
-  if (['none', 'canceled', 'past_due', 'inactive'].includes(membershipState.value)) return { label: 'Buy membership', to: '/dashboard/memberships' }
-  return { label: 'Manage membership', to: '/dashboard/membership' }
-})
-
 const headerPrimaryAction = computed(() => {
-  if (needsMembership.value) {
-    return {
-      label: membershipCta.value.label,
-      to: membershipCta.value.to,
-      icon: 'i-lucide-badge-check'
-    }
-  }
-
   return {
     label: 'Book studio',
     to: '/dashboard/book',
@@ -124,7 +109,6 @@ const headerPrimaryAction = computed(() => {
 })
 
 const headerSecondaryActions = computed(() => {
-  if (needsMembership.value) return []
   return [{
     label: 'My bookings',
     to: '/dashboard/bookings',
@@ -264,40 +248,64 @@ const pendingCancelSummary = computed(() => {
         title="Admin access"
         description="You are viewing the dashboard as an admin. Membership guards are bypassed."
       />
-      <!-- Membership CTA for non-members -->
-      <UAlert
-        v-else-if="needsMembership"
+      <DashboardDismissibleIntro
+        v-else-if="isGuestAccount"
+        storage-key="dashboard-guest-intro"
         color="warning"
-        variant="soft"
-        title="Membership required to book"
-        description="Choose a plan (or finish checkout) to access booking and credits."
+        icon="i-lucide-badge-alert"
+        title="You're set up as a guest"
+        description="Guests can book studio time with premium credits between 11am and 7pm. Start by choosing a time on the booking calendar or buying credits; checkout can cover only the credit shortfall if needed."
       >
         <template #actions>
           <UButton
-            size="sm"
-            :to="membershipCta.to"
+            size="xs"
+            to="/dashboard/book"
           >
-            {{ membershipCta.label }}
+            Book studio
+          </UButton>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="soft"
+            to="/dashboard/credits"
+          >
+            Buy credits
+          </UButton>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="soft"
+            to="/dashboard/membership"
+          >
+            Compare memberships
           </UButton>
         </template>
-      </UAlert>
-      <!-- Active member welcome -->
-      <UAlert
-        v-else
+      </DashboardDismissibleIntro>
+      <DashboardDismissibleIntro
+        v-else-if="membershipState === 'active'"
+        storage-key="dashboard-member-intro"
         color="success"
-        variant="soft"
+        icon="i-lucide-badge-check"
         title="Membership active"
         :description="tierLabel ? `Plan: ${tierLabel}` : 'Welcome back!'"
       >
         <template #actions>
           <UButton
-            size="sm"
+            size="xs"
             to="/dashboard/book"
           >
             Book studio
           </UButton>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="soft"
+            to="/dashboard/credits"
+          >
+            Review credits
+          </UButton>
         </template>
-      </UAlert>
+      </DashboardDismissibleIntro>
       <UAlert
         v-if="pendingCancelSummary"
         class="mt-3"
@@ -389,7 +397,6 @@ const pendingCancelSummary = computed(() => {
         </div>
         <div class="mt-4 flex flex-col gap-2">
           <UButton
-            :disabled="needsMembership"
             to="/dashboard/book"
             size="sm"
           >

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { DateTime } from 'luxon'
-import { normalizeDiscountLabel } from '~~/app/utils/membershipDiscount'
 import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
 // auth only — no membership-required middleware. We handle the no-membership
@@ -46,26 +45,6 @@ type Booking = {
     hold_end: string
     hold_type: string
   }[] | null
-}
-
-type PlanOption = {
-  cadence: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
-  credits_per_month: number
-  price_cents: number
-  currency: string
-  discount_label?: string | null
-}
-
-type Tier = {
-  id: string
-  display_name: string
-  description?: string | null
-  booking_window_days: number
-  peak_multiplier: number
-  max_bank: number
-  holds_included: number
-  adminOnly?: boolean
-  membership_plan_variations: PlanOption[]
 }
 
 type BookingPolicy = {
@@ -154,14 +133,6 @@ const { data: past, refresh: refreshPast } = await useAsyncData('bookings:past',
   return (data ?? []) as unknown as Booking[]
 })
 
-// Fetch tiers for upsell panel (only loaded when no active membership)
-const { data: catalogData } = await useAsyncData('bookings:catalog', async () => {
-  if (hasMembership.value) return null
-  const res = await $fetch<{ tiers: Tier[] }>('/api/membership/catalog')
-  return res?.tiers ?? []
-}, { watch: [hasMembership] })
-
-const tiers = computed(() => catalogData.value ?? [])
 const { data: bookingPolicy } = await useAsyncData('bookings:policy', async () => {
   return await $fetch<BookingPolicy>('/api/bookings/policy')
 })
@@ -201,10 +172,6 @@ const { data: holdSummary, refresh: refreshHoldSummary } = await useAsyncData('b
     } as HoldSummary
   }
 }, { watch: [hasMembership] })
-
-function getDiscountLabel(label?: string | null) {
-  return normalizeDiscountLabel(label)
-}
 
 async function refreshAll() {
   nowIso.value = new Date().toISOString()
@@ -1485,43 +1452,6 @@ function goToNextRescheduleMonth() {
   void loadRescheduleMonthHints(rescheduleForm.startTime)
 }
 
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100)
-}
-
-function cadenceLabel(c: string) {
-  if (c === 'daily') return 'Daily'
-  if (c === 'weekly') return 'Weekly'
-  if (c === 'monthly') return 'Monthly'
-  if (c === 'quarterly') return 'Quarterly'
-  if (c === 'annual') return 'Annual'
-  return c
-}
-
-function cadencePriceUnit(cadence: string) {
-  if (cadence === 'daily') return 'day'
-  if (cadence === 'weekly') return 'week'
-  if (cadence === 'monthly') return 'mo'
-  if (cadence === 'quarterly') return 'qtr'
-  if (cadence === 'annual') return 'yr'
-  return cadence
-}
-
-function cadenceCreditsUnit(cadence: string) {
-  if (cadence === 'daily') return 'day'
-  if (cadence === 'weekly') return 'week'
-  return 'mo'
-}
-
-function formatPeakCredits(value: number) {
-  if (Number.isInteger(value)) return value.toString()
-  return value.toFixed(2).replace(/\.?0+$/, '')
-}
-
-function goCheckout(tierId: string, cadence: string) {
-  router.push(`/checkout?tier=${encodeURIComponent(tierId)}&cadence=${encodeURIComponent(cadence)}&returnTo=/dashboard/bookings`)
-}
-
 onMounted(() => {
   nowIso.value = new Date().toISOString()
   void openRescheduleFromQuery()
@@ -1563,131 +1493,6 @@ watch(
       </template>
 
       <template #default>
-        <!-- ── No active membership: show guest mode + tier upsell ── -->
-        <div
-          v-if="!hasMembership"
-          class="space-y-6"
-        >
-          <UCard>
-            <div class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p class="font-semibold">
-                  You don't have an active membership
-                </p>
-                <p class="mt-1 text-sm text-dimmed">
-                  You can still book as a guest with premium credits. Choose a plan below for lower credit costs, longer booking windows, 30-minute slots, and overnight holds.
-                </p>
-              </div>
-              <UBadge
-                color="warning"
-                variant="soft"
-              >
-                No active plan
-              </UBadge>
-            </div>
-          </UCard>
-
-          <div class="grid gap-4 lg:grid-cols-3">
-            <UCard
-              v-for="tier in tiers"
-              :key="tier.id"
-            >
-              <div class="flex items-center gap-2">
-                <div class="text-base font-semibold">
-                  {{ tier.display_name }}
-                </div>
-                <UBadge
-                  v-if="tier.adminOnly"
-                  color="warning"
-                  variant="soft"
-                  size="xs"
-                  icon="i-lucide-flask-conical"
-                >
-                  Admin only
-                </UBadge>
-              </div>
-              <p
-                v-if="tier.description"
-                class="mt-1 text-sm text-dimmed"
-              >
-                {{ tier.description }}
-              </p>
-
-              <div class="mt-4 grid grid-cols-3 gap-2">
-                <div class="rounded-lg border border-default p-2 text-center">
-                  <div class="text-sm font-medium">
-                    {{ tier.booking_window_days }}d
-                  </div>
-                  <div class="text-xs text-dimmed">
-                    booking
-                  </div>
-                </div>
-                <div class="rounded-lg border border-default p-2 text-center">
-                  <div class="text-sm font-medium">
-                    {{ formatPeakCredits(tier.peak_multiplier) }} cr/hr
-                  </div>
-                  <div class="text-xs text-dimmed">
-                    peak hour
-                  </div>
-                </div>
-                <div class="rounded-lg border border-default p-2 text-center">
-                  <div class="text-sm font-medium">
-                    {{ tier.max_bank }}
-                  </div>
-                  <div class="text-xs text-dimmed">
-                    credit cap
-                  </div>
-                </div>
-              </div>
-
-              <div class="mt-4 space-y-2">
-                <div
-                  v-for="opt in tier.membership_plan_variations"
-                  :key="opt.cadence"
-                  class="flex items-center justify-between rounded-lg border border-default p-3"
-                >
-                  <div>
-                    <div class="text-sm font-medium flex items-center gap-2">
-                      {{ cadenceLabel(opt.cadence) }}
-                      <UBadge
-                        v-if="getDiscountLabel(opt.discount_label)"
-                        color="neutral"
-                        variant="soft"
-                        size="xs"
-                      >
-                        {{ getDiscountLabel(opt.discount_label) }}
-                      </UBadge>
-                    </div>
-                    <div class="text-xs text-dimmed">
-                      {{ opt.credits_per_month }} credits/{{ cadenceCreditsUnit(opt.cadence) }}
-                    </div>
-                  </div>
-                  <div class="text-right">
-                    <div class="text-sm font-semibold">
-                      {{ formatMoney(opt.price_cents, opt.currency) }}
-                    </div>
-                    <div class="text-xs text-dimmed">
-                      / {{ cadencePriceUnit(opt.cadence) }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="mt-4 grid gap-2">
-                <UButton
-                  v-for="opt in tier.membership_plan_variations"
-                  :key="opt.cadence + '-cta'"
-                  block
-                  size="sm"
-                  @click="goCheckout(tier.id, opt.cadence)"
-                >
-                  Start {{ tier.display_name }} · {{ cadenceLabel(opt.cadence) }}
-                </UButton>
-              </div>
-            </UCard>
-          </div>
-        </div>
-
         <!-- ── Authenticated booking history ── -->
         <div
           class="space-y-6"

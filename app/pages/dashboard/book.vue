@@ -317,12 +317,13 @@ async function fetchPreview(start: Date, end: Date) {
   }
 }
 
-function onSelect(payload: { start: Date, end: Date }) {
+function onSelect(payload: { start: Date, end: Date, rateKind?: 'standard' | 'standby' }) {
+  const nextRateKind = payload.rateKind === 'standby' ? 'standby' : 'standard'
+  form.rateKind = nextRateKind
   selected.value = payload
   form.notes = ''
   form.request_hold = false
   form.holdPaymentMethod = 'auto'
-  form.rateKind = 'standard'
   preview.value = null
   previewError.value = null
   open.value = true
@@ -335,7 +336,7 @@ function openManualBookingModal() {
   manualBookingOpen.value = true
 }
 
-function onManualBookingSubmit(payload: { start: Date, end: Date }) {
+function onManualBookingSubmit(payload: { start: Date, end: Date, rateKind?: 'standard' | 'standby' }) {
   onSelect(payload)
 }
 
@@ -716,6 +717,14 @@ function formatPeakCredits(value: number) {
   return value.toFixed(2).replace(/\.?0+$/, '')
 }
 
+function formatStandbyDiscount(value?: number | null) {
+  const multiplier = Number(value ?? 0.5)
+  const discount = Number.isFinite(multiplier)
+    ? Math.round(Math.max(0, Math.min(1, 1 - multiplier)) * 100)
+    : 50
+  return `${discount}%`
+}
+
 function formatPrice(cents: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
 }
@@ -746,34 +755,59 @@ function formatPrice(cents: number) {
         />
       </template>
       <div class="w-full space-y-4">
-        <UCard
+        <DashboardDismissibleIntro
           v-if="hasActiveMembership"
-          class="admin-panel-card border-0"
-        >
-          <p class="text-sm text-dimmed">
-            Click and drag on the calendar to select a time slot (30-minute increments). Your tier's booking window and peak-hour credit rates apply. Reschedules require {{ memberRescheduleNoticeHours }}+ hours notice.
-          </p>
-        </UCard>
-
-        <UAlert
-          v-if="!hasActiveMembership"
-          color="warning"
-          variant="soft"
-          icon="i-lucide-badge-alert"
-          title="Booking as a guest"
-          description="Guest bookings use premium credits, configured daytime hours, a 2-hour minimum, and whole-hour increments. You can confirm with existing guest credits or pay only the credit shortfall at checkout. Members get lower credit costs, longer booking windows, 30-minute slots, and overnight holds."
+          storage-key="booking-member-intro"
+          color="info"
+          icon="i-lucide-calendar-plus"
+          title="Create a studio booking"
+          description="Click and drag on the calendar, or use Create booking to choose a date and time. Your tier's booking window, peak-hour credit rate, and reschedule notice rules apply."
         >
           <template #actions>
             <UButton
-              color="warning"
-              variant="soft"
-              size="sm"
-              to="/memberships"
+              size="xs"
+              icon="i-lucide-calendar-plus"
+              @click="openManualBookingModal"
             >
-              View memberships
+              Create booking
+            </UButton>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="soft"
+              to="/dashboard/bookings"
+            >
+              My bookings
             </UButton>
           </template>
-        </UAlert>
+        </DashboardDismissibleIntro>
+
+        <DashboardDismissibleIntro
+          v-else
+          storage-key="booking-guest-intro"
+          color="warning"
+          icon="i-lucide-badge-alert"
+          title="Create a guest booking"
+          description="Guests can book between 11am and 7pm using premium credits. Select at least 2 hours in whole-hour increments; you can confirm with existing credits or pay only the credit shortfall at checkout."
+        >
+          <template #actions>
+            <UButton
+              size="xs"
+              icon="i-lucide-calendar-plus"
+              @click="openManualBookingModal"
+            >
+              Create booking
+            </UButton>
+            <UButton
+              color="warning"
+              variant="soft"
+              size="xs"
+              to="/dashboard/membership"
+            >
+              Compare memberships
+            </UButton>
+          </template>
+        </DashboardDismissibleIntro>
 
         <AvailabilityCalendar
           :key="calendarKey"
@@ -878,11 +912,17 @@ function formatPrice(cents: number) {
                 <div class="flex justify-between items-center">
                   <span class="text-dimmed">Rate</span>
                   <UBadge
-                    :color="preview.breakdown.isPeakWindow ? 'warning' : 'success'"
+                    :color="preview.rateKind === 'standby' ? 'neutral' : preview.breakdown.isPeakWindow ? 'warning' : 'success'"
                     variant="soft"
                     size="sm"
                   >
-                    {{ preview.breakdown.isPeakWindow ? `Peak (${formatPeakCredits(preview.peakMultiplier)} credits/hr)` : 'Off-peak (1 credit/hr)' }}
+                    {{
+                      preview.rateKind === 'standby'
+                        ? `Standby (${formatStandbyDiscount(preview.standby?.discountMultiplier)} off)`
+                        : preview.breakdown.isPeakWindow
+                          ? `Peak (${formatPeakCredits(preview.peakMultiplier)} credits/hr)`
+                          : 'Off-peak (1 credit/hr)'
+                    }}
                   </UBadge>
                 </div>
                 <div class="flex justify-between items-center border-t border-default pt-2 mt-1">
@@ -923,7 +963,7 @@ function formatPrice(cents: number) {
                 class="mt-2"
                 :model-value="form.rateKind === 'standby'"
                 label="Use same-day standby rate"
-                :description="`Standby applies a ${Math.round((1 - preview.standby.discountMultiplier) * 100)}% credit discount. Standby bookings are locked after purchase and cannot be canceled, rescheduled, extended, or held.`"
+                :description="`Standby applies a ${formatStandbyDiscount(preview.standby.discountMultiplier)} credit discount. Standby bookings are locked after purchase and cannot be canceled, rescheduled, extended, or held.`"
                 @update:model-value="form.rateKind = $event ? 'standby' : 'standard'"
               />
 

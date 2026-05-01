@@ -38,6 +38,10 @@ type SidebarLinkGroup = {
   items: NavigationMenuItem[]
 }
 
+type SidebarWorkshopAccess = {
+  workshopBookingEnabled: boolean
+}
+
 const { data: sidebarMembership } = await useAsyncData('dash:sidebar:membership', async () => {
   if (!user.value?.sub) return null
   const { data, error } = await supabase
@@ -58,6 +62,15 @@ const { data: sidebarCredits } = await useAsyncData('dash:sidebar:credits', asyn
     .maybeSingle()
   if (error) throw error
   return typeof data?.balance === 'number' ? data.balance : Number(data?.balance ?? 0)
+}, { watch: [() => user.value?.sub] })
+
+const { data: sidebarWorkshopAccess } = await useAsyncData('dash:sidebar:workshop-access', async () => {
+  if (!user.value?.sub) return null
+  try {
+    return await $fetch<SidebarWorkshopAccess>('/api/workshops/access')
+  } catch {
+    return null
+  }
 }, { watch: [() => user.value?.sub] })
 
 const { data: sidebarCreditCap } = await useAsyncData('dash:sidebar:credit-cap', async () => {
@@ -125,37 +138,43 @@ const isAdminSidebarMode = computed(() =>
 )
 
 const memberLinkGroups = computed<SidebarLinkGroup[]>(() => {
+  const workspaceItems: NavigationMenuItem[] = [
+    {
+      label: 'Dashboard',
+      icon: 'i-lucide-house',
+      to: '/dashboard',
+      exact: true,
+      onSelect: () => { open.value = false }
+    },
+    {
+      label: 'Book Studio',
+      icon: 'i-lucide-calendar-plus',
+      to: '/dashboard/book',
+      onSelect: () => { open.value = false }
+    }
+  ]
+
+  if (sidebarWorkshopAccess.value?.workshopBookingEnabled) {
+    workspaceItems.push({
+      label: 'Workshops',
+      icon: 'i-lucide-presentation',
+      to: '/dashboard/workshops',
+      onSelect: () => { open.value = false }
+    })
+  }
+
+  workspaceItems.push({
+    label: 'Bookings',
+    icon: 'i-lucide-list-checks',
+    to: '/dashboard/bookings',
+    onSelect: () => { open.value = false }
+  })
+
   const groups: SidebarLinkGroup[] = [
     {
       id: 'member-workspace',
       label: 'Workspace',
-      items: [
-        {
-          label: 'Dashboard',
-          icon: 'i-lucide-house',
-          to: '/dashboard',
-          exact: true,
-          onSelect: () => { open.value = false }
-        },
-        {
-          label: 'Book Studio',
-          icon: 'i-lucide-calendar-plus',
-          to: '/dashboard/book',
-          onSelect: () => { open.value = false }
-        },
-        {
-          label: 'Workshops',
-          icon: 'i-lucide-presentation',
-          to: '/dashboard/workshops',
-          onSelect: () => { open.value = false }
-        },
-        {
-          label: 'Bookings',
-          icon: 'i-lucide-list-checks',
-          to: '/dashboard/bookings',
-          onSelect: () => { open.value = false }
-        }
-      ]
+      items: workspaceItems
     },
     {
       id: 'member-account',
@@ -171,6 +190,12 @@ const memberLinkGroups = computed<SidebarLinkGroup[]>(() => {
           label: 'Credits',
           icon: 'i-lucide-wallet-cards',
           to: '/dashboard/credits',
+          onSelect: () => { open.value = false }
+        },
+        {
+          label: 'Referrals',
+          icon: 'i-lucide-gift',
+          to: '/dashboard/referrals',
           onSelect: () => { open.value = false }
         },
         {

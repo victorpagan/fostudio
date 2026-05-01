@@ -215,10 +215,36 @@ function openTierDetails(tierId: string) {
           description="No visible membership tiers were returned for this account."
         />
 
-        <UAlert
+        <DashboardDismissibleIntro
+          v-if="!hasActiveMembership"
+          storage-key="memberships-guest-intro"
+          color="warning"
+          icon="i-lucide-badge-alert"
+          title="Why upgrade from guest booking?"
+          description="Guests can book between 11am and 7pm using premium credits, but membership gives lower effective credit costs, longer booking windows, 30-minute slots, and hold privileges."
+        >
+          <template #actions>
+            <UButton
+              size="xs"
+              to="/dashboard/book"
+            >
+              Book as guest
+            </UButton>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="soft"
+              to="/dashboard/credits"
+            >
+              Buy guest credits
+            </UButton>
+          </template>
+        </DashboardDismissibleIntro>
+
+        <DashboardDismissibleIntro
           v-if="hasActiveMembership"
+          storage-key="memberships-member-intro"
           color="neutral"
-          variant="soft"
           icon="i-lucide-calendar-clock"
           title="Membership changes apply next cycle"
           description="Upgrades and downgrades are scheduled for your next billing cycle. Mid-cycle prorated membership changes are not applied."

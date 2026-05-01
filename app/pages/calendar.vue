@@ -32,7 +32,7 @@ const fallbackContent: SiteCalendarContent = {
   nextMovePanel: {
     title: 'Best next move',
     primaryCta: { label: 'Explore memberships', to: '/memberships' },
-    secondaryCta: { label: 'Book as a guest', to: '/book' }
+    secondaryCta: { label: 'Book as a guest', to: '/signup?returnTo=/dashboard/book' }
   }
 }
 
@@ -41,7 +41,19 @@ const { data: siteCalendar } = await useAsyncData('site:calendar', async () => {
 })
 
 const content = computed<SiteCalendarContent>(() => {
-  return (siteCalendar.value as SiteCalendarContent | null) ?? fallbackContent
+  const resolved = (siteCalendar.value as SiteCalendarContent | null) ?? fallbackContent
+  return {
+    ...resolved,
+    nextMovePanel: {
+      ...resolved.nextMovePanel,
+      secondaryCta: {
+        ...resolved.nextMovePanel.secondaryCta,
+        to: resolved.nextMovePanel.secondaryCta.to === '/book'
+          ? '/signup?returnTo=/dashboard/book'
+          : resolved.nextMovePanel.secondaryCta.to
+      }
+    }
+  }
 })
 </script>
 
@@ -103,6 +115,8 @@ const content = computed<SiteCalendarContent>(() => {
         <AvailabilityCalendar
           endpoint="/api/calendar/public"
           full-day
+          :show-standby-badge="false"
+          :show-standby-zones="false"
         />
       </div>
     </section>

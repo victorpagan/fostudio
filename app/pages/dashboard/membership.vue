@@ -415,6 +415,20 @@ const currentVariation = computed(() =>
   variations.value?.find(v => v.cadence === membership.value?.cadence) ?? null
 )
 
+const membershipIntroDescription = computed(() => {
+  if (hasActiveMembership.value) {
+    const tierName = tier.value?.display_name
+      ?? formatMembershipTierLabel(membership.value?.tier)
+      ?? 'your membership'
+    const cadence = formatCadence(membership.value?.cadence ?? null)
+    const credits = currentVariation.value?.credits_per_month ?? null
+    const creditLine = credits !== null ? `${credits} credits per ${creditsCycleLabel(membership.value?.cadence ?? null).toLowerCase()}` : 'monthly credits'
+    return `${tierName} (${cadence}) includes ${creditLine}, a ${tier.value?.booking_window_days ?? 'member'}-day booking window, member peak rates, and hold privileges where available.`
+  }
+
+  return 'Guests can book with premium credits between 11am and 7pm, but have a shorter booking window, whole-hour bookings only, no overnight holds, and higher peak-hour credit costs. Membership unlocks lower effective rates, longer booking windows, 30-minute slots, and member holds.'
+})
+
 const displayedCreditBalance = computed(() => creditSummary.value?.totalBalance ?? balance.value ?? 0)
 const canBuyTopoff = computed(() => creditSummary.value?.canBuyTopoff ?? true)
 const savedCards = computed(() => (paymentMethodsData.value?.methods ?? []).filter(card => card.enabled))
@@ -1334,6 +1348,58 @@ onUnmounted(() => {
         />
       </template>
       <div class="space-y-4">
+        <DashboardDismissibleIntro
+          v-if="hasActiveMembership"
+          storage-key="membership-member-intro"
+          color="success"
+          icon="i-lucide-badge-check"
+          title="Your membership"
+          :description="membershipIntroDescription"
+        >
+          <template #actions>
+            <UButton
+              size="xs"
+              to="/dashboard/book"
+            >
+              Book studio
+            </UButton>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="soft"
+              to="/dashboard/credits"
+            >
+              Manage credits
+            </UButton>
+          </template>
+        </DashboardDismissibleIntro>
+
+        <DashboardDismissibleIntro
+          v-else-if="showCatalog"
+          storage-key="membership-guest-intro"
+          color="warning"
+          icon="i-lucide-badge-alert"
+          title="Guest booking versus membership"
+          :description="membershipIntroDescription"
+        >
+          <template #actions>
+            <UButton
+              size="xs"
+              to="/dashboard/book"
+            >
+              Book as guest
+            </UButton>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="soft"
+              to="/dashboard/credits"
+            >
+              Buy guest credits
+            </UButton>
+          </template>
+        </DashboardDismissibleIntro>
+
         <!-- ── No membership: inline tier picker ──────────────────────── -->
         <template v-if="membershipState === 'none' || (showCatalog && tierCatalog?.length)">
           <UCard

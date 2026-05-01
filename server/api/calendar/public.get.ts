@@ -194,8 +194,10 @@ export default defineEventHandler(async (event) => {
     end: normalizeIso(window.end),
     title: 'Standby availability',
     display: 'background',
-    color: '#d8a657',
-    extendedProps: { type: 'standby' }
+    extendedProps: {
+      type: 'standby',
+      minOpenSlotHours: standbyPolicy.minOpenSlotHours
+    }
   }))
 
   return {

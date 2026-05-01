@@ -73,6 +73,20 @@ function nameFromParts(first?: string | null, last?: string | null, email?: stri
   return name || email || 'Guest'
 }
 
+function readSquareErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) return error.message.trim()
+  if (!error || typeof error !== 'object') return 'Square request failed'
+  const details = (error as { errors?: unknown }).errors
+  if (!Array.isArray(details) || details.length === 0) return 'Square request failed'
+  const first = details[0]
+  if (!first || typeof first !== 'object') return 'Square request failed'
+  const detail = (first as { detail?: unknown }).detail
+  if (typeof detail === 'string' && detail.trim()) return detail.trim()
+  const code = (first as { code?: unknown }).code
+  if (typeof code === 'string' && code.trim()) return code.trim()
+  return 'Square request failed'
+}
+
 async function hasStandbyBookingToday(supabase: unknown, userId: string, start: DateTime) {
   type CountResult = { count?: number | null, error?: { message: string } | null }
   type CountQuery = PromiseLike<CountResult> & {
@@ -183,7 +197,7 @@ export default defineEventHandler(async (event) => {
   if (blockErr) throw createError({ statusCode: 500, statusMessage: blockErr.message })
   if (blockConflicts?.length) throw createError({ statusCode: 409, statusMessage: 'That time slot is blocked by studio admin.' })
 
-  const squareCustomerId = await ensureSquareCustomerForUser(event, {
+  await ensureSquareCustomerForUser(event, {
     userId: user.sub,
     email: user.email ?? null,
     firstName: typeof user.user_metadata?.first_name === 'string' ? user.user_metadata.first_name : null,
@@ -336,40 +350,38 @@ export default defineEventHandler(async (event) => {
   const durationHours = end.diff(start, 'hours').hours
   const durationLabel = Number.isInteger(durationHours) ? `${durationHours}h` : `${durationHours.toFixed(1)}h`
 
-  const createRes = await square.checkout.paymentLinks.create({
-    idempotencyKey: randomUUID(),
-    quickPay: {
-      name: `FO Studio guest booking credits — ${startLabel} (${durationLabel})`,
-      priceMoney: {
-        amount: BigInt(amountDueCents),
-        currency: 'USD'
+  let createRes: PaymentLinkResult
+  try {
+    createRes = await square.checkout.paymentLinks.create({
+      idempotencyKey: randomUUID(),
+      quickPay: {
+        name: `FO Studio guest booking credits — ${startLabel} (${durationLabel})`,
+        priceMoney: {
+          amount: BigInt(amountDueCents),
+          currency: 'USD'
+        },
+        locationId
       },
-      locationId
-    },
-    checkoutOptions: { redirectUrl },
-    prePopulatedData: {
-      buyerEmail: guestEmail ?? undefined,
-      buyerPhoneNumber: toSquareBuyerPhone(customer.phone),
-      buyerAddress: {
-        firstName: customer.first_name ?? undefined,
-        lastName: customer.last_name ?? undefined
+      checkoutOptions: { redirectUrl },
+      paymentNote: `guest_booking_id:${booking.id};topup_token:${topupSession.token}`,
+      prePopulatedData: {
+        buyerEmail: guestEmail ?? undefined,
+        buyerPhoneNumber: toSquareBuyerPhone(customer.phone),
+        buyerAddress: {
+          firstName: customer.first_name ?? undefined,
+          lastName: customer.last_name ?? undefined
+        }
       }
-    },
-    order: {
-      locationId,
-      referenceId: booking.id,
-      customerId: squareCustomerId ?? undefined,
-      metadata: {
-        booking_id: booking.id,
-        topup_session_id: topupSession.id,
-        topup_token: topupSession.token,
-        booking_type: 'authenticated_guest',
-        credits_needed: String(creditsNeeded),
-        shortfall_credits: String(shortfallCredits),
-        user_id: user.sub
-      }
-    }
-  } as never) as PaymentLinkResult
+    } as never) as PaymentLinkResult
+  } catch (error) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('credit_topup_sessions').update({ status: 'failed' }).eq('id', topupSession.id)
+    await supabase.from('bookings').delete().eq('id', booking.id)
+    throw createError({
+      statusCode: 502,
+      statusMessage: `Failed to create guest checkout: ${readSquareErrorMessage(error)}`
+    })
+  }
 
   const paymentLink = createRes.paymentLink
   if (!paymentLink?.url) {

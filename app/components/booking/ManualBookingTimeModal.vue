@@ -20,6 +20,7 @@ type CalendarEvent = {
     isOwn?: boolean
     status?: string
     bookingId?: string
+    minOpenSlotHours?: number
   }
 }
 
@@ -67,7 +68,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
-  (e: 'submit', payload: { start: Date, end: Date }): void
+  (e: 'submit', payload: { start: Date, end: Date, rateKind?: 'standard' | 'standby' }): void
 }>()
 
 const toast = useToast()
@@ -83,6 +84,7 @@ const availabilityMonthCursor = ref<DateTime | null>(null)
 const availabilityHintMonth = ref('')
 const availabilityBookingWindowDays = ref<number | null>(null)
 const dayOccupiedIntervals = ref<Record<string, Array<{ startMinute: number, endMinute: number }>>>({})
+const dayStandbyIntervals = ref<Record<string, Array<{ startMinute: number, endMinute: number, minDurationMinutes: number }>>>({})
 const dayOccupiedMinutes = ref<Record<string, number>>({})
 const dayCycleIndex = ref<Record<string, number>>({})
 
@@ -243,6 +245,53 @@ function buildCalendarQuery(from: string, to: string) {
   return query
 }
 
+function addIntervalByDay(
+  target: Record<string, Array<{ startMinute: number, endMinute: number }>>,
+  rawStart: DateTime,
+  rawEnd: DateTime
+) {
+  let start = rawStart
+  const end = rawEnd
+
+  while (start < end) {
+    const dayStart = start.startOf('day')
+    const dayEnd = dayStart.plus({ days: 1 })
+    const segmentEnd = end < dayEnd ? end : dayEnd
+    const key = toDayKey(dayStart)
+    const startMinute = Math.max(0, Math.round(start.diff(dayStart, 'minutes').minutes))
+    const endMinute = Math.min(24 * 60, Math.round(segmentEnd.diff(dayStart, 'minutes').minutes))
+    if (endMinute > startMinute) {
+      if (!target[key]) target[key] = []
+      target[key].push({ startMinute, endMinute })
+    }
+    start = segmentEnd
+  }
+}
+
+function addStandbyIntervalByDay(
+  target: Record<string, Array<{ startMinute: number, endMinute: number, minDurationMinutes: number }>>,
+  rawStart: DateTime,
+  rawEnd: DateTime,
+  minDurationMinutes: number
+) {
+  let start = rawStart
+  const end = rawEnd
+
+  while (start < end) {
+    const dayStart = start.startOf('day')
+    const dayEnd = dayStart.plus({ days: 1 })
+    const segmentEnd = end < dayEnd ? end : dayEnd
+    const key = toDayKey(dayStart)
+    const startMinute = Math.max(0, Math.round(start.diff(dayStart, 'minutes').minutes))
+    const endMinute = Math.min(24 * 60, Math.round(segmentEnd.diff(dayStart, 'minutes').minutes))
+    if (endMinute > startMinute) {
+      if (!target[key]) target[key] = []
+      target[key].push({ startMinute, endMinute, minDurationMinutes })
+    }
+    start = segmentEnd
+  }
+}
+
 async function loadAvailabilityForCurrentMonth(force = false) {
   if (!hasCalendarAvailability.value || !props.open) return
 
@@ -265,9 +314,19 @@ async function loadAvailabilityForCurrentMonth(force = false) {
     availabilityBookingWindowDays.value = Math.max(1, Number(res.bookingWindowDays ?? availabilityBookingWindowDays.value ?? 30))
 
     const intervalsByDay: Record<string, Array<{ startMinute: number, endMinute: number }>> = {}
+    const standbyByDay: Record<string, Array<{ startMinute: number, endMinute: number, minDurationMinutes: number }>> = {}
     for (const rawEvent of res.events ?? []) {
       const type = rawEvent.extendedProps?.type
-      if (type === 'standby') continue
+      const start = parseCalendarDateTime(rawEvent.start)
+      const end = parseCalendarDateTime(rawEvent.end)
+      if (!start || !end || !start.isValid || !end.isValid || end <= start) continue
+
+      if (type === 'standby') {
+        const minDurationMinutes = Math.max(0, Number(rawEvent.extendedProps?.minOpenSlotHours ?? 4)) * 60
+        addStandbyIntervalByDay(standbyByDay, start, end, minDurationMinutes)
+        continue
+      }
+
       const isOccupied = type === 'booking'
         || type === 'hold'
         || type === 'block'
@@ -275,23 +334,7 @@ async function loadAvailabilityForCurrentMonth(force = false) {
         || rawEvent.display === 'background'
       if (!isOccupied) continue
 
-      let start = parseCalendarDateTime(rawEvent.start)
-      const end = parseCalendarDateTime(rawEvent.end)
-      if (!start || !end || !start.isValid || !end.isValid || end <= start) continue
-
-      while (start < end) {
-        const dayStart = start.startOf('day')
-        const dayEnd = dayStart.plus({ days: 1 })
-        const segmentEnd = end < dayEnd ? end : dayEnd
-        const key = toDayKey(dayStart)
-        const startMinute = Math.max(0, Math.round(start.diff(dayStart, 'minutes').minutes))
-        const endMinute = Math.min(24 * 60, Math.round(segmentEnd.diff(dayStart, 'minutes').minutes))
-        if (endMinute > startMinute) {
-          if (!intervalsByDay[key]) intervalsByDay[key] = []
-          intervalsByDay[key].push({ startMinute, endMinute })
-        }
-        start = segmentEnd
-      }
+      addIntervalByDay(intervalsByDay, start, end)
     }
 
     const mergedByDay: Record<string, Array<{ startMinute: number, endMinute: number }>> = {}
@@ -303,6 +346,7 @@ async function loadAvailabilityForCurrentMonth(force = false) {
     }
 
     dayOccupiedIntervals.value = mergedByDay
+    dayStandbyIntervals.value = standbyByDay
     dayOccupiedMinutes.value = occupiedByDay
     availabilityHintMonth.value = monthKey
     syncSelectionToAvailability()
@@ -487,6 +531,16 @@ const selectedRangeValidationMessage = computed(() => {
 
 const canSubmit = computed(() => !selectedRangeValidationMessage.value)
 
+function selectionRateKind(key: string, startMinute: number, endMinute: number): 'standard' | 'standby' {
+  const durationMinutes = endMinute - startMinute
+  return (dayStandbyIntervals.value[key] ?? []).some(interval =>
+    startMinute >= interval.startMinute && endMinute <= interval.endMinute
+    && durationMinutes >= interval.minDurationMinutes
+  )
+    ? 'standby'
+    : 'standard'
+}
+
 function applyDefaultEnd() {
   const start = selectedStartSlot.value
   if (!start) {
@@ -615,7 +669,11 @@ function submit() {
   }
 
   emit('update:open', false)
-  emit('submit', { start: start.toJSDate(), end: end.toJSDate() })
+  emit('submit', {
+    start: start.toJSDate(),
+    end: end.toJSDate(),
+    rateKind: selectionRateKind(form.date, startMinutes, endMinutes)
+  })
 }
 
 function applyCalendarDay(key: string) {

@@ -16,7 +16,7 @@ type CalendarEvent = EventInput & {
   end?: string
   title?: string
   extendedProps?: {
-    type?: 'booking' | 'hold' | 'external' | 'block' | 'standby'
+    type?: 'booking' | 'hold' | 'external' | 'block' | 'standby' | 'past-blackout'
     isOwn?: boolean
     status?: string
     rateKind?: string
@@ -28,6 +28,7 @@ type CalendarEvent = EventInput & {
     isGuest?: boolean
     calendarId?: string
     paymentExpiresAt?: string | null
+    minOpenSlotHours?: number
   }
 }
 
@@ -54,13 +55,17 @@ const props = withDefaults(defineProps<{
   endpoint: string // '/api/calendar/public' or '/api/calendar/member'
   fullDay?: boolean
   adminView?: boolean
+  showStandbyBadge?: boolean
+  showStandbyZones?: boolean
 }>(), {
   fullDay: false,
-  adminView: false
+  adminView: false,
+  showStandbyBadge: true,
+  showStandbyZones: true
 })
 
 const emit = defineEmits<{
-  (e: 'select', payload: { start: Date, end: Date }): void
+  (e: 'select', payload: { start: Date, end: Date, rateKind?: 'standard' | 'standby' }): void
   (e: 'booking-click', payload: {
     bookingId: string
     start: string
@@ -93,6 +98,9 @@ const workshopPromo = ref<WorkshopPromo | null>(null)
 const nowTickMs = ref(Date.now())
 const lastLoadRangeStart = ref<Date | null>(null)
 const lastLoadRangeEnd = ref<Date | null>(null)
+const activeLegendPopup = ref<'peak' | 'standby' | null>(null)
+const peakZonesHighlighted = ref(false)
+const standbyZonesHighlighted = ref(false)
 let nowTickTimer: ReturnType<typeof setInterval> | null = null
 const instance = getCurrentInstance()
 const STUDIO_TZ = 'America/Los_Angeles'
@@ -248,7 +256,11 @@ function isExpiredPendingPaymentEvent(event: CalendarEvent, nowMs = nowTickMs.va
 }
 
 const activeEvents = computed(() =>
-  events.value.filter(event => !isExpiredPendingPaymentEvent(event))
+  events.value.filter((event) => {
+    if (isExpiredPendingPaymentEvent(event)) return false
+    if (!props.showStandbyZones && event.extendedProps?.type === 'standby') return false
+    return true
+  })
 )
 
 const ownBookingCount = computed(() =>
@@ -384,12 +396,58 @@ const peakChip = computed(() => {
   return `Peak ${base} · ${multiplier} credits/hr`
 })
 
+const peakInfoLabel = computed(() => {
+  if (!peakWindow.value) return null
+  if (peakWindow.value.multiplier === null) {
+    return `${peakWindow.value.daysLabel} ${peakWindow.value.windowLabel}`
+  }
+  const multiplier = Number.isInteger(peakWindow.value.multiplier)
+    ? peakWindow.value.multiplier.toString()
+    : peakWindow.value.multiplier.toFixed(2).replace(/\.?0+$/, '')
+  return `${peakWindow.value.daysLabel} ${peakWindow.value.windowLabel} at ${multiplier} credits/hr`
+})
+
 const visibleRangeLabel = computed(() => {
   if (isMemberFeed.value && bookingWindowDays.value) {
     return `${visibleRange.value} (${bookingWindowDays.value}-day booking reach)`
   }
   return visibleRange.value
 })
+
+function formatCalendarTime(value: Date) {
+  return value.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: STUDIO_TZ
+  })
+}
+
+const standbyChipLabel = computed(() => {
+  const ranges = activeEvents.value
+    .filter(event => event.extendedProps?.type === 'standby')
+    .map((event) => {
+      const start = calendarEventDateToStudioDate(event.start)
+      const end = calendarEventDateToStudioDate(event.end)
+      if (!start || !end || end <= start) return null
+      const minOpenSlotHours = Number(event.extendedProps?.minOpenSlotHours ?? 4)
+      return { start, end, minOpenSlotHours }
+    })
+    .filter((range): range is { start: Date, end: Date, minOpenSlotHours: number } => Boolean(range))
+
+  if (!ranges.length) return null
+
+  const start = new Date(Math.min(...ranges.map(range => range.start.getTime())))
+  const end = new Date(Math.max(...ranges.map(range => range.end.getTime())))
+  const minHours = Math.max(...ranges.map(range => Number.isFinite(range.minOpenSlotHours) ? range.minOpenSlotHours : 4))
+  const minHoursLabel = Number.isInteger(minHours) ? `${minHours}h` : `${minHours.toFixed(1).replace(/\.0$/, '')}h`
+  return `Standby ${formatCalendarTime(start)}-${formatCalendarTime(end)} · ${minHoursLabel} min`
+})
+
+const standbyInfoLabel = computed(() => standbyChipLabel.value ?? 'Standby is currently available.')
+
+function toggleLegendPopup(target: 'peak' | 'standby') {
+  activeLegendPopup.value = activeLegendPopup.value === target ? null : target
+}
 
 function hourToTimeLabel(hour: number) {
   const safe = Math.max(0, Math.min(24, Math.floor(hour)))
@@ -466,6 +524,18 @@ function rangeOverlapsUnavailable(start: Date, end: Date) {
   })
 }
 
+function isWithinStandbyWindow(start: Date, end: Date) {
+  return activeEvents.value.some((event) => {
+    if (event.extendedProps?.type !== 'standby') return false
+    const eventStart = calendarEventDateToStudioDate(event.start)
+    const eventEnd = calendarEventDateToStudioDate(event.end)
+    if (!eventStart || !eventEnd) return false
+    const minDurationMs = Math.max(0, Number(event.extendedProps?.minOpenSlotHours ?? 4)) * 60 * 60 * 1000
+    if (end.getTime() - start.getTime() < minDurationMs) return false
+    return start >= eventStart && end <= eventEnd
+  })
+}
+
 function selectionIsAllowed(selectionStart: Date, selectionEnd: Date, allDay?: boolean) {
   if (selectionStart < new Date()) return false
   if (allDay) return false
@@ -505,7 +575,8 @@ function emitCalendarSelection(start: Date, end: Date, allDay?: boolean) {
   if (!selectionIsAllowed(start, normalizedEnd, allDay)) return
   emit('select', {
     start,
-    end: normalizedEnd
+    end: normalizedEnd,
+    rateKind: isWithinStandbyWindow(start, normalizedEnd) ? 'standby' : 'standard'
   })
 }
 
@@ -547,24 +618,60 @@ const peakEvents = computed<CalendarEvent[]>(() => {
   ]
 })
 
+const pastBlackoutEvents = computed<CalendarEvent[]>(() => {
+  const rangeStart = lastLoadRangeStart.value
+  const rangeEnd = lastLoadRangeEnd.value
+  if (!rangeStart || !rangeEnd) return []
+
+  const rangeStartLa = DateTime.fromJSDate(calendarDateToStudioDate(rangeStart), { zone: 'utc' }).setZone(STUDIO_TZ)
+  const rangeEndLa = DateTime.fromJSDate(calendarDateToStudioDate(rangeEnd), { zone: 'utc' }).setZone(STUDIO_TZ)
+  const nowLa = DateTime.fromMillis(nowTickMs.value, { zone: STUDIO_TZ })
+  if (nowLa <= rangeStartLa) return []
+
+  const events: CalendarEvent[] = []
+  const blackoutEnd = DateTime.min(nowLa, rangeEndLa)
+  let cursor = rangeStartLa.startOf('day')
+
+  while (cursor < blackoutEnd) {
+    const segmentStart = cursor < rangeStartLa ? rangeStartLa : cursor
+    const segmentEnd = DateTime.min(cursor.plus({ days: 1 }), blackoutEnd)
+    if (segmentEnd > segmentStart) {
+      events.push({
+        id: `past-blackout-${cursor.toISODate()}`,
+        title: 'Past',
+        display: 'background',
+        start: studioInstantToCalendarIso(segmentStart.toJSDate()),
+        end: studioInstantToCalendarIso(segmentEnd.toJSDate()),
+        classNames: ['fc-past-blackout'],
+        extendedProps: { type: 'past-blackout' }
+      })
+    }
+    cursor = cursor.plus({ days: 1 })
+  }
+
+  return events
+})
+
 const calendarEvents = computed<CalendarEvent[]>(() => [
+  ...pastBlackoutEvents.value,
   ...activeEvents.value,
   ...peakEvents.value
 ])
 
 const memberValidRange = computed(() => {
   if (!canSelect.value) return undefined
-  const now = new Date()
+  const nowLa = DateTime.fromMillis(nowTickMs.value, { zone: STUDIO_TZ })
+  const currentWeekStart = nowLa.startOf('day').minus({ days: nowLa.weekday % 7 })
   if (!bookingWindowDays.value) {
     return {
-      start: studioInstantToCalendarIso(now)
+      start: studioInstantToCalendarIso(currentWeekStart.toJSDate())
     }
   }
 
-  const end = new Date(now.getTime() + bookingWindowDays.value * 24 * 60 * 60 * 1000)
+  const end = nowLa.plus({ days: bookingWindowDays.value })
   return {
-    start: studioInstantToCalendarIso(now),
-    end: studioInstantToCalendarIso(end)
+    start: studioInstantToCalendarIso(currentWeekStart.toJSDate()),
+    end: studioInstantToCalendarIso(end.toJSDate())
   }
 })
 
@@ -592,7 +699,11 @@ const calendarOptions = computed(() => ({
     // Allow selecting over visual-only peak/standby shading; keep real booking/hold/block overlaps blocked.
     if (
       event.display === 'background'
-      && ((event.classNames ?? []).includes('fc-peak-window') || event.extendedProps?.type === 'standby')
+      && (
+        (event.classNames ?? []).includes('fc-peak-window')
+        || event.extendedProps?.type === 'standby'
+        || event.extendedProps?.type === 'past-blackout'
+      )
     ) return true
     if (event.extendedProps?.type === 'hold' && event.extendedProps?.isOwn) return true
     return false
@@ -606,7 +717,7 @@ const calendarOptions = computed(() => ({
   now: studioInstantToCalendarIso(new Date(nowTickMs.value)),
   nowIndicator: true,
   allDaySlot: false,
-  height: 'auto',
+  height: isGuestConstrainedFeed.value ? 800 : 'auto',
   slotMinTime: calendarSlotMinTime.value,
   slotMaxTime: calendarSlotMaxTime.value,
   snapDuration: calendarSnapDuration.value,
@@ -705,7 +816,11 @@ onUnmounted(() => {
 <template>
   <div
     class="availability-shell"
-    :class="{ 'availability-shell--guest-compact': isGuestConstrainedFeed }"
+    :class="{
+      'availability-shell--guest-compact': isGuestConstrainedFeed,
+      'availability-shell--peak-highlight': peakZonesHighlighted,
+      'availability-shell--standby-highlight': standbyZonesHighlighted
+    }"
   >
     <div class="availability-toolbar">
       <div>
@@ -727,17 +842,77 @@ onUnmounted(() => {
         </div>
         <div
           v-if="peakChip"
-          class="availability-chip availability-chip-peak"
+          class="availability-chip-popover-wrap"
         >
-          <span class="availability-dot availability-dot-peak" />
-          {{ peakChip }}
+          <button
+            type="button"
+            class="availability-chip availability-chip-button availability-chip-peak"
+            :aria-expanded="activeLegendPopup === 'peak'"
+            @click="toggleLegendPopup('peak')"
+            @mouseenter="peakZonesHighlighted = true"
+            @mouseleave="peakZonesHighlighted = false"
+            @focus="peakZonesHighlighted = true"
+            @blur="peakZonesHighlighted = false"
+            @keydown.escape="activeLegendPopup = null"
+          >
+            <span class="availability-dot availability-dot-peak" />
+            {{ peakChip }}
+            <UIcon
+              name="i-lucide-info"
+              class="size-3.5"
+            />
+          </button>
+          <div
+            v-if="activeLegendPopup === 'peak'"
+            class="availability-chip-popover availability-chip-popover-peak"
+          >
+            <p class="text-xs font-semibold uppercase tracking-wide">
+              Peak hours
+            </p>
+            <p class="mt-1 text-sm">
+              {{ peakInfoLabel }}
+            </p>
+            <p class="mt-2 text-xs leading-5 text-dimmed">
+              Time selected inside the orange peak zones uses the peak credit multiplier.
+            </p>
+          </div>
         </div>
         <div
-          v-if="standbyWindowCount"
-          class="availability-chip availability-chip-standby"
+          v-if="props.showStandbyBadge && standbyWindowCount"
+          class="availability-chip-popover-wrap"
         >
-          <span class="availability-dot availability-dot-standby" />
-          Standby rate window
+          <button
+            type="button"
+            class="availability-chip availability-chip-button availability-chip-standby"
+            :aria-expanded="activeLegendPopup === 'standby'"
+            @click="toggleLegendPopup('standby')"
+            @mouseenter="standbyZonesHighlighted = true"
+            @mouseleave="standbyZonesHighlighted = false"
+            @focus="standbyZonesHighlighted = true"
+            @blur="standbyZonesHighlighted = false"
+            @keydown.escape="activeLegendPopup = null"
+          >
+            <span class="availability-dot availability-dot-standby" />
+            {{ standbyChipLabel ?? 'Standby available' }}
+            <UIcon
+              name="i-lucide-info"
+              class="size-3.5"
+            />
+          </button>
+          <div
+            v-if="activeLegendPopup === 'standby'"
+            class="availability-chip-popover availability-chip-popover-standby"
+          >
+            <p class="text-xs font-semibold uppercase tracking-wide">
+              Standby
+            </p>
+            <p class="mt-1 text-sm">
+              {{ standbyInfoLabel }}
+            </p>
+            <p class="mt-2 text-xs leading-5 text-dimmed">
+              Standby is same-day discounted booking. Select a time fully inside the Stand By zone and meet the listed minimum to use the standby rate. Standby bookings cannot be held, canceled, rescheduled, extended, or chained more than once per day.
+            </p>
+          </div>
         </div>
         <div
           v-if="loading"

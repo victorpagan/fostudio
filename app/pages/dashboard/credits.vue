@@ -65,17 +65,6 @@ type PaymentMethodsResponse = {
   defaultCardId?: string | null
 }
 
-type ReferralSummaryResponse = {
-  code: string
-  active: boolean
-  stats: {
-    awardedCount: number
-    pendingCount: number
-    rejectedCount: number
-    totalCreditsAwarded: number
-  }
-}
-
 const { data: membership } = await useAsyncData('dash:credits:membership', async () => {
   if (!user.value) return null
   const { data, error } = await supabase
@@ -128,11 +117,6 @@ const { data: paymentMethodsData, refresh: refreshPaymentMethods } = await useAs
   return await $fetch<PaymentMethodsResponse>('/api/payments/methods')
 }, { watch: [() => user.value?.sub], server: false })
 
-const { data: referralSummary, refresh: refreshReferralSummary } = await useAsyncData('dash:credits:referral-summary', async () => {
-  if (!user.value?.sub) return null
-  return await $fetch<ReferralSummaryResponse>('/api/referrals/me')
-}, { watch: [() => user.value?.sub], server: false })
-
 const displayedCreditBalance = computed(() => creditSummary.value?.totalBalance ?? balance.value ?? 0)
 const canBuyTopoff = computed(() => creditSummary.value?.canBuyTopoff ?? true)
 const savedCards = computed(() => (paymentMethodsData.value?.methods ?? []).filter(card => card.enabled))
@@ -154,7 +138,6 @@ const pendingTopupAmountCents = ref(0)
 const pendingTopupCurrency = ref('USD')
 const pendingTopupLabel = ref('credits')
 const promoCode = ref('')
-const copyingReferralCode = ref(false)
 const dashboardHydrated = ref(false)
 const activeCreditsTab = ref<'buy' | 'history'>('buy')
 
@@ -280,30 +263,8 @@ async function refreshAll() {
     refreshCreditSummary(),
     refreshLedger(),
     refreshTopupOptions(),
-    refreshPaymentMethods(),
-    refreshReferralSummary()
+    refreshPaymentMethods()
   ])
-}
-
-async function copyReferralCode() {
-  if (!referralSummary.value?.code || copyingReferralCode.value) return
-  copyingReferralCode.value = true
-  try {
-    await navigator.clipboard.writeText(referralSummary.value.code)
-    toast.add({
-      title: 'Referral code copied',
-      description: `${referralSummary.value.code} is ready to share.`,
-      color: 'success'
-    })
-  } catch {
-    toast.add({
-      title: 'Could not copy code',
-      description: 'Clipboard access failed. Copy it manually.',
-      color: 'warning'
-    })
-  } finally {
-    copyingReferralCode.value = false
-  }
 }
 
 async function startTopup(optionKey: string) {
@@ -526,14 +487,57 @@ watch(
         />
       </template>
       <div class="space-y-4">
-        <UAlert
+        <DashboardDismissibleIntro
           v-if="!hasActiveMembership"
+          storage-key="credits-guest-intro"
           color="warning"
-          variant="soft"
-          icon="i-lucide-badge-x"
-          title="Guest credit mode"
-          description="You can buy premium guest credits and book without an active membership. Guest credits expire sooner and do not include member booking windows, 30-minute slots, or overnight holds."
-        />
+          icon="i-lucide-wallet-cards"
+          title="Buying credits as a guest"
+          description="Guest credits use premium pricing, expire sooner, and can be used for bookings between 11am and 7pm. Buy a bundle here or choose a time first and pay only the credit shortfall during booking."
+        >
+          <template #actions>
+            <UButton
+              size="xs"
+              to="/dashboard/book"
+            >
+              Book first
+            </UButton>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="soft"
+              to="/dashboard/membership"
+            >
+              Compare memberships
+            </UButton>
+          </template>
+        </DashboardDismissibleIntro>
+
+        <DashboardDismissibleIntro
+          v-else
+          storage-key="credits-member-intro"
+          color="info"
+          icon="i-lucide-wallet-cards"
+          title="Buying extra credits"
+          description="Use this page to review your balance, buy top-off credits, and see credit history. Top-off credits are useful when a booking needs more than your current monthly plan bank."
+        >
+          <template #actions>
+            <UButton
+              size="xs"
+              to="/dashboard/book"
+            >
+              Book studio
+            </UButton>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="soft"
+              to="/dashboard/referrals"
+            >
+              Referral code
+            </UButton>
+          </template>
+        </DashboardDismissibleIntro>
 
         <UCard>
           <div class="space-y-3">
@@ -556,10 +560,10 @@ watch(
                   size="sm"
                   color="neutral"
                   variant="soft"
-                  icon="i-lucide-users"
-                  to="/dashboard/membership"
+                  icon="i-lucide-gift"
+                  to="/dashboard/referrals"
                 >
-                  Membership
+                  Referrals
                 </UButton>
                 <UButton
                   size="sm"
@@ -607,73 +611,6 @@ watch(
               :title="`${formatCredits(creditSummary.expiringSoonCredits)} credits expiring soon`"
               :description="`Use expiring credits by ${formatDateLabel(creditSummary.expiringSoonAt) ?? 'this week'}.`"
             />
-          </div>
-        </UCard>
-
-        <UCard v-if="referralSummary">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div class="text-xs text-dimmed uppercase tracking-wide">
-                Referral program
-              </div>
-              <div class="mt-1 text-sm text-dimmed">
-                Share your code. Rewards apply after a first successful membership activation.
-              </div>
-            </div>
-            <UButton
-              size="sm"
-              color="neutral"
-              variant="soft"
-              icon="i-lucide-copy"
-              :loading="copyingReferralCode"
-              @click="copyReferralCode"
-            >
-              Copy code
-            </UButton>
-          </div>
-
-          <div class="mt-3 rounded-lg border border-default bg-elevated px-3 py-2">
-            <div class="text-xs text-dimmed uppercase tracking-wide">
-              Your code
-            </div>
-            <div class="mt-1 text-lg font-semibold tracking-wide">
-              {{ referralSummary.code }}
-            </div>
-          </div>
-
-          <div class="mt-3 grid gap-2 sm:grid-cols-4 text-xs">
-            <div class="rounded-lg border border-default p-2">
-              <div class="text-dimmed">
-                Awarded
-              </div>
-              <div class="mt-1 font-semibold">
-                {{ referralSummary.stats.awardedCount }}
-              </div>
-            </div>
-            <div class="rounded-lg border border-default p-2">
-              <div class="text-dimmed">
-                Pending
-              </div>
-              <div class="mt-1 font-semibold">
-                {{ referralSummary.stats.pendingCount }}
-              </div>
-            </div>
-            <div class="rounded-lg border border-default p-2">
-              <div class="text-dimmed">
-                Rejected
-              </div>
-              <div class="mt-1 font-semibold">
-                {{ referralSummary.stats.rejectedCount }}
-              </div>
-            </div>
-            <div class="rounded-lg border border-default p-2">
-              <div class="text-dimmed">
-                Credits earned
-              </div>
-              <div class="mt-1 font-semibold">
-                {{ formatCredits(referralSummary.stats.totalCreditsAwarded) }}
-              </div>
-            </div>
           </div>
         </UCard>
 

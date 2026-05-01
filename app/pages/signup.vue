@@ -221,7 +221,8 @@ async function handleSignup() {
           email,
           phone,
           first_name: form.firstName.trim() || undefined,
-          last_name: form.lastName.trim() || undefined
+          last_name: form.lastName.trim() || undefined,
+          studioSource: 'studio_checkout_signup'
         }
       })
 
@@ -269,7 +270,8 @@ async function handleSignup() {
         email,
         phone,
         first_name: form.firstName.trim() || undefined,
-        last_name: form.lastName.trim() || undefined
+        last_name: form.lastName.trim() || undefined,
+        studioSource: 'studio_signup'
       }
     })
 

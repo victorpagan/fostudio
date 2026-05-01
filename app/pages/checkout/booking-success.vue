@@ -316,7 +316,7 @@ function formatTime(iso: string) {
 
         <div class="flex gap-3 justify-center">
           <UButton
-            to="/book"
+            to="/signup?returnTo=/dashboard/book"
             color="neutral"
             variant="soft"
           >

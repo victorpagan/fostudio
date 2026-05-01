@@ -1,4 +1,5 @@
 // File: server/api/account/bootstrap.post.ts
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { z } from 'zod'
 import type { H3Event } from 'h3'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
@@ -10,6 +11,8 @@ const schema = z.object({
   phone: z.string().optional(),
   first_name: z.string().optional(),
   last_name: z.string().optional(),
+  studioSource: z.enum(['studio_signup', 'studio_checkout_signup', 'lab_shared_auth']).optional(),
+  studio_source: z.enum(['studio_signup', 'studio_checkout_signup', 'lab_shared_auth']).optional(),
   address: z.any().optional() // jsonb (optional; only set if you have it)
 })
 
@@ -21,6 +24,33 @@ function normEmail(email?: string | null) {
 function normPhone(phone?: string | null) {
   const p = (phone ?? '').trim()
   return p.length ? p : null
+}
+
+function isMissingStudioProvenanceColumn(message?: string | null) {
+  const normalized = String(message ?? '').toLowerCase()
+  return normalized.includes('studio_account_origin')
+    || normalized.includes('studio_registered_at')
+    || normalized.includes('studio_last_seen_at')
+}
+
+async function stampStudioProvenance(supa: any, customerId: string, input: {
+  source: 'studio_signup' | 'studio_checkout_signup' | 'lab_shared_auth'
+  hasExistingOrigin: boolean
+}) {
+  const nowIso = new Date().toISOString()
+  const patch: Record<string, unknown> = {
+    studio_last_seen_at: nowIso
+  }
+
+  if (!input.hasExistingOrigin) {
+    patch.studio_account_origin = input.source
+    patch.studio_registered_at = nowIso
+  }
+
+  const { error } = await supa.from('customers').update(patch).eq('id', customerId)
+  if (error && !isMissingStudioProvenanceColumn(error.message)) {
+    throw createError({ statusCode: 500, statusMessage: `Failed to stamp Studio account provenance: ${error.message}` })
+  }
 }
 
 async function canTransferCustomerOwnership(supa: any, fromUserId: string) {
@@ -100,6 +130,7 @@ export default defineEventHandler(async (event) => {
   const first_name = (body.first_name ?? '').trim() || null
   const last_name = (body.last_name ?? '').trim() || null
   const address = body.address ?? null
+  const studioSource = body.studioSource ?? body.studio_source ?? 'lab_shared_auth'
 
   // 1) Find the customer row linked to this auth user.
   //    If duplicates exist (shouldn't after the unique constraint is added, but
@@ -117,7 +148,7 @@ export default defineEventHandler(async (event) => {
 
   // De-duplicate: keep the first (newest), delete the rest
   if ((linkedRows?.length ?? 0) > 1) {
-    const [keep, ...extras] = linkedRows!
+    const [, ...extras] = linkedRows!
     const extraIds = extras.map((r: any) => r.id)
     await supa.from('customers').delete().in('id', extraIds)
     console.warn(`[bootstrap] Removed ${extraIds.length} duplicate customer rows for user ${user.sub}`)
@@ -221,6 +252,10 @@ export default defineEventHandler(async (event) => {
 
   // At this point customerRow is guaranteed non-null (we threw above if insert failed)
   const row = customerRow!
+  await stampStudioProvenance(supa, row.id, {
+    source: studioSource,
+    hasExistingOrigin: Boolean(row.studio_account_origin)
+  })
 
   // 6) Square sync: ensure we have square_customer_id + json
   let squareCustomerId: string | null = row.square_customer_id ?? null

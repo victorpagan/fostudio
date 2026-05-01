@@ -10,11 +10,18 @@ type MemberTab = 'overview' | 'activity' | 'bookings' | 'credits' | 'access'
 
 type MemberRecord = {
   membership_id: string
+  membership_record_id: string | null
   user_id: string
   tier: string | null
   cadence: string | null
   status: string | null
   effective_status: string
+  account_kind: 'guest' | 'subscriber_current' | 'subscriber_past'
+  account_source: 'studio_signup' | 'studio_checkout_signup' | 'studio_membership' | 'lab_shared_auth' | 'unknown'
+  has_membership_history: boolean
+  has_current_membership: boolean
+  studio_registered_at: string | null
+  studio_last_seen_at: string | null
   current_period_start: string | null
   current_period_end: string | null
   last_paid_at: string | null
@@ -45,6 +52,11 @@ type MemberRecord = {
 
 type MembersSummary = {
   totalMembers: number
+  guestAccounts: number
+  studioSignupAccounts: number
+  labSharedAccounts: number
+  currentSubscriberAccounts: number
+  pastSubscriberAccounts: number
   activeMembers: number
   pastDueMembers: number
   pendingCheckoutMembers: number
@@ -160,6 +172,11 @@ type ActivityItem = {
 
 const emptySummary: MembersSummary = {
   totalMembers: 0,
+  guestAccounts: 0,
+  studioSignupAccounts: 0,
+  labSharedAccounts: 0,
+  currentSubscriberAccounts: 0,
+  pastSubscriberAccounts: 0,
   activeMembers: 0,
   pastDueMembers: 0,
   pendingCheckoutMembers: 0,
@@ -179,7 +196,7 @@ const summary = ref<MembersSummary>(emptySummary)
 const selectedMemberId = ref<string | null>(null)
 const selectedTab = ref<MemberTab>('overview')
 const memberSearch = ref('')
-const memberStatusFilter = ref<'all' | 'active' | 'past_due' | 'pending_checkout' | 'canceled' | 'expired' | 'inactive'>('all')
+const memberStatusFilter = ref<'all' | 'guest' | 'subscriber_current' | 'subscriber_past' | 'active' | 'past_due' | 'pending_checkout' | 'canceled' | 'expired' | 'inactive'>('all')
 const memberHealthFilter = ref<'all' | 'attention' | 'waiver' | 'door_code' | 'zero_credits' | 'incidents' | 'workshops'>('all')
 const rosterPage = ref(1)
 const rosterPageSize = ref(25)
@@ -198,7 +215,10 @@ const doorCodeForm = reactive({ value: '' })
 const workshopAccessForm = reactive({ enabled: false })
 
 const statusFilterItems = [
-  { label: 'All statuses', value: 'all' },
+  { label: 'All accounts', value: 'all' },
+  { label: 'Guest accounts', value: 'guest' },
+  { label: 'Current subscribers', value: 'subscriber_current' },
+  { label: 'Past subscribers', value: 'subscriber_past' },
   { label: 'Active', value: 'active' },
   { label: 'Past due', value: 'past_due' },
   { label: 'Pending checkout', value: 'pending_checkout' },
@@ -237,7 +257,10 @@ const selectedMember = computed(() => members.value.find(member => member.member
 const filteredMembers = computed(() => {
   const query = memberSearch.value.trim().toLowerCase()
   return members.value.filter((member) => {
-    if (memberStatusFilter.value !== 'all' && member.effective_status !== memberStatusFilter.value) return false
+    if (memberStatusFilter.value === 'guest' && member.account_kind !== 'guest') return false
+    if (memberStatusFilter.value === 'subscriber_current' && member.account_kind !== 'subscriber_current') return false
+    if (memberStatusFilter.value === 'subscriber_past' && member.account_kind !== 'subscriber_past') return false
+    if (!['all', 'guest', 'subscriber_current', 'subscriber_past'].includes(memberStatusFilter.value) && member.effective_status !== memberStatusFilter.value) return false
 
     if (memberHealthFilter.value === 'attention' && member.health_flags.length === 0) return false
     if (memberHealthFilter.value === 'waiver' && member.waiver_status === 'current') return false
@@ -255,6 +278,8 @@ const filteredMembers = computed(() => {
       member.user_id,
       member.tier,
       member.cadence,
+      accountKindLabel(member.account_kind),
+      accountSourceLabel(member.account_source),
       member.customer_lab_notes,
       ...member.health_flags
     ].filter(Boolean).join(' ').toLowerCase()
@@ -272,10 +297,10 @@ const rosterRangeLabel = computed(() => {
 })
 
 const kpiCards = computed(() => [
-  { label: 'Active members', value: summary.value.activeMembers, hint: `${summary.value.totalMembers} total`, icon: 'i-lucide-users', color: 'success' as const },
+  { label: 'Current subscribers', value: summary.value.currentSubscriberAccounts, hint: `${summary.value.activeMembers} active · ${summary.value.pastDueMembers} past due`, icon: 'i-lucide-badge-check', color: 'success' as const },
+  { label: 'Guest accounts', value: summary.value.guestAccounts, hint: `${summary.value.studioSignupAccounts} Studio signups · ${summary.value.labSharedAccounts} lab logins`, icon: 'i-lucide-user-round', color: 'info' as const },
+  { label: 'Past subscribers', value: summary.value.pastSubscriberAccounts, hint: 'Canceled, expired, or inactive', icon: 'i-lucide-history', color: summary.value.pastSubscriberAccounts ? 'warning' as const : 'neutral' as const },
   { label: 'Needs waiver', value: summary.value.waiverAttentionMembers, hint: 'Missing, expired, or stale', icon: 'i-lucide-file-warning', color: summary.value.waiverAttentionMembers ? 'warning' as const : 'neutral' as const },
-  { label: 'Door requests', value: summary.value.pendingDoorCodeRequests, hint: 'Pending code changes', icon: 'i-lucide-key-round', color: summary.value.pendingDoorCodeRequests ? 'warning' as const : 'neutral' as const },
-  { label: 'Upcoming bookings', value: summary.value.upcomingBookings, hint: 'Across listed members', icon: 'i-lucide-calendar-clock', color: 'primary' as const },
   { label: 'Open ops items', value: summary.value.openIncidents + summary.value.openExpenses, hint: `${summary.value.openIncidents} incidents · ${summary.value.openExpenses} expenses`, icon: 'i-lucide-siren', color: summary.value.openIncidents ? 'error' as const : 'neutral' as const }
 ])
 
@@ -386,6 +411,33 @@ function memberLabel(member: MemberRecord | null | undefined) {
   return name || member.customer_email || member.user_id
 }
 
+function accountKindLabel(kind: MemberRecord['account_kind']) {
+  if (kind === 'guest') return 'Guest account'
+  if (kind === 'subscriber_current') return 'Current subscriber'
+  return 'Past subscriber'
+}
+
+function accountKindColor(kind: MemberRecord['account_kind']) {
+  if (kind === 'guest') return 'info' as const
+  if (kind === 'subscriber_current') return 'success' as const
+  return 'warning' as const
+}
+
+function accountSourceLabel(source: MemberRecord['account_source']) {
+  if (source === 'studio_signup') return 'Studio signup'
+  if (source === 'studio_checkout_signup') return 'Studio checkout signup'
+  if (source === 'studio_membership') return 'Studio membership'
+  if (source === 'lab_shared_auth') return 'Lab shared login'
+  return 'Unknown source'
+}
+
+function accountSourceColor(source: MemberRecord['account_source']) {
+  if (source === 'studio_signup' || source === 'studio_checkout_signup') return 'primary' as const
+  if (source === 'studio_membership') return 'success' as const
+  if (source === 'lab_shared_auth') return 'neutral' as const
+  return 'warning' as const
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -449,6 +501,7 @@ function formatShortDate(value: string | null | undefined) {
 
 function memberStatusColor(status: string | null | undefined) {
   const normalized = String(status ?? '').toLowerCase()
+  if (normalized === 'guest') return 'info' as const
   if (normalized === 'active') return 'success' as const
   if (normalized === 'past_due' || normalized === 'pending_checkout') return 'warning' as const
   if (normalized === 'expired' || normalized === 'canceled') return 'error' as const
@@ -585,13 +638,13 @@ async function refreshAll() {
 }
 
 async function saveMembershipStatus() {
-  if (!selectedMember.value) return
+  if (!selectedMember.value?.membership_record_id) return
   updatingStatus.value = true
   try {
     await $fetch('/api/admin/members/membership-status', {
       method: 'POST',
       body: {
-        membershipId: selectedMember.value.membership_id,
+        membershipId: selectedMember.value.membership_record_id,
         status: statusForm.status
       }
     })
@@ -612,7 +665,7 @@ async function applyCreditAdjustment() {
       method: 'POST',
       body: {
         userId: selectedMember.value.user_id,
-        membershipId: selectedMember.value.membership_id,
+        membershipId: selectedMember.value.membership_record_id,
         delta: creditForm.delta,
         reason: creditForm.reason,
         note: creditForm.note || null
@@ -755,7 +808,7 @@ onMounted(async () => {
               placeholder="Name, email, phone, tier, notes, flags"
             />
           </UFormField>
-          <UFormField label="Status">
+          <UFormField label="Account/status">
             <USelect
               v-model="memberStatusFilter"
               :items="statusFilterItems"
@@ -824,7 +877,7 @@ onMounted(async () => {
                     Member
                   </th>
                   <th class="px-4 py-3 font-medium">
-                    Status
+                    Account
                   </th>
                   <th class="px-4 py-3 font-medium">
                     Plan
@@ -866,17 +919,33 @@ onMounted(async () => {
                     </div>
                   </td>
                   <td class="px-4 py-3">
-                    <UBadge
-                      :color="memberStatusColor(member.effective_status)"
-                      size="xs"
-                      variant="soft"
-                    >
-                      {{ member.effective_status }}
-                    </UBadge>
+                    <div class="flex flex-col items-start gap-1">
+                      <UBadge
+                        :color="accountKindColor(member.account_kind)"
+                        size="xs"
+                        variant="soft"
+                      >
+                        {{ accountKindLabel(member.account_kind) }}
+                      </UBadge>
+                      <UBadge
+                        :color="memberStatusColor(member.effective_status)"
+                        size="xs"
+                        variant="subtle"
+                      >
+                        {{ member.effective_status }}
+                      </UBadge>
+                      <UBadge
+                        :color="accountSourceColor(member.account_source)"
+                        size="xs"
+                        variant="outline"
+                      >
+                        {{ accountSourceLabel(member.account_source) }}
+                      </UBadge>
+                    </div>
                   </td>
                   <td class="px-4 py-3 text-dimmed">
-                    {{ member.tier || 'No tier' }}<br>
-                    <span class="text-xs">{{ member.cadence || 'no cadence' }}</span>
+                    {{ member.tier || (member.account_kind === 'guest' ? 'No subscription history' : 'No tier') }}<br>
+                    <span class="text-xs">{{ member.cadence || (member.account_kind === 'guest' ? 'guest rules' : 'no cadence') }}</span>
                   </td>
                   <td class="px-4 py-3">
                     <UBadge
@@ -996,10 +1065,22 @@ onMounted(async () => {
                   {{ memberLabel(selectedMember) }}
                 </h2>
                 <UBadge
-                  :color="memberStatusColor(selectedMember.effective_status)"
+                  :color="accountKindColor(selectedMember.account_kind)"
                   variant="soft"
                 >
+                  {{ accountKindLabel(selectedMember.account_kind) }}
+                </UBadge>
+                <UBadge
+                  :color="memberStatusColor(selectedMember.effective_status)"
+                  variant="subtle"
+                >
                   {{ selectedMember.effective_status }}
+                </UBadge>
+                <UBadge
+                  :color="accountSourceColor(selectedMember.account_source)"
+                  variant="outline"
+                >
+                  {{ accountSourceLabel(selectedMember.account_source) }}
                 </UBadge>
                 <UBadge
                   :color="memberHealthColor"
@@ -1014,7 +1095,7 @@ onMounted(async () => {
                 </template>
               </div>
               <div class="mt-2 flex flex-wrap gap-2 text-xs text-dimmed">
-                <span>{{ selectedMember.tier || 'No tier' }} / {{ selectedMember.cadence || 'no cadence' }}</span>
+                <span>{{ selectedMember.tier || (selectedMember.account_kind === 'guest' ? 'No subscription history' : 'No tier') }} / {{ selectedMember.cadence || (selectedMember.account_kind === 'guest' ? 'guest rules' : 'no cadence') }}</span>
                 <span>·</span>
                 <span>{{ formatCredits(selectedMember.credit_balance) }} credits</span>
                 <span>·</span>
@@ -1114,9 +1195,36 @@ onMounted(async () => {
               <div class="grid gap-4 lg:grid-cols-2">
                 <UCard class="border-0 bg-default/50">
                   <div class="font-medium">
-                    Contact and membership
+                    Contact and account
                   </div>
                   <div class="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                    <div>
+                      <div class="text-xs text-dimmed">
+                        Account type
+                      </div><div>
+                        <UBadge
+                          :color="accountKindColor(selectedMember.account_kind)"
+                          variant="soft"
+                        >
+                          {{ accountKindLabel(selectedMember.account_kind) }}
+                        </UBadge>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="text-xs text-dimmed">
+                        Membership status
+                      </div><div>{{ selectedMember.has_membership_history ? selectedMember.effective_status : 'Guest only' }}</div>
+                    </div>
+                    <div>
+                      <div class="text-xs text-dimmed">
+                        Account source
+                      </div><div>{{ accountSourceLabel(selectedMember.account_source) }}</div>
+                    </div>
+                    <div>
+                      <div class="text-xs text-dimmed">
+                        First seen in Studio
+                      </div><div>{{ formatDate(selectedMember.studio_registered_at) }}</div>
+                    </div>
                     <div>
                       <div class="text-xs text-dimmed">
                         Email
@@ -1434,7 +1542,16 @@ onMounted(async () => {
                 <div class="font-medium">
                   Membership status
                 </div>
-                <div class="mt-3 grid gap-3 sm:grid-cols-[12rem_auto]">
+                <p
+                  v-if="!selectedMember.membership_record_id"
+                  class="mt-2 text-sm text-dimmed"
+                >
+                  This is a guest account with no subscription history. Membership status controls appear once the account has a membership record.
+                </p>
+                <div
+                  v-else
+                  class="mt-3 grid gap-3 sm:grid-cols-[12rem_auto]"
+                >
                   <USelect
                     v-model="statusForm.status"
                     :items="[
@@ -1446,6 +1563,7 @@ onMounted(async () => {
                   />
                   <UButton
                     :loading="updatingStatus"
+                    :disabled="!selectedMember.membership_record_id"
                     @click="saveMembershipStatus"
                   >
                     Save status

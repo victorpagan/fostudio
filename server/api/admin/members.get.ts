@@ -40,11 +40,18 @@ type MembershipSourceRow = {
 
 type MemberRow = {
   membership_id: string
+  membership_record_id: string | null
   user_id: string
   tier: string | null
   cadence: string | null
   status: string | null
   effective_status: string
+  account_kind: 'guest' | 'subscriber_current' | 'subscriber_past'
+  account_source: 'studio_signup' | 'studio_checkout_signup' | 'studio_membership' | 'lab_shared_auth' | 'unknown'
+  has_membership_history: boolean
+  has_current_membership: boolean
+  studio_registered_at: string | null
+  studio_last_seen_at: string | null
   current_period_start: string | null
   current_period_end: string | null
   last_paid_at: string | null
@@ -104,6 +111,62 @@ function pushIf(flags: string[], condition: boolean, value: string) {
   if (condition) flags.push(value)
 }
 
+const CUSTOMER_BASE_COLUMNS = 'user_id,email,phone,first_name,last_name,lab_notes,door_code,workshop_booking_enabled,created_at,updated_at'
+const CUSTOMER_PROVENANCE_COLUMNS = `${CUSTOMER_BASE_COLUMNS},studio_account_origin,studio_registered_at,studio_last_seen_at`
+
+function isMissingCustomerProvenanceColumn(message?: string | null) {
+  const normalized = String(message ?? '').toLowerCase()
+  return normalized.includes('studio_account_origin')
+    || normalized.includes('studio_registered_at')
+    || normalized.includes('studio_last_seen_at')
+}
+
+function membershipSortValue(membership: MembershipSourceRow) {
+  const candidates = [membership.current_period_end, membership.last_paid_at, membership.created_at]
+  for (const value of candidates) {
+    const parsed = Date.parse(String(value ?? ''))
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return 0
+}
+
+function chooseMembership(left: MembershipSourceRow | undefined, right: MembershipSourceRow, now: Date) {
+  if (!left) return right
+
+  const leftStatus = deriveEffectiveStatus(left.status, left.current_period_end, now)
+  const rightStatus = deriveEffectiveStatus(right.status, right.current_period_end, now)
+  const rank = (status: string) => {
+    if (status === 'active') return 4
+    if (status === 'past_due') return 3
+    if (status === 'pending_checkout') return 2
+    return 1
+  }
+  const leftRank = rank(leftStatus)
+  const rightRank = rank(rightStatus)
+  if (rightRank !== leftRank) return rightRank > leftRank ? right : left
+
+  return membershipSortValue(right) > membershipSortValue(left) ? right : left
+}
+
+function deriveAccountKind(membership: MembershipSourceRow | undefined, effectiveStatus: string): MemberRow['account_kind'] {
+  if (!membership) return 'guest'
+  if (['active', 'past_due', 'pending_checkout'].includes(effectiveStatus)) return 'subscriber_current'
+  return 'subscriber_past'
+}
+
+function deriveAccountSource(customer: { studio_account_origin?: string | null } | undefined, membership: MembershipSourceRow | undefined): MemberRow['account_source'] {
+  const origin = String(customer?.studio_account_origin ?? '').trim()
+  if (
+    origin === 'studio_signup'
+    || origin === 'studio_checkout_signup'
+    || origin === 'studio_membership'
+    || origin === 'lab_shared_auth'
+  ) {
+    return origin
+  }
+  return membership ? 'studio_membership' : 'unknown'
+}
+
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
   const db = supabase as unknown as UntypedSupabaseClient
@@ -123,14 +186,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: activeWaiverTemplateErr.message })
   }
 
-  const { data: memberships, error: membershipsErr } = await db
-    .from<MembershipSourceRow>('memberships')
-    .select('id,user_id,tier,cadence,status,current_period_start,current_period_end,last_paid_at,created_at')
-    .order('created_at', { ascending: false })
-    .limit(500)
-
-  if (membershipsErr) throw createError({ statusCode: 500, statusMessage: membershipsErr.message })
-
   type CustomerRow = {
     user_id: string
     email: string | null
@@ -140,6 +195,11 @@ export default defineEventHandler(async (event) => {
     lab_notes: string | null
     door_code: string | null
     workshop_booking_enabled: boolean | null
+    created_at: string | null
+    updated_at: string | null
+    studio_account_origin?: 'studio_signup' | 'studio_checkout_signup' | 'studio_membership' | 'lab_shared_auth' | null
+    studio_registered_at?: string | null
+    studio_last_seen_at?: string | null
   }
   type DoorCodeRequestRow = {
     user_id: string
@@ -169,7 +229,44 @@ export default defineEventHandler(async (event) => {
     status: string | null
   }
 
-  const userIds = [...new Set((memberships ?? []).map(row => row.user_id).filter(Boolean))]
+  const membershipsRes = await db
+    .from<MembershipSourceRow>('memberships')
+    .select('id,user_id,tier,cadence,status,current_period_start,current_period_end,last_paid_at,created_at')
+    .order('created_at', { ascending: false })
+    .limit(1000)
+
+  let customersResAll = await db
+    .from<CustomerRow>('customers')
+    .select(CUSTOMER_PROVENANCE_COLUMNS)
+    .order('updated_at', { ascending: false })
+    .limit(1000)
+
+  if (customersResAll.error && isMissingCustomerProvenanceColumn(customersResAll.error.message)) {
+    customersResAll = await db
+      .from<CustomerRow>('customers')
+      .select(CUSTOMER_BASE_COLUMNS)
+      .order('updated_at', { ascending: false })
+      .limit(1000)
+  }
+
+  if (membershipsRes.error) throw createError({ statusCode: 500, statusMessage: membershipsRes.error.message })
+  if (customersResAll.error) throw createError({ statusCode: 500, statusMessage: customersResAll.error.message })
+
+  const memberships = membershipsRes.data ?? []
+  const customersAll = customersResAll.data ?? []
+  const latestMembershipByUserId = new Map<string, MembershipSourceRow>()
+  for (const membership of memberships) {
+    if (!membership.user_id) continue
+    latestMembershipByUserId.set(
+      membership.user_id,
+      chooseMembership(latestMembershipByUserId.get(membership.user_id), membership, now)
+    )
+  }
+
+  const userIds = [...new Set([
+    ...memberships.map(row => row.user_id).filter(Boolean),
+    ...customersAll.map(row => row.user_id).filter(Boolean)
+  ])]
   let customers: CustomerRow[] = []
   let balances: BalanceRow[] = []
   let doorCodeRequests: DoorCodeRequestRow[] = []
@@ -179,11 +276,19 @@ export default defineEventHandler(async (event) => {
   let expenses: CountRow[] = []
 
   if (userIds.length) {
-    const [customersRes, balancesRes, doorCodeRequestsRes, waiverSignaturesRes, bookingsRes, incidentsRes, expensesRes] = await Promise.all([
-      db
+    let customersRes = await db
+      .from<CustomerRow>('customers')
+      .select(CUSTOMER_PROVENANCE_COLUMNS)
+      .in('user_id', userIds)
+
+    if (customersRes.error && isMissingCustomerProvenanceColumn(customersRes.error.message)) {
+      customersRes = await db
         .from<CustomerRow>('customers')
-        .select('user_id,email,phone,first_name,last_name,lab_notes,door_code,workshop_booking_enabled')
-        .in('user_id', userIds),
+        .select(CUSTOMER_BASE_COLUMNS)
+        .in('user_id', userIds)
+    }
+
+    const [balancesRes, doorCodeRequestsRes, waiverSignaturesRes, bookingsRes, incidentsRes, expensesRes] = await Promise.all([
       db
         .from<BalanceRow>('credit_balance')
         .select('user_id,balance')
@@ -293,20 +398,25 @@ export default defineEventHandler(async (event) => {
     openExpenseCountByUserId.set(row.member_user_id, (openExpenseCountByUserId.get(row.member_user_id) ?? 0) + 1)
   }
 
-  const members: MemberRow[] = (memberships ?? []).map((membership) => {
-    const customer = customersByUserId.get(membership.user_id)
-    const latestDoorCodeRequest = latestDoorCodeRequestByUserId.get(membership.user_id)
-    const latestWaiverSignature = latestWaiverSignatureByUserId.get(membership.user_id)
-    const bookingStats = bookingStatsByUserId.get(membership.user_id)
-    const creditBalance = balancesByUserId.get(membership.user_id) ?? null
-    const effectiveStatus = deriveEffectiveStatus(membership.status, membership.current_period_end, now)
+  const members: MemberRow[] = userIds.map((userId) => {
+    const membership = latestMembershipByUserId.get(userId)
+    const customer = customersByUserId.get(userId)
+    const latestDoorCodeRequest = latestDoorCodeRequestByUserId.get(userId)
+    const latestWaiverSignature = latestWaiverSignatureByUserId.get(userId)
+    const bookingStats = bookingStatsByUserId.get(userId)
+    const creditBalance = balancesByUserId.get(userId) ?? null
+    const effectiveStatus = membership
+      ? deriveEffectiveStatus(membership.status, membership.current_period_end, now)
+      : 'guest'
+    const accountKind = deriveAccountKind(membership, effectiveStatus)
+    const accountSource = deriveAccountSource(customer, membership)
     const waiverStatus = computeWaiverStatus({
       activeTemplate: activeWaiverTemplate as { id: string } | null,
       signature: latestWaiverSignature ?? null,
       now
     })
-    const openIncidents = openIncidentCountByUserId.get(membership.user_id) ?? 0
-    const openExpenses = openExpenseCountByUserId.get(membership.user_id) ?? 0
+    const openIncidents = openIncidentCountByUserId.get(userId) ?? 0
+    const openExpenses = openExpenseCountByUserId.get(userId) ?? 0
     const healthFlags: string[] = []
 
     pushIf(healthFlags, effectiveStatus === 'expired', 'Membership expired')
@@ -318,16 +428,23 @@ export default defineEventHandler(async (event) => {
     pushIf(healthFlags, openExpenses > 0, `${openExpenses} open expense${openExpenses === 1 ? '' : 's'}`)
 
     return {
-      membership_id: membership.id,
-      user_id: membership.user_id,
-      tier: membership.tier,
-      cadence: membership.cadence,
-      status: membership.status,
+      membership_id: membership?.id ?? `guest:${userId}`,
+      membership_record_id: membership?.id ?? null,
+      user_id: userId,
+      tier: membership?.tier ?? null,
+      cadence: membership?.cadence ?? null,
+      status: membership?.status ?? null,
       effective_status: effectiveStatus,
-      current_period_start: membership.current_period_start,
-      current_period_end: membership.current_period_end,
-      last_paid_at: membership.last_paid_at,
-      created_at: membership.created_at,
+      account_kind: accountKind,
+      account_source: accountSource,
+      has_membership_history: Boolean(membership),
+      has_current_membership: accountKind === 'subscriber_current',
+      studio_registered_at: customer?.studio_registered_at ?? null,
+      studio_last_seen_at: customer?.studio_last_seen_at ?? null,
+      current_period_start: membership?.current_period_start ?? null,
+      current_period_end: membership?.current_period_end ?? null,
+      last_paid_at: membership?.last_paid_at ?? null,
+      created_at: membership?.created_at ?? customer?.updated_at ?? customer?.created_at ?? nowIso,
       customer_email: customer?.email ?? null,
       customer_phone: customer?.phone ?? null,
       customer_first_name: customer?.first_name ?? null,
@@ -351,10 +468,15 @@ export default defineEventHandler(async (event) => {
       open_expenses_count: openExpenses,
       health_flags: healthFlags
     }
-  })
+  }).sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
 
   const summary = {
     totalMembers: members.length,
+    guestAccounts: members.filter(member => member.account_kind === 'guest').length,
+    studioSignupAccounts: members.filter(member => member.account_source === 'studio_signup' || member.account_source === 'studio_checkout_signup').length,
+    labSharedAccounts: members.filter(member => member.account_source === 'lab_shared_auth').length,
+    currentSubscriberAccounts: members.filter(member => member.account_kind === 'subscriber_current').length,
+    pastSubscriberAccounts: members.filter(member => member.account_kind === 'subscriber_past').length,
     activeMembers: members.filter(member => member.effective_status === 'active').length,
     pastDueMembers: members.filter(member => member.effective_status === 'past_due').length,
     pendingCheckoutMembers: members.filter(member => member.effective_status === 'pending_checkout').length,
