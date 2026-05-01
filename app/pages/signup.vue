@@ -167,8 +167,9 @@ function cadenceLabel(value: Cadence | null) {
 }
 
 function mapSignupError(error: unknown) {
-  const maybe = error as { message?: string, status?: number, statusCode?: number }
-  const message = String(maybe?.message ?? '').toLowerCase()
+  const maybe = error as { data?: { statusMessage?: string }, message?: string, status?: number, statusCode?: number }
+  const rawMessage = maybe?.data?.statusMessage ?? maybe?.message ?? ''
+  const message = String(rawMessage).toLowerCase()
   const statusCode = Number(maybe?.statusCode ?? maybe?.status ?? 0)
 
   if (statusCode === 429 || message.includes('too many requests') || message.includes('rate limit')) {
@@ -177,12 +178,21 @@ function mapSignupError(error: unknown) {
   if (message.includes('user already registered')) {
     return 'This email already has an account. Log in to resume membership activation.'
   }
-  return maybe?.message ?? 'Signup failed.'
+  if (message.includes('confirmation email') || message.includes('sending confirmation')) {
+    return 'Account created, but the confirmation email could not be sent. Try logging in, or contact support if this continues.'
+  }
+  return rawMessage || 'Signup failed.'
 }
 
 async function handleSignup() {
   errorMsg.value = null
   successMsg.value = null
+  const phone = form.phone.trim()
+  if (!phone) {
+    errorMsg.value = 'Phone is required to create an account.'
+    return
+  }
+
   loading.value = true
   try {
     if (isCheckoutLinkedSignup.value && checkoutTokenFromReturnTo.value) {
@@ -194,7 +204,8 @@ async function handleSignup() {
           password: form.password,
           first_name: form.firstName.trim() || undefined,
           last_name: form.lastName.trim() || undefined,
-          phone: form.phone.trim() || undefined
+          phone,
+          returnTo: returnTo.value
         }
       })
 
@@ -208,7 +219,7 @@ async function handleSignup() {
         method: 'POST',
         body: {
           email,
-          phone: form.phone.trim() || undefined,
+          phone,
           first_name: form.firstName.trim() || undefined,
           last_name: form.lastName.trim() || undefined
         }
@@ -233,50 +244,46 @@ async function handleSignup() {
       return
     }
 
-    const { data, error } = await supabase.auth.signUp({
-      email: form.email.trim(),
-      password: form.password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/onboarding?returnTo=${encodeURIComponent(returnTo.value)}`
+    const email = form.email.trim()
+    await $fetch('/api/account/signup', {
+      method: 'POST',
+      body: {
+        email,
+        password: form.password,
+        first_name: form.firstName.trim() || undefined,
+        last_name: form.lastName.trim() || undefined,
+        phone,
+        returnTo: returnTo.value
       }
     })
-    if (error) throw error
-    if (!data.user) throw new Error('No user returned from signup.')
 
-    // Link/create customer row + Square customer (server-side, service role)
-    // If email confirmations are ON, data.session may be null.
-    // That’s fine; bootstrap will run on first login/onboarding.
-    if (data.session) {
-      await $fetch('/api/account/bootstrap', {
-        method: 'POST',
-        body: {
-          email: form.email.trim(),
-          phone: form.phone.trim() || undefined,
-          first_name: form.firstName.trim() || undefined,
-          last_name: form.lastName.trim() || undefined
-        }
+    const { error: loginErr } = await supabase.auth.signInWithPassword({
+      email,
+      password: form.password
+    })
+    if (loginErr) throw loginErr
+
+    await $fetch('/api/account/bootstrap', {
+      method: 'POST',
+      body: {
+        email,
+        phone,
+        first_name: form.firstName.trim() || undefined,
+        last_name: form.lastName.trim() || undefined
+      }
+    })
+
+    const pending = await $fetch<{ pending: { token: string, returnTo: string } | null }>('/api/checkout/pending').catch(() => ({ pending: null }))
+    if (pending.pending?.token) {
+      const query = new URLSearchParams({
+        checkout: pending.pending.token,
+        returnTo: pending.pending.returnTo
       })
-
-      if (checkoutTokenFromReturnTo.value) {
-        await router.push(returnTo.value)
-        return
-      }
-
-      const pending = await $fetch<{ pending: { token: string, returnTo: string } | null }>('/api/checkout/pending').catch(() => ({ pending: null }))
-      if (pending.pending?.token) {
-        const query = new URLSearchParams({
-          checkout: pending.pending.token,
-          returnTo: pending.pending.returnTo
-        })
-        await router.push(`/checkout/success?${query.toString()}`)
-        return
-      }
-
-      await router.push(returnTo.value)
+      await router.push(`/checkout/success?${query.toString()}`)
       return
     }
 
-    successMsg.value = 'Account created. Check your email to confirm your account, then log in to continue.'
+    await router.push(returnTo.value)
   } catch (error: unknown) {
     errorMsg.value = mapSignupError(error)
   } finally {
@@ -290,8 +297,12 @@ async function handleSignup() {
     <div class="mx-auto grid max-w-5xl gap-8 lg:grid-cols-2 lg:items-start">
       <!-- Left: Tier summary -->
       <UCard>
-        <div class="text-sm text-gray-500 dark:text-gray-400">You selected</div>
-        <div class="mt-1 text-2xl font-semibold">{{ tierInfo.name }}</div>
+        <div class="text-sm text-gray-500 dark:text-gray-400">
+          You selected
+        </div>
+        <div class="mt-1 text-2xl font-semibold">
+          {{ tierInfo.name }}
+        </div>
         <div
           v-if="hasPlanContext"
           class="mt-1 text-sm text-gray-600 dark:text-gray-300"
@@ -310,16 +321,28 @@ async function handleSignup() {
           class="mt-4 grid grid-cols-3 gap-2"
         >
           <div class="rounded-xl border border-gray-200/60 p-3 text-center dark:border-gray-800/60">
-            <div class="text-sm font-medium">{{ cadenceLabel(cadence) }}</div>
-            <div class="text-xs text-gray-500 dark:text-gray-400">billing</div>
+            <div class="text-sm font-medium">
+              {{ cadenceLabel(cadence) }}
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">
+              billing
+            </div>
           </div>
           <div class="rounded-xl border border-gray-200/60 p-3 text-center dark:border-gray-800/60">
-            <div class="text-sm font-medium">{{ tierInfo.credits > 0 ? tierInfo.credits : '—' }}</div>
-            <div class="text-xs text-gray-500 dark:text-gray-400">credits</div>
+            <div class="text-sm font-medium">
+              {{ tierInfo.credits > 0 ? tierInfo.credits : '—' }}
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">
+              credits
+            </div>
           </div>
           <div class="rounded-xl border border-gray-200/60 p-3 text-center dark:border-gray-800/60">
-            <div class="text-sm font-medium">{{ tierInfo.bookingWindowDays > 0 ? `${tierInfo.bookingWindowDays}d` : '—' }}</div>
-            <div class="text-xs text-gray-500 dark:text-gray-400">booking</div>
+            <div class="text-sm font-medium">
+              {{ tierInfo.bookingWindowDays > 0 ? `${tierInfo.bookingWindowDays}d` : '—' }}
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">
+              booking
+            </div>
           </div>
         </div>
         <UAlert
@@ -333,7 +356,9 @@ async function handleSignup() {
         />
 
         <div class="mt-5 space-y-2 text-sm text-gray-600 dark:text-gray-300">
-          <div class="font-medium">What happens next</div>
+          <div class="font-medium">
+            What happens next
+          </div>
           <ul class="space-y-2">
             <li class="flex gap-2">
               <span class="mt-1 h-1.5 w-1.5 rounded-full bg-gray-400" />
@@ -349,18 +374,29 @@ async function handleSignup() {
             </li>
           </ul>
         </div>
-
       </UCard>
 
       <!-- Right: Signup form -->
       <UCard>
         <template #header>
-          <div class="text-lg font-semibold">Create your account</div>
+          <div class="text-lg font-semibold">
+            Create your account
+          </div>
         </template>
 
         <div class="space-y-4">
-          <UAlert v-if="errorMsg" color="error" variant="soft" :title="errorMsg" />
-          <UAlert v-if="successMsg" color="success" variant="soft" :title="successMsg" />
+          <UAlert
+            v-if="errorMsg"
+            color="error"
+            variant="soft"
+            :title="errorMsg"
+          />
+          <UAlert
+            v-if="successMsg"
+            color="success"
+            variant="soft"
+            :title="successMsg"
+          />
 
           <div
             v-if="isCheckoutLinkedSignup"
@@ -380,24 +416,54 @@ async function handleSignup() {
             v-else
             class="grid gap-3 sm:grid-cols-2"
           >
-            <UInput v-model="form.firstName" placeholder="First name" />
-            <UInput v-model="form.lastName" placeholder="Last name" />
+            <UInput
+              v-model="form.firstName"
+              placeholder="First name"
+            />
+            <UInput
+              v-model="form.lastName"
+              placeholder="Last name"
+            />
           </div>
 
-          <UInput v-if="!isCheckoutLinkedSignup" v-model="form.phone" placeholder="Phone (optional)" />
-          <UInput v-if="!isCheckoutLinkedSignup" v-model="form.email" type="email" placeholder="Email" />
-          <UInput v-model="form.password" type="password" placeholder="Password" />
+          <UFormField
+            label="Phone"
+            required
+            :error="!form.phone.trim() && errorMsg?.includes('Phone') ? 'Phone is required' : undefined"
+          >
+            <UInput
+              v-model="form.phone"
+              type="tel"
+              placeholder="Phone"
+              autocomplete="tel"
+            />
+          </UFormField>
+          <UInput
+            v-if="!isCheckoutLinkedSignup"
+            v-model="form.email"
+            type="email"
+            placeholder="Email"
+          />
+          <UInput
+            v-model="form.password"
+            type="password"
+            placeholder="Password"
+          />
 
           <div class="text-xs text-gray-500 dark:text-gray-400">
             By continuing, you agree to the studio rules and policies.
           </div>
 
           <div class="flex gap-2">
-            <UButton :loading="loading" :disabled="loading" class="w-full" @click="handleSignup">
+            <UButton
+              :loading="loading"
+              :disabled="loading"
+              class="w-full"
+              @click="handleSignup"
+            >
               Continue
             </UButton>
           </div>
-
         </div>
       </UCard>
     </div>

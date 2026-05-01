@@ -126,7 +126,7 @@ async function logout() {
                 to="/login"
                 class="site-auth-link hidden sm:inline-flex"
               >
-                Login
+                Login/Sign Up
               </NuxtLink>
             </template>
 
@@ -193,7 +193,7 @@ async function logout() {
               class="site-mobile-link"
               @click="isOpen = false"
             >
-              Login
+              Login/Sign Up
             </NuxtLink>
           </template>
 

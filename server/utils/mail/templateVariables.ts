@@ -22,6 +22,11 @@ const COMMON_VARIABLES = [
 
 const REGISTERED_MAIL_EVENTS: RegisteredMailEvent[] = [
   {
+    eventType: 'account.signup',
+    category: 'critical',
+    description: 'New account created through public signup.'
+  },
+  {
     eventType: 'membership.waitlistInvite',
     category: 'non_critical',
     description: 'Member invite to complete checkout from the waitlist.'
@@ -99,6 +104,19 @@ const REGISTERED_MAIL_EVENTS: RegisteredMailEvent[] = [
 ]
 
 const EVENT_VARIABLES: AvailableVariablesByEvent = {
+  'account.signup': [
+    'customerName',
+    'customerEmail',
+    'firstName',
+    'lastName',
+    'phone',
+    'loginUrl',
+    'onboardingUrl',
+    'dashboardUrl',
+    'bookUrl',
+    'returnTo',
+    'accountCreatedAt'
+  ],
   'membership.waitlistInvite': [
     'customerName',
     'customerEmail',
@@ -316,6 +334,21 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
 }
 
 const EVENT_DEFAULT_COPY: Record<string, MailTemplateDefaultCopy> = {
+  'account.signup': {
+    subjectTemplate: 'Welcome to FO Studio',
+    preheaderTemplate: 'Your FO Studio account is ready. Finish onboarding to start booking.',
+    bodyTemplate: `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;max-width:640px;margin:0 auto;">
+<h1 style="font-size:24px;margin:0 0 12px;">Welcome to FO Studio</h1>
+<p style="margin:0 0 14px;">Hi {{ customerName }}, your account is ready.</p>
+<div style="background:#f6f6f6;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin:0 0 16px;">
+<p style="margin:0 0 8px;"><strong>Email:</strong> {{ customerEmail }}</p>
+<p style="margin:0;"><strong>Phone:</strong> {{ phone }}</p>
+</div>
+<p style="margin:0 0 14px;">Next, complete onboarding so you can book studio time.</p>
+<p style="margin:0 0 16px;"><a href="{{ onboardingUrl }}">Continue onboarding</a></p>
+<p style="margin:0;">Already finished onboarding? <a href="{{ dashboardUrl }}">Open your dashboard</a>.</p>
+</div>`
+  },
   'membership.waitlistInvite': {
     subjectTemplate: 'Your membership spot is available',
     preheaderTemplate: 'Complete checkout to claim your spot at FO Studio.',

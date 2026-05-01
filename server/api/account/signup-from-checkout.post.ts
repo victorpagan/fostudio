@@ -1,12 +1,15 @@
 import { z } from 'zod'
 import { serverSupabaseServiceRole } from '#supabase/server'
+import { sendAccountSignupMail } from '~~/server/utils/mail/accountSignup'
 
 const bodySchema = z.object({
   token: z.string().uuid(),
   password: z.string().min(8),
   first_name: z.string().optional(),
   last_name: z.string().optional(),
-  phone: z.string().optional()
+  phone: z.string().trim().min(1, 'Phone is required.'),
+  returnTo: z.string().trim().optional(),
+  return_to: z.string().trim().optional()
 })
 
 type CheckoutSessionRow = {
@@ -44,7 +47,7 @@ export default defineEventHandler(async (event) => {
   const email = session.guest_email.trim().toLowerCase()
   const firstName = (body.first_name ?? '').trim() || undefined
   const lastName = (body.last_name ?? '').trim() || undefined
-  const phone = (body.phone ?? '').trim() || undefined
+  const phone = body.phone.trim()
 
   const { data: created, error: createErr } = await supabase.auth.admin.createUser({
     email,
@@ -72,10 +75,19 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: 'Account creation returned no user.' })
   }
 
+  const signupMail = await sendAccountSignupMail(event, {
+    userId: created.user.id,
+    email,
+    firstName,
+    lastName,
+    phone,
+    returnTo: body.returnTo ?? body.return_to ?? null
+  })
+
   return {
     ok: true,
     email,
-    userId: created.user.id
+    userId: created.user.id,
+    mailQueued: signupMail.ok
   }
 })
-
