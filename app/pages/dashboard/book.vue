@@ -243,6 +243,15 @@ const manualBookingStartHour = computed(() =>
 const manualBookingEndHour = computed(() =>
   hasActiveMembership.value ? 24 : Math.max(manualBookingStartHour.value + 1, Math.min(24, Number(bookingPolicy.value?.guestBookingEndHour ?? 19)))
 )
+
+// Credit preview must be initialized before canShowHoldOption is watched.
+// Active members evaluate the hold option during setup, while guests short-circuit before preview is read.
+const preview = ref<BookingPreview | null>(null)
+const previewLoading = ref(false)
+const previewError = ref<string | null>(null)
+const balanceLoading = ref(false)
+const creditBalance = ref<number>(0)
+
 const canShowHoldOption = computed(() =>
   hasActiveMembership.value
   && form.rateKind !== 'standby'
@@ -265,13 +274,6 @@ watch(canShowHoldOption, (allowed) => {
     form.holdPaymentMethod = 'auto'
   }
 })
-
-// Credit preview — fetched when a time slot is selected
-const preview = ref<BookingPreview | null>(null)
-const previewLoading = ref(false)
-const previewError = ref<string | null>(null)
-const balanceLoading = ref(false)
-const creditBalance = ref<number>(0)
 
 const calendarRef = ref<{ refresh: () => Promise<void> | void } | null>(null)
 
