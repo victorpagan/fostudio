@@ -358,6 +358,12 @@ const adminLinkGroups = computed<SidebarLinkGroup[]>(() => {
           onSelect: () => { open.value = false }
         },
         {
+          label: 'Studio Handbook',
+          icon: 'i-lucide-book-open-text',
+          to: '/dashboard/admin/studio-handbook',
+          onSelect: () => { open.value = false }
+        },
+        {
           label: 'Waiver Templates',
           icon: 'i-lucide-file-signature',
           to: '/dashboard/admin/waiver',
