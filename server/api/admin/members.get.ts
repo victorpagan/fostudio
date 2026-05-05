@@ -240,6 +240,11 @@ export default defineEventHandler(async (event) => {
     .select(CUSTOMER_PROVENANCE_COLUMNS)
     .order('updated_at', { ascending: false })
     .limit(1000)
+  let studioCustomersResAll = await db
+    .from<CustomerRow>('customers')
+    .select(CUSTOMER_PROVENANCE_COLUMNS)
+    .order('studio_registered_at', { ascending: false, nullsFirst: false })
+    .limit(1000)
 
   if (customersResAll.error && isMissingCustomerProvenanceColumn(customersResAll.error.message)) {
     customersResAll = await db
@@ -247,13 +252,23 @@ export default defineEventHandler(async (event) => {
       .select(CUSTOMER_BASE_COLUMNS)
       .order('updated_at', { ascending: false })
       .limit(1000)
+    studioCustomersResAll = {
+      data: [],
+      error: null
+    }
   }
 
   if (membershipsRes.error) throw createError({ statusCode: 500, statusMessage: membershipsRes.error.message })
   if (customersResAll.error) throw createError({ statusCode: 500, statusMessage: customersResAll.error.message })
+  if (studioCustomersResAll.error) throw createError({ statusCode: 500, statusMessage: studioCustomersResAll.error.message })
 
   const memberships = membershipsRes.data ?? []
-  const customersAll = customersResAll.data ?? []
+  const customersAllByUserId = new Map<string, CustomerRow>()
+  for (const customer of [...(customersResAll.data ?? []), ...(studioCustomersResAll.data ?? [])]) {
+    if (!customer.user_id) continue
+    customersAllByUserId.set(customer.user_id, customer)
+  }
+  const customersAll = [...customersAllByUserId.values()]
   const latestMembershipByUserId = new Map<string, MembershipSourceRow>()
   for (const membership of memberships) {
     if (!membership.user_id) continue
@@ -444,7 +459,7 @@ export default defineEventHandler(async (event) => {
       current_period_start: membership?.current_period_start ?? null,
       current_period_end: membership?.current_period_end ?? null,
       last_paid_at: membership?.last_paid_at ?? null,
-      created_at: membership?.created_at ?? customer?.updated_at ?? customer?.created_at ?? nowIso,
+      created_at: membership?.created_at ?? customer?.studio_registered_at ?? customer?.studio_last_seen_at ?? customer?.updated_at ?? customer?.created_at ?? nowIso,
       customer_email: customer?.email ?? null,
       customer_phone: customer?.phone ?? null,
       customer_first_name: customer?.first_name ?? null,
