@@ -541,7 +541,8 @@ async function recoverPendingTopups() {
   const topupToken = readQueryString(route.query.topup)
   const orderId = readQueryString(route.query.orderId) ?? readQueryString(route.query.order_id)
 
-  if (!topupToken && Date.now() - lastTopupRecoveryAt.value < 20_000) return
+  if (!topupToken) return
+  if (Date.now() - lastTopupRecoveryAt.value < 20_000) return
 
   topupRecoveryRunning.value = true
   lastTopupRecoveryAt.value = Date.now()

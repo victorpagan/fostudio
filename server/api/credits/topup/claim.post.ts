@@ -98,9 +98,30 @@ async function sendTopupPurchasedMail(params: {
   }
 }
 
-async function readBalance(supabase: any, userId: string) {
-  const { data, error } = await supabase
-    .from('credit_balance')
+type QueryResult<T = Record<string, unknown>> = {
+  data?: T[] | null
+  error?: { message: string } | null
+}
+
+type SingleResult<T = Record<string, unknown>> = {
+  data?: T | null
+  error?: { message: string } | null
+}
+
+type QueryBuilder<T = Record<string, unknown>> = PromiseLike<QueryResult<T>> & {
+  eq: (column: string, value: unknown) => QueryBuilder<T>
+  maybeSingle: () => PromiseLike<SingleResult<T>>
+  select: (columns?: string, options?: Record<string, unknown>) => QueryBuilder<T>
+}
+
+type UntypedSupabaseClient = {
+  from: <T = Record<string, unknown>>(table: string) => QueryBuilder<T>
+}
+
+async function readBalance(supabase: unknown, userId: string) {
+  const db = supabase as UntypedSupabaseClient
+  const { data, error } = await db
+    .from<{ balance: number | string | null }>('credit_balance')
     .select('balance')
     .eq('user_id', userId)
     .maybeSingle()
@@ -108,8 +129,8 @@ async function readBalance(supabase: any, userId: string) {
   if (!error) return asNumber(data?.balance) ?? 0
 
   // Fallback for environments where the view is out of sync.
-  const { data: ledgerRows, error: ledgerErr } = await supabase
-    .from('credits_ledger')
+  const { data: ledgerRows, error: ledgerErr } = await db
+    .from<{ delta: number | string | null, expires_at: string | null }>('credits_ledger')
     .select('delta,expires_at')
     .eq('user_id', userId)
 
@@ -131,10 +152,10 @@ export default defineEventHandler(async (event) => {
 
   const body = bodySchema.parse(await readBody(event).catch(() => ({})))
   const supabase = serverSupabaseServiceRole(event)
-  const db = supabase as any
+  const db = supabase
 
-  const square = await useSquareClient(event)
   const processSession = async (topup: TopupSessionRow, hintedOrderId?: string | null) => {
+    const square = await useSquareClient(event)
     const baseDebug: ClaimDebug = {
       topupSessionId: topup.id,
       topupStatus: topup.status,
@@ -340,51 +361,19 @@ export default defineEventHandler(async (event) => {
     return processSession(data as TopupSessionRow, body.orderId ?? null)
   }
 
-  const { data: pendingRows, error: pendingErr } = await db
-    .from('credit_topup_sessions')
-    .select('*')
-    .eq('user_id', user.sub)
-    .in('status', ['pending', 'expired'])
-    .order('created_at', { ascending: false })
-    .limit(10)
-
-  if (pendingErr) throw createError({ statusCode: 500, statusMessage: pendingErr.message })
-
-  if (!pendingRows?.length) {
-    return {
-      ok: true,
-      status: 'processed' as const,
-      creditsAdded: 0,
-      newBalance: await readBalance(supabase, user.sub),
-      message: 'No pending top-ups found.',
-      debug: {
-        topupSessionId: 'none',
-        topupStatus: 'none',
-        orderId: null,
-        orderState: null,
-        paymentId: null,
-        paymentStatus: null,
-        hasLedgerEntry: false
-      } as ClaimDebug
-    }
-  }
-
-  let firstPendingResult: Record<string, unknown> | null = null
-  for (const row of pendingRows as TopupSessionRow[]) {
-    const result = await processSession(row, body.orderId ?? null)
-    if (result.status === 'processed') return result
-    if (!firstPendingResult && result.status === 'pending') firstPendingResult = result as unknown as Record<string, unknown>
-  }
-
-  if (firstPendingResult) return firstPendingResult
-
+  // Background dashboard recovery calls this endpoint without a token. Do not
+  // scan old pending/expired sessions here: reconciling those requires Square
+  // lookups and can exceed Heroku's 30s request limit. Explicit checkout returns
+  // include the token and still process fully through the branch above.
   return {
-    ok: false,
-    status: 'pending' as const,
-    message: 'Pending top-up found, but payment has not settled yet.',
+    ok: true,
+    status: 'processed' as const,
+    creditsAdded: 0,
+    newBalance: await readBalance(supabase, user.sub),
+    message: 'No explicit top-up claim supplied.',
     debug: {
-      topupSessionId: 'unknown',
-      topupStatus: 'pending',
+      topupSessionId: 'none',
+      topupStatus: 'none',
       orderId: null,
       orderState: null,
       paymentId: null,

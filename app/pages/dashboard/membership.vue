@@ -1063,11 +1063,10 @@ function readQueryString(value: unknown) {
 async function claimTopupFromRoute() {
   const topupToken = readQueryString(route.query.topup)
   const topupOrderId = readQueryString(route.query.orderId) ?? readQueryString(route.query.order_id)
-  if (topupClaimInFlight.value) return
-  const hasCheckoutQuery = Boolean(topupToken || topupOrderId)
+  if (topupClaimInFlight.value || !topupToken) return
 
   topupClaimInFlight.value = true
-  if (hasCheckoutQuery) topupClaimingFromRoute.value = true
+  topupClaimingFromRoute.value = true
   let shouldClearTopupQuery = false
   try {
     const maxAttempts = topupToken ? 7 : 1
@@ -1088,9 +1087,7 @@ async function claimTopupFromRoute() {
         debug?: Record<string, unknown>
       }>('/api/credits/topup/claim', {
         method: 'POST',
-        body: topupToken
-          ? { token: topupToken, orderId: topupOrderId ?? undefined }
-          : {}
+        body: { token: topupToken, orderId: topupOrderId ?? undefined }
       })
       if (res.status !== 'pending') break
       attempt += 1
@@ -1147,7 +1144,7 @@ async function claimTopupFromRoute() {
     }
   } finally {
     topupClaimInFlight.value = false
-    if (hasCheckoutQuery) topupClaimingFromRoute.value = false
+    topupClaimingFromRoute.value = false
     if (shouldClearTopupQuery && route.query.topup) {
       const nextQuery = { ...route.query }
       delete nextQuery.topup
