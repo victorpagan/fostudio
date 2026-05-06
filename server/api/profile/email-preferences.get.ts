@@ -5,12 +5,27 @@ type MailUserPreferencesRow = {
   non_critical_enabled: boolean
 }
 
+type SupabaseSingleResult<T> = {
+  data?: T | null
+  error?: { message: string } | null
+}
+
+type MailPreferencesClient = {
+  from: (table: 'mail_user_preferences') => {
+    select: (columns: string) => {
+      eq: (column: string, value: string) => {
+        maybeSingle: () => Promise<SupabaseSingleResult<MailUserPreferencesRow>>
+      }
+    }
+  }
+}
+
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Sign in required' })
 
   const supabase = await serverSupabaseClient(event)
-  const db = supabase as any
+  const db = supabase as unknown as MailPreferencesClient
 
   const { data, error } = await db
     .from('mail_user_preferences')
@@ -24,7 +39,7 @@ export default defineEventHandler(async (event) => {
   return {
     preferences: {
       criticalEnabled: row?.critical_enabled ?? true,
-      nonCriticalEnabled: row?.non_critical_enabled ?? false
+      nonCriticalEnabled: row?.non_critical_enabled ?? true
     }
   }
 })

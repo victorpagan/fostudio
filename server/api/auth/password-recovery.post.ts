@@ -45,13 +45,6 @@ function isUserNotFoundError(error: unknown) {
   return corpus.includes('user_not_found') || corpus.includes('user with this email not found')
 }
 
-function isRecoverSendFailure(error: unknown) {
-  const corpus = normalizeErrorMessage(error).toLowerCase()
-  return corpus.includes('error sending recovery email')
-    || corpus.includes('unexpected_failure')
-    || corpus.includes('status 500')
-}
-
 export default defineEventHandler(async (event) => {
   const parsed = bodySchema.safeParse(await readBody(event))
   if (!parsed.success) {
@@ -72,43 +65,13 @@ export default defineEventHandler(async (event) => {
   const redirectTo = new URL('/reset-password', siteBaseUrl).toString()
 
   const supabaseUrl = stripWrappingQuotes(process.env.SUPABASE_URL)
-  const anonKey = stripWrappingQuotes(process.env.SUPABASE_KEY)
   const serviceKey = stripWrappingQuotes(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SECRET_KEY)
-  if (!supabaseUrl || !anonKey || !serviceKey) {
+  if (!supabaseUrl || !serviceKey) {
     throw createError({ statusCode: 500, statusMessage: 'Supabase auth configuration is incomplete.' })
   }
 
-  // Primary path: native Supabase recover mail.
-  try {
-    await $fetch(`${supabaseUrl}/auth/v1/recover`, {
-      method: 'POST',
-      query: { redirect_to: redirectTo },
-      headers: {
-        apikey: anonKey,
-        Authorization: `Bearer ${anonKey}`
-      },
-      body: { email }
-    })
-
-    return { ok: true, delivery: 'supabase' as const }
-  } catch (error) {
-    // For unknown users we still return success to avoid account enumeration.
-    if (isUserNotFoundError(error)) {
-      return { ok: true, delivery: 'none' as const }
-    }
-
-    if (!isRecoverSendFailure(error)) {
-      console.error('[auth/password-recovery] supabase recover failed', {
-        message: normalizeErrorMessage(error)
-      })
-      throw createError({
-        statusCode: 502,
-        statusMessage: 'Password recovery is temporarily unavailable. Please try again.'
-      })
-    }
-  }
-
-  // Fallback path: generate recovery link and send through our mail pipeline.
+  // Generate the recovery link through Supabase Auth, but always deliver the
+  // email through Fomailer. This avoids Supabase/FO Studio SMTP as a sender.
   let actionLink = ''
   let hashedToken = ''
   try {
@@ -193,7 +156,7 @@ export default defineEventHandler(async (event) => {
   })
 
   if (!sendResult.ok) {
-    console.error('[auth/password-recovery] fallback mail send failed', {
+    console.error('[auth/password-recovery] fomailer send failed', {
       reason: sendResult.reason ?? 'unknown'
     })
     throw createError({
@@ -202,5 +165,5 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  return { ok: true, delivery: 'fomailer_fallback' as const }
+  return { ok: true, delivery: 'fomailer' as const }
 })

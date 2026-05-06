@@ -104,7 +104,7 @@ const { data: waiverStatus, refresh: refreshWaiverStatus } = await useAsyncData(
 }, { watch: [() => user.value?.sub], default: () => null })
 const emailPreferences = reactive({
   criticalEnabled: true,
-  nonCriticalEnabled: false
+  nonCriticalEnabled: true
 })
 const emailPreferencesSaving = ref(false)
 const { data: emailPreferencesData, refresh: refreshEmailPreferences } = await useAsyncData('dash:profile:email-preferences', async () => {
@@ -112,7 +112,7 @@ const { data: emailPreferencesData, refresh: refreshEmailPreferences } = await u
     return {
       preferences: {
         criticalEnabled: true,
-        nonCriticalEnabled: false
+        nonCriticalEnabled: true
       }
     } as EmailPreferencesResponse
   }
@@ -123,7 +123,7 @@ const { data: emailPreferencesData, refresh: refreshEmailPreferences } = await u
   default: () => ({
     preferences: {
       criticalEnabled: true,
-      nonCriticalEnabled: false
+      nonCriticalEnabled: true
     }
   })
 })

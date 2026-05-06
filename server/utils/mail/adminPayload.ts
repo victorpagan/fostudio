@@ -49,6 +49,8 @@ export function buildAdminMailPayload(params: BuildAdminMailPayloadParams) {
   const waiverUrl = `${params.origin}/dashboard/waiver`
   const calendarUrl = `${params.origin}/calendar`
   const manageUrl = `${params.origin}/dashboard/bookings`
+  const creditsUrl = `${params.origin}/dashboard/credits`
+  const dashboardUrl = `${params.origin}/dashboard`
 
   const base = {
     to: params.recipient,
@@ -100,6 +102,8 @@ export function buildAdminMailPayload(params: BuildAdminMailPayloadParams) {
     bookingEnd,
     bookingStartHuman: formatHumanDate(bookingStart),
     bookingEndHuman: formatHumanDate(bookingEnd),
+    hoursUntilBooking: 24,
+    reminderLabel: 'tomorrow',
     previousBookingStart,
     previousBookingEnd,
     previousBookingStartHuman: formatHumanDate(previousBookingStart),
@@ -115,6 +119,18 @@ export function buildAdminMailPayload(params: BuildAdminMailPayloadParams) {
     actionedBy: 'member',
     accessCode: '654321',
     submittedAt: new Date().toISOString(),
+    creditsExpiring: 6,
+    creditsExpireAt: isoDate(7),
+    creditsExpireAtHuman: formatHumanDate(isoDate(7)),
+    daysUntilExpiry: 7,
+    daysUntilEnd: 14,
+    daysPastDue: 3,
+    daysSinceSignup: 7,
+    lastBookingStart: isoDate(-45),
+    lastBookingStartHuman: formatHumanDate(isoDate(-45)),
+    daysSinceLastBooking: 45,
+    waiverExpiresAt: isoDate(14),
+    waiverExpiresAtHuman: formatHumanDate(isoDate(14)),
     source: 'site.contact',
     replyTo: params.recipient,
     contactName: 'FO Studio Test',
@@ -122,6 +138,8 @@ export function buildAdminMailPayload(params: BuildAdminMailPayloadParams) {
     contactPhone: '(555) 010-0200',
     contactSubject: 'General inquiry',
     contactMessage: 'Hi, I would like to learn more about memberships and availability.',
+    dashboardUrl,
+    creditsUrl,
     calendarUrl,
     manageUrl,
     studioAddress: '3131 N. San Fernando Rd., Los Angeles, CA 90065'

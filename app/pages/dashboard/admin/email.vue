@@ -58,6 +58,67 @@ type SendgridTemplateSelectItem = {
   description: string
 }
 
+type ReminderRuleDraft = {
+  eventType: string
+  category: MailTemplateCategory
+  enabled: boolean
+  offsetsMinutes: number[]
+  offsetsInput: string
+  cooldownHours: number
+  description: string
+  adminNotes: string
+  updatedAt: string | null
+}
+
+type ReminderDelivery = {
+  id: string
+  eventType: string
+  userId: string
+  entityType: string
+  entityId: string
+  reminderKey: string
+  category: MailTemplateCategory
+  status: 'sent' | 'skipped' | 'error'
+  toEmail: string
+  customerName: string
+  templateId: string | null
+  skipReason: string | null
+  errorMessage: string | null
+  sentAt: string | null
+  skippedAt: string | null
+  createdAt: string
+}
+
+type ReminderSettingsResponse = {
+  rules: Array<{
+    eventType: string
+    category: MailTemplateCategory
+    enabled: boolean
+    offsetsMinutes: number[]
+    cooldownHours: number
+    description: string
+    adminNotes: string
+    updatedAt: string | null
+  }>
+}
+
+type ReminderDeliveriesResponse = {
+  deliveries: ReminderDelivery[]
+}
+
+type ReminderDryRunResponse = {
+  candidates: number
+  results: Array<{
+    eventType: string
+    userId: string
+    entityType: string
+    entityId: string
+    reminderKey: string
+    status: string
+    to?: string
+  }>
+}
+
 const BROADCAST_EVENT_TYPE = 'mailing.memberBroadcast'
 const FULL_HTML_DOCUMENT_PATTERN = /<html[\s>]|<body[\s>]|<!doctype/i
 
@@ -97,6 +158,11 @@ const templates = ref<AdminMailTemplate[]>([])
 const availableVariablesByEvent = ref<Record<string, string[]>>({ '*': [] })
 const selectedTemplateIndex = ref(0)
 const templateDraft = ref<AdminMailTemplate | null>(null)
+const reminderRules = ref<ReminderRuleDraft[]>([])
+const reminderDeliveries = ref<ReminderDelivery[]>([])
+const reminderPending = ref(false)
+const reminderSaving = ref(false)
+const reminderDryRunPending = ref(false)
 const sendgridLookupPending = ref(false)
 const sendgridLookupError = ref<string | null>(null)
 const sendgridLookup = ref<SendgridTemplateLookupResponse | null>(null)
@@ -251,9 +317,172 @@ async function loadSettings(options: { silent?: boolean } = {}) {
   }
 }
 
+function formatReminderOffsetsInput(offsets: number[]) {
+  return [...new Set(offsets)]
+    .map(value => Number(value))
+    .filter(value => Number.isFinite(value) && value > 0)
+    .sort((a, b) => b - a)
+    .join(', ')
+}
+
+function parseReminderOffsetsInput(value: string) {
+  return [...new Set(
+    value
+      .split(/[\s,]+/)
+      .map(item => Number(item.trim()))
+      .filter(item => Number.isInteger(item) && item > 0)
+  )].sort((a, b) => b - a)
+}
+
+function formatReminderOffsetLabel(minutes: number) {
+  if (minutes % 1440 === 0) return `${minutes / 1440}d`
+  if (minutes % 60 === 0) return `${minutes / 60}h`
+  return `${minutes}m`
+}
+
+function formatReminderOffsetsLabel(offsets: number[]) {
+  const normalized = parseReminderOffsetsInput(formatReminderOffsetsInput(offsets))
+  return normalized.length > 0
+    ? normalized.map(formatReminderOffsetLabel).join(' + ')
+    : 'No timing offsets'
+}
+
+function formatAdminDateTime(value: string | null | undefined) {
+  if (!value) return 'never'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return 'never'
+  return parsed.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  })
+}
+
+async function loadReminderSettings(options: { silent?: boolean } = {}) {
+  reminderPending.value = true
+  try {
+    const res = await $fetch<ReminderSettingsResponse>('/api/admin/email/reminders/settings')
+    reminderRules.value = (res.rules ?? []).map(rule => ({
+      eventType: rule.eventType,
+      category: rule.category,
+      enabled: Boolean(rule.enabled),
+      offsetsMinutes: rule.offsetsMinutes ?? [],
+      offsetsInput: formatReminderOffsetsInput(rule.offsetsMinutes ?? []),
+      cooldownHours: Number(rule.cooldownHours ?? 0),
+      description: rule.description ?? '',
+      adminNotes: rule.adminNotes ?? '',
+      updatedAt: rule.updatedAt
+    }))
+  } catch (error: unknown) {
+    if (!options.silent) {
+      toast.add({
+        title: 'Could not load reminder rules',
+        description: readErrorMessage(error),
+        color: 'error'
+      })
+    }
+  } finally {
+    reminderPending.value = false
+  }
+}
+
+async function loadReminderDeliveries(options: { silent?: boolean } = {}) {
+  try {
+    const res = await $fetch<ReminderDeliveriesResponse>('/api/admin/email/reminders/deliveries', {
+      query: { limit: 30 }
+    })
+    reminderDeliveries.value = res.deliveries ?? []
+  } catch (error: unknown) {
+    if (!options.silent) {
+      toast.add({
+        title: 'Could not load reminder delivery audit',
+        description: readErrorMessage(error),
+        color: 'error'
+      })
+    }
+  }
+}
+
+async function saveReminderSettings() {
+  reminderSaving.value = true
+  try {
+    const rules = reminderRules.value.map((rule) => {
+      const offsetsMinutes = parseReminderOffsetsInput(rule.offsetsInput)
+      if (offsetsMinutes.length === 0) {
+        throw new Error(`${rule.eventType} needs at least one timing offset.`)
+      }
+
+      return {
+        eventType: rule.eventType,
+        enabled: rule.enabled,
+        offsetsMinutes,
+        cooldownHours: Number(rule.cooldownHours ?? 0),
+        adminNotes: rule.adminNotes
+      }
+    })
+
+    await $fetch('/api/admin/email/reminders/settings', {
+      method: 'POST',
+      body: { rules }
+    })
+
+    toast.add({ title: 'Reminder settings saved', color: 'success' })
+    await Promise.all([
+      loadReminderSettings({ silent: true }),
+      loadReminderDeliveries({ silent: true })
+    ])
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not save reminder settings',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    reminderSaving.value = false
+  }
+}
+
+async function runReminderDryRun() {
+  reminderDryRunPending.value = true
+  try {
+    const res = await $fetch<ReminderDryRunResponse>('/api/internal/mail/reminders/process', {
+      method: 'POST',
+      body: {
+        dryRun: true,
+        limit: 50
+      }
+    })
+
+    toast.add({
+      title: 'Reminder dry run complete',
+      description: `${res.candidates} due candidate${res.candidates === 1 ? '' : 's'} found. No emails were sent.`,
+      color: res.candidates > 0 ? 'info' : 'neutral'
+    })
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not run reminder dry run',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    reminderDryRunPending.value = false
+  }
+}
+
+async function refreshReminders() {
+  await Promise.all([
+    loadReminderSettings(),
+    loadReminderDeliveries()
+  ])
+}
+
 onMounted(() => {
   void Promise.all([
     loadSettings({ silent: true }),
+    loadReminderSettings({ silent: true }),
+    loadReminderDeliveries({ silent: true }),
     refreshSendgridTemplateCatalog()
   ])
 })
@@ -1492,6 +1721,187 @@ onBeforeUnmount(() => {
         </div>
 
         <aside class="w-full self-start space-y-4 xl:sticky xl:top-4">
+          <UCard>
+            <div class="space-y-4">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <div class="text-sm font-medium">
+                    Reminders
+                  </div>
+                  <div class="text-xs text-dimmed mt-0.5">
+                    Automated reminder events are non-critical by default. Transactional sends stay critical.
+                  </div>
+                </div>
+                <UBadge
+                  color="neutral"
+                  variant="soft"
+                  size="sm"
+                >
+                  {{ reminderRules.length }}
+                </UBadge>
+              </div>
+
+              <div class="rounded-lg border border-default bg-default/40 p-3 text-xs text-dimmed space-y-1">
+                <div><strong>Critical:</strong> signup, payments, booking confirmations, cancellations, door-code updates, contact form.</div>
+                <div><strong>Non-critical:</strong> reminders and reactivation/onboarding nudges. Users can opt out in profile settings.</div>
+              </div>
+
+              <div class="flex flex-wrap gap-2">
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  icon="i-lucide-refresh-cw"
+                  :loading="reminderPending"
+                  @click="refreshReminders"
+                >
+                  Refresh
+                </UButton>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  icon="i-lucide-flask-conical"
+                  :loading="reminderDryRunPending"
+                  @click="runReminderDryRun"
+                >
+                  Dry run
+                </UButton>
+                <UButton
+                  size="xs"
+                  icon="i-lucide-save"
+                  :loading="reminderSaving"
+                  @click="saveReminderSettings"
+                >
+                  Save rules
+                </UButton>
+              </div>
+
+              <div class="max-h-[36rem] overflow-y-auto pr-1 space-y-3">
+                <div
+                  v-for="rule in reminderRules"
+                  :key="rule.eventType"
+                  class="rounded-lg border border-default bg-default/35 p-3 space-y-3"
+                >
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <div class="flex flex-wrap items-center gap-1.5">
+                        <code class="rounded bg-elevated px-1.5 py-0.5 text-[11px] break-all">
+                          {{ rule.eventType }}
+                        </code>
+                        <UBadge
+                          :color="rule.category === 'critical' ? 'error' : 'neutral'"
+                          variant="soft"
+                          size="sm"
+                        >
+                          {{ rule.category }}
+                        </UBadge>
+                      </div>
+                      <p class="mt-1 text-xs text-dimmed leading-snug">
+                        {{ rule.description }}
+                      </p>
+                    </div>
+                    <USwitch v-model="rule.enabled" />
+                  </div>
+
+                  <div class="grid gap-2 sm:grid-cols-2">
+                    <UFormField
+                      label="Offsets (minutes)"
+                      :description="formatReminderOffsetsLabel(parseReminderOffsetsInput(rule.offsetsInput))"
+                    >
+                      <UInput
+                        v-model="rule.offsetsInput"
+                        class="w-full"
+                        size="sm"
+                        placeholder="1440, 120"
+                      />
+                    </UFormField>
+                    <UFormField label="Cooldown hours">
+                      <UInput
+                        v-model="rule.cooldownHours"
+                        class="w-full"
+                        size="sm"
+                        type="number"
+                        min="0"
+                      />
+                    </UFormField>
+                  </div>
+
+                  <UFormField label="Admin notes">
+                    <UTextarea
+                      v-model="rule.adminNotes"
+                      class="w-full"
+                      :rows="2"
+                      placeholder="Internal notes for this reminder rule"
+                    />
+                  </UFormField>
+                </div>
+
+                <div
+                  v-if="reminderRules.length === 0"
+                  class="rounded-md border border-dashed border-default px-3 py-4 text-sm text-dimmed text-center"
+                >
+                  No reminder rules loaded.
+                </div>
+              </div>
+
+              <div class="border-t border-default pt-4">
+                <div class="mb-2 flex items-center justify-between gap-3">
+                  <div class="text-sm font-medium">
+                    Recent reminder audit
+                  </div>
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-rotate-cw"
+                    @click="() => { void loadReminderDeliveries() }"
+                  >
+                    Refresh
+                  </UButton>
+                </div>
+
+                <div class="space-y-2">
+                  <div
+                    v-for="delivery in reminderDeliveries.slice(0, 8)"
+                    :key="delivery.id"
+                    class="rounded-md border border-default/80 bg-default/40 p-2"
+                  >
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <UBadge
+                        :color="delivery.status === 'sent' ? 'success' : delivery.status === 'error' ? 'error' : 'neutral'"
+                        variant="soft"
+                        size="sm"
+                      >
+                        {{ delivery.status }}
+                      </UBadge>
+                      <code class="text-[11px] break-all">
+                        {{ delivery.eventType }}
+                      </code>
+                    </div>
+                    <div class="mt-1 text-xs text-dimmed leading-snug">
+                      {{ delivery.customerName || delivery.toEmail || delivery.userId }}
+                      · {{ formatAdminDateTime(delivery.createdAt) }}
+                    </div>
+                    <div
+                      v-if="delivery.skipReason || delivery.errorMessage"
+                      class="mt-1 text-[11px] text-dimmed break-words"
+                    >
+                      {{ delivery.skipReason || delivery.errorMessage }}
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="reminderDeliveries.length === 0"
+                    class="rounded-md border border-dashed border-default px-3 py-4 text-xs text-dimmed text-center"
+                  >
+                    No reminder deliveries recorded yet.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </UCard>
+
           <UCard>
             <div class="space-y-4">
               <div class="text-sm font-medium">
