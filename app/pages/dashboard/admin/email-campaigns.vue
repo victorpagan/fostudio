@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DashboardAdminEmailHighFidelityEmailPreview from '~~/app/components/dashboard/admin/email/HighFidelityEmailPreview.vue'
 import { pickImageFromDevice, uploadEditorImage } from '~~/app/utils/editorImageUpload'
 
 definePageMeta({ middleware: ['admin'] })
@@ -183,6 +184,28 @@ type TiptapEditor = {
   isActive: (name: string) => boolean
 }
 
+type TiptapEditorView = {
+  state: {
+    schema: {
+      nodes: {
+        image?: {
+          create: (attributes: TiptapImageAttributes) => unknown
+        }
+      }
+    }
+    tr: {
+      replaceSelectionWith: (node: unknown) => TiptapEditorView['state']['tr']
+      scrollIntoView: () => TiptapEditorView['state']['tr']
+    }
+  }
+  dispatch: (transaction: unknown) => void
+}
+
+type StagedEditorImage = {
+  file: File
+  blobUrl: string
+}
+
 const CAMPAIGN_IMAGE_SLOTS: CampaignImageSlot[] = [
   {
     id: 'features',
@@ -365,6 +388,8 @@ const sendgridLookupError = ref<string | null>(null)
 const sendgridLookup = ref<SendgridTemplateLookupResponse | null>(null)
 const sendgridTemplateCatalogRows = ref<SendgridTemplateCatalogItem[]>([])
 const sendgridTemplateCatalogPending = ref(false)
+const editorImageUploadPending = ref(false)
+const stagedEditorImages = ref<Map<string, StagedEditorImage>>(new Map())
 const data = ref<CampaignsResponse | null>(null)
 const pending = ref(false)
 const initialDataLoaded = ref(false)
@@ -404,7 +429,7 @@ const AUTOSAVE_DEBOUNCE_MS = 1200
 const editorDragHandleOptions = {
   placement: 'left-start',
   offset: {
-    mainAxis: -6,
+    mainAxis: 18,
     alignmentAxis: 0
   }
 } as const
@@ -854,6 +879,76 @@ function stringifyInlineStyle(declarations: Map<string, string>) {
     .join('; ')
 }
 
+function mergeInlineStyle(existingStyle: string | undefined, defaults: Record<string, string>) {
+  const declarations = parseInlineStyle(existingStyle)
+  for (const [key, value] of Object.entries(defaults)) {
+    if (!declarations.has(key)) declarations.set(key, value)
+  }
+  return stringifyInlineStyle(declarations)
+}
+
+function addDefaultInlineStyleToTag(html: string, tagName: string, defaults: Record<string, string>) {
+  const tagPattern = new RegExp(`<${tagName}\\b([^>]*)>`, 'gi')
+  return html.replace(tagPattern, (_match: string, attributes: string) => {
+    const attrs = String(attributes ?? '')
+    const styleMatch = attrs.match(/\sstyle=(["'])(.*?)\1/i)
+    if (styleMatch) {
+      const mergedStyle = mergeInlineStyle(styleMatch[2], defaults)
+      const nextAttrs = attrs.replace(/\sstyle=(["'])(.*?)\1/i, ` style="${mergedStyle}"`)
+      return `<${tagName}${nextAttrs}>`
+    }
+    return `<${tagName}${attrs} style="${stringifyInlineStyle(new Map(Object.entries(defaults)))}">`
+  })
+}
+
+function normalizeEditorHtmlForEmail(html: string) {
+  let output = String(html ?? '')
+  if (!output.trim()) return output
+
+  output = addDefaultInlineStyleToTag(output, 'p', {
+    'margin': '0 0 14px',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'ul', {
+    'margin': '0 0 14px',
+    'padding-left': '22px',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'ol', {
+    'margin': '0 0 14px',
+    'padding-left': '22px',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'li', {
+    'margin': '0 0 6px',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'blockquote', {
+    'margin': '0 0 14px',
+    'padding-left': '14px',
+    'border-left': '3px solid #d4d4d8',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'h1', {
+    'margin': '0 0 14px',
+    'font-size': '28px',
+    'line-height': '1.2'
+  })
+  output = addDefaultInlineStyleToTag(output, 'h2', {
+    'margin': '18px 0 10px',
+    'font-size': '22px',
+    'line-height': '1.25'
+  })
+  output = addDefaultInlineStyleToTag(output, 'h3', {
+    'margin': '16px 0 8px',
+    'font-size': '18px',
+    'line-height': '1.3'
+  })
+  output = output.replace(/<p\b([^>]*)>\s*<\/p>/gi, '<p$1>&nbsp;</p>')
+  output = output.replace(/<p\b([^>]*)>\s*<br\s*\/?>\s*<\/p>/gi, '<p$1>&nbsp;</p>')
+  return output
+}
+
 function buildEditorImageStyle(existingStyle: string | undefined, maxWidth: string) {
   const declarations = parseInlineStyle(existingStyle)
   declarations.delete('width')
@@ -873,6 +968,164 @@ function updateSelectedImageStyle(editor: TiptapEditor, maxWidth: string) {
       style: buildEditorImageStyle(attrs.style, maxWidth)
     })
 }
+
+function readClipboardImage(event: ClipboardEvent): File | null {
+  const items = Array.from(event.clipboardData?.items ?? [])
+  for (const item of items) {
+    if (item.kind !== 'file') continue
+    const file = item.getAsFile()
+    if (file?.type.startsWith('image/')) return file
+  }
+
+  const files = Array.from(event.clipboardData?.files ?? [])
+  for (const file of files) {
+    if (file.type.startsWith('image/')) return file
+  }
+
+  return null
+}
+
+function readDroppedImage(event: DragEvent): File | null {
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  for (const file of files) {
+    if (file.type.startsWith('image/')) return file
+  }
+  return null
+}
+
+function validateEditorImageFile(file: File) {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Selected file is not an image')
+  }
+  if (file.size > EDITOR_IMAGE_MAX_BYTES) {
+    throw new Error(`Image is too large (${Math.ceil(file.size / (1024 * 1024))}MB). Max ${Math.ceil(EDITOR_IMAGE_MAX_BYTES / (1024 * 1024))}MB.`)
+  }
+}
+
+function stageEditorImage(file: File) {
+  validateEditorImageFile(file)
+  const blobUrl = URL.createObjectURL(file)
+  stagedEditorImages.value.set(blobUrl, { file, blobUrl })
+  return blobUrl
+}
+
+function removeStagedEditorImage(blobUrl: string) {
+  const staged = stagedEditorImages.value.get(blobUrl)
+  if (!staged) return
+  URL.revokeObjectURL(staged.blobUrl)
+  stagedEditorImages.value.delete(blobUrl)
+}
+
+function resetStagedEditorImages() {
+  for (const blobUrl of Array.from(stagedEditorImages.value.keys())) {
+    removeStagedEditorImage(blobUrl)
+  }
+}
+
+function insertImageIntoEditorView(view: TiptapEditorView, file: File) {
+  const blobUrl = stageEditorImage(file)
+  const imageNodeType = view.state.schema.nodes.image
+  if (!imageNodeType) {
+    removeStagedEditorImage(blobUrl)
+    throw new Error('The editor image extension is not available.')
+  }
+
+  const node = imageNodeType.create({
+    src: blobUrl,
+    alt: file.name,
+    title: file.name,
+    style: buildEditorImageStyle('', DEFAULT_IMAGE_MAX_WIDTH)
+  })
+  const transaction = view.state.tr.replaceSelectionWith(node).scrollIntoView()
+  view.dispatch(transaction)
+}
+
+const campaignEditorProps = computed(() => ({
+  handlePaste: (view: TiptapEditorView, event: Event) => {
+    const clipboardEvent = event as ClipboardEvent
+    const image = readClipboardImage(clipboardEvent)
+    if (!image) return false
+
+    try {
+      clipboardEvent.preventDefault()
+      insertImageIntoEditorView(view, image)
+    } catch (error: unknown) {
+      toast.add({
+        title: 'Could not paste image',
+        description: readErrorMessage(error),
+        color: 'error'
+      })
+    }
+    return true
+  },
+  handleDrop: (view: TiptapEditorView, event: Event) => {
+    const dragEvent = event as DragEvent
+    const image = readDroppedImage(dragEvent)
+    if (!image) return false
+
+    try {
+      dragEvent.preventDefault()
+      insertImageIntoEditorView(view, image)
+    } catch (error: unknown) {
+      toast.add({
+        title: 'Could not drop image',
+        description: readErrorMessage(error),
+        color: 'error'
+      })
+    }
+    return true
+  }
+}))
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+async function uploadDataUrlImage(dataUrl: string) {
+  const response = await fetch(dataUrl)
+  const blob = await response.blob()
+  const extension = String(blob.type || '').split('/')[1] || 'png'
+  const file = new File([blob], `pasted-image.${extension}`, { type: blob.type || 'image/png' })
+  validateEditorImageFile(file)
+  return await uploadEditorImage(file)
+}
+
+async function resolveEditorContentImages(html: string): Promise<string> {
+  if (!html) return html
+
+  let nextHtml = html
+  const stagedEntries = Array.from(stagedEditorImages.value.entries())
+    .filter(([blobUrl]) => nextHtml.includes(blobUrl))
+  const dataUrlMatches = [...nextHtml.matchAll(/src=(["'])(data:image\/[^"']+)\1/g)]
+    .map(match => match[2])
+    .filter((value): value is string => Boolean(value))
+
+  if (stagedEntries.length === 0 && dataUrlMatches.length === 0) {
+    resetStagedEditorImages()
+    return nextHtml
+  }
+
+  editorImageUploadPending.value = true
+  try {
+    for (const [blobUrl, staged] of stagedEntries) {
+      const uploaded = await uploadEditorImage(staged.file)
+      nextHtml = nextHtml.replace(new RegExp(escapeRegExp(blobUrl), 'g'), uploaded.url)
+      removeStagedEditorImage(blobUrl)
+    }
+
+    const uniqueDataUrls = [...new Set(dataUrlMatches)]
+    for (const dataUrl of uniqueDataUrls) {
+      const uploaded = await uploadDataUrlImage(dataUrl)
+      nextHtml = nextHtml.replace(new RegExp(escapeRegExp(dataUrl), 'g'), uploaded.url)
+    }
+
+    return nextHtml
+  } finally {
+    editorImageUploadPending.value = false
+  }
+}
+
+const stagedEditorImageCount = computed(() => stagedEditorImages.value.size)
 
 function formatIsoDate(value: string | null | undefined) {
   if (!value) return '-'
@@ -1053,7 +1306,7 @@ const previewContext = computed(() => {
   const baseContext = {
     ...dynamicData,
     eventType: draft.eventType,
-    customerName: String((dynamicData.customerName ?? 'FO Studio Member') || 'FO Studio Member'),
+    customerName: String((dynamicData.customerName ?? 'there') || 'there'),
     customerEmail: String((dynamicData.customerEmail ?? 'member@example.com') || 'member@example.com'),
     membershipPlanName: String((dynamicData.membershipPlanName ?? 'Pro') || 'Pro'),
     cadenceLabel: String((dynamicData.cadenceLabel ?? 'Monthly') || 'Monthly')
@@ -1069,9 +1322,12 @@ const previewContext = computed(() => {
   const preheader = preheaderSource
     ? renderTokenTemplate(preheaderSource, { ...baseContext, subject }).trim()
     : 'Preview generated from current draft values.'
-  const bodyHTML = bodySource
+  const renderedBodyHTML = bodySource
     ? renderTokenTemplate(bodySource, { ...baseContext, subject, preheader }).trim()
     : '<p>Draft content preview will appear here.</p>'
+  const bodyHTML = draft.renderMode === 'editor_html'
+    ? normalizeEditorHtmlForEmail(renderedBodyHTML)
+    : renderedBodyHTML
 
   return {
     ...baseContext,
@@ -1415,6 +1671,7 @@ function queueAutosave() {
 
 function hydrateDraftFromCampaign(campaign: CampaignRecord | null) {
   suppressAutosave.value = true
+  resetStagedEditorImages()
   if (!campaign) {
     const defaultEventType = resolveDefaultEventType()
     draft.id = null
@@ -1575,6 +1832,26 @@ async function saveCampaign(options: { silentSuccess?: boolean, silentError?: bo
     return false
   }
 
+  let bodyTemplate = draft.bodyTemplate
+  if (draft.renderMode === 'editor_html') {
+    try {
+      bodyTemplate = await resolveEditorContentImages(draft.bodyTemplate)
+      if (bodyTemplate !== draft.bodyTemplate) {
+        draft.bodyTemplate = bodyTemplate
+      }
+    } catch (error: unknown) {
+      lastSaveError.value = readErrorMessage(error)
+      if (!options.silentError) {
+        toast.add({
+          title: 'Could not upload campaign image',
+          description: lastSaveError.value,
+          color: 'error'
+        })
+      }
+      return false
+    }
+  }
+
   saving.value = true
   try {
     const result = await $fetch<{ campaign: { id: string } }>('/api/admin/email/campaigns.upsert', {
@@ -1589,7 +1866,7 @@ async function saveCampaign(options: { silentSuccess?: boolean, silentError?: bo
         renderMode: draft.renderMode,
         subjectTemplate: draft.subjectTemplate,
         preheaderTemplate: draft.preheaderTemplate,
-        bodyTemplate: draft.bodyTemplate,
+        bodyTemplate,
         dynamicData,
         includeMembershipRecipients: draft.includeMembershipRecipients,
         additionalRecipients: parseRecipientsInput(draft.additionalRecipientsText)
@@ -2084,6 +2361,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearSendgridLookupTimer()
   clearAutosaveTimer()
+  resetStagedEditorImages()
 })
 </script>
 
@@ -2206,7 +2484,7 @@ onBeforeUnmount(() => {
                 <UButton
                   color="neutral"
                   variant="soft"
-                  :loading="saving"
+                  :loading="saving || editorImageUploadPending"
                   :disabled="isArchivedDraft || !isDraftEventTypeRegistered"
                   @click="() => { void saveCampaign() }"
                 >
@@ -2214,7 +2492,7 @@ onBeforeUnmount(() => {
                 </UButton>
                 <UButton
                   icon="i-lucide-send"
-                  :loading="reviewingSend"
+                  :loading="reviewingSend || editorImageUploadPending"
                   :disabled="!draft.name.trim()"
                   @click="openSendReview"
                 >
@@ -2434,6 +2712,18 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
+              <DashboardAdminEmailHighFidelityEmailPreview
+                v-model:viewport="previewViewport"
+                title="Selected template live preview"
+                :html="previewHtml"
+                :template-id="draftSendgridTemplateId"
+                :lookup="sendgridLookup"
+                :pending="sendgridLookupPending"
+                :error="sendgridLookupError"
+                :refresh-disabled="!draftSendgridTemplateId"
+                @refresh="() => { void fetchLatestSendgridTemplate(draft.sendgridTemplateId) }"
+              />
+
               <div class="rounded-lg border border-default/80 bg-default/50 p-3">
                 <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
                   Template id history
@@ -2548,192 +2838,205 @@ onBeforeUnmount(() => {
               </UFormField>
             </div>
 
-            <div v-else>
-              <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,36rem)]">
-                <div class="min-w-0 space-y-4">
-                  <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_16rem]">
-                    <div class="grid gap-3 md:grid-cols-2">
-                      <UFormField label="Subject template">
-                        <UInput
-                          v-model="draft.subjectTemplate"
-                          class="w-full"
-                          placeholder="FO Studio update for {{ customerName }}"
-                        />
-                      </UFormField>
-                      <UFormField label="Preheader template">
-                        <UInput
-                          v-model="draft.preheaderTemplate"
-                          class="w-full"
-                          placeholder="Short preview text for inbox list view."
-                        />
-                      </UFormField>
-                    </div>
-                    <UFormField label="Render mode">
-                      <USelect
-                        v-model="draft.renderMode"
+            <div
+              v-else
+              class="space-y-4"
+            >
+              <DashboardAdminEmailHighFidelityEmailPreview
+                v-model:viewport="previewViewport"
+                title="Live template preview"
+                :html="previewHtml"
+                :template-id="draftSendgridTemplateId"
+                :lookup="sendgridLookup"
+                :pending="sendgridLookupPending"
+                :error="sendgridLookupError"
+                :refresh-disabled="!draftSendgridTemplateId"
+                @refresh="() => { void fetchLatestSendgridTemplate(draft.sendgridTemplateId) }"
+              />
+
+              <div class="min-w-0 space-y-4">
+                <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_16rem]">
+                  <div class="grid gap-3 md:grid-cols-2">
+                    <UFormField label="Subject template">
+                      <UInput
+                        v-model="draft.subjectTemplate"
                         class="w-full"
-                        :items="renderModeItems"
+                        placeholder="FO Studio update for {{ customerName }}"
+                      />
+                    </UFormField>
+                    <UFormField label="Preheader template">
+                      <UInput
+                        v-model="draft.preheaderTemplate"
+                        class="w-full"
+                        placeholder="Short preview text for inbox list view."
                       />
                     </UFormField>
                   </div>
-
-                  <UFormField
-                    v-if="draft.renderMode === 'editor_html'"
-                    label="Body template (HTML)"
-                  >
-                    <template #description>
-                      Use <code v-pre>{{ variableName }}</code> tokens only.
-                    </template>
-                    <UEditor
-                      v-slot="{ editor }"
-                      v-model="draft.bodyTemplate"
-                      content-type="html"
-                      :handlers="editorHandlers"
-                      :image="{ allowBase64: false }"
-                      :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
-                      class="campaign-editor-shell w-full overflow-visible rounded-md border border-zinc-200/80 bg-white dark:border-zinc-700/80 dark:bg-zinc-900"
-                      :placeholder="editorPlaceholder(draft.bodyTemplate, 'Write campaign body HTML...')"
-                    >
-                      <UEditorToolbar
-                        :editor="editor"
-                        :items="editorToolbarItems"
-                        class="sticky inset-x-0 top-0 z-10 overflow-x-auto border-b border-zinc-200/80 bg-white/95 p-1.5 backdrop-blur dark:border-zinc-700/80 dark:bg-zinc-900/95"
-                      />
-                      <UEditorToolbar
-                        :editor="editor"
-                        :items="editorBubbleToolbarItems"
-                        layout="bubble"
-                      />
-                      <UEditorSuggestionMenu
-                        :editor="editor"
-                        :items="editorSuggestionItems"
-                      />
-                      <UEditorDragHandle
-                        v-slot="{ ui }"
-                        :editor="editor"
-                        :options="editorDragHandleOptions"
-                        :ui="{ handle: '-translate-x-2 rounded border border-zinc-200/80 bg-white dark:border-zinc-700/80 dark:bg-zinc-900/95' }"
-                      >
-                        <UButton
-                          icon="i-lucide-grip-vertical"
-                          color="neutral"
-                          variant="ghost"
-                          size="sm"
-                          :class="ui.handle()"
-                        />
-                      </UEditorDragHandle>
-                    </UEditor>
+                  <UFormField label="Render mode">
+                    <USelect
+                      v-model="draft.renderMode"
+                      class="w-full"
+                      :items="renderModeItems"
+                    />
                   </UFormField>
-
-                  <UFormField
-                    v-else
-                    label="SendGrid dynamic data (JSON)"
-                  >
-                    <template #description>
-                      Section toggles and content for your SendGrid template. String values can use <code v-pre>{{ variableName }}</code> tokens.
-                    </template>
-                    <div class="space-y-3">
-                      <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-default p-2">
-                        <div class="text-xs text-dimmed">
-                          Use modular SendGrid keys like <code>hero_enabled</code>, <code>feature_1_title</code>, <code>offer_code</code>.
-                        </div>
-                        <UButton
-                          size="xs"
-                          color="neutral"
-                          variant="soft"
-                          icon="i-lucide-wand-sparkles"
-                          @click="loadWebsiteLaunchPreset"
-                        >
-                          Load website launch preset
-                        </UButton>
-                      </div>
-                      <div class="space-y-2 rounded-md border border-default p-2.5">
-                        <div class="text-xs font-medium text-highlighted">
-                          Campaign images
-                        </div>
-                        <div class="grid gap-2 md:grid-cols-2">
-                          <div
-                            v-for="slot in CAMPAIGN_IMAGE_SLOTS"
-                            :key="`campaign-image-${slot.id}`"
-                            class="space-y-2 rounded-md border border-default/80 p-2"
-                          >
-                            <div class="flex items-center justify-between gap-2">
-                              <div class="text-xs font-medium text-highlighted">
-                                {{ slot.label }}
-                              </div>
-                              <div class="flex items-center gap-1">
-                                <UButton
-                                  size="xs"
-                                  color="neutral"
-                                  variant="soft"
-                                  icon="i-lucide-image-up"
-                                  :loading="campaignImageUploadPending[slot.id]"
-                                  @click="() => { void uploadCampaignImage(slot) }"
-                                >
-                                  Upload
-                                </UButton>
-                                <UButton
-                                  size="xs"
-                                  color="neutral"
-                                  variant="ghost"
-                                  icon="i-lucide-x"
-                                  @click="clearCampaignImage(slot)"
-                                >
-                                  Clear
-                                </UButton>
-                              </div>
-                            </div>
-                            <UInput
-                              :model-value="readDynamicDataString(slot.urlKey)"
-                              class="w-full"
-                              placeholder="https://.../image.jpg"
-                              @update:model-value="(value) => updateDynamicDataString(slot.urlKey, String(value ?? ''))"
-                            />
-                            <UInput
-                              :model-value="readDynamicDataString(slot.altKey)"
-                              class="w-full"
-                              placeholder="Alt text"
-                              @update:model-value="(value) => updateDynamicDataString(slot.altKey, String(value ?? ''))"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <UTextarea
-                        v-model="draft.dynamicDataJsonText"
-                        :rows="20"
-                        class="w-full font-mono text-xs"
-                        placeholder="{&#10;  &quot;hero_enabled&quot;: true&#10;}"
-                      />
-                    </div>
-                  </UFormField>
-
-                  <div class="rounded-md border border-primary/20 bg-primary/5 p-2.5 text-xs text-dimmed">
-                    <div class="mb-1.5 font-medium text-highlighted">
-                      Available recipient/context variables
-                    </div>
-                    <div class="leading-relaxed break-words">
-                      <span
-                        v-for="variableName in editorVariableTokens"
-                        :key="`campaign-${variableName}`"
-                        class="mb-1 mr-2 inline-block rounded bg-default/90 px-1.5 py-0.5 ring-1 ring-primary/20"
-                      >
-                        <code>{{ formatVariableToken(variableName) }}</code>
-                      </span>
-                    </div>
-                  </div>
                 </div>
 
-                <aside class="min-w-0 xl:sticky xl:top-4 xl:self-start">
-                  <DashboardAdminEmailHighFidelityEmailPreview
-                    v-model:viewport="previewViewport"
-                    title="Live template preview"
-                    :html="previewHtml"
-                    :template-id="draftSendgridTemplateId"
-                    :lookup="sendgridLookup"
-                    :pending="sendgridLookupPending"
-                    :error="sendgridLookupError"
-                  />
-                </aside>
+                <UFormField
+                  v-if="draft.renderMode === 'editor_html'"
+                  label="Body template (HTML)"
+                >
+                  <template #description>
+                    Use <code v-pre>{{ variableName }}</code> tokens only.
+                  </template>
+                  <UEditor
+                    v-slot="{ editor }"
+                    v-model="draft.bodyTemplate"
+                    content-type="html"
+                    :handlers="editorHandlers"
+                    :image="{ allowBase64: false }"
+                    :editor-props="campaignEditorProps"
+                    :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
+                    class="campaign-editor-shell w-full overflow-visible rounded-md border border-zinc-200/80 bg-white dark:border-zinc-700/80 dark:bg-zinc-900"
+                    :placeholder="editorPlaceholder(draft.bodyTemplate, 'Write campaign body HTML...')"
+                  >
+                    <UEditorToolbar
+                      :editor="editor"
+                      :items="editorToolbarItems"
+                      class="sticky inset-x-0 top-0 z-10 overflow-x-auto border-b border-zinc-200/80 bg-white/95 p-1.5 backdrop-blur dark:border-zinc-700/80 dark:bg-zinc-900/95"
+                    />
+                    <UEditorToolbar
+                      :editor="editor"
+                      :items="editorBubbleToolbarItems"
+                      layout="bubble"
+                    />
+                    <UEditorSuggestionMenu
+                      :editor="editor"
+                      :items="editorSuggestionItems"
+                      :limit="12"
+                      :filter-fields="['label', 'description', 'token']"
+                    />
+                    <UEditorDragHandle
+                      v-slot="{ ui }"
+                      :editor="editor"
+                      :options="editorDragHandleOptions"
+                      :ui="{ handle: 'campaign-editor-drag-handle -translate-x-4 rounded border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-700/80 dark:bg-zinc-900/95' }"
+                    >
+                      <UButton
+                        icon="i-lucide-grip-vertical"
+                        color="neutral"
+                        variant="ghost"
+                        size="sm"
+                        :class="ui.handle()"
+                      />
+                    </UEditorDragHandle>
+                  </UEditor>
+                  <p class="mt-1.5 text-xs text-dimmed">
+                    Type <code>/</code> for formatting, variables, and image upload. Paste or drop images directly into the editor; pasted images upload to Supabase when the campaign saves.
+                    <template v-if="stagedEditorImageCount">
+                      {{ stagedEditorImageCount }} image{{ stagedEditorImageCount === 1 ? '' : 's' }} staged.
+                    </template>
+                    <template v-if="editorImageUploadPending">
+                      Uploading images...
+                    </template>
+                  </p>
+                </UFormField>
+
+                <UFormField
+                  v-else
+                  label="SendGrid dynamic data (JSON)"
+                >
+                  <template #description>
+                    Section toggles and content for your SendGrid template. String values can use <code v-pre>{{ variableName }}</code> tokens.
+                  </template>
+                  <div class="space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-default p-2">
+                      <div class="text-xs text-dimmed">
+                        Use modular SendGrid keys like <code>hero_enabled</code>, <code>feature_1_title</code>, <code>offer_code</code>.
+                      </div>
+                      <UButton
+                        size="xs"
+                        color="neutral"
+                        variant="soft"
+                        icon="i-lucide-wand-sparkles"
+                        @click="loadWebsiteLaunchPreset"
+                      >
+                        Load website launch preset
+                      </UButton>
+                    </div>
+                    <div class="space-y-2 rounded-md border border-default p-2.5">
+                      <div class="text-xs font-medium text-highlighted">
+                        Campaign images
+                      </div>
+                      <div class="grid gap-2 md:grid-cols-2">
+                        <div
+                          v-for="slot in CAMPAIGN_IMAGE_SLOTS"
+                          :key="`campaign-image-${slot.id}`"
+                          class="space-y-2 rounded-md border border-default/80 p-2"
+                        >
+                          <div class="flex items-center justify-between gap-2">
+                            <div class="text-xs font-medium text-highlighted">
+                              {{ slot.label }}
+                            </div>
+                            <div class="flex items-center gap-1">
+                              <UButton
+                                size="xs"
+                                color="neutral"
+                                variant="soft"
+                                icon="i-lucide-image-up"
+                                :loading="campaignImageUploadPending[slot.id]"
+                                @click="() => { void uploadCampaignImage(slot) }"
+                              >
+                                Upload
+                              </UButton>
+                              <UButton
+                                size="xs"
+                                color="neutral"
+                                variant="ghost"
+                                icon="i-lucide-x"
+                                @click="clearCampaignImage(slot)"
+                              >
+                                Clear
+                              </UButton>
+                            </div>
+                          </div>
+                          <UInput
+                            :model-value="readDynamicDataString(slot.urlKey)"
+                            class="w-full"
+                            placeholder="https://.../image.jpg"
+                            @update:model-value="(value) => updateDynamicDataString(slot.urlKey, String(value ?? ''))"
+                          />
+                          <UInput
+                            :model-value="readDynamicDataString(slot.altKey)"
+                            class="w-full"
+                            placeholder="Alt text"
+                            @update:model-value="(value) => updateDynamicDataString(slot.altKey, String(value ?? ''))"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <UTextarea
+                      v-model="draft.dynamicDataJsonText"
+                      :rows="20"
+                      class="w-full font-mono text-xs"
+                      placeholder="{&#10;  &quot;hero_enabled&quot;: true&#10;}"
+                    />
+                  </div>
+                </UFormField>
+
+                <div class="rounded-md border border-primary/20 bg-primary/5 p-2.5 text-xs text-dimmed">
+                  <div class="mb-1.5 font-medium text-highlighted">
+                    Available recipient/context variables
+                  </div>
+                  <div class="leading-relaxed break-words">
+                    <span
+                      v-for="variableName in editorVariableTokens"
+                      :key="`campaign-${variableName}`"
+                      class="mb-1 mr-2 inline-block rounded bg-default/90 px-1.5 py-0.5 ring-1 ring-primary/20"
+                    >
+                      <code>{{ formatVariableToken(variableName) }}</code>
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -2877,12 +3180,16 @@ onBeforeUnmount(() => {
   min-height: 22rem;
   max-height: 38rem;
   overflow-y: auto;
-  padding: 0.95rem 1rem 0.95rem 2.4rem;
-  line-height: 1.55;
+  padding: 1.25rem 1.35rem 1.25rem 3.75rem;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .campaign-editor-shell :deep(p) {
-  margin: 0 0 0.75rem;
+  min-height: 1.6em;
+  margin: 0 0 14px;
+  line-height: 1.6;
 }
 
 .campaign-editor-shell :deep(p:last-child) {
@@ -2891,18 +3198,21 @@ onBeforeUnmount(() => {
 
 .campaign-editor-shell :deep(ul) {
   list-style: disc;
-  margin: 0 0 0.9rem;
-  padding-left: 1.25rem;
+  margin: 0 0 14px;
+  padding-left: 1.4rem;
+  line-height: 1.6;
 }
 
 .campaign-editor-shell :deep(ol) {
   list-style: decimal;
-  margin: 0 0 0.9rem;
-  padding-left: 1.25rem;
+  margin: 0 0 14px;
+  padding-left: 1.4rem;
+  line-height: 1.6;
 }
 
 .campaign-editor-shell :deep(li) {
-  margin: 0.2rem 0;
+  margin: 0 0 6px;
+  line-height: 1.6;
 }
 
 .campaign-editor-shell :deep(img) {
@@ -2916,7 +3226,7 @@ onBeforeUnmount(() => {
 .campaign-editor-shell :deep(h4) {
   font-weight: 600;
   line-height: 1.25;
-  margin: 1rem 0 0.55rem;
+  margin: 18px 0 10px;
 }
 
 .campaign-editor-shell :deep(h1) {
@@ -2937,8 +3247,9 @@ onBeforeUnmount(() => {
 
 .campaign-editor-shell :deep(blockquote) {
   border-left: 3px solid var(--ui-border-muted);
-  margin: 0 0 0.9rem;
-  padding-left: 0.85rem;
+  margin: 0 0 14px;
+  padding-left: 0.9rem;
+  line-height: 1.6;
   color: var(--ui-text-muted);
 }
 
@@ -2948,13 +3259,17 @@ onBeforeUnmount(() => {
   border: 1px solid var(--ui-border);
   background: var(--ui-bg-elevated);
   padding: 0.75rem;
-  margin: 0 0 0.9rem;
+  margin: 0 0 14px;
 }
 
 .campaign-editor-shell :deep(hr) {
   border: 0;
   border-top: 1px solid var(--ui-border);
-  margin: 0.9rem 0;
+  margin: 18px 0;
+}
+
+.campaign-editor-shell :deep(.campaign-editor-drag-handle) {
+  margin-left: -0.35rem;
 }
 
 @media (max-width: 767.98px) {
@@ -2962,7 +3277,7 @@ onBeforeUnmount(() => {
   .campaign-editor-shell :deep(.ProseMirror) {
     min-height: 16rem;
     max-height: 24rem;
-    padding: 0.8rem 0.8rem 0.8rem 1.5rem;
+    padding: 1rem 1rem 1rem 2.75rem;
   }
 }
 </style>

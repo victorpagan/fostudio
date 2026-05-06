@@ -86,6 +86,10 @@ function readErrorMessage(error: unknown) {
   return value.data?.statusMessage ?? value.statusMessage ?? value.message ?? 'Unknown error'
 }
 
+function resolveCustomerName(firstName: string | null | undefined) {
+  return String(firstName ?? '').trim() || 'there'
+}
+
 async function runWithConcurrency<T>(
   values: T[],
   limit: number,
@@ -182,19 +186,11 @@ export default defineEventHandler(async (event) => {
 
         if (recipientsByEmail.has(recipient)) continue
 
-        const customerName = [
-          String(customer?.first_name ?? '').trim(),
-          String(customer?.last_name ?? '').trim()
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .trim() || null
-
         recipientsByEmail.set(recipient, {
           recipient,
           source: 'member',
           userId,
-          customerName,
+          customerName: resolveCustomerName(customer?.first_name),
           tierName: String(membership.tier ?? '').trim() || null,
           cadence: String(membership.cadence ?? '').trim() || null,
           status: String(membership.status ?? '').trim() || null,
@@ -214,7 +210,7 @@ export default defineEventHandler(async (event) => {
       recipient,
       source: 'extra',
       userId: null,
-      customerName: null,
+      customerName: 'there',
       tierName: null,
       cadence: null,
       status: null,
@@ -262,8 +258,8 @@ export default defineEventHandler(async (event) => {
       delete payload.userId
       payload.customerEmail = context.recipient
       payload.guestEmail = context.recipient
-      payload.customerName = null
-      payload.guestName = null
+      payload.customerName = context.customerName || 'there'
+      payload.guestName = context.customerName || 'there'
       payload.doorCode = null
       payload.tierId = null
       payload.tierName = null
@@ -276,10 +272,8 @@ export default defineEventHandler(async (event) => {
       payload.userId = context.userId
       payload.customerEmail = context.recipient
       payload.guestEmail = context.recipient
-      if (context.customerName) {
-        payload.customerName = context.customerName
-        payload.guestName = context.customerName
-      }
+      payload.customerName = context.customerName || 'there'
+      payload.guestName = context.customerName || 'there'
       if (context.tierName) {
         payload.tierId = context.tierName
         payload.tierName = context.tierName

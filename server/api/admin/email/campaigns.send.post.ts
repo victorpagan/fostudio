@@ -72,6 +72,97 @@ function renderTemplate(template: string, context: Record<string, unknown>) {
   })
 }
 
+function parseInlineStyle(style: string | undefined) {
+  const declarations = new Map<string, string>()
+  for (const part of String(style ?? '').split(';')) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+    const separatorIndex = trimmed.indexOf(':')
+    if (separatorIndex <= 0) continue
+    const key = trimmed.slice(0, separatorIndex).trim().toLowerCase()
+    const value = trimmed.slice(separatorIndex + 1).trim()
+    if (!key || !value) continue
+    declarations.set(key, value)
+  }
+  return declarations
+}
+
+function stringifyInlineStyle(declarations: Map<string, string>) {
+  return [...declarations.entries()]
+    .map(([key, value]) => `${key}: ${value}`)
+    .join('; ')
+}
+
+function mergeInlineStyle(existingStyle: string | undefined, defaults: Record<string, string>) {
+  const declarations = parseInlineStyle(existingStyle)
+  for (const [key, value] of Object.entries(defaults)) {
+    if (!declarations.has(key)) declarations.set(key, value)
+  }
+  return stringifyInlineStyle(declarations)
+}
+
+function addDefaultInlineStyleToTag(html: string, tagName: string, defaults: Record<string, string>) {
+  const tagPattern = new RegExp(`<${tagName}\\b([^>]*)>`, 'gi')
+  return html.replace(tagPattern, (_match: string, attributes: string) => {
+    const attrs = String(attributes ?? '')
+    const styleMatch = attrs.match(/\sstyle=(["'])(.*?)\1/i)
+    if (styleMatch) {
+      const mergedStyle = mergeInlineStyle(styleMatch[2], defaults)
+      const nextAttrs = attrs.replace(/\sstyle=(["'])(.*?)\1/i, ` style="${mergedStyle}"`)
+      return `<${tagName}${nextAttrs}>`
+    }
+    return `<${tagName}${attrs} style="${stringifyInlineStyle(new Map(Object.entries(defaults)))}">`
+  })
+}
+
+function normalizeEditorHtmlForEmail(html: string) {
+  let output = String(html ?? '')
+  if (!output.trim()) return output
+
+  output = addDefaultInlineStyleToTag(output, 'p', {
+    'margin': '0 0 14px',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'ul', {
+    'margin': '0 0 14px',
+    'padding-left': '22px',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'ol', {
+    'margin': '0 0 14px',
+    'padding-left': '22px',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'li', {
+    'margin': '0 0 6px',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'blockquote', {
+    'margin': '0 0 14px',
+    'padding-left': '14px',
+    'border-left': '3px solid #d4d4d8',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'h1', {
+    'margin': '0 0 14px',
+    'font-size': '28px',
+    'line-height': '1.2'
+  })
+  output = addDefaultInlineStyleToTag(output, 'h2', {
+    'margin': '18px 0 10px',
+    'font-size': '22px',
+    'line-height': '1.25'
+  })
+  output = addDefaultInlineStyleToTag(output, 'h3', {
+    'margin': '16px 0 8px',
+    'font-size': '18px',
+    'line-height': '1.3'
+  })
+  output = output.replace(/<p\b([^>]*)>\s*<\/p>/gi, '<p$1>&nbsp;</p>')
+  output = output.replace(/<p\b([^>]*)>\s*<br\s*\/?>\s*<\/p>/gi, '<p$1>&nbsp;</p>')
+  return output
+}
+
 function renderDynamicValue(value: unknown, context: Record<string, unknown>): unknown {
   if (typeof value === 'string') {
     return renderTemplate(value, context)
@@ -176,8 +267,8 @@ export default defineEventHandler(async (event) => {
       delete payload.userId
       payload.customerEmail = context.recipient
       payload.guestEmail = context.recipient
-      payload.customerName = null
-      payload.guestName = null
+      payload.customerName = context.customerName || 'there'
+      payload.guestName = context.customerName || 'there'
       payload.doorCode = null
       payload.tierId = null
       payload.tierName = null
@@ -190,10 +281,8 @@ export default defineEventHandler(async (event) => {
       payload.userId = context.userId
       payload.customerEmail = context.recipient
       payload.guestEmail = context.recipient
-      if (context.customerName) {
-        payload.customerName = context.customerName
-        payload.guestName = context.customerName
-      }
+      payload.customerName = context.customerName || 'there'
+      payload.guestName = context.customerName || 'there'
       if (context.tierName) {
         payload.tierId = context.tierName
         payload.tierName = context.tierName
@@ -228,7 +317,10 @@ export default defineEventHandler(async (event) => {
 
     const renderedSubject = renderTemplate(String(campaign.subject_template ?? ''), payload).trim()
     const renderedPreheader = renderTemplate(String(campaign.preheader_template ?? ''), payload).trim()
-    const renderedBody = renderTemplate(String(campaign.body_template ?? ''), payload).trim()
+    const rawRenderedBody = renderTemplate(String(campaign.body_template ?? ''), payload).trim()
+    const renderedBody = campaign.render_mode === 'editor_html'
+      ? normalizeEditorHtmlForEmail(rawRenderedBody)
+      : rawRenderedBody
 
     if (renderedSubject) payload.subject = renderedSubject
     if (renderedPreheader) payload.preheader = renderedPreheader

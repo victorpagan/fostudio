@@ -5,6 +5,8 @@ type EmailTemplateLookup = {
   resolvedFrom: 'active' | 'latest' | 'none'
   selectedVersion: {
     id: string
+    name?: string
+    active?: boolean
     subject: string
     updatedAt: string | null
   } | null
@@ -17,19 +19,24 @@ const props = withDefaults(defineProps<{
   pending?: boolean
   error?: string | null
   title?: string
+  refreshDisabled?: boolean
 }>(), {
   lookup: null,
   pending: false,
   error: null,
-  title: 'High-fidelity preview'
+  title: 'High-fidelity preview',
+  refreshDisabled: false
 })
 
 const viewport = defineModel<'desktop' | 'mobile'>('viewport', { default: 'desktop' })
+const emit = defineEmits<{
+  refresh: []
+}>()
 </script>
 
 <template>
   <section class="rounded-lg border border-default/80 bg-default/40 p-3 space-y-3">
-    <div class="flex items-center justify-between gap-2">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div>
         <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
           {{ props.title }}
@@ -38,25 +45,38 @@ const viewport = defineModel<'desktop' | 'mobile'>('viewport', { default: 'deskt
           Template id: <code>{{ props.templateId || '(not set)' }}</code>
         </div>
       </div>
-      <div class="flex items-center gap-1">
+      <div class="flex flex-wrap items-center gap-1">
         <UButton
           size="xs"
           color="neutral"
-          :variant="viewport === 'desktop' ? 'soft' : 'ghost'"
-          icon="i-lucide-monitor"
-          @click="viewport = 'desktop'"
+          variant="soft"
+          icon="i-lucide-refresh-cw"
+          :loading="props.pending"
+          :disabled="props.refreshDisabled || !props.templateId"
+          @click="emit('refresh')"
         >
-          Desktop
+          Refresh now
         </UButton>
-        <UButton
-          size="xs"
-          color="neutral"
-          :variant="viewport === 'mobile' ? 'soft' : 'ghost'"
-          icon="i-lucide-smartphone"
-          @click="viewport = 'mobile'"
-        >
-          Mobile
-        </UButton>
+        <div class="flex items-center gap-1">
+          <UButton
+            size="xs"
+            color="neutral"
+            :variant="viewport === 'desktop' ? 'soft' : 'ghost'"
+            icon="i-lucide-monitor"
+            @click="viewport = 'desktop'"
+          >
+            Desktop
+          </UButton>
+          <UButton
+            size="xs"
+            color="neutral"
+            :variant="viewport === 'mobile' ? 'soft' : 'ghost'"
+            icon="i-lucide-smartphone"
+            @click="viewport = 'mobile'"
+          >
+            Mobile
+          </UButton>
+        </div>
       </div>
     </div>
 
@@ -72,6 +92,41 @@ const viewport = defineModel<'desktop' | 'mobile'>('viewport', { default: 'deskt
     >
       Fetching latest SendGrid template version...
     </div>
+    <div
+      v-else-if="props.lookup"
+      class="space-y-1 rounded-md border border-default bg-default px-3 py-2 text-xs text-dimmed"
+    >
+      <div>
+        Template: <code>{{ props.lookup.templateId }}</code>
+        <template v-if="props.lookup.name">
+          · {{ props.lookup.name }}
+        </template>
+      </div>
+      <div>
+        Version source: <strong>{{ props.lookup.resolvedFrom }}</strong>
+        <template v-if="props.lookup.selectedVersion?.id">
+          · version <code>{{ props.lookup.selectedVersion.id }}</code>
+        </template>
+      </div>
+      <div>
+        Subject: {{ props.lookup.selectedVersion?.subject || '(empty)' }}
+      </div>
+      <div v-if="props.lookup.selectedVersion?.updatedAt">
+        Version updated {{ new Date(props.lookup.selectedVersion.updatedAt).toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit'
+        }) }}
+      </div>
+    </div>
+    <div
+      v-else
+      class="rounded-md border border-default bg-default px-3 py-2 text-xs text-dimmed"
+    >
+      Set a SendGrid template id to fetch active/latest version details.
+    </div>
 
     <div class="rounded-md border border-default bg-default p-2">
       <div
@@ -80,7 +135,7 @@ const viewport = defineModel<'desktop' | 'mobile'>('viewport', { default: 'deskt
       >
         <iframe
           :srcdoc="props.html"
-          class="w-full min-h-[760px] rounded-md border border-default/70 bg-white"
+          class="w-full min-h-[560px] rounded-md border border-default/70 bg-white md:min-h-[760px]"
           sandbox="allow-scripts"
           title="Email preview"
         />

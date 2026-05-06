@@ -81,6 +81,10 @@ function sortByLatestMembership(a: MembershipRow, b: MembershipRow) {
   return bAt - aAt
 }
 
+function resolveCustomerName(firstName: string | null | undefined) {
+  return String(firstName ?? '').trim() || 'there'
+}
+
 export function summarizeCampaignRecipients(
   recipientContexts: CampaignRecipientContext[],
   sent = 0,
@@ -115,7 +119,7 @@ export async function resolveCampaignRecipients(
         recipient: testRecipient,
         source: 'extra',
         userId: null,
-        customerName: null,
+        customerName: 'there',
         tierName: null,
         cadence: null,
         status: null,
@@ -168,19 +172,11 @@ export async function resolveCampaignRecipients(
         if (!recipient) continue
         if (recipientsByEmail.has(recipient)) continue
 
-        const customerName = [
-          String(customer?.first_name ?? '').trim(),
-          String(customer?.last_name ?? '').trim()
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .trim() || null
-
         recipientsByEmail.set(recipient, {
           recipient,
           source: 'member',
           userId,
-          customerName,
+          customerName: resolveCustomerName(customer?.first_name),
           tierName: String(membership.tier ?? '').trim() || null,
           cadence: String(membership.cadence ?? '').trim() || null,
           status: String(membership.status ?? '').trim() || null,
@@ -200,7 +196,7 @@ export async function resolveCampaignRecipients(
       recipient,
       source: 'extra',
       userId: null,
-      customerName: null,
+      customerName: 'there',
       tierName: null,
       cadence: null,
       status: null,

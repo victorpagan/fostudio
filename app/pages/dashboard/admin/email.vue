@@ -598,7 +598,7 @@ const DEFAULT_IMAGE_MAX_WIDTH = '640px'
 const emailEditorDragHandleOptions = {
   placement: 'left-start',
   offset: {
-    mainAxis: -6,
+    mainAxis: 18,
     alignmentAxis: 0
   }
 } as const
@@ -622,6 +622,76 @@ function stringifyInlineStyle(declarations: Map<string, string>) {
   return [...declarations.entries()]
     .map(([key, value]) => `${key}: ${value}`)
     .join('; ')
+}
+
+function mergeInlineStyle(existingStyle: string | undefined, defaults: Record<string, string>) {
+  const declarations = parseInlineStyle(existingStyle)
+  for (const [key, value] of Object.entries(defaults)) {
+    if (!declarations.has(key)) declarations.set(key, value)
+  }
+  return stringifyInlineStyle(declarations)
+}
+
+function addDefaultInlineStyleToTag(html: string, tagName: string, defaults: Record<string, string>) {
+  const tagPattern = new RegExp(`<${tagName}\\b([^>]*)>`, 'gi')
+  return html.replace(tagPattern, (_match: string, attributes: string) => {
+    const attrs = String(attributes ?? '')
+    const styleMatch = attrs.match(/\sstyle=(["'])(.*?)\1/i)
+    if (styleMatch) {
+      const mergedStyle = mergeInlineStyle(styleMatch[2], defaults)
+      const nextAttrs = attrs.replace(/\sstyle=(["'])(.*?)\1/i, ` style="${mergedStyle}"`)
+      return `<${tagName}${nextAttrs}>`
+    }
+    return `<${tagName}${attrs} style="${stringifyInlineStyle(new Map(Object.entries(defaults)))}">`
+  })
+}
+
+function normalizeEditorHtmlForEmail(html: string) {
+  let output = String(html ?? '')
+  if (!output.trim()) return output
+
+  output = addDefaultInlineStyleToTag(output, 'p', {
+    'margin': '0 0 14px',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'ul', {
+    'margin': '0 0 14px',
+    'padding-left': '22px',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'ol', {
+    'margin': '0 0 14px',
+    'padding-left': '22px',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'li', {
+    'margin': '0 0 6px',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'blockquote', {
+    'margin': '0 0 14px',
+    'padding-left': '14px',
+    'border-left': '3px solid #d4d4d8',
+    'line-height': '1.6'
+  })
+  output = addDefaultInlineStyleToTag(output, 'h1', {
+    'margin': '0 0 14px',
+    'font-size': '28px',
+    'line-height': '1.2'
+  })
+  output = addDefaultInlineStyleToTag(output, 'h2', {
+    'margin': '18px 0 10px',
+    'font-size': '22px',
+    'line-height': '1.25'
+  })
+  output = addDefaultInlineStyleToTag(output, 'h3', {
+    'margin': '16px 0 8px',
+    'font-size': '18px',
+    'line-height': '1.3'
+  })
+  output = output.replace(/<p\b([^>]*)>\s*<\/p>/gi, '<p$1>&nbsp;</p>')
+  output = output.replace(/<p\b([^>]*)>\s*<br\s*\/?>\s*<\/p>/gi, '<p$1>&nbsp;</p>')
+  return output
 }
 
 function buildEditorImageStyle(existingStyle: string | undefined, maxWidth: string) {
@@ -1177,9 +1247,10 @@ const registryPreviewContext = computed(() => {
     ? renderTokenTemplate(preheaderSource, { ...context, subject }).trim()
     : 'Preview generated from current registry draft.'
 
-  const bodyHTML = bodySource
+  const rawBodyHTML = bodySource
     ? renderHandlebarsLikeTemplate(bodySource, { ...context, subject, preheader }).trim()
     : '<p>Template body preview will appear here.</p>'
+  const bodyHTML = normalizeEditorHtmlForEmail(rawBodyHTML)
 
   return {
     ...context,
@@ -1532,6 +1603,8 @@ onBeforeUnmount(() => {
                   <UEditorSuggestionMenu
                     :editor="editor"
                     :items="selectedEditorSuggestionItems"
+                    :limit="12"
+                    :filter-fields="['label', 'description', 'token']"
                   />
                   <UEditorMentionMenu
                     :editor="editor"
@@ -1545,7 +1618,7 @@ onBeforeUnmount(() => {
                     v-slot="{ ui }"
                     :editor="editor"
                     :options="emailEditorDragHandleOptions"
-                    :ui="{ handle: '-translate-x-2 rounded border border-zinc-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-900/95' }"
+                    :ui="{ handle: 'email-editor-drag-handle -translate-x-4 rounded border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-700/80 dark:bg-zinc-900/95' }"
                   >
                     <UButton
                       icon="i-lucide-grip-vertical"
@@ -2028,12 +2101,16 @@ onBeforeUnmount(() => {
   min-height: 24rem;
   max-height: 36rem;
   overflow-y: auto;
-  padding: 0.95rem 1rem 0.95rem 2.4rem;
-  line-height: 1.55;
+  padding: 1.25rem 1.35rem 1.25rem 3.75rem;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .email-editor-shell :deep(p) {
-  margin: 0 0 0.75rem;
+  min-height: 1.6em;
+  margin: 0 0 14px;
+  line-height: 1.6;
 }
 
 .email-editor-shell :deep(p:last-child) {
@@ -2042,18 +2119,21 @@ onBeforeUnmount(() => {
 
 .email-editor-shell :deep(ul) {
   list-style: disc;
-  margin: 0 0 0.9rem;
-  padding-left: 1.25rem;
+  margin: 0 0 14px;
+  padding-left: 1.4rem;
+  line-height: 1.6;
 }
 
 .email-editor-shell :deep(ol) {
   list-style: decimal;
-  margin: 0 0 0.9rem;
-  padding-left: 1.25rem;
+  margin: 0 0 14px;
+  padding-left: 1.4rem;
+  line-height: 1.6;
 }
 
 .email-editor-shell :deep(li) {
-  margin: 0.2rem 0;
+  margin: 0 0 6px;
+  line-height: 1.6;
 }
 
 .email-editor-shell :deep(img) {
@@ -2067,7 +2147,7 @@ onBeforeUnmount(() => {
 .email-editor-shell :deep(h4) {
   font-weight: 600;
   line-height: 1.25;
-  margin: 1rem 0 0.55rem;
+  margin: 18px 0 10px;
 }
 
 .email-editor-shell :deep(h1) {
@@ -2088,8 +2168,9 @@ onBeforeUnmount(() => {
 
 .email-editor-shell :deep(blockquote) {
   border-left: 3px solid var(--ui-border-muted);
-  margin: 0 0 0.9rem;
-  padding-left: 0.85rem;
+  margin: 0 0 14px;
+  padding-left: 0.9rem;
+  line-height: 1.6;
   color: var(--ui-text-muted);
 }
 
@@ -2099,13 +2180,17 @@ onBeforeUnmount(() => {
   border: 1px solid var(--ui-border);
   background: var(--ui-bg-elevated);
   padding: 0.75rem;
-  margin: 0 0 0.9rem;
+  margin: 0 0 14px;
 }
 
 .email-editor-shell :deep(hr) {
   border: 0;
   border-top: 1px solid var(--ui-border);
-  margin: 0.9rem 0;
+  margin: 18px 0;
+}
+
+.email-editor-shell :deep(.email-editor-drag-handle) {
+  margin-left: -0.35rem;
 }
 
 @media (max-width: 767.98px) {
@@ -2113,7 +2198,7 @@ onBeforeUnmount(() => {
   .email-editor-shell :deep(.ProseMirror) {
     min-height: 16rem;
     max-height: 24rem;
-    padding: 0.8rem 0.8rem 0.8rem 1.5rem;
+    padding: 1rem 1rem 1rem 2.75rem;
   }
 }
 </style>
