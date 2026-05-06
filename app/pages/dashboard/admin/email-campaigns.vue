@@ -182,6 +182,16 @@ type TiptapEditor = {
   chain: () => TiptapEditorChain
   getAttributes: (name: string) => Record<string, unknown>
   isActive: (name: string) => boolean
+  state: {
+    selection: {
+      from: number
+      to: number
+      empty: boolean
+    }
+    doc: {
+      textBetween: (from: number, to: number, blockSeparator?: string) => string
+    }
+  }
 }
 
 type TiptapEditorView = {
@@ -373,7 +383,6 @@ const SENDGRID_NATIVE_PREVIEW_TEMPLATE = `<!doctype html>
 </html>`
 
 const route = useRoute()
-const router = useRouter()
 const toast = useToast()
 const FULL_HTML_DOCUMENT_PATTERN = /<html[\s>]|<body[\s>]|<!doctype/i
 const saving = ref(false)
@@ -382,6 +391,7 @@ const sendingTest = ref(false)
 const reviewingSend = ref(false)
 const syncingCampaignQuery = ref(false)
 const selectedCampaignId = ref<string | null>(null)
+const localDraftMode = ref(false)
 const testRecipient = ref('')
 const sendgridLookupPending = ref(false)
 const sendgridLookupError = ref<string | null>(null)
@@ -405,6 +415,7 @@ const suppressAutosave = ref(false)
 const lastSavedDraftSnapshot = ref('')
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null
 let autosaveRequestId = 0
+let draftSessionId = 0
 const sendgridTemplateCatalog = computed(() => sendgridTemplateCatalogRows.value)
 const draft = reactive<CampaignDraft>({
   id: null,
@@ -502,6 +513,7 @@ const draftSendgridTemplateId = computed(() => normalizeTemplateId(draft.sendgri
 
 const CUSTOM_TEMPLATE_VALUE = '__custom__'
 const NO_CAMPAIGN_SELECTED_VALUE = '__none__'
+const LOCAL_DRAFT_QUERY_VALUE = 'new'
 const LEGACY_EVENT_LABEL_PREFIX = 'Legacy (unregistered): '
 
 const templateSelectValue = computed({
@@ -727,18 +739,29 @@ const selectedCampaignRow = computed(() => {
 const currentCampaignTemplateHistory = computed(() => selectedCampaignRow.value?.templateIdHistory ?? [])
 
 const campaignSelectItems = computed(() => {
+  const localDraftItem = {
+    label: localDraftMode.value ? 'New unsaved draft' : 'New draft',
+    value: NO_CAMPAIGN_SELECTED_VALUE
+  }
+
   if (campaignRows.value.length === 0) {
-    return [{ label: 'No campaigns available', value: NO_CAMPAIGN_SELECTED_VALUE, disabled: true }]
+    return [localDraftItem]
   }
 
   if (filteredCampaignRows.value.length === 0) {
-    return [{ label: 'No matching campaigns', value: NO_CAMPAIGN_SELECTED_VALUE, disabled: true }]
+    return [
+      localDraftItem,
+      { label: 'No matching campaigns', value: '__no_matching_campaigns__', disabled: true }
+    ]
   }
 
-  return filteredCampaignRows.value.map(campaign => ({
-    label: campaign.name,
-    value: campaign.id
-  }))
+  return [
+    localDraftItem,
+    ...filteredCampaignRows.value.map(campaign => ({
+      label: campaign.name,
+      value: campaign.id
+    }))
+  ]
 })
 
 const campaignNavigatorValue = computed({
@@ -1303,9 +1326,20 @@ function renderHandlebarsLikeTemplate(template: string, context: Record<string, 
 
 const previewContext = computed(() => {
   const dynamicData = parsedDynamicData.value ?? {}
+  const origin = import.meta.client ? window.location.origin : 'https://fo.studio'
   const baseContext = {
     ...dynamicData,
     eventType: draft.eventType,
+    supportEmail: String((dynamicData.supportEmail ?? 'hello@fo.studio') || 'hello@fo.studio'),
+    dashboardUrl: String((dynamicData.dashboardUrl ?? `${origin}/dashboard`) || `${origin}/dashboard`),
+    bookUrl: String((dynamicData.bookUrl ?? `${origin}/dashboard/book`) || `${origin}/dashboard/book`),
+    membershipUrl: String((dynamicData.membershipUrl ?? `${origin}/dashboard/membership`) || `${origin}/dashboard/membership`),
+    membershipsPublicUrl: String((dynamicData.membershipsPublicUrl ?? `${origin}/memberships`) || `${origin}/memberships`),
+    waiverUrl: String((dynamicData.waiverUrl ?? `${origin}/dashboard/waiver`) || `${origin}/dashboard/waiver`),
+    creditsUrl: String((dynamicData.creditsUrl ?? `${origin}/dashboard/credits`) || `${origin}/dashboard/credits`),
+    manageUrl: String((dynamicData.manageUrl ?? `${origin}/dashboard/bookings`) || `${origin}/dashboard/bookings`),
+    calendarUrl: String((dynamicData.calendarUrl ?? `${origin}/calendar`) || `${origin}/calendar`),
+    studioAddress: String((dynamicData.studioAddress ?? '3131 N. San Fernando Rd., Los Angeles, CA 90065') || '3131 N. San Fernando Rd., Los Angeles, CA 90065'),
     customerName: String((dynamicData.customerName ?? 'there') || 'there'),
     customerEmail: String((dynamicData.customerEmail ?? 'member@example.com') || 'member@example.com'),
     membershipPlanName: String((dynamicData.membershipPlanName ?? 'Pro') || 'Pro'),
@@ -1588,9 +1622,9 @@ function onEventTypeSelected(eventType: string) {
   syncTemplateIdFromRegistry({ silent: true })
 }
 
-function serializeCampaignDraft() {
+function serializeCampaignDraft(options: { includeId?: boolean } = {}) {
   return JSON.stringify({
-    id: draft.id,
+    id: options.includeId === false ? undefined : draft.id,
     name: draft.name,
     status: draft.status,
     templateId: draft.templateId,
@@ -1612,6 +1646,10 @@ function markDraftClean(status: 'idle' | 'saved' = draft.id ? 'saved' : 'idle') 
   autosaveError.value = null
 }
 
+function hasUnsavedDraftChanges() {
+  return serializeCampaignDraft() !== lastSavedDraftSnapshot.value
+}
+
 function clearAutosaveTimer() {
   if (autosaveTimer) {
     clearTimeout(autosaveTimer)
@@ -1623,6 +1661,8 @@ async function runAutosave() {
   clearAutosaveTimer()
   const requestId = autosaveRequestId + 1
   autosaveRequestId = requestId
+  const requestDraftSessionId = draftSessionId
+  const requestDraftSnapshot = serializeCampaignDraft({ includeId: false })
 
   if (isArchivedDraft.value) {
     autosaveStatus.value = 'idle'
@@ -1644,11 +1684,23 @@ async function runAutosave() {
 
   autosaveStatus.value = 'saving'
   autosaveError.value = null
-  const saved = await saveCampaign({ silentSuccess: true, silentError: true })
+  const saved = await saveCampaign({
+    silentSuccess: true,
+    silentError: true,
+    refreshAfterSave: false,
+    markCleanOnSave: false,
+    draftSessionId: requestDraftSessionId
+  })
   if (requestId !== autosaveRequestId) return
 
   if (saved) {
-    markDraftClean('saved')
+    if (serializeCampaignDraft({ includeId: false }) === requestDraftSnapshot) {
+      markDraftClean('saved')
+    } else {
+      autosaveStatus.value = 'dirty'
+      autosaveError.value = null
+      queueAutosave()
+    }
     return
   }
 
@@ -1732,7 +1784,12 @@ function applySelectedTemplateContentToDraft() {
   draft.dynamicDataJsonText = stringifyDynamicData(template.dynamicDataTemplate ?? {})
 }
 
-function readCampaignIdFromQuery() {
+function readCampaignQueryValue() {
+  if (import.meta.client) {
+    const value = new URLSearchParams(window.location.search).get('campaign')
+    return value?.trim() || null
+  }
+
   const value = route.query.campaign
   if (typeof value === 'string' && value.trim()) return value.trim()
   if (Array.isArray(value)) {
@@ -1742,18 +1799,28 @@ function readCampaignIdFromQuery() {
   return null
 }
 
+function isLocalDraftCampaignQuery() {
+  return readCampaignQueryValue() === LOCAL_DRAFT_QUERY_VALUE
+}
+
+function readCampaignIdFromQuery() {
+  const value = readCampaignQueryValue()
+  if (!value || value === LOCAL_DRAFT_QUERY_VALUE) return null
+  return value
+}
+
 async function syncCampaignQuery(campaignId: string | null) {
   if (import.meta.server) return
-  const currentCampaignId = readCampaignIdFromQuery()
-  if (campaignId === currentCampaignId) return
 
-  const nextQuery = { ...route.query }
-  if (campaignId) nextQuery.campaign = campaignId
-  else delete nextQuery.campaign
+  const nextCampaignValue = campaignId ?? LOCAL_DRAFT_QUERY_VALUE
+  if (readCampaignQueryValue() === nextCampaignValue) return
+
+  const nextUrl = new URL(window.location.href)
+  nextUrl.searchParams.set('campaign', nextCampaignValue)
 
   syncingCampaignQuery.value = true
   try {
-    await router.replace({ query: nextQuery })
+    window.history.replaceState(window.history.state, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`)
   } finally {
     syncingCampaignQuery.value = false
   }
@@ -1762,6 +1829,9 @@ async function syncCampaignQuery(campaignId: string | null) {
 async function selectCampaign(campaignId: string, options: { syncQuery?: boolean } = {}) {
   const selected = campaigns.value.find(item => item.id === campaignId) ?? null
   if (!selected) return
+  draftSessionId += 1
+  localDraftMode.value = false
+  clearAutosaveTimer()
   selectedCampaignId.value = campaignId
   hydrateDraftFromCampaign(selected)
   if (options.syncQuery !== false) {
@@ -1770,6 +1840,10 @@ async function selectCampaign(campaignId: string, options: { syncQuery?: boolean
 }
 
 async function createCampaignDraft(options: { syncQuery?: boolean } = {}) {
+  draftSessionId += 1
+  autosaveRequestId += 1
+  localDraftMode.value = true
+  clearAutosaveTimer()
   selectedCampaignId.value = null
   activeBuilderTab.value = 'setup'
   sendReview.value = null
@@ -1785,6 +1859,12 @@ async function createCampaignDraft(options: { syncQuery?: boolean } = {}) {
 
 async function reloadCampaigns(options: { preserveSelection?: boolean } = {}) {
   await refresh()
+  if (localDraftMode.value) return
+  if (isLocalDraftCampaignQuery()) {
+    await createCampaignDraft({ syncQuery: false })
+    return
+  }
+
   const selectedFromQuery = readCampaignIdFromQuery()
   const preferredCampaignId = selectedFromQuery ?? (options.preserveSelection ? selectedCampaignId.value : null)
   if (preferredCampaignId) {
@@ -1803,7 +1883,13 @@ async function reloadCampaigns(options: { preserveSelection?: boolean } = {}) {
   await createCampaignDraft()
 }
 
-async function saveCampaign(options: { silentSuccess?: boolean, silentError?: boolean } = {}) {
+async function saveCampaign(options: {
+  silentSuccess?: boolean
+  silentError?: boolean
+  refreshAfterSave?: boolean
+  markCleanOnSave?: boolean
+  draftSessionId?: number
+} = {}) {
   lastSaveError.value = null
   if (!isDraftEventTypeRegistered.value) {
     lastSaveError.value = 'Select a registered mail event type before saving this campaign.'
@@ -1873,12 +1959,25 @@ async function saveCampaign(options: { silentSuccess?: boolean, silentError?: bo
       }
     })
 
+    if (options.draftSessionId != null && options.draftSessionId !== draftSessionId) {
+      return false
+    }
+
+    localDraftMode.value = false
     selectedCampaignId.value = result.campaign.id
     draft.id = result.campaign.id
+    if (options.markCleanOnSave !== false) {
+      markDraftClean('saved')
+    }
+    if (options.refreshAfterSave === false) {
+      await syncCampaignQuery(result.campaign.id)
+    }
     if (!options.silentSuccess) {
       toast.add({ title: 'Campaign saved', color: 'success' })
     }
-    await reloadCampaigns({ preserveSelection: true })
+    if (options.refreshAfterSave !== false) {
+      await reloadCampaigns({ preserveSelection: true })
+    }
     return true
   } catch (error: unknown) {
     lastSaveError.value = readErrorMessage(error)
@@ -2037,6 +2136,20 @@ function buildSuggestionItems(tokens: string[]) {
       level: 2
     },
     {
+      label: 'Large text',
+      description: 'Insert a larger email paragraph',
+      icon: 'i-lucide-type',
+      kind: 'styledTextBlock',
+      size: 'large'
+    },
+    {
+      label: 'Small text',
+      description: 'Insert smaller helper text',
+      icon: 'i-lucide-case-sensitive',
+      kind: 'styledTextBlock',
+      size: 'small'
+    },
+    {
       label: 'Bullet List',
       description: 'Add list items',
       icon: 'i-lucide-list',
@@ -2071,7 +2184,59 @@ function buildSuggestionItems(tokens: string[]) {
 
 const editorSuggestionItems = computed(() => buildSuggestionItems(editorVariableTokens.value))
 
+function selectedEditorPlainText(editor: TiptapEditor) {
+  const selection = editor.state.selection
+  if (selection.empty) return ''
+  return editor.state.doc.textBetween(selection.from, selection.to, '\n').trim()
+}
+
+function buildStyledTextBlockHtml(size: 'small' | 'normal' | 'large', text: string) {
+  const styles = {
+    small: 'margin:0 0 12px;font-size:13px;line-height:1.55;color:#52525b;',
+    normal: 'margin:0 0 14px;font-size:15px;line-height:1.6;color:#18181b;',
+    large: 'margin:0 0 16px;font-size:18px;line-height:1.55;color:#18181b;'
+  } as const
+  const fallback = size === 'small' ? 'Small helper text' : size === 'large' ? 'Large paragraph text' : 'Paragraph text'
+  return `<p style="${styles[size]}">${escapeHtml(text || fallback)}</p>`
+}
+
+function buildAlignedTextBlockHtml(align: 'left' | 'center' | 'right' | 'justify', text: string) {
+  const fallback = align === 'center' ? 'Centered paragraph' : align === 'right' ? 'Right aligned paragraph' : 'Paragraph text'
+  return `<p style="margin:0 0 14px;line-height:1.6;text-align:${align};">${escapeHtml(text || fallback)}</p>`
+}
+
+function applyEditorParagraph(editor: TiptapEditor) {
+  const chain = editor.chain().focus() as unknown as { setParagraph?: () => { run: () => boolean }, run: () => boolean }
+  return chain.setParagraph?.().run() ?? chain.run()
+}
+
+function applyEditorHeading(editor: TiptapEditor, level: 1 | 2 | 3 | 4) {
+  const chain = editor.chain().focus() as unknown as { toggleHeading?: (input: { level: number }) => { run: () => boolean }, run: () => boolean }
+  return chain.toggleHeading?.({ level })?.run() ?? chain.run()
+}
+
+function insertEditorDivider(editor: TiptapEditor) {
+  const chain = editor.chain().focus() as unknown as { setHorizontalRule?: () => { run: () => boolean }, insertContent: (content: string) => { run: () => boolean } }
+  return chain.setHorizontalRule?.().run() ?? chain.insertContent('<hr />').run()
+}
+
+function applyEditorAlignment(editor: TiptapEditor, align: 'left' | 'center' | 'right' | 'justify') {
+  return editor
+    .chain()
+    .focus()
+    .insertContent(buildAlignedTextBlockHtml(align, selectedEditorPlainText(editor)))
+    .run()
+}
+
 const editorHandlers = {
+  styledTextBlock: {
+    canExecute: () => true,
+    execute: (editor: TiptapEditor, cmd?: { size?: 'small' | 'normal' | 'large' }) => {
+      const size = cmd?.size ?? 'normal'
+      return editor.chain().focus().insertContent(buildStyledTextBlockHtml(size, selectedEditorPlainText(editor)))
+    },
+    isActive: () => false
+  },
   insertToken: {
     canExecute: () => true,
     execute: (editor: TiptapEditor, cmd?: { token?: string }) => {
@@ -2171,6 +2336,31 @@ const editorToolbarItems = [[{
     level: 3,
     icon: 'i-lucide-heading-3',
     label: 'Heading 3'
+  }, {
+    kind: 'heading',
+    level: 4,
+    icon: 'i-lucide-heading-4',
+    label: 'Heading 4'
+  }]
+}, {
+  icon: 'i-lucide-type',
+  tooltip: { text: 'Text size' },
+  content: { align: 'start' },
+  items: [{
+    kind: 'styledTextBlock',
+    size: 'small',
+    icon: 'i-lucide-case-sensitive',
+    label: 'Small paragraph'
+  }, {
+    kind: 'styledTextBlock',
+    size: 'normal',
+    icon: 'i-lucide-type',
+    label: 'Normal paragraph'
+  }, {
+    kind: 'styledTextBlock',
+    size: 'large',
+    icon: 'i-lucide-type',
+    label: 'Large paragraph'
   }]
 }, {
   icon: 'i-lucide-list',
@@ -2305,14 +2495,31 @@ const editorBubbleToolbarItems = [[{
 
 watch([templates, campaigns], () => {
   if (!initialDataLoaded.value) return
+  if (localDraftMode.value) return
+  if (isLocalDraftCampaignQuery()) {
+    void createCampaignDraft({ syncQuery: false })
+    return
+  }
+
   const selectedFromQuery = readCampaignIdFromQuery()
   if (selectedFromQuery) {
+    if (selectedFromQuery === selectedCampaignId.value && (autosaveStatus.value === 'saving' || hasUnsavedDraftChanges())) {
+      return
+    }
+
     const fromQuery = campaigns.value.find(item => item.id === selectedFromQuery)
     if (fromQuery) {
+      draftSessionId += 1
+      localDraftMode.value = false
+      clearAutosaveTimer()
       selectedCampaignId.value = fromQuery.id
       hydrateDraftFromCampaign(fromQuery)
       return
     }
+  }
+
+  if (selectedCampaignId.value && (autosaveStatus.value === 'saving' || hasUnsavedDraftChanges())) {
+    return
   }
 
   if (selectedCampaignId.value) {
@@ -2334,12 +2541,20 @@ watch([templates, campaigns], () => {
 watch(() => route.query.campaign, () => {
   if (syncingCampaignQuery.value) return
 
+  if (isLocalDraftCampaignQuery()) {
+    void createCampaignDraft({ syncQuery: false })
+    return
+  }
+
   const selectedFromQuery = readCampaignIdFromQuery()
   if (!selectedFromQuery) return
   if (selectedFromQuery === selectedCampaignId.value) return
 
   const fromQuery = campaigns.value.find(item => item.id === selectedFromQuery)
   if (fromQuery) {
+    draftSessionId += 1
+    localDraftMode.value = false
+    clearAutosaveTimer()
     selectedCampaignId.value = fromQuery.id
     hydrateDraftFromCampaign(fromQuery)
   }
@@ -2437,7 +2652,6 @@ onBeforeUnmount(() => {
             <USelect
               v-model="campaignNavigatorValue"
               :items="campaignSelectItems"
-              :disabled="campaignRows.length === 0 || filteredCampaignRows.length === 0"
               placeholder="Select campaign"
             />
           </UFormField>
@@ -2904,6 +3118,82 @@ onBeforeUnmount(() => {
                       :items="editorToolbarItems"
                       class="sticky inset-x-0 top-0 z-10 overflow-x-auto border-b border-zinc-200/80 bg-white/95 p-1.5 backdrop-blur dark:border-zinc-700/80 dark:bg-zinc-900/95"
                     />
+                    <div class="campaign-editor-quickbar border-b border-zinc-200/80 bg-zinc-50/90 px-2 py-2 dark:border-zinc-700/80 dark:bg-zinc-950/60">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="px-1 text-[11px] font-semibold uppercase tracking-wide text-dimmed">Format</span>
+                        <UButtonGroup size="xs">
+                          <UButton
+                            label="P"
+                            color="neutral"
+                            variant="soft"
+                            @click="applyEditorParagraph(editor)"
+                          />
+                          <UButton
+                            label="H1"
+                            color="neutral"
+                            variant="soft"
+                            @click="applyEditorHeading(editor, 1)"
+                          />
+                          <UButton
+                            label="H2"
+                            color="neutral"
+                            variant="soft"
+                            @click="applyEditorHeading(editor, 2)"
+                          />
+                          <UButton
+                            label="H3"
+                            color="neutral"
+                            variant="soft"
+                            @click="applyEditorHeading(editor, 3)"
+                          />
+                          <UButton
+                            label="H4"
+                            color="neutral"
+                            variant="soft"
+                            @click="applyEditorHeading(editor, 4)"
+                          />
+                        </UButtonGroup>
+                        <UButton
+                          label="Divider"
+                          icon="i-lucide-separator-horizontal"
+                          color="neutral"
+                          variant="soft"
+                          size="xs"
+                          @click="insertEditorDivider(editor)"
+                        />
+                        <span class="px-1 text-[11px] font-semibold uppercase tracking-wide text-dimmed">Align</span>
+                        <UButtonGroup size="xs">
+                          <UButton
+                            icon="i-lucide-align-left"
+                            color="neutral"
+                            variant="soft"
+                            aria-label="Align left"
+                            @click="applyEditorAlignment(editor, 'left')"
+                          />
+                          <UButton
+                            icon="i-lucide-align-center"
+                            color="neutral"
+                            variant="soft"
+                            aria-label="Align center"
+                            @click="applyEditorAlignment(editor, 'center')"
+                          />
+                          <UButton
+                            icon="i-lucide-align-right"
+                            color="neutral"
+                            variant="soft"
+                            aria-label="Align right"
+                            @click="applyEditorAlignment(editor, 'right')"
+                          />
+                          <UButton
+                            icon="i-lucide-align-justify"
+                            color="neutral"
+                            variant="soft"
+                            aria-label="Align justify"
+                            @click="applyEditorAlignment(editor, 'justify')"
+                          />
+                        </UButtonGroup>
+                      </div>
+                    </div>
                     <UEditorToolbar
                       :editor="editor"
                       :items="editorBubbleToolbarItems"
@@ -2919,7 +3209,7 @@ onBeforeUnmount(() => {
                       v-slot="{ ui }"
                       :editor="editor"
                       :options="editorDragHandleOptions"
-                      :ui="{ handle: 'campaign-editor-drag-handle -translate-x-4 rounded border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-700/80 dark:bg-zinc-900/95' }"
+                      :ui="{ handle: 'campaign-editor-drag-handle -translate-x-6 rounded border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-700/80 dark:bg-zinc-900/95' }"
                     >
                       <UButton
                         icon="i-lucide-grip-vertical"
@@ -3180,7 +3470,7 @@ onBeforeUnmount(() => {
   min-height: 22rem;
   max-height: 38rem;
   overflow-y: auto;
-  padding: 1.25rem 1.35rem 1.25rem 3.75rem;
+  padding: 1.25rem 1.35rem 1.25rem 4.75rem;
   font-family: Arial, Helvetica, sans-serif;
   font-size: 15px;
   line-height: 1.6;
@@ -3269,7 +3559,7 @@ onBeforeUnmount(() => {
 }
 
 .campaign-editor-shell :deep(.campaign-editor-drag-handle) {
-  margin-left: -0.35rem;
+  margin-left: -0.75rem;
 }
 
 @media (max-width: 767.98px) {
@@ -3277,7 +3567,7 @@ onBeforeUnmount(() => {
   .campaign-editor-shell :deep(.ProseMirror) {
     min-height: 16rem;
     max-height: 24rem;
-    padding: 1rem 1rem 1rem 2.75rem;
+    padding: 1rem 1rem 1rem 3.25rem;
   }
 }
 </style>

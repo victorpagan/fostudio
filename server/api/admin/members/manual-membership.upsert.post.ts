@@ -64,6 +64,9 @@ export default defineEventHandler(async (event) => {
   if (expiresAt && Date.parse(expiresAt) <= Date.parse(startsAt)) {
     throw createError({ statusCode: 400, statusMessage: 'Manual membership end date must be after the start date.' })
   }
+  if (expiresAt && Date.parse(expiresAt) <= now.getTime()) {
+    throw createError({ statusCode: 400, statusMessage: 'Manual membership end date must be in the future.' })
+  }
 
   const { data: tier, error: tierErr } = await db
     .from('membership_tiers')

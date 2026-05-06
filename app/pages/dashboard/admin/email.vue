@@ -714,7 +714,59 @@ function updateSelectedImageStyle(editor: TiptapEditor, maxWidth: string) {
     })
 }
 
+function selectedEditorPlainText(editor: TiptapEditor) {
+  const selection = editor.state.selection
+  if (selection.empty) return ''
+  return editor.state.doc.textBetween(selection.from, selection.to, '\n').trim()
+}
+
+function buildStyledTextBlockHtml(size: 'small' | 'normal' | 'large', text: string) {
+  const styles = {
+    small: 'margin:0 0 12px;font-size:13px;line-height:1.55;color:#52525b;',
+    normal: 'margin:0 0 14px;font-size:15px;line-height:1.6;color:#18181b;',
+    large: 'margin:0 0 16px;font-size:18px;line-height:1.55;color:#18181b;'
+  } as const
+  const fallback = size === 'small' ? 'Small helper text' : size === 'large' ? 'Large paragraph text' : 'Paragraph text'
+  return `<p style="${styles[size]}">${escapeHtml(text || fallback)}</p>`
+}
+
+function buildAlignedTextBlockHtml(align: 'left' | 'center' | 'right' | 'justify', text: string) {
+  const fallback = align === 'center' ? 'Centered paragraph' : align === 'right' ? 'Right aligned paragraph' : 'Paragraph text'
+  return `<p style="margin:0 0 14px;line-height:1.6;text-align:${align};">${escapeHtml(text || fallback)}</p>`
+}
+
+function applyEditorParagraph(editor: TiptapEditor) {
+  const chain = editor.chain().focus() as unknown as { setParagraph?: () => { run: () => boolean }, run: () => boolean }
+  return chain.setParagraph?.().run() ?? chain.run()
+}
+
+function applyEditorHeading(editor: TiptapEditor, level: 1 | 2 | 3 | 4) {
+  const chain = editor.chain().focus() as unknown as { toggleHeading?: (input: { level: number }) => { run: () => boolean }, run: () => boolean }
+  return chain.toggleHeading?.({ level })?.run() ?? chain.run()
+}
+
+function insertEditorDivider(editor: TiptapEditor) {
+  const chain = editor.chain().focus() as unknown as { setHorizontalRule?: () => { run: () => boolean }, insertContent: (content: string) => { run: () => boolean } }
+  return chain.setHorizontalRule?.().run() ?? chain.insertContent('<hr />').run()
+}
+
+function applyEditorAlignment(editor: TiptapEditor, align: 'left' | 'center' | 'right' | 'justify') {
+  return editor
+    .chain()
+    .focus()
+    .insertContent(buildAlignedTextBlockHtml(align, selectedEditorPlainText(editor)))
+    .run()
+}
+
 const emailEditorHandlers = {
+  styledTextBlock: {
+    canExecute: () => true,
+    execute: (editor: TiptapEditor, cmd?: { size?: 'small' | 'normal' | 'large' }) => {
+      const size = cmd?.size ?? 'normal'
+      return editor.chain().focus().insertContent(buildStyledTextBlockHtml(size, selectedEditorPlainText(editor)))
+    },
+    isActive: () => false
+  },
   insertToken: {
     canExecute: () => true,
     execute: (editor: TiptapEditor, cmd?: { token?: string }) => {
@@ -810,6 +862,20 @@ function buildSuggestionItems(tokens: string[]) {
       level: 2
     },
     {
+      label: 'Large text',
+      description: 'Insert a larger email paragraph',
+      icon: 'i-lucide-type',
+      kind: 'styledTextBlock',
+      size: 'large'
+    },
+    {
+      label: 'Small text',
+      description: 'Insert smaller helper text',
+      icon: 'i-lucide-case-sensitive',
+      kind: 'styledTextBlock',
+      size: 'small'
+    },
+    {
       label: 'Bullet List',
       description: 'Add list items',
       icon: 'i-lucide-list',
@@ -847,7 +913,7 @@ function buildSuggestionItems(tokens: string[]) {
     : []]
 }
 
-const selectedEditorSuggestionItems = computed(() => buildSuggestionItems(selectedTemplateVariables.value))
+const selectedEditorSuggestionItems = computed(() => buildSuggestionItems(selectedTemplateVariables.value) as never)
 
 const emailEditorToolbarItems = [[{
   kind: 'undo',
@@ -885,6 +951,26 @@ const emailEditorToolbarItems = [[{
     level: 4,
     icon: 'i-lucide-heading-4',
     label: 'Heading 4'
+  }]
+}, {
+  icon: 'i-lucide-type',
+  tooltip: { text: 'Text size' },
+  content: { align: 'start' },
+  items: [{
+    kind: 'styledTextBlock',
+    size: 'small',
+    icon: 'i-lucide-case-sensitive',
+    label: 'Small paragraph'
+  }, {
+    kind: 'styledTextBlock',
+    size: 'normal',
+    icon: 'i-lucide-type',
+    label: 'Normal paragraph'
+  }, {
+    kind: 'styledTextBlock',
+    size: 'large',
+    icon: 'i-lucide-type',
+    label: 'Large paragraph'
   }]
 }, {
   icon: 'i-lucide-list',
@@ -1178,6 +1264,22 @@ function renderHandlebarsLikeTemplate(template: string, context: Record<string, 
 }
 
 function sampleValueForToken(tokenPath: string) {
+  const origin = import.meta.client ? window.location.origin : 'https://fo.studio'
+  const sampleByToken: Record<string, string> = {
+    supportEmail: 'hello@fo.studio',
+    dashboardUrl: `${origin}/dashboard`,
+    bookUrl: `${origin}/dashboard/book`,
+    membershipUrl: `${origin}/dashboard/membership`,
+    membershipsPublicUrl: `${origin}/memberships`,
+    waiverUrl: `${origin}/dashboard/waiver`,
+    creditsUrl: `${origin}/dashboard/credits`,
+    manageUrl: `${origin}/dashboard/bookings`,
+    calendarUrl: `${origin}/calendar`,
+    studioAddress: '3131 N. San Fernando Rd., Los Angeles, CA 90065'
+  }
+  const directSample = sampleByToken[tokenPath]
+  if (directSample) return directSample
+
   const leaf = tokenPath.split('.').at(-1)?.toLowerCase() ?? tokenPath.toLowerCase()
 
   if (leaf.includes('email')) return 'member@example.com'
@@ -1595,6 +1697,82 @@ onBeforeUnmount(() => {
                     :items="emailEditorToolbarItems"
                     class="border-b border-zinc-200/80 dark:border-zinc-700/80 sticky top-0 inset-x-0 p-1.5 z-10 bg-white/95 dark:bg-zinc-900/95 backdrop-blur overflow-x-auto"
                   />
+                  <div class="email-editor-quickbar border-b border-zinc-200/80 bg-zinc-50/90 px-2 py-2 dark:border-zinc-700/80 dark:bg-zinc-950/60">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="px-1 text-[11px] font-semibold uppercase tracking-wide text-dimmed">Format</span>
+                      <UButtonGroup size="xs">
+                        <UButton
+                          label="P"
+                          color="neutral"
+                          variant="soft"
+                          @click="applyEditorParagraph(editor)"
+                        />
+                        <UButton
+                          label="H1"
+                          color="neutral"
+                          variant="soft"
+                          @click="applyEditorHeading(editor, 1)"
+                        />
+                        <UButton
+                          label="H2"
+                          color="neutral"
+                          variant="soft"
+                          @click="applyEditorHeading(editor, 2)"
+                        />
+                        <UButton
+                          label="H3"
+                          color="neutral"
+                          variant="soft"
+                          @click="applyEditorHeading(editor, 3)"
+                        />
+                        <UButton
+                          label="H4"
+                          color="neutral"
+                          variant="soft"
+                          @click="applyEditorHeading(editor, 4)"
+                        />
+                      </UButtonGroup>
+                      <UButton
+                        label="Divider"
+                        icon="i-lucide-separator-horizontal"
+                        color="neutral"
+                        variant="soft"
+                        size="xs"
+                        @click="insertEditorDivider(editor)"
+                      />
+                      <span class="px-1 text-[11px] font-semibold uppercase tracking-wide text-dimmed">Align</span>
+                      <UButtonGroup size="xs">
+                        <UButton
+                          icon="i-lucide-align-left"
+                          color="neutral"
+                          variant="soft"
+                          aria-label="Align left"
+                          @click="applyEditorAlignment(editor, 'left')"
+                        />
+                        <UButton
+                          icon="i-lucide-align-center"
+                          color="neutral"
+                          variant="soft"
+                          aria-label="Align center"
+                          @click="applyEditorAlignment(editor, 'center')"
+                        />
+                        <UButton
+                          icon="i-lucide-align-right"
+                          color="neutral"
+                          variant="soft"
+                          aria-label="Align right"
+                          @click="applyEditorAlignment(editor, 'right')"
+                        />
+                        <UButton
+                          icon="i-lucide-align-justify"
+                          color="neutral"
+                          variant="soft"
+                          aria-label="Align justify"
+                          @click="applyEditorAlignment(editor, 'justify')"
+                        />
+                      </UButtonGroup>
+                    </div>
+                  </div>
                   <UEditorToolbar
                     :editor="editor"
                     :items="emailEditorBubbleToolbarItems"
@@ -1618,7 +1796,7 @@ onBeforeUnmount(() => {
                     v-slot="{ ui }"
                     :editor="editor"
                     :options="emailEditorDragHandleOptions"
-                    :ui="{ handle: 'email-editor-drag-handle -translate-x-4 rounded border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-700/80 dark:bg-zinc-900/95' }"
+                    :ui="{ handle: 'email-editor-drag-handle -translate-x-6 rounded border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-700/80 dark:bg-zinc-900/95' }"
                   >
                     <UButton
                       icon="i-lucide-grip-vertical"
@@ -2101,7 +2279,7 @@ onBeforeUnmount(() => {
   min-height: 24rem;
   max-height: 36rem;
   overflow-y: auto;
-  padding: 1.25rem 1.35rem 1.25rem 3.75rem;
+  padding: 1.25rem 1.35rem 1.25rem 4.75rem;
   font-family: Arial, Helvetica, sans-serif;
   font-size: 15px;
   line-height: 1.6;
@@ -2190,7 +2368,7 @@ onBeforeUnmount(() => {
 }
 
 .email-editor-shell :deep(.email-editor-drag-handle) {
-  margin-left: -0.35rem;
+  margin-left: -0.75rem;
 }
 
 @media (max-width: 767.98px) {
@@ -2198,7 +2376,7 @@ onBeforeUnmount(() => {
   .email-editor-shell :deep(.ProseMirror) {
     min-height: 16rem;
     max-height: 24rem;
-    padding: 1rem 1rem 1rem 2.75rem;
+    padding: 1rem 1rem 1rem 3.25rem;
   }
 }
 </style>

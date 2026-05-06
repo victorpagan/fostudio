@@ -539,6 +539,13 @@ function toDateInput(value: string | null | undefined) {
   return dt.toISOString().slice(0, 10)
 }
 
+function toFutureDateInput(value: string | null | undefined) {
+  if (!value) return ''
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime()) || dt.getTime() <= Date.now()) return ''
+  return dt.toISOString().slice(0, 10)
+}
+
 function dateInputToIso(value: string | null | undefined) {
   const normalized = String(value ?? '').trim()
   if (!normalized) return null
@@ -674,12 +681,17 @@ function selectMember(member: MemberRecord, options: { syncRoute?: boolean } = {
   statusForm.status = member.status ?? 'active'
   doorCodeForm.value = member.door_code ?? ''
   workshopAccessForm.enabled = Boolean(member.workshop_booking_enabled)
+  const isManualMembership = member.membership_source === 'manual'
   manualMembershipForm.tierId = member.tier ?? manualTierItems.value[0]?.value ?? ''
   manualMembershipForm.cadence = member.cadence ?? manualCadenceItems.value[0]?.value ?? 'monthly'
-  manualMembershipForm.startsOn = toDateInput(member.current_period_start) || new Date().toISOString().slice(0, 10)
-  manualMembershipForm.expiresOn = toDateInput(member.manual_expires_at ?? member.current_period_end)
-  manualMembershipForm.manualGrantsEnabled = Boolean(member.manual_grants_enabled)
-  manualMembershipForm.reason = member.manual_reason ?? ''
+  manualMembershipForm.startsOn = isManualMembership && ['active', 'past_due'].includes(member.effective_status)
+    ? toDateInput(member.current_period_start) || new Date().toISOString().slice(0, 10)
+    : new Date().toISOString().slice(0, 10)
+  manualMembershipForm.expiresOn = isManualMembership
+    ? toFutureDateInput(member.manual_expires_at)
+    : ''
+  manualMembershipForm.manualGrantsEnabled = isManualMembership && Boolean(member.manual_grants_enabled)
+  manualMembershipForm.reason = isManualMembership ? member.manual_reason ?? '' : ''
 
   if (options.syncRoute !== false) {
     void router.replace({
@@ -884,6 +896,7 @@ async function saveManualMembership() {
     })
     toast.add({ title: 'Manual membership saved' })
     await refreshAll()
+    await refreshNuxtData(['dash:sidebar:membership', 'dash:sidebar:credit-cap', 'book:membership-state', 'dash:home:membership'])
   } catch (error: unknown) {
     toast.add({ title: 'Could not save manual membership', description: readErrorMessage(error), color: 'error' })
   } finally {
@@ -904,6 +917,7 @@ async function revokeManualMembership() {
     })
     toast.add({ title: 'Manual membership revoked' })
     await refreshAll()
+    await refreshNuxtData(['dash:sidebar:membership', 'dash:sidebar:credit-cap', 'book:membership-state', 'dash:home:membership'])
   } catch (error: unknown) {
     toast.add({ title: 'Could not revoke manual membership', description: readErrorMessage(error), color: 'error' })
   } finally {
@@ -1904,7 +1918,13 @@ onMounted(async () => {
                   Membership status
                 </div>
                 <p
-                  v-if="!selectedMember.membership_record_id"
+                  v-if="selectedMember.membership_source === 'manual'"
+                  class="mt-2 text-sm text-dimmed"
+                >
+                  Manual memberships are managed through the manual membership panel above. Revoke or update that assignment there instead of changing status directly.
+                </p>
+                <p
+                  v-else-if="!selectedMember.membership_record_id"
                   class="mt-2 text-sm text-dimmed"
                 >
                   This is a guest account with no subscription history. Membership status controls appear once the account has a membership record.
