@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import { getRequestURL } from 'h3'
 import { requireServerAdmin } from '~~/server/utils/auth'
-import { sendViaFomailer } from '~~/server/utils/mail/fomailer'
+import { resolveFomailerType, sendViaFomailer } from '~~/server/utils/mail/fomailer'
 import { buildAdminMailPayload, normalizeMailRecipient } from '~~/server/utils/mail/adminPayload'
+import { applyRenderedRegistryCopy } from '~~/server/utils/mail/render'
 
 const bodySchema = z.object({
   eventType: z.string().trim().min(3).max(160).regex(/^[A-Za-z0-9._-]+$/),
@@ -13,6 +14,9 @@ type MailTemplateRegistryRow = {
   event_type: string
   sendgrid_template_id: string
   active: boolean
+  subject_template: string | null
+  preheader_template: string | null
+  body_template: string | null
 }
 
 function readUpstreamErrorDetails(error: unknown) {
@@ -49,7 +53,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: templateRowRaw, error: templateError } = await supabase
     .from('mail_template_registry')
-    .select('event_type,sendgrid_template_id,active')
+    .select('event_type,sendgrid_template_id,active,subject_template,preheader_template,body_template')
     .eq('event_type', body.eventType)
     .maybeSingle()
 
@@ -70,12 +74,14 @@ export default defineEventHandler(async (event) => {
     userId: user.sub ?? 'admin-test-user',
     templateId,
     origin: getRequestURL(event).origin
-  })
+  }) as Record<string, unknown>
+
+  applyRenderedRegistryCopy(payload, templateRow)
 
   let sendResult: Awaited<ReturnType<typeof sendViaFomailer>>
   try {
     sendResult = await sendViaFomailer(event, {
-      type: body.eventType,
+      type: resolveFomailerType(body.eventType),
       payload
     })
     if (!sendResult.ok) {

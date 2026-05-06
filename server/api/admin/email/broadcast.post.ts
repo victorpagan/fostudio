@@ -16,7 +16,11 @@ const BROADCAST_EVENT_TYPE = 'mailing.memberBroadcast'
 const bodySchema = z.object({
   eventType: z.string().trim().min(3).max(160).regex(/^[A-Za-z0-9._-]+$/).optional().default(BROADCAST_EVENT_TYPE),
   includeMembershipRecipients: z.coerce.boolean().default(true),
-  additionalRecipients: z.array(z.string().trim().email().max(320)).max(1000).default([])
+  additionalRecipients: z.array(z.string().trim().email().max(320)).max(1000).default([]),
+  broadcastTitle: z.string().trim().max(160).optional(),
+  broadcastBody: z.string().trim().max(20_000).optional(),
+  primaryCtaLabel: z.string().trim().max(80).optional(),
+  primaryCtaUrl: z.string().trim().url().max(1000).optional()
 })
 
 type MailTemplateRegistryRow = {
@@ -248,6 +252,11 @@ export default defineEventHandler(async (event) => {
       templateId,
       origin
     }) as Record<string, unknown>
+
+    if (body.broadcastTitle) payload.broadcastTitle = body.broadcastTitle
+    if (body.broadcastBody) payload.broadcastBody = body.broadcastBody
+    if (body.primaryCtaLabel) payload.primaryCtaLabel = body.primaryCtaLabel
+    if (body.primaryCtaUrl) payload.primaryCtaUrl = body.primaryCtaUrl
 
     if (!context.userId) {
       delete payload.userId

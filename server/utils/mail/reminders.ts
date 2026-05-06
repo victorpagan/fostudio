@@ -2,8 +2,9 @@ import { DateTime } from 'luxon'
 import { getRequestURL, type H3Event } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { STUDIO_TZ } from '~~/server/utils/booking/peak'
-import { sendViaFomailer } from '~~/server/utils/mail/fomailer'
+import { resolveFomailerType, sendViaFomailer } from '~~/server/utils/mail/fomailer'
 import { getRegisteredMailEvents, type MailTemplateCategory } from '~~/server/utils/mail/templateVariables'
+import { applyRenderedRegistryCopy } from '~~/server/utils/mail/render'
 
 type SupabaseLike = {
   from: <T = Record<string, unknown>>(table: string) => SupabaseQueryBuilder<T>
@@ -55,6 +56,9 @@ type MailTemplateRegistryRow = {
   sendgrid_template_id: string | null
   category: MailTemplateCategory | null
   active: boolean | null
+  subject_template: string | null
+  preheader_template: string | null
+  body_template: string | null
 }
 
 type MailUserPreferenceRow = {
@@ -887,7 +891,7 @@ async function loadRegistry(db: SupabaseLike, eventTypes: string[]) {
   const rows = await throwIfError<MailTemplateRegistryRow>(
     db
       .from<MailTemplateRegistryRow>('mail_template_registry')
-      .select('event_type,sendgrid_template_id,category,active')
+      .select('event_type,sendgrid_template_id,category,active,subject_template,preheader_template,body_template')
       .in('event_type', uniqueEventTypes),
     'load mail template registry'
   )
@@ -1091,15 +1095,17 @@ export async function processMailReminders(event: H3Event, options: ReminderProc
         continue
       }
 
+      const payload = applyRenderedRegistryCopy({
+        ...candidate.payload,
+        to: candidate.to,
+        userId: candidate.userId,
+        eventType: candidate.eventType,
+        templateId
+      }, registry)
+
       const sendResult = await sendViaFomailer(event, {
-        type: candidate.eventType,
-        payload: {
-          ...candidate.payload,
-          to: candidate.to,
-          userId: candidate.userId,
-          eventType: candidate.eventType,
-          templateId
-        }
+        type: resolveFomailerType(candidate.eventType),
+        payload
       })
 
       if (!sendResult.ok) {

@@ -1,4 +1,4 @@
-import type { H3Event } from 'h3'
+import { getRequestURL, type H3Event } from 'h3'
 import { getKey, getServerConfig } from '~~/server/utils/config/secret'
 
 type MailServerConfig = {
@@ -15,6 +15,31 @@ type FomailerRequest = {
   endpoint?: string
   body: Record<string, unknown>
   headers?: Record<string, string>
+}
+
+const FOMAILER_NATIVE_TYPES = new Set([
+  'account.signup',
+  'booking.guestConfirmed',
+  'booking.memberCanceled',
+  'booking.memberCreated',
+  'booking.memberRescheduled',
+  'contact.formSubmitted',
+  'credits.topupPurchased',
+  'holds.topupPurchased',
+  'mailing.memberBroadcast',
+  'membership.checkoutActivationPending',
+  'membership.doorCodeUpdated',
+  'membership.ended',
+  'membership.pastDue',
+  'membership.renewed',
+  'membership.started',
+  'membership.waitlistInvite'
+])
+
+export function resolveFomailerType(eventType: string | null | undefined) {
+  const normalized = String(eventType ?? '').trim()
+  if (FOMAILER_NATIVE_TYPES.has(normalized)) return normalized
+  return 'mailing.memberBroadcast'
 }
 
 function resolveMailHost(raw: unknown): string | null {
@@ -51,6 +76,32 @@ function resolveEndpoint(mailHost: string, endpoint: string) {
   return `${mailHost}${normalized}`
 }
 
+function enrichPayload(event: H3Event, payload: Record<string, unknown>) {
+  const origin = getRequestURL(event).origin
+  return {
+    supportEmail: 'hello@fo.studio',
+    dashboardUrl: `${origin}/dashboard`,
+    bookUrl: `${origin}/dashboard/book`,
+    membershipUrl: `${origin}/dashboard/membership`,
+    membershipsPublicUrl: `${origin}/memberships`,
+    waiverUrl: `${origin}/dashboard/waiver`,
+    creditsUrl: `${origin}/dashboard/credits`,
+    manageUrl: `${origin}/dashboard/bookings`,
+    calendarUrl: `${origin}/calendar`,
+    studioAddress: '3131 N. San Fernando Rd., Los Angeles, CA 90065',
+    ...payload
+  }
+}
+
+function enrichRequestBody(event: H3Event, body: Record<string, unknown>) {
+  const payload = body.payload
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return body
+  return {
+    ...body,
+    payload: enrichPayload(event, payload as Record<string, unknown>)
+  }
+}
+
 export async function sendViaFomailer(event: H3Event, input: FomailerRequest | FomailerLegacyBody) {
   const rawMailHost = await getServerConfig(event, 'MAIL_SERVER_CONFIG').catch(() => null)
   const mailHost = resolveMailHost(rawMailHost)
@@ -70,7 +121,7 @@ export async function sendViaFomailer(event: H3Event, input: FomailerRequest | F
       'x-mail-key': mailApiKey,
       ...request.headers
     },
-    body: request.body
+    body: enrichRequestBody(event, request.body)
   })
 
   return { ok: true as const, data }

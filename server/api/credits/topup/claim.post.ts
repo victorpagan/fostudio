@@ -47,6 +47,12 @@ function asNumber(value: unknown): number | null {
   return null
 }
 
+function formatDollars(value: number | null | undefined) {
+  const cents = Number(value ?? 0)
+  if (!Number.isFinite(cents)) return '0.00'
+  return (cents / 100).toFixed(2)
+}
+
 function readString(source: Record<string, unknown> | null | undefined, ...keys: string[]) {
   if (!source) return null
   for (const key of keys) {
@@ -83,9 +89,10 @@ async function sendTopupPurchasedMail(params: {
         creditsAdded: params.creditsAdded,
         newBalance: params.newBalance,
         amountCents: params.amountCents,
+        amountDollars: formatDollars(params.amountCents),
         optionLabel: params.optionLabel,
         paymentId: params.paymentId,
-        customerName: params.customerName,
+        customerName: params.customerName || 'there',
         customerEmail: params.customerEmail
       }
     })

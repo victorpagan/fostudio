@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { getRequestURL } from 'h3'
 import { requireServerAdmin } from '~~/server/utils/auth'
-import { sendViaFomailer } from '~~/server/utils/mail/fomailer'
+import { resolveFomailerType, sendViaFomailer } from '~~/server/utils/mail/fomailer'
 import {
   buildAdminMailPayload,
   formatCadenceLabel,
@@ -241,7 +241,7 @@ export default defineEventHandler(async (event) => {
     try {
       const sendResult = await sendViaFomailer(event, {
         body: {
-          type: campaign.event_type,
+          type: resolveFomailerType(campaign.event_type),
           payload
         }
       })

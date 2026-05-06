@@ -51,12 +51,14 @@ export function buildAdminMailPayload(params: BuildAdminMailPayloadParams) {
   const manageUrl = `${params.origin}/dashboard/bookings`
   const creditsUrl = `${params.origin}/dashboard/credits`
   const dashboardUrl = `${params.origin}/dashboard`
+  const membershipsPublicUrl = `${params.origin}/memberships`
 
   const base = {
     to: params.recipient,
     userId: params.userId,
     eventType: params.eventType,
-    templateId: params.templateId
+    templateId: params.templateId,
+    supportEmail: 'hello@fo.studio'
   }
 
   return {
@@ -70,7 +72,12 @@ export function buildAdminMailPayload(params: BuildAdminMailPayloadParams) {
     activationUrl: `${params.origin}/checkout/success?checkout=test-token`,
     bookUrl,
     membershipUrl,
+    membershipsPublicUrl,
     waiverUrl,
+    broadcastTitle: 'FO Studio update',
+    broadcastBody: 'Here is the latest from the studio.',
+    primaryCtaLabel: 'Book studio time',
+    primaryCtaUrl: bookUrl,
     checkoutToken: 'test-token',
     planVariationId: 'test-plan-variation',
     paymentLinkId: 'test-payment-link',
