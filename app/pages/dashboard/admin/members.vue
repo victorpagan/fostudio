@@ -17,6 +17,13 @@ type MemberRecord = {
   status: string | null
   effective_status: string
   account_kind: 'guest' | 'subscriber_current' | 'subscriber_past'
+  membership_source: 'square' | 'manual' | 'unknown'
+  membership_source_label: 'Paid' | 'Manual' | 'Guest' | 'Past subscriber'
+  manual_grants_enabled: boolean
+  manual_assigned_by: string | null
+  manual_assigned_at: string | null
+  manual_reason: string | null
+  manual_expires_at: string | null
   account_source: 'studio_signup' | 'studio_checkout_signup' | 'studio_membership' | 'lab_shared_auth' | 'unknown'
   has_membership_history: boolean
   has_current_membership: boolean
@@ -56,6 +63,7 @@ type MembersSummary = {
   studioSignupAccounts: number
   labSharedAccounts: number
   currentSubscriberAccounts: number
+  manualMembershipAccounts: number
   pastSubscriberAccounts: number
   activeMembers: number
   pastDueMembers: number
@@ -134,6 +142,21 @@ type DetailExpense = {
   updated_at: string
 }
 
+type ManualMembershipEvent = {
+  id: string
+  membership_id: string | null
+  user_id: string
+  admin_user_id: string | null
+  action: string
+  tier: string | null
+  cadence: string | null
+  manual_grants_enabled: boolean | null
+  manual_expires_at: string | null
+  reason: string | null
+  payload: unknown
+  created_at: string
+}
+
 type MemberDetail = {
   userId: string
   membership: Record<string, unknown> | null
@@ -150,6 +173,7 @@ type MemberDetail = {
   referrals: DetailReferral[]
   incidents: DetailIncident[]
   expenses: DetailExpense[]
+  manualMembershipEvents: ManualMembershipEvent[]
   summary: {
     upcomingBookings: number
     pastBookings: number
@@ -159,6 +183,22 @@ type MemberDetail = {
     openIncidents: number
     openExpenses: number
   }
+}
+
+type MembershipTierCatalog = {
+  id: string
+  display_name: string
+  active: boolean
+  visible: boolean
+  direct_access_only: boolean
+  membership_plan_variations?: Array<{
+    cadence: string
+    provider: string
+    credits_per_month: number
+    active: boolean
+    visible: boolean
+    sort_order: number
+  }>
 }
 
 type ActivityItem = {
@@ -176,6 +216,7 @@ const emptySummary: MembersSummary = {
   studioSignupAccounts: 0,
   labSharedAccounts: 0,
   currentSubscriberAccounts: 0,
+  manualMembershipAccounts: 0,
   pastSubscriberAccounts: 0,
   activeMembers: 0,
   pastDueMembers: 0,
@@ -196,7 +237,7 @@ const summary = ref<MembersSummary>(emptySummary)
 const selectedMemberId = ref<string | null>(null)
 const selectedTab = ref<MemberTab>('overview')
 const memberSearch = ref('')
-const memberStatusFilter = ref<'all' | 'guest' | 'subscriber_current' | 'subscriber_past' | 'active' | 'past_due' | 'pending_checkout' | 'canceled' | 'expired' | 'inactive'>('all')
+const memberStatusFilter = ref<'all' | 'guest' | 'subscriber_current' | 'manual' | 'subscriber_past' | 'active' | 'past_due' | 'pending_checkout' | 'canceled' | 'expired' | 'inactive'>('all')
 const memberHealthFilter = ref<'all' | 'attention' | 'waiver' | 'door_code' | 'zero_credits' | 'incidents' | 'workshops'>('all')
 const rosterPage = ref(1)
 const rosterPageSize = ref(25)
@@ -207,17 +248,29 @@ const updatingStatus = ref(false)
 const adjustingCredits = ref(false)
 const updatingDoorCode = ref(false)
 const updatingWorkshopAccess = ref(false)
+const savingManualMembership = ref(false)
+const revokingManualMembership = ref(false)
 const dashboardHydrated = ref(false)
+const membershipTierCatalog = ref<MembershipTierCatalog[]>([])
 
 const statusForm = reactive({ status: 'active' })
 const creditForm = reactive({ delta: 1, reason: 'admin_adjustment', note: '' })
 const doorCodeForm = reactive({ value: '' })
 const workshopAccessForm = reactive({ enabled: false })
+const manualMembershipForm = reactive({
+  tierId: '',
+  cadence: 'monthly',
+  startsOn: '',
+  expiresOn: '',
+  manualGrantsEnabled: false,
+  reason: ''
+})
 
 const statusFilterItems = [
   { label: 'All accounts', value: 'all' },
   { label: 'Guest accounts', value: 'guest' },
   { label: 'Current subscribers', value: 'subscriber_current' },
+  { label: 'Manual memberships', value: 'manual' },
   { label: 'Past subscribers', value: 'subscriber_past' },
   { label: 'Active', value: 'active' },
   { label: 'Past due', value: 'past_due' },
@@ -254,13 +307,37 @@ const tabItems: Array<{ label: string, value: MemberTab, icon: string }> = [
 
 const members = computed(() => memberRows.value)
 const selectedMember = computed(() => members.value.find(member => member.membership_id === selectedMemberId.value) ?? null)
+const manualAssignableTiers = computed(() => membershipTierCatalog.value.filter(tier => tier.active !== false))
+const manualTierItems = computed(() => manualAssignableTiers.value.map(tier => ({
+  label: `${tier.display_name ?? tier.id}${tier.visible === false || tier.direct_access_only ? ' (hidden)' : ''}`,
+  value: tier.id
+})))
+const manualCadenceItems = computed(() => {
+  const tier = manualAssignableTiers.value.find(item => item.id === manualMembershipForm.tierId)
+  const variations = tier?.membership_plan_variations ?? []
+  const seen = new Set<string>()
+  return variations
+    .filter(variation => variation.active !== false && ['manual', 'square'].includes(String(variation.provider ?? '').toLowerCase()))
+    .sort((left, right) => Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0))
+    .filter((variation) => {
+      const cadence = String(variation.cadence ?? '').trim()
+      if (!cadence || seen.has(cadence)) return false
+      seen.add(cadence)
+      return true
+    })
+    .map(variation => ({
+      label: `${cadenceLabel(variation.cadence)} · ${formatCredits(variation.credits_per_month)} cr`,
+      value: variation.cadence
+    }))
+})
 const filteredMembers = computed(() => {
   const query = memberSearch.value.trim().toLowerCase()
   return members.value.filter((member) => {
     if (memberStatusFilter.value === 'guest' && member.account_kind !== 'guest') return false
     if (memberStatusFilter.value === 'subscriber_current' && member.account_kind !== 'subscriber_current') return false
+    if (memberStatusFilter.value === 'manual' && member.membership_source !== 'manual') return false
     if (memberStatusFilter.value === 'subscriber_past' && member.account_kind !== 'subscriber_past') return false
-    if (!['all', 'guest', 'subscriber_current', 'subscriber_past'].includes(memberStatusFilter.value) && member.effective_status !== memberStatusFilter.value) return false
+    if (!['all', 'guest', 'subscriber_current', 'manual', 'subscriber_past'].includes(memberStatusFilter.value) && member.effective_status !== memberStatusFilter.value) return false
 
     if (memberHealthFilter.value === 'attention' && member.health_flags.length === 0) return false
     if (memberHealthFilter.value === 'waiver' && member.waiver_status === 'current') return false
@@ -279,6 +356,7 @@ const filteredMembers = computed(() => {
       member.tier,
       member.cadence,
       accountKindLabel(member.account_kind),
+      member.membership_source_label,
       accountSourceLabel(member.account_source),
       member.customer_lab_notes,
       ...member.health_flags
@@ -297,7 +375,7 @@ const rosterRangeLabel = computed(() => {
 })
 
 const kpiCards = computed(() => [
-  { label: 'Current subscribers', value: summary.value.currentSubscriberAccounts, hint: `${summary.value.activeMembers} active · ${summary.value.pastDueMembers} past due`, icon: 'i-lucide-badge-check', color: 'success' as const },
+  { label: 'Current subscribers', value: summary.value.currentSubscriberAccounts, hint: `${summary.value.activeMembers} active · ${summary.value.manualMembershipAccounts} manual`, icon: 'i-lucide-badge-check', color: 'success' as const },
   { label: 'Guest accounts', value: summary.value.guestAccounts, hint: `${summary.value.studioSignupAccounts} Studio signups · ${summary.value.labSharedAccounts} lab logins`, icon: 'i-lucide-user-round', color: 'info' as const },
   { label: 'Past subscribers', value: summary.value.pastSubscriberAccounts, hint: 'Canceled, expired, or inactive', icon: 'i-lucide-history', color: summary.value.pastSubscriberAccounts ? 'warning' as const : 'neutral' as const },
   { label: 'Needs waiver', value: summary.value.waiverAttentionMembers, hint: 'Missing, expired, or stale', icon: 'i-lucide-file-warning', color: summary.value.waiverAttentionMembers ? 'warning' as const : 'neutral' as const },
@@ -438,6 +516,36 @@ function accountSourceColor(source: MemberRecord['account_source']) {
   return 'warning' as const
 }
 
+function membershipSourceColor(label: MemberRecord['membership_source_label']) {
+  if (label === 'Manual') return 'info' as const
+  if (label === 'Paid') return 'success' as const
+  if (label === 'Past subscriber') return 'warning' as const
+  return 'neutral' as const
+}
+
+function cadenceLabel(value: string | null | undefined) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'daily') return 'Daily'
+  if (normalized === 'weekly') return 'Weekly'
+  if (normalized === 'quarterly') return 'Quarterly'
+  if (normalized === 'annual') return 'Annual'
+  return 'Monthly'
+}
+
+function toDateInput(value: string | null | undefined) {
+  if (!value) return ''
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return ''
+  return dt.toISOString().slice(0, 10)
+}
+
+function dateInputToIso(value: string | null | undefined) {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) return null
+  const dt = new Date(`${normalized}T00:00:00`)
+  return Number.isNaN(dt.getTime()) ? null : dt.toISOString()
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -566,6 +674,12 @@ function selectMember(member: MemberRecord, options: { syncRoute?: boolean } = {
   statusForm.status = member.status ?? 'active'
   doorCodeForm.value = member.door_code ?? ''
   workshopAccessForm.enabled = Boolean(member.workshop_booking_enabled)
+  manualMembershipForm.tierId = member.tier ?? manualTierItems.value[0]?.value ?? ''
+  manualMembershipForm.cadence = member.cadence ?? manualCadenceItems.value[0]?.value ?? 'monthly'
+  manualMembershipForm.startsOn = toDateInput(member.current_period_start) || new Date().toISOString().slice(0, 10)
+  manualMembershipForm.expiresOn = toDateInput(member.manual_expires_at ?? member.current_period_end)
+  manualMembershipForm.manualGrantsEnabled = Boolean(member.manual_grants_enabled)
+  manualMembershipForm.reason = member.manual_reason ?? ''
 
   if (options.syncRoute !== false) {
     void router.replace({
@@ -599,11 +713,19 @@ function goToRosterPage(delta: number) {
 }
 
 async function loadMembers(options: { preserveSelection?: boolean } = {}) {
+  const priorUserId = selectedMember.value?.user_id ?? null
   membersPending.value = true
   try {
     const res = await $fetch<{ members: MemberRecord[], summary: MembersSummary }>('/api/admin/members')
     memberRows.value = res.members ?? []
     summary.value = res.summary ?? emptySummary
+    if (options.preserveSelection && priorUserId) {
+      const preserved = memberRows.value.find(member => member.user_id === priorUserId)
+      if (preserved) {
+        selectMember(preserved, { syncRoute: false })
+        return
+      }
+    }
     if (!options.preserveSelection || !selectedMember.value) applySelectedMember(memberRows.value)
   } catch (error: unknown) {
     toast.add({
@@ -613,6 +735,25 @@ async function loadMembers(options: { preserveSelection?: boolean } = {}) {
     })
   } finally {
     membersPending.value = false
+  }
+}
+
+async function loadMembershipTiers() {
+  try {
+    const res = await $fetch<{ tiers: MembershipTierCatalog[] }>('/api/admin/membership/tiers')
+    membershipTierCatalog.value = res.tiers ?? []
+    if (!manualMembershipForm.tierId && manualTierItems.value[0]?.value) {
+      manualMembershipForm.tierId = manualTierItems.value[0].value
+    }
+    if (!manualCadenceItems.value.some(item => item.value === manualMembershipForm.cadence)) {
+      manualMembershipForm.cadence = manualCadenceItems.value[0]?.value ?? 'monthly'
+    }
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not load membership tiers',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
   }
 }
 
@@ -721,6 +862,55 @@ async function saveWorkshopAccess() {
   }
 }
 
+async function saveManualMembership() {
+  if (!selectedMember.value || savingManualMembership.value) return
+  if (!manualMembershipForm.tierId) {
+    toast.add({ title: 'Choose a manual membership tier', color: 'error' })
+    return
+  }
+  savingManualMembership.value = true
+  try {
+    await $fetch('/api/admin/members/manual-membership.upsert', {
+      method: 'POST',
+      body: {
+        userId: selectedMember.value.user_id,
+        tierId: manualMembershipForm.tierId,
+        cadence: manualMembershipForm.cadence,
+        startsAt: dateInputToIso(manualMembershipForm.startsOn),
+        expiresAt: dateInputToIso(manualMembershipForm.expiresOn),
+        manualGrantsEnabled: manualMembershipForm.manualGrantsEnabled,
+        reason: manualMembershipForm.reason || null
+      }
+    })
+    toast.add({ title: 'Manual membership saved' })
+    await refreshAll()
+  } catch (error: unknown) {
+    toast.add({ title: 'Could not save manual membership', description: readErrorMessage(error), color: 'error' })
+  } finally {
+    savingManualMembership.value = false
+  }
+}
+
+async function revokeManualMembership() {
+  if (!selectedMember.value || revokingManualMembership.value) return
+  revokingManualMembership.value = true
+  try {
+    await $fetch('/api/admin/members/manual-membership.revoke', {
+      method: 'POST',
+      body: {
+        userId: selectedMember.value.user_id,
+        reason: manualMembershipForm.reason || null
+      }
+    })
+    toast.add({ title: 'Manual membership revoked' })
+    await refreshAll()
+  } catch (error: unknown) {
+    toast.add({ title: 'Could not revoke manual membership', description: readErrorMessage(error), color: 'error' })
+  } finally {
+    revokingManualMembership.value = false
+  }
+}
+
 watch([members, () => route.query.member, () => route.query.userId, () => route.query.membershipId], ([next]) => {
   applySelectedMember(next ?? [])
 }, { immediate: true })
@@ -741,9 +931,15 @@ watch(() => selectedMember.value?.user_id, (userId) => {
   void loadMemberDetail(userId)
 }, { immediate: true })
 
+watch(() => manualMembershipForm.tierId, () => {
+  if (!manualCadenceItems.value.some(item => item.value === manualMembershipForm.cadence)) {
+    manualMembershipForm.cadence = manualCadenceItems.value[0]?.value ?? 'monthly'
+  }
+})
+
 onMounted(async () => {
   dashboardHydrated.value = true
-  await loadMembers()
+  await Promise.all([loadMembers(), loadMembershipTiers()])
 })
 </script>
 
@@ -928,6 +1124,13 @@ onMounted(async () => {
                         {{ accountKindLabel(member.account_kind) }}
                       </UBadge>
                       <UBadge
+                        :color="membershipSourceColor(member.membership_source_label)"
+                        size="xs"
+                        variant="soft"
+                      >
+                        {{ member.membership_source_label }}
+                      </UBadge>
+                      <UBadge
                         :color="memberStatusColor(member.effective_status)"
                         size="xs"
                         variant="subtle"
@@ -1069,6 +1272,12 @@ onMounted(async () => {
                   variant="soft"
                 >
                   {{ accountKindLabel(selectedMember.account_kind) }}
+                </UBadge>
+                <UBadge
+                  :color="membershipSourceColor(selectedMember.membership_source_label)"
+                  variant="soft"
+                >
+                  {{ selectedMember.membership_source_label }}
                 </UBadge>
                 <UBadge
                   :color="memberStatusColor(selectedMember.effective_status)"
@@ -1214,6 +1423,23 @@ onMounted(async () => {
                       <div class="text-xs text-dimmed">
                         Membership status
                       </div><div>{{ selectedMember.has_membership_history ? selectedMember.effective_status : 'Guest only' }}</div>
+                    </div>
+                    <div>
+                      <div class="text-xs text-dimmed">
+                        Membership source
+                      </div><div>
+                        <UBadge
+                          :color="membershipSourceColor(selectedMember.membership_source_label)"
+                          variant="soft"
+                        >
+                          {{ selectedMember.membership_source_label }}
+                        </UBadge>
+                      </div>
+                    </div>
+                    <div v-if="selectedMember.membership_source === 'manual'">
+                      <div class="text-xs text-dimmed">
+                        Manual grant setting
+                      </div><div>{{ selectedMember.manual_grants_enabled ? 'Recurring credits enabled' : 'No recurring credits' }}</div>
                     </div>
                     <div>
                       <div class="text-xs text-dimmed">
@@ -1537,6 +1763,141 @@ onMounted(async () => {
                   </div>
                 </UCard>
               </div>
+
+              <UCard class="border-0 bg-default/50">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div class="font-medium">
+                      Manual membership
+                    </div>
+                    <p class="mt-1 text-xs text-dimmed">
+                      Assign a non-paying membership that uses normal booking, credit, hold, and access entitlements without Square billing.
+                    </p>
+                  </div>
+                  <UBadge
+                    :color="membershipSourceColor(selectedMember.membership_source_label)"
+                    variant="soft"
+                  >
+                    {{ selectedMember.membership_source_label }}
+                  </UBadge>
+                </div>
+
+                <div class="mt-4 grid gap-3 lg:grid-cols-2">
+                  <UFormField label="Tier">
+                    <USelect
+                      v-model="manualMembershipForm.tierId"
+                      :items="manualTierItems"
+                      placeholder="Choose tier"
+                    />
+                  </UFormField>
+                  <UFormField label="Cadence">
+                    <USelect
+                      v-model="manualMembershipForm.cadence"
+                      :items="manualCadenceItems"
+                      placeholder="Choose cadence"
+                    />
+                  </UFormField>
+                  <UFormField label="Start date">
+                    <UInput
+                      v-model="manualMembershipForm.startsOn"
+                      type="date"
+                    />
+                  </UFormField>
+                  <UFormField label="Optional end date">
+                    <UInput
+                      v-model="manualMembershipForm.expiresOn"
+                      type="date"
+                    />
+                  </UFormField>
+                  <UFormField
+                    class="lg:col-span-2"
+                    label="Reason / internal note"
+                  >
+                    <UTextarea
+                      v-model="manualMembershipForm.reason"
+                      :rows="3"
+                      placeholder="Influencer comp, admin account, partnership, etc."
+                    />
+                  </UFormField>
+                </div>
+
+                <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <UCheckbox
+                    v-model="manualMembershipForm.manualGrantsEnabled"
+                    label="Grant recurring credits from the selected tier/cadence"
+                  />
+                  <div class="flex flex-wrap gap-2">
+                    <UButton
+                      color="error"
+                      variant="soft"
+                      :loading="revokingManualMembership"
+                      :disabled="selectedMember.membership_source !== 'manual'"
+                      @click="revokeManualMembership"
+                    >
+                      Revoke manual membership
+                    </UButton>
+                    <UButton
+                      :loading="savingManualMembership"
+                      :disabled="!manualTierItems.length || !manualCadenceItems.length"
+                      @click="saveManualMembership"
+                    >
+                      Save manual membership
+                    </UButton>
+                  </div>
+                </div>
+
+                <div
+                  v-if="selectedMember.membership_source === 'manual'"
+                  class="mt-4 grid gap-3 text-sm sm:grid-cols-3"
+                >
+                  <div>
+                    <div class="text-xs text-dimmed">
+                      Assigned
+                    </div>
+                    <div>{{ formatDate(selectedMember.manual_assigned_at) }}</div>
+                  </div>
+                  <div>
+                    <div class="text-xs text-dimmed">
+                      Expires
+                    </div>
+                    <div>{{ formatDate(selectedMember.manual_expires_at) }}</div>
+                  </div>
+                  <div>
+                    <div class="text-xs text-dimmed">
+                      Recurring credits
+                    </div>
+                    <div>{{ selectedMember.manual_grants_enabled ? 'Enabled' : 'Disabled' }}</div>
+                  </div>
+                </div>
+
+                <div
+                  v-if="selectedDetail?.manualMembershipEvents?.length"
+                  class="mt-4 space-y-2"
+                >
+                  <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+                    Recent manual membership audit
+                  </div>
+                  <div
+                    v-for="eventRow in selectedDetail.manualMembershipEvents.slice(0, 5)"
+                    :key="eventRow.id"
+                    class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-default bg-default p-2 text-sm"
+                  >
+                    <div>
+                      <span class="font-medium">{{ formatReason(eventRow.action) }}</span>
+                      <span class="text-dimmed"> · {{ eventRow.tier || 'no tier' }} / {{ eventRow.cadence || 'no cadence' }}</span>
+                      <div
+                        v-if="eventRow.reason"
+                        class="text-xs text-dimmed"
+                      >
+                        {{ eventRow.reason }}
+                      </div>
+                    </div>
+                    <div class="text-xs text-dimmed">
+                      {{ formatDate(eventRow.created_at) }}
+                    </div>
+                  </div>
+                </div>
+              </UCard>
 
               <UCard class="border-0 bg-default/50">
                 <div class="font-medium">

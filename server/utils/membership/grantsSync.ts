@@ -5,9 +5,14 @@ import { resolveMembershipBillingPeriod } from '~~/server/utils/square/billingPe
 
 type MembershipGrantSyncRow = {
   id: string
+  user_id: string | null
   tier: string | null
   cadence: string | null
   status: string | null
+  membership_source: string | null
+  manual_grants_enabled: boolean | null
+  manual_assigned_at: string | null
+  manual_expires_at: string | null
   billing_provider: string | null
   billing_subscription_id: string | null
   square_subscription_id: string | null
@@ -43,16 +48,81 @@ function isoChanged(left: string | null | undefined, right: string | null | unde
   return leftMs !== rightMs
 }
 
+function addMonthsIso(value: Date, months: number) {
+  const next = new Date(value.getTime())
+  next.setUTCMonth(next.getUTCMonth() + months)
+  return next.toISOString()
+}
+
+function parseDateOrNull(value: string | null | undefined) {
+  if (!value) return null
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function cancelPendingMembershipGrants(db: any, membershipId: string, reason: string) {
+  const { error } = await db.rpc('cancel_pending_membership_credit_grants', {
+    p_membership_id: membershipId,
+    p_reason: reason,
+    p_from: '1970-01-01T00:00:00.000Z'
+  })
+  if (error) {
+    console.warn('[membership-grant-sync] cancel pending grants failed', {
+      membershipId,
+      message: error.message
+    })
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function syncManualMembershipGrants(db: any, membership: MembershipGrantSyncRow) {
+  const now = new Date()
+  const expiresAt = parseDateOrNull(membership.manual_expires_at ?? membership.current_period_end)
+  const isExpired = Boolean(expiresAt && expiresAt.getTime() <= now.getTime())
+
+  if (!membership.manual_grants_enabled || isExpired) {
+    await cancelPendingMembershipGrants(
+      db,
+      membership.id,
+      isExpired ? 'manual_membership_expired' : 'manual_grants_disabled'
+    )
+    return
+  }
+
+  const periodStart = parseDateOrNull(membership.current_period_start)
+    ?? parseDateOrNull(membership.manual_assigned_at)
+    ?? now
+  const periodEndIso = expiresAt && expiresAt.getTime() > now.getTime()
+    ? expiresAt.toISOString()
+    : addMonthsIso(new Date(Math.max(periodStart.getTime(), now.getTime())), 12)
+
+  const { error: scheduleErr } = await db.rpc('schedule_membership_credit_grants', {
+    p_membership_id: membership.id,
+    p_invoice_id: null,
+    p_period_start: periodStart.toISOString(),
+    p_period_end: periodEndIso
+  })
+
+  if (scheduleErr) {
+    console.warn('[membership-grant-sync] manual schedule failed', {
+      membershipId: membership.id,
+      message: scheduleErr.message
+    })
+  }
+}
+
 export async function syncMembershipCreditGrantsForUser(event: H3Event, userId: string, options?: GrantSyncOptions) {
   const supabase = serverSupabaseServiceRole(event)
+  // Generated Supabase types can lag additive membership columns/RPC args.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
 
   const { data: membershipsRaw, error: membershipsErr } = await db
     .from('memberships')
-    .select('id,tier,cadence,status,billing_provider,billing_subscription_id,square_subscription_id,square_plan_variation_id,current_period_start,current_period_end')
+    .select('id,user_id,tier,cadence,status,membership_source,manual_grants_enabled,manual_assigned_at,manual_expires_at,billing_provider,billing_subscription_id,square_subscription_id,square_plan_variation_id,current_period_start,current_period_end')
     .eq('user_id', userId)
     .in('status', ['active', 'past_due'])
-    .eq('billing_provider', 'square')
 
   if (membershipsErr) throw new Error(membershipsErr.message)
 
@@ -64,9 +134,17 @@ export async function syncMembershipCreditGrantsForUser(event: H3Event, userId: 
     } satisfies GrantSyncResult
   }
 
-  const square = await useSquareClient(event)
+  let squarePromise: ReturnType<typeof useSquareClient> | null = null
 
   for (const membership of memberships) {
+    const source = (membership.membership_source ?? membership.billing_provider ?? '').trim().toLowerCase()
+    if (source === 'manual') {
+      await syncManualMembershipGrants(db, membership)
+      continue
+    }
+
+    if ((membership.billing_provider ?? '').toLowerCase() !== 'square') continue
+
     const subscriptionId = (
       membership.billing_subscription_id?.trim()
       || membership.square_subscription_id?.trim()
@@ -75,6 +153,8 @@ export async function syncMembershipCreditGrantsForUser(event: H3Event, userId: 
     if (!subscriptionId) continue
 
     try {
+      squarePromise ??= useSquareClient(event)
+      const square = await squarePromise
       const subRes = await square.subscriptions.get({
         subscriptionId
       } as never)

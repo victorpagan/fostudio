@@ -119,6 +119,21 @@ type ExpenseRow = {
   updated_at: string
 }
 
+type ManualMembershipEventRow = {
+  id: string
+  membership_id: string | null
+  user_id: string
+  admin_user_id: string | null
+  action: string
+  tier: string | null
+  cadence: string | null
+  manual_grants_enabled: boolean | null
+  manual_expires_at: string | null
+  reason: string | null
+  payload: unknown
+  created_at: string
+}
+
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
   const db = supabase as unknown as UntypedSupabaseClient
@@ -128,7 +143,7 @@ export default defineEventHandler(async (event) => {
   const [membershipRes, customerRes, balanceRes, activeWaiverTemplateRes, waiverRes, doorCodeRes] = await Promise.all([
     db
       .from('memberships')
-      .select('id,user_id,tier,cadence,status,current_period_start,current_period_end,last_paid_at,created_at,updated_at,activated_at,canceled_at')
+      .select('id,user_id,tier,cadence,status,membership_source,billing_provider,billing_subscription_id,square_subscription_id,manual_grants_enabled,manual_assigned_by,manual_assigned_at,manual_reason,manual_expires_at,current_period_start,current_period_end,last_paid_at,created_at,updated_at,activated_at,canceled_at')
       .eq('user_id', query.userId)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -170,7 +185,7 @@ export default defineEventHandler(async (event) => {
     if (result.error) throw createError({ statusCode: 500, statusMessage: result.error.message })
   }
 
-  const [bookingsRes, creditsRes, referralsRes, incidentsRes, expensesRes] = await Promise.all([
+  const [bookingsRes, creditsRes, referralsRes, incidentsRes, expensesRes, manualEventsRes] = await Promise.all([
     db
       .from<DetailBookingRow>('bookings')
       .select('id,start_time,end_time,status,notes,credits_burned,guest_name,guest_email,created_at,updated_at,booking_kind,workshop_title,workshop_link,booking_holds(id,hold_start,hold_end,hold_type)')
@@ -200,10 +215,16 @@ export default defineEventHandler(async (event) => {
       .select('id,title,category,status,amount_cents,currency,incurred_on,vendor_name,incident_id,submitted_at,approved_at,paid_at,created_at,updated_at')
       .eq('member_user_id', query.userId)
       .order('updated_at', { ascending: false })
+      .limit(20),
+    db
+      .from<ManualMembershipEventRow>('admin_manual_membership_events')
+      .select('id,membership_id,user_id,admin_user_id,action,tier,cadence,manual_grants_enabled,manual_expires_at,reason,payload,created_at')
+      .eq('user_id', query.userId)
+      .order('created_at', { ascending: false })
       .limit(20)
   ])
 
-  for (const result of [bookingsRes, creditsRes, referralsRes, incidentsRes, expensesRes]) {
+  for (const result of [bookingsRes, creditsRes, referralsRes, incidentsRes, expensesRes, manualEventsRes]) {
     if (result.error) throw createError({ statusCode: 500, statusMessage: result.error.message })
   }
 
@@ -212,6 +233,7 @@ export default defineEventHandler(async (event) => {
   const referrals = referralsRes.data ?? []
   const incidents = incidentsRes.data ?? []
   const expenses = expensesRes.data ?? []
+  const manualMembershipEvents = manualEventsRes.data ?? []
   const upcomingBookings = bookings.filter((booking) => {
     const endMs = Date.parse(String(booking.end_time ?? ''))
     return Number.isFinite(endMs) && endMs >= now.getTime() && booking.status !== 'canceled'
@@ -243,6 +265,7 @@ export default defineEventHandler(async (event) => {
     referrals,
     incidents,
     expenses,
+    manualMembershipEvents,
     summary: {
       upcomingBookings: upcomingBookings.length,
       pastBookings: pastBookings.length,

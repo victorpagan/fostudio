@@ -128,6 +128,9 @@ async function run() {
   const activeMemberships = membershipsAvailable
     ? activeMembershipStateAt(kpiMembershipState, context.end)
     : []
+  const activeManualMemberships = membershipsAvailable
+    ? activeMembershipStateAt(data.membershipState, context.end).filter(row => row.is_manual)
+    : []
 
   const membershipEvents = membershipsAvailable
     ? membershipEventsInRange(kpiMembershipEvents, context.start, context.end)
@@ -300,7 +303,8 @@ async function run() {
       net_members: (typeof newMembers === 'number' && typeof canceledMembers === 'number')
         ? newMembers - canceledMembers
         : null,
-      active_members: membershipsAvailable ? activeMemberships.length : null
+      active_members: membershipsAvailable ? activeMemberships.length : null,
+      active_manual_members: membershipsAvailable ? activeManualMemberships.length : null
     },
     member_usage: usageBlock,
     booking_segmentation: segmentation,
@@ -320,7 +324,8 @@ async function run() {
     recognized_revenue_total: output.week.recognized_revenue_total,
     cash_received: output.week.cash_received,
     bookings_total: output.week.bookings_total,
-    active_members: output.week.active_members
+    active_members: output.week.active_members,
+    active_manual_members: output.week.active_manual_members
   })
 }
 

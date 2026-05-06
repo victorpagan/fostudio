@@ -6,7 +6,7 @@ import { useSquareClient } from '~~/server/utils/square'
 
 const variationSchema = z.object({
   cadence: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'annual']),
-  provider: z.literal('square').default('square'),
+  provider: z.enum(['square', 'manual']).default('square'),
   providerPlanId: z.string().optional().nullable(),
   providerPlanVariationId: z.string().optional().nullable(),
   creditsPerMonth: z.number().min(0),
@@ -151,7 +151,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Enable at least one billing cadence.' })
   }
 
-  const missingPlanLink = enabledVariations.find((variation) => {
+  const squareVariations = enabledVariations.filter(variation => variation.provider === 'square')
+  const missingPlanLink = squareVariations.find((variation) => {
     const planId = variation.providerPlanId?.trim()
     const variationId = variation.providerPlanVariationId?.trim()
     return !planId || !variationId
@@ -164,7 +165,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const knownPlanIds = new Set(
-    enabledVariations
+    squareVariations
       .map(variation => variation.providerPlanId?.trim())
       .filter((id): id is string => Boolean(id))
   )
@@ -176,10 +177,10 @@ export default defineEventHandler(async (event) => {
   }
 
   const sharedPlanId = Array.from(knownPlanIds)[0] ?? null
-  const basePriceVariation = [...enabledVariations]
+  const basePriceVariation = [...squareVariations]
     .sort((a, b) => cadenceSortOrder(a.cadence) - cadenceSortOrder(b.cadence))
     .find(variation => variation.cadence === 'monthly')
-    ?? [...enabledVariations].sort((a, b) => cadenceSortOrder(a.cadence) - cadenceSortOrder(b.cadence))[0]
+    ?? [...squareVariations].sort((a, b) => cadenceSortOrder(a.cadence) - cadenceSortOrder(b.cadence))[0]
 
   if (sharedPlanId && basePriceVariation) {
     try {
@@ -260,7 +261,8 @@ export default defineEventHandler(async (event) => {
       cadence: variation.cadence,
       provider: variation.provider,
       provider_plan_id: variation.providerPlanId?.trim() ?? null,
-      provider_plan_variation_id: variation.providerPlanVariationId?.trim() ?? null,
+      provider_plan_variation_id: variation.providerPlanVariationId?.trim()
+        || (variation.provider === 'manual' ? `manual_${body.id}_${variation.cadence}` : null),
       credits_per_month: variation.creditsPerMonth,
       price_cents: variation.priceCents,
       currency: variation.currency.toUpperCase(),
@@ -278,7 +280,7 @@ export default defineEventHandler(async (event) => {
   if (variationErr) throw createError({ statusCode: 500, statusMessage: variationErr.message })
 
   const disabledCadences = cadenceOrder.filter(
-    cadence => !enabledVariations.some(variation => variation.cadence === cadence)
+    cadence => !squareVariations.some(variation => variation.cadence === cadence)
   )
 
   if (disabledCadences.length > 0) {
@@ -303,6 +305,6 @@ export default defineEventHandler(async (event) => {
     ok: true,
     tierId: body.id,
     squarePlanId: sharedPlanId,
-    linkedCadences: enabledVariations.map(variation => variation.cadence)
+    linkedCadences: squareVariations.map(variation => variation.cadence)
   }
 })

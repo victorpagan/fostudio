@@ -28,6 +28,7 @@ export type AnalyticsPayload = {
       booked_hours?: number | null
       utilization_rate?: number | null
       active_members?: number | null
+      active_manual_members?: number | null
       new_members?: number | null
       canceled_members?: number | null
       net_members?: number | null

@@ -30,6 +30,7 @@ const summaryCards = computed(() => {
     { label: 'Booked hours', value: formatAnalyticsHours(week?.booked_hours) },
     { label: 'Utilization', value: formatAnalyticsRatioPct(week?.utilization_rate) },
     { label: 'Active members', value: formatAnalyticsNumber(week?.active_members) },
+    { label: 'Manual members', value: formatAnalyticsNumber(week?.active_manual_members) },
     { label: 'Open incidents', value: formatAnalyticsNumber(ops?.incidents_open_count) },
     { label: 'Submitted expenses', value: formatAnalyticsNumber(ops?.expenses_submitted_count) },
     { label: 'Paid expenses (week)', value: formatAnalyticsCurrency(ops?.expenses_paid_total_week) }

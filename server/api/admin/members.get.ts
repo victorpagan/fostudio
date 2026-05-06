@@ -32,6 +32,14 @@ type MembershipSourceRow = {
   tier: string | null
   cadence: string | null
   status: string | null
+  membership_source: string | null
+  billing_provider: string | null
+  billing_subscription_id: string | null
+  manual_grants_enabled: boolean | null
+  manual_assigned_by: string | null
+  manual_assigned_at: string | null
+  manual_reason: string | null
+  manual_expires_at: string | null
   current_period_start: string | null
   current_period_end: string | null
   last_paid_at: string | null
@@ -47,6 +55,13 @@ type MemberRow = {
   status: string | null
   effective_status: string
   account_kind: 'guest' | 'subscriber_current' | 'subscriber_past'
+  membership_source: 'square' | 'manual' | 'unknown'
+  membership_source_label: 'Paid' | 'Manual' | 'Guest' | 'Past subscriber'
+  manual_grants_enabled: boolean
+  manual_assigned_by: string | null
+  manual_assigned_at: string | null
+  manual_reason: string | null
+  manual_expires_at: string | null
   account_source: 'studio_signup' | 'studio_checkout_signup' | 'studio_membership' | 'lab_shared_auth' | 'unknown'
   has_membership_history: boolean
   has_current_membership: boolean
@@ -154,6 +169,23 @@ function deriveAccountKind(membership: MembershipSourceRow | undefined, effectiv
   return 'subscriber_past'
 }
 
+function deriveMembershipSource(membership: MembershipSourceRow | undefined): MemberRow['membership_source'] {
+  if (!membership) return 'unknown'
+  const source = String(membership.membership_source ?? membership.billing_provider ?? '').trim().toLowerCase()
+  if (source === 'manual') return 'manual'
+  if (source === 'square') return 'square'
+  return 'unknown'
+}
+
+function deriveMembershipSourceLabel(
+  membership: MembershipSourceRow | undefined,
+  accountKind: MemberRow['account_kind']
+): MemberRow['membership_source_label'] {
+  if (!membership || accountKind === 'guest') return 'Guest'
+  if (accountKind === 'subscriber_past') return 'Past subscriber'
+  return deriveMembershipSource(membership) === 'manual' ? 'Manual' : 'Paid'
+}
+
 function deriveAccountSource(customer: { studio_account_origin?: string | null } | undefined, membership: MembershipSourceRow | undefined): MemberRow['account_source'] {
   const origin = String(customer?.studio_account_origin ?? '').trim()
   if (
@@ -231,7 +263,7 @@ export default defineEventHandler(async (event) => {
 
   const membershipsRes = await db
     .from<MembershipSourceRow>('memberships')
-    .select('id,user_id,tier,cadence,status,current_period_start,current_period_end,last_paid_at,created_at')
+    .select('id,user_id,tier,cadence,status,membership_source,billing_provider,billing_subscription_id,manual_grants_enabled,manual_assigned_by,manual_assigned_at,manual_reason,manual_expires_at,current_period_start,current_period_end,last_paid_at,created_at')
     .order('created_at', { ascending: false })
     .limit(1000)
 
@@ -424,6 +456,8 @@ export default defineEventHandler(async (event) => {
       ? deriveEffectiveStatus(membership.status, membership.current_period_end, now)
       : 'guest'
     const accountKind = deriveAccountKind(membership, effectiveStatus)
+    const membershipSource = deriveMembershipSource(membership)
+    const membershipSourceLabel = deriveMembershipSourceLabel(membership, accountKind)
     const accountSource = deriveAccountSource(customer, membership)
     const waiverStatus = computeWaiverStatus({
       activeTemplate: activeWaiverTemplate as { id: string } | null,
@@ -451,6 +485,13 @@ export default defineEventHandler(async (event) => {
       status: membership?.status ?? null,
       effective_status: effectiveStatus,
       account_kind: accountKind,
+      membership_source: membershipSource,
+      membership_source_label: membershipSourceLabel,
+      manual_grants_enabled: Boolean(membership?.manual_grants_enabled),
+      manual_assigned_by: membership?.manual_assigned_by ?? null,
+      manual_assigned_at: membership?.manual_assigned_at ?? null,
+      manual_reason: membership?.manual_reason ?? null,
+      manual_expires_at: membership?.manual_expires_at ?? null,
       account_source: accountSource,
       has_membership_history: Boolean(membership),
       has_current_membership: accountKind === 'subscriber_current',
@@ -491,6 +532,7 @@ export default defineEventHandler(async (event) => {
     studioSignupAccounts: members.filter(member => member.account_source === 'studio_signup' || member.account_source === 'studio_checkout_signup').length,
     labSharedAccounts: members.filter(member => member.account_source === 'lab_shared_auth').length,
     currentSubscriberAccounts: members.filter(member => member.account_kind === 'subscriber_current').length,
+    manualMembershipAccounts: members.filter(member => member.account_kind === 'subscriber_current' && member.membership_source === 'manual').length,
     pastSubscriberAccounts: members.filter(member => member.account_kind === 'subscriber_past').length,
     activeMembers: members.filter(member => member.effective_status === 'active').length,
     pastDueMembers: members.filter(member => member.effective_status === 'past_due').length,

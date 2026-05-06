@@ -13,6 +13,7 @@ type MembershipRow = {
   tier: string | null
   cadence: string | null
   status: string | null
+  membership_source: string | null
   billing_provider: string | null
   billing_subscription_id: string | null
   current_period_end: string | null
@@ -43,7 +44,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: membershipRaw, error: membershipErr } = await supabase
     .from('memberships')
-    .select('id,tier,cadence,status,billing_provider,billing_subscription_id,current_period_end')
+    .select('id,tier,cadence,status,membership_source,billing_provider,billing_subscription_id,current_period_end')
     .eq('user_id', user.sub)
     .maybeSingle()
 
@@ -59,12 +60,17 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const membership = membershipRaw as MembershipRow
+  const membership = membershipRaw as unknown as MembershipRow
+  const isManualMembership = (membership.membership_source ?? membership.billing_provider ?? '').toLowerCase() === 'manual'
   if ((membership.billing_provider ?? '').toLowerCase() !== 'square' || !membership.billing_subscription_id) {
     return {
       ok: true,
       grantSync,
       hasManagedSubscription: false,
+      isManualMembership,
+      message: isManualMembership
+        ? 'This is an admin-assigned membership and is not managed through Square.'
+        : null,
       currentPeriodEnd: membership.current_period_end ?? null,
       pendingSwap: null,
       pendingCancel: null

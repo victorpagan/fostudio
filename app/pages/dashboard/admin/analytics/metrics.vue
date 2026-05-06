@@ -29,6 +29,7 @@ const weekRows = computed(() => {
     ['Booked hours', formatAnalyticsHours(week?.booked_hours)],
     ['Utilization rate', formatAnalyticsRatioPct(week?.utilization_rate)],
     ['Active members', formatAnalyticsNumber(week?.active_members)],
+    ['Active manual members', formatAnalyticsNumber(week?.active_manual_members)],
     ['New members', formatAnalyticsNumber(week?.new_members)],
     ['Canceled members', formatAnalyticsNumber(week?.canceled_members)],
     ['Net membership change', formatAnalyticsNumber(week?.net_members)],

@@ -75,6 +75,8 @@ export type RawMembershipRecord = {
   tier: string
   cadence: string | null
   status: string
+  membership_source: string
+  is_manual: boolean
   amount: number
   created_at: string
   canceled_at: string | null
@@ -176,6 +178,8 @@ export type NormalizedMembershipRecord = NormalizedDateDims & {
   tier: TierKey
   status: string
   amount: number
+  membership_source: string
+  is_manual: boolean
   is_new: boolean
   is_canceled: boolean
   is_test_account: boolean
@@ -193,6 +197,8 @@ export type MembershipStateRecord = {
   cadence: string | null
   status: string
   amount: number
+  membership_source: string
+  is_manual: boolean
   created_at: string
   canceled_at: string | null
   current_period_start: string | null
@@ -290,6 +296,7 @@ export type WeeklyMetrics = {
   booked_hours: number | null
   utilization_rate: number | null
   active_members: number | null
+  active_manual_members: number | null
   new_members: number | null
   canceled_members: number | null
   net_members: number | null
@@ -439,6 +446,7 @@ export type WeeklyReportJson = {
     booked_hours: number | null
     utilization_rate: number | null
     active_members: number | null
+    active_manual_members: number | null
     new_members: number | null
     cancellations: number | null
   }

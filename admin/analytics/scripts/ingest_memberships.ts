@@ -16,6 +16,8 @@ type MembershipRow = {
   tier: string
   cadence: string | null
   status: string
+  membership_source: string | null
+  billing_provider: string | null
   created_at: string
   canceled_at: string | null
   current_period_start: string | null
@@ -26,6 +28,7 @@ type MembershipRow = {
 type VariationRow = {
   tier_id: string
   cadence: string | null
+  provider: string | null
   price_cents: number
 }
 
@@ -33,6 +36,7 @@ function toPricingMap(rows: VariationRow[]) {
   const map = new Map<string, number>()
 
   for (const row of rows) {
+    if (String(row.provider ?? '').trim().toLowerCase() !== 'square') continue
     const tier = String(row.tier_id ?? '').trim().toLowerCase()
     const cadence = String(row.cadence ?? '').trim().toLowerCase()
     const key = `${tier}:${cadence}`
@@ -51,6 +55,10 @@ function normalizeMembershipFromDb(
 ): RawMembershipRecord {
   const tier = String(row.tier ?? '').trim().toLowerCase() || 'other'
   const cadence = toStringOrNull(row.cadence)?.toLowerCase() ?? null
+  const membershipSource = toStringOrNull(row.membership_source)?.toLowerCase()
+    ?? toStringOrNull(row.billing_provider)?.toLowerCase()
+    ?? 'square'
+  const isManual = membershipSource === 'manual'
   const priceKey = `${tier}:${cadence ?? ''}`
   const account = resolveAccountClassification({
     customerId: row.customer_id,
@@ -65,7 +73,9 @@ function normalizeMembershipFromDb(
     tier,
     cadence,
     status: String(row.status ?? '').trim().toLowerCase() || 'active',
-    amount: pricingMap.get(priceKey) ?? 0,
+    membership_source: membershipSource,
+    is_manual: isManual,
+    amount: isManual ? 0 : pricingMap.get(priceKey) ?? 0,
     created_at: String(row.created_at),
     canceled_at: toStringOrNull(row.canceled_at),
     current_period_start: toStringOrNull(row.current_period_start),
@@ -73,7 +83,7 @@ function normalizeMembershipFromDb(
     last_paid_at: toStringOrNull(row.last_paid_at),
     is_test_account: account.is_test_account,
     is_internal_account: account.is_internal_account,
-    exclude_from_kpis: account.exclude_from_kpis,
+    exclude_from_kpis: account.exclude_from_kpis || isManual,
     expires_at: account.expires_at
   }
 }
@@ -91,11 +101,11 @@ async function loadFromSupabase() {
   const [membershipRes, variationRes, customersRes] = await Promise.all([
     supabase
       .from('memberships')
-      .select('id,user_id,customer_id,tier,cadence,status,created_at,canceled_at,current_period_start,current_period_end,last_paid_at')
+      .select('id,user_id,customer_id,tier,cadence,status,membership_source,billing_provider,created_at,canceled_at,current_period_start,current_period_end,last_paid_at')
       .limit(5000),
     supabase
       .from('membership_plan_variations')
-      .select('tier_id,cadence,price_cents')
+      .select('tier_id,cadence,provider,price_cents')
       .order('sort_order', { ascending: true }),
     fetchCustomerClassificationRows(supabase).catch(() => [])
   ])
@@ -122,6 +132,7 @@ async function loadFromSupabase() {
     .map(row => normalizeMembershipFromDb(row, pricingMap, customerLookup))
 
   const excludedCount = records.filter(row => row.exclude_from_kpis).length
+  const manualCount = records.filter(row => row.is_manual).length
 
   return {
     source: 'supabase' as IngestSource,
@@ -129,6 +140,7 @@ async function loadFromSupabase() {
     notes: [
       `Loaded ${records.length} membership rows from Supabase.`,
       `Loaded ${customersRes.length} customer classification rows from Supabase.`,
+      `Marked ${manualCount} manual membership rows outside paid-member/revenue KPIs.`,
       `Excluded ${excludedCount} membership rows from KPI computations due to account classification.`
     ]
   }

@@ -12,7 +12,6 @@ import {
   findPendingSwapAction,
   normalizeSquareActionType
 } from '~~/server/utils/square/subscriptionActions'
-import { computeCyclePriceCents } from '~~/server/utils/membership/cadencePricing'
 
 const bodySchema = z.object({
   tier: z.string().min(1),
@@ -26,6 +25,7 @@ type MembershipRow = {
   tier: string | null
   cadence: string | null
   status: string | null
+  membership_source: string | null
   billing_provider: string | null
   billing_customer_id: string | null
   billing_subscription_id: string | null
@@ -112,8 +112,8 @@ async function createOrderTemplateIdForPlanVariation(
   const eligibleIdsRaw = planData?.eligibleItemIds ?? planData?.eligible_item_ids
   const eligibleItemIds = Array.isArray(eligibleIdsRaw)
     ? eligibleIdsRaw
-      .map(entry => typeof entry === 'string' ? entry.trim() : '')
-      .filter(Boolean)
+        .map(entry => typeof entry === 'string' ? entry.trim() : '')
+        .filter(Boolean)
     : []
   const eligibleItemId = eligibleItemIds[0] ?? null
   if (!eligibleItemId) throw new Error(`Square plan ${subscriptionPlanId} has no eligible item id`)
@@ -132,10 +132,13 @@ async function createOrderTemplateIdForPlanVariation(
   if (!itemVariationId) throw new Error(`Square item ${eligibleItemId} has no item variation id`)
 
   // Use cadence multiplier for quantity: quarterly=3, annual=12, others=1
-  const cadenceQuantity = !cadence ? 1
-    : cadence === 'quarterly' ? 3
-    : cadence === 'annual' ? 12
-    : 1
+  const cadenceQuantity = !cadence
+    ? 1
+    : cadence === 'quarterly'
+      ? 3
+      : cadence === 'annual'
+        ? 12
+        : 1
 
   const orderPayload: Record<string, unknown> = {
     idempotencyKey: `mpswap-order:${planVariationId}:${Date.now()}`,
@@ -404,24 +407,30 @@ export default defineEventHandler(async (event) => {
 
   const { data: membershipRaw, error: membershipErr } = await supabase
     .from('memberships')
-    .select('id,customer_id,tier,cadence,status,billing_provider,billing_customer_id,billing_subscription_id,square_customer_id,square_subscription_id,square_plan_variation_id,current_period_end')
+    .select('id,customer_id,tier,cadence,status,membership_source,billing_provider,billing_customer_id,billing_subscription_id,square_customer_id,square_subscription_id,square_plan_variation_id,current_period_end')
     .eq('user_id', user.sub)
     .maybeSingle()
 
   if (membershipErr) throw createError({ statusCode: 500, statusMessage: membershipErr.message })
   if (!membershipRaw) throw createError({ statusCode: 404, statusMessage: 'Membership not found' })
 
-  const membership = membershipRaw as MembershipRow
+  const membership = membershipRaw as unknown as MembershipRow
   const status = normalizeStatus(membership.status)
   if (status !== 'active' && status !== 'past_due') {
     throw createError({ statusCode: 409, statusMessage: 'Membership must be active to change plans.' })
   }
 
   const billingProvider = (membership.billing_provider ?? '').toLowerCase()
+  const membershipSource = (membership.membership_source ?? '').toLowerCase()
+  if (membershipSource === 'manual' || billingProvider === 'manual') {
+    throw createError({ statusCode: 409, statusMessage: 'This is an admin-assigned membership. Contact FO Studio to change it.' })
+  }
   const currentPlanVariationId = membership.square_plan_variation_id?.trim() || null
   let customerId = membership.billing_customer_id?.trim() || membership.square_customer_id?.trim() || null
   let mappedCustomerId = membership.customer_id?.trim() || null
   let persistedDefaultCardId: string | null = null
+  // Generated Supabase types lag some admin-only customer billing fields here.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
   if (mappedCustomerId) {
     const { data: customerRow, error: customerRowErr } = await db
@@ -501,12 +510,12 @@ export default defineEventHandler(async (event) => {
   const promoCode = normalizePromoCode(body.promo_code)
   const promoPricing = promoCode
     ? await resolvePromoPricing({
-      supabase,
-      promoCode,
-      context: 'membership',
-      tierId: body.tier,
-      basePriceCents: Number(targetVariation.price_cents ?? 0)
-    })
+        supabase,
+        promoCode,
+        context: 'membership',
+        tierId: body.tier,
+        basePriceCents: Number(targetVariation.price_cents ?? 0)
+      })
     : null
   console.info(logPrefix, 'resolved-membership-and-target', {
     membershipId: membership.id,
@@ -709,7 +718,7 @@ export default defineEventHandler(async (event) => {
   const customerCards = extractSquareCards(listCardsRes)
   const cardById = new Map(
     customerCards
-      .map((card) => [readString(card, 'id'), card] as const)
+      .map(card => [readString(card, 'id'), card] as const)
       .filter((entry): entry is [string, Record<string, unknown>] => Boolean(entry[0]))
   )
   const candidateCardId = subscriptionCardId || persistedDefaultCardId

@@ -946,6 +946,9 @@ export default defineEventHandler(async (event) => {
     checkout_order_template_id: orderId,
     square_plan_variation_id: session.plan_variation_id,
     square_customer_id: squareCustomerId,
+    membership_source: 'square',
+    manual_grants_enabled: false,
+    manual_expires_at: null,
     billing_provider: 'square',
     billing_customer_id: squareCustomerId
   }

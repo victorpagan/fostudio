@@ -429,6 +429,7 @@ async function run() {
       booked_hours: metrics.week.booked_hours,
       utilization_rate: metrics.week.utilization_rate,
       active_members: metrics.week.active_members,
+      active_manual_members: metrics.week.active_manual_members,
       new_members: metrics.week.new_members,
       cancellations: metrics.week.canceled_members
     },
@@ -478,6 +479,7 @@ async function run() {
     `- Booked hours: ${asHours(metrics.week.booked_hours)}`,
     `- Utilization: ${asUtilization(metrics.week.utilization_rate)}`,
     `- Active members: ${asInt(metrics.week.active_members)}`,
+    `- Active manual members: ${asInt(metrics.week.active_manual_members)}`,
     `- New members: ${asInt(metrics.week.new_members)}`,
     `- Cancellations: ${asInt(metrics.week.canceled_members)}`,
     '',
