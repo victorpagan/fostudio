@@ -1329,6 +1329,30 @@ body.dashboard-ui :where(.campaign-editor-shell, .waiver-editor-shell) :is(.tipt
   color: color-mix(in srgb, white 96%, transparent);
 }
 
+.landing-hero-guest-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, white 28%, transparent);
+  background: color-mix(in srgb, #1a1a1a 60%, transparent);
+  padding: 0.48rem 0.86rem;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, white 92%, transparent);
+  backdrop-filter: blur(14px);
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.landing-hero-guest-cta:hover {
+  border-color: color-mix(in srgb, white 48%, transparent);
+  background: color-mix(in srgb, #1a1a1a 78%, transparent);
+  color: white;
+}
+
 .landing-hero-badges {
   position: absolute;
   z-index: 3;
@@ -2510,10 +2534,6 @@ body.dashboard-ui :where(.campaign-editor-shell, .waiver-editor-shell) :is(.tipt
 
 .availability-shell .fc .fc-timegrid-slot {
   height: 3.75rem;
-}
-
-.availability-shell.availability-shell--guest-compact .fc .fc-timegrid-slot {
-  height: 2.35rem;
 }
 
 .availability-shell.availability-shell--guest-compact .fc {

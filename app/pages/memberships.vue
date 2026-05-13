@@ -345,6 +345,24 @@ async function submitWaitlist() {
                 {{ badge }}
               </UBadge>
             </div>
+            <div class="mt-5 flex flex-wrap gap-2">
+              <UButton
+                to="/signup?returnTo=/dashboard/book"
+                color="neutral"
+                variant="soft"
+                icon="i-lucide-calendar-plus"
+              >
+                Book as a guest
+              </UButton>
+              <UButton
+                to="/calendar"
+                color="neutral"
+                variant="ghost"
+                trailing-icon="i-lucide-arrow-up-right"
+              >
+                View availability
+              </UButton>
+            </div>
 
             <p
               v-if="isPlanSwitchMode"

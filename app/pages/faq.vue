@@ -33,7 +33,7 @@ const fallbackContent: SiteFaqContent = {
   items: [
     {
       q: 'Do I need a membership to book the studio?',
-      a: 'No. You can book as a guest for a one-off session. Membership becomes the better fit when you need repeat access, a longer booking window, and a steadier cost structure.'
+      a: 'No. Create a free account from the signup page, then book as a guest from the dashboard. Membership becomes the better fit when you need repeat access, a longer booking window, lower effective rates, and member benefits.'
     },
     {
       q: 'What is included with memberships?',
@@ -57,7 +57,7 @@ const fallbackContent: SiteFaqContent = {
     },
     {
       q: 'Can I try the studio before joining a membership?',
-      a: 'Yes. The guest booking flow exists for exactly that. It is a good option when you want to test the room, run a single client day, or confirm the studio fits your workflow before committing.'
+      a: 'Yes. The guest booking flow exists for exactly that. Sign up for a free account, then book a guest session if you want to test the room, run a single client day, or confirm the studio fits your workflow before committing.'
     },
     {
       q: 'What happens if I need to cancel a booking?',

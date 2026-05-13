@@ -383,6 +383,12 @@ function tierAccentClass(tierId: string, index: number) {
         >
           {{ landingContent.hero.campaignHint }}
         </p>
+        <NuxtLink
+          to="/signup?returnTo=/dashboard/book"
+          class="landing-hero-guest-cta"
+        >
+          Book as a guest
+        </NuxtLink>
       </div>
 
       <div class="landing-hero-note">

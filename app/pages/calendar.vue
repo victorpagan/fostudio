@@ -15,6 +15,7 @@ type SiteCalendarContent = {
   }
   nextMovePanel: {
     title: string
+    points: string[]
     primaryCta: CalendarCta
     secondaryCta: CalendarCta
   }
@@ -31,8 +32,11 @@ const fallbackContent: SiteCalendarContent = {
   },
   nextMovePanel: {
     title: 'Best next move',
-    primaryCta: { label: 'Explore memberships', to: '/memberships' },
-    secondaryCta: { label: 'Book as a guest', to: '/signup?returnTo=/dashboard/book' }
+    points: [
+      'Want to try the studio before choosing a membership? Create a free account from the signup page, then book as a guest.'
+    ],
+    primaryCta: { label: 'Sign up to book as a guest', to: '/signup?returnTo=/dashboard/book' },
+    secondaryCta: { label: 'Compare memberships', to: '/memberships' }
   }
 }
 
@@ -44,8 +48,17 @@ const content = computed<SiteCalendarContent>(() => {
   const resolved = (siteCalendar.value as SiteCalendarContent | null) ?? fallbackContent
   return {
     ...resolved,
+    readingPanel: {
+      ...resolved.readingPanel,
+      points: Array.isArray(resolved.readingPanel.points) && resolved.readingPanel.points.length
+        ? resolved.readingPanel.points
+        : fallbackContent.readingPanel.points
+    },
     nextMovePanel: {
       ...resolved.nextMovePanel,
+      points: Array.isArray(resolved.nextMovePanel.points) && resolved.nextMovePanel.points.length
+        ? resolved.nextMovePanel.points
+        : fallbackContent.nextMovePanel.points,
       secondaryCta: {
         ...resolved.nextMovePanel.secondaryCta,
         to: resolved.nextMovePanel.secondaryCta.to === '/book'
@@ -89,6 +102,14 @@ const content = computed<SiteCalendarContent>(() => {
             <h2 class="calendar-guide-title">
               {{ content.nextMovePanel.title }}
             </h2>
+            <div class="calendar-guide-copy">
+              <p
+                v-for="point in content.nextMovePanel.points"
+                :key="point"
+              >
+                {{ point }}
+              </p>
+            </div>
             <div class="calendar-guide-actions">
               <UButton :to="content.nextMovePanel.primaryCta.to">
                 {{ content.nextMovePanel.primaryCta.label }}
@@ -117,6 +138,7 @@ const content = computed<SiteCalendarContent>(() => {
           full-day
           :show-standby-badge="false"
           :show-standby-zones="false"
+          :show-past-blackout="false"
         />
       </div>
     </section>

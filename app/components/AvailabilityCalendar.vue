@@ -29,6 +29,7 @@ type CalendarEvent = EventInput & {
     calendarId?: string
     paymentExpiresAt?: string | null
     minOpenSlotHours?: number
+    calendarWallTime?: boolean
   }
 }
 
@@ -57,11 +58,13 @@ const props = withDefaults(defineProps<{
   adminView?: boolean
   showStandbyBadge?: boolean
   showStandbyZones?: boolean
+  showPastBlackout?: boolean
 }>(), {
   fullDay: false,
   adminView: false,
   showStandbyBadge: true,
-  showStandbyZones: true
+  showStandbyZones: true,
+  showPastBlackout: true
 })
 
 const emit = defineEmits<{
@@ -191,12 +194,22 @@ function calendarDateToStudioDate(value: Date) {
   return laInstant.toJSDate()
 }
 
-function mapApiEventsToCalendar(events: CalendarEvent[]) {
-  return events.map(event => ({
+function mapEventToCalendarWallTime(event: CalendarEvent): CalendarEvent {
+  if (event.extendedProps?.calendarWallTime) return event
+
+  return {
     ...event,
     start: event.start ? studioInstantToCalendarIso(event.start) : event.start,
-    end: event.end ? studioInstantToCalendarIso(event.end) : event.end
-  }))
+    end: event.end ? studioInstantToCalendarIso(event.end) : event.end,
+    extendedProps: {
+      ...event.extendedProps,
+      calendarWallTime: true
+    }
+  }
+}
+
+function mapApiEventsToCalendar(events: CalendarEvent[]) {
+  return events.map(mapEventToCalendarWallTime)
 }
 
 function applyCalendarResponse(res: CalendarResponse) {
@@ -281,11 +294,13 @@ function isExpiredPendingPaymentEvent(event: CalendarEvent, nowMs = nowTickMs.va
 }
 
 const activeEvents = computed(() =>
-  events.value.filter((event) => {
-    if (isExpiredPendingPaymentEvent(event)) return false
-    if (!props.showStandbyZones && event.extendedProps?.type === 'standby') return false
-    return true
-  })
+  events.value
+    .filter((event) => {
+      if (isExpiredPendingPaymentEvent(event)) return false
+      if (!props.showStandbyZones && event.extendedProps?.type === 'standby') return false
+      return true
+    })
+    .map(mapEventToCalendarWallTime)
 )
 
 const ownBookingCount = computed(() =>
@@ -537,7 +552,7 @@ function calendarEventDateToStudioDate(value: unknown) {
 }
 
 function rangeOverlapsUnavailable(start: Date, end: Date) {
-  return events.value.some((event) => {
+  return activeEvents.value.some((event) => {
     const type = event.extendedProps?.type
     if (event.display === 'background' || type === 'standby') return false
     if (type === 'hold' && event.extendedProps?.isOwn) return false
@@ -644,6 +659,8 @@ const peakEvents = computed<CalendarEvent[]>(() => {
 })
 
 const pastBlackoutEvents = computed<CalendarEvent[]>(() => {
+  if (!props.showPastBlackout) return []
+
   const rangeStart = lastLoadRangeStart.value
   const rangeEnd = lastLoadRangeEnd.value
   if (!rangeStart || !rangeEnd) return []

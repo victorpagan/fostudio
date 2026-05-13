@@ -1,18 +1,24 @@
+hero:
+  kicker: Availability
+  title: Studio availability and booking options
+  description: Check the public calendar, compare memberships, or create an account to book a guest session before committing.
 nextMovePanel:
-  title: ""
-  points: []
+  title: Try the studio before joining
+  points:
+    - We allow guest bookings for people who want to try FO Studio before choosing a membership.
+    - Create a free account from the signup page, then use the dashboard booking calendar to book as a guest.
   primaryCta:
-    label: Explore memberships
-    to: /memberships
+    label: Sign up to book as a guest
+    to: /signup?returnTo=/dashboard/book
   secondaryCta:
-    label: View Policies
-    to: /policy
+    label: Compare memberships
+    to: /memberships
 readingPanel:
-  title: ""
+  title: Check availability before you book
   points:
     - Warm blocks mark hold windows where a set stays built overnight.
     - Neutral blocks show confirmed bookings that are no longer available.
-    - Use week view for planning. Switch to day view when you need a tight read on turnaround time.
+    - Use week view for planning. Guests can create an account and book from the dashboard if they want to try the studio before committing to a membership.
 seo:
   title: Studio Availability Calendar | FO Studio Los Angeles
   description: Check FO Studio availability, active booking blocks, and next steps to reserve the studio as a member or guest.

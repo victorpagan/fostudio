@@ -1,6 +1,10 @@
+hero:
+  kicker: FAQ
+  title: Clear answers before you commit to the next shoot.
+  description: Common FO Studio questions about memberships, guest booking, credits, booking windows, overnight holds, and studio access.
 items:
   - q: Do I need a membership to book the studio or can I request a tour?
-    a: Currently guest bookings are closed unless booked through Peerspace. If you would like a tour, please use the contact form and we will get back to you with availability and answer any questions you have.
+    a: You do not need a membership to try the studio. Create a free account from the signup page, then book as a guest from the dashboard. If you would like a tour first, use the contact form and we will get back to you with availability.
   - q: What is included with memberships?
     a: "Memberships include studio equipment, backdrop paper, props, and standard consumables. The goal is to keep your production day simple: book, pay, and show up prepared to shoot."
   - q: How do membership credits work on quarterly and annual plans?
@@ -15,6 +19,8 @@ items:
     a: Member reschedules are available until {{memberRescheduleNoticeHours}} hours before the booking start. Cancellation and refund treatment depends on timing, so if a session needs to move, do it as early as possible.
   - q: How far ahead can I book?
     a: That depends on the membership tier. Higher tiers can see and reserve farther into the calendar. Guest bookings are intentionally limited to a shorter window.
+  - q: Can I try the studio before joining a membership?
+    a: Yes. Sign up for a free account and book as a guest from the dashboard. This is intended for people who want to test the space before choosing a recurring membership.
   - q: Can I hold equipment or keep a setup overnight?
     a: Membership tiers include a monthly overnight-hold cap. Holds require a minimum booking length and a late-enough booking end time based on studio policy. Hold time does not count toward booking hours, and door locks do not work during hold hours unless staff is contacted first.
   - q: Do you support film shooters?
