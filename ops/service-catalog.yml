@@ -1,0 +1,107 @@
+service:
+  slug: fostudio
+  display_name: FO Studio
+  repo: /Users/vic/Documents/Github/fostudio
+  runtime:
+    type: nuxt
+    version: "Nuxt 4 on Node"
+    package_manager: pnpm
+    app_root: "."
+  hosting:
+    provider: Heroku
+    team: film-objektiv
+    app: fostudio
+    web_url: "https://fostudio-2472c7fb148b.herokuapp.com/"
+    public_site_url_default: "https://fo.studio"
+  deploy:
+    method: "pnpm build; pnpm start"
+    artifact: ".output/server/index.mjs"
+  reachability:
+    public: true
+    private: true
+    note: "Public booking/marketing routes plus admin/internal API routes."
+  health:
+    health_url: "https://fostudio-2472c7fb148b.herokuapp.com/"
+    ready_url: unknown
+    heartbeat_key: "access queue freshness via lock_access_jobs and /api/admin/access/status"
+    note: "No dedicated public /health or /ready route is currently documented; Service Fabric uses the Heroku root URL until one is added."
+    status_language: [Up, Ready, Delayed, Degraded, Blocked, Down]
+  dependencies:
+    supabase:
+      project_ref: kvkfqcxfknsyrzonoplg
+      tables_read:
+        - orders2
+        - system_config
+        - mail_template_registry
+        - mail_user_preferences
+        - mail_admin_copy_preferences
+      tables_written:
+        - admin_expense_reports
+        - admin_incident_reports
+        - admin_manual_membership_events
+        - analytics_ad_daily
+        - analytics_outputs
+        - app_error_events
+        - app_error_groups
+        - booking_access_codes
+        - booking_holds
+        - bookings
+        - calendar_blocks
+        - credit_balance
+        - credit_pricing_options
+        - credit_topup_sessions
+        - credits_ledger
+        - customers
+        - door_code_change_requests
+        - external_calendar_events
+        - hold_balance
+        - hold_ledger
+        - hold_topup_sessions
+        - lock_access_incidents
+        - lock_access_jobs
+        - lock_permanent_codes
+        - lock_slot_assignments
+        - mail_campaign_template_id_history
+        - mail_campaign_templates
+        - mail_campaigns
+        - mail_reminder_deliveries
+        - mail_reminder_rules
+        - member_referral_codes
+        - member_waiver_signatures
+        - membership_checkout_sessions
+        - membership_credit_grants
+        - membership_plan_variations
+        - membership_referrals
+        - membership_tiers
+        - membership_waitlist
+        - memberships
+        - promo_codes
+        - referral_credit_rules
+        - waiver_templates
+      rpc:
+        - get_secret
+    external:
+      - Square API and webhooks
+      - fomailer
+      - SendGrid
+      - Home Assistant
+      - Abode
+      - Google Calendar API
+      - Google Ads API
+      - Meta Marketing API
+      - Nuxt Studio
+  owned_operational_tables:
+    - bookings
+    - booking_holds
+    - memberships
+    - membership_credit_grants
+    - membership_checkout_sessions
+    - lock_access_jobs
+    - lock_access_incidents
+    - lock_permanent_codes
+    - lock_slot_assignments
+    - analytics_outputs
+    - analytics_ad_daily
+  contacts:
+    owner: unknown
+    note: "No explicit owner/contact file found in repo."
