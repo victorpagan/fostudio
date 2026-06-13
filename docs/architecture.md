@@ -56,12 +56,13 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
   - `GET /health`: process-level host check.
   - `GET /ready`: Supabase-backed readiness check using service-role server access.
 - Service Fabric should use `/health` for public reachability and `/ready` for Supabase-backed readiness.
+- Public `/ready` currently validates Supabase-backed server readiness; it does not fully validate Square, Home Assistant, Abode, Google Calendar, or internal worker auth/provider availability.
 - Access subsystem has `GET /api/admin/access/status`.
 - Internal workers include `POST /api/internal/access/process`, `POST /api/internal/access/booking-sync`, `POST /api/internal/mail/reminders/process`, `GET /api/internal/analytics/outputs`, and `POST /api/internal/analytics/run`.
 - Recommended Home Assistant scheduler calls `POST /api/internal/access/process` every minute with `x-access-key`.
 - Status mapping:
   - `Up`: host responds.
-  - `Ready`: app, Supabase, Square config, and critical internal worker auth are usable.
+  - `Ready`: app host and Supabase-backed server readiness are usable.
   - `Delayed`: access jobs, reminders, analytics, or calendar sync are behind.
   - `Degraded`: Square, fomailer, Home Assistant, Abode, Google Calendar, or analytics integrations partially fail.
   - `Blocked`: required Supabase/env/secret/system_config values are missing.
