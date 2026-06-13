@@ -52,8 +52,10 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 
 ## Health, Readiness, And Heartbeat
 
-- No general `/health` or `/ready` route was found.
-- Service Fabric currently uses the Heroku root URL as the public reachability probe until a dedicated `/health` and `/ready` contract is added.
+- Dedicated HTTP health endpoints:
+  - `GET /health`: process-level host check.
+  - `GET /ready`: Supabase-backed readiness check using service-role server access.
+- Service Fabric should use `/health` for public reachability and `/ready` for Supabase-backed readiness.
 - Access subsystem has `GET /api/admin/access/status`.
 - Internal workers include `POST /api/internal/access/process`, `POST /api/internal/access/booking-sync`, `POST /api/internal/mail/reminders/process`, `GET /api/internal/analytics/outputs`, and `POST /api/internal/analytics/run`.
 - Recommended Home Assistant scheduler calls `POST /api/internal/access/process` every minute with `x-access-key`.

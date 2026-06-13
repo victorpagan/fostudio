@@ -21,10 +21,10 @@ service:
     private: true
     note: "Public booking/marketing routes plus admin/internal API routes."
   health:
-    health_url: "https://fostudio-2472c7fb148b.herokuapp.com/"
-    ready_url: unknown
+    health_url: "https://fostudio-2472c7fb148b.herokuapp.com/health"
+    ready_url: "https://fostudio-2472c7fb148b.herokuapp.com/ready"
     heartbeat_key: "access queue freshness via lock_access_jobs and /api/admin/access/status"
-    note: "No dedicated public /health or /ready route is currently documented; Service Fabric uses the Heroku root URL until one is added."
+    note: "Public /health checks host reachability. Public /ready checks Supabase readiness using server-side service-role access."
     status_language: [Up, Ready, Delayed, Degraded, Blocked, Down]
   dependencies:
     supabase:
