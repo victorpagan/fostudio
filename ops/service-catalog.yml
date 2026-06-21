@@ -92,6 +92,10 @@ service:
       - Google Ads API
       - Meta Marketing API
       - Nuxt Studio
+    integration_contracts:
+      square_customer_phone: "Phone values are normalized to E.164 or omitted before Square customer search/create/update calls."
+      fomailer_event_types: "Registry-backed sends include account.signup plus booking, membership, credit, hold, contact, reminder, and broadcast events."
+      access_incident_mail: "Lock/access incident alerts are best-effort and route through mailing.memberBroadcast to configured admin recipients."
   owned_operational_tables:
     - bookings
     - booking_holds

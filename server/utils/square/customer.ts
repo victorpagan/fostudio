@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
+import { toSquareE164Phone } from '~~/server/utils/square/checkoutPrefill'
 import { sanitizeForJSON } from '~~/server/utils/sanitize'
 
 export type PrimaryCustomerRow = {
@@ -40,6 +41,7 @@ function sanitizeName(name?: string | null, email?: string | null) {
 
 async function searchSquareCustomerId(event: H3Event, email: string | null, phone: string | null) {
   const square = await useSquareClient(event)
+  const squarePhone = toSquareE164Phone(phone)
 
   if (email) {
     const res = await square.customers.search({
@@ -50,9 +52,9 @@ async function searchSquareCustomerId(event: H3Event, email: string | null, phon
     if (found?.id) return found.id
   }
 
-  if (phone) {
+  if (squarePhone) {
     const res = await square.customers.search({
-      query: { filter: { phoneNumber: { exact: phone } } },
+      query: { filter: { phoneNumber: { exact: squarePhone } } },
       limit: 1n
     } as never)
     const found = (res as { customers?: Array<{ id?: string | null }> | null })?.customers?.[0]
@@ -71,7 +73,7 @@ async function createSquareCustomer(event: H3Event, input: {
   const square = await useSquareClient(event)
   const res = await square.customers.create({
     emailAddress: input.email ?? undefined,
-    phoneNumber: input.phone ?? undefined,
+    phoneNumber: toSquareE164Phone(input.phone),
     givenName: input.firstName ?? undefined,
     familyName: input.lastName ?? undefined
   } as never)
@@ -122,7 +124,8 @@ async function updateSquareCustomerIfNeeded(event: H3Event, squareCustomerId: st
     const patch: Record<string, unknown> = {}
     if (!givenName && input.firstName) patch.givenName = input.firstName
     if (!familyName && input.lastName) patch.familyName = input.lastName
-    if (!phoneNumber && input.phone) patch.phoneNumber = input.phone
+    const squarePhone = toSquareE164Phone(input.phone)
+    if (!phoneNumber && squarePhone) patch.phoneNumber = squarePhone
 
     if (!Object.keys(patch).length) return
 

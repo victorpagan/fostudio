@@ -4,6 +4,7 @@ import { z } from 'zod'
 import type { H3Event } from 'h3'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
+import { toSquareE164Phone } from '~~/server/utils/square/checkoutPrefill'
 import { sanitizeForJSON } from '~~/server/utils/sanitize'
 
 const schema = z.object({
@@ -68,6 +69,7 @@ async function canTransferCustomerOwnership(supa: any, fromUserId: string) {
 
 async function searchSquareCustomerId(event: H3Event, email: string | null, phone: string | null) {
   const square = await useSquareClient(event)
+  const squarePhone = toSquareE164Phone(phone)
 
   // Prefer email search
   if (email) {
@@ -80,9 +82,9 @@ async function searchSquareCustomerId(event: H3Event, email: string | null, phon
   }
 
   // Fallback phone search
-  if (phone) {
+  if (squarePhone) {
     const res = await square.customers.search({
-      query: { filter: { phoneNumber: { exact: phone } } },
+      query: { filter: { phoneNumber: { exact: squarePhone } } },
       limit: 1n
     } as any)
     const found = (res as any)?.customers?.[0]
@@ -107,7 +109,7 @@ async function createSquareCustomer(event: H3Event, input: {
   const square = await useSquareClient(event)
   const res = await square.customers.create({
     emailAddress: input.email ?? undefined,
-    phoneNumber: input.phone ?? undefined,
+    phoneNumber: toSquareE164Phone(input.phone),
     givenName: input.first_name ?? undefined,
     familyName: input.last_name ?? undefined
   } as any)

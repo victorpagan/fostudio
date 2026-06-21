@@ -32,8 +32,8 @@
 ## External Dependencies
 
 - Supabase database, auth, storage, `system_config`, and `get_secret`.
-- Square for payments, subscriptions, cards, catalog/pricing, customers, and webhooks.
-- `fomailer` for mail sends; SendGrid for template/admin checks.
+- Square for payments, subscriptions, cards, catalog/pricing, customers, and webhooks. Customer sync normalizes phone numbers to Square-safe E.164 at the Square boundary and omits invalid/ambiguous phone values from Square requests while preserving local customer data.
+- `fomailer` for mail sends; SendGrid for template/admin checks. FO Studio sends registry-backed lifecycle events including `account.signup`, `booking.memberCreated`, booking changes, membership changes, credits/holds top-ups, contact, and broadcasts.
 - Home Assistant and Abode for lock/alarm access automation.
 - Google Calendar API for booking calendar sync.
 - Google Ads and Meta Marketing APIs for analytics ingestion.
@@ -73,6 +73,7 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 - Access jobs activate 30 minutes before booking start and deactivate 30 minutes after booking end.
 - `lock_access_jobs` is processed only if an external scheduler calls the internal process endpoint.
 - Permanent lock codes are stored in `lock_permanent_codes`; active permanent slots are reserved from booking/member allocation.
+- Access incident records are written before notification attempts. Notification email is best-effort and routes through the registry-backed `mailing.memberBroadcast` Fomailer handler to configured admin recipients so notification failure does not block incident creation.
 - Secrets are loaded through Supabase Vault via `get_secret`; non-secret settings use `system_config` and runtime env.
 - Database/RLS changes must be authored in `fosupabase`.
 
