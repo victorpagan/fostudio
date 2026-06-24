@@ -27,6 +27,9 @@ test('admin member detail includes charge history but customer dashboard remains
   assert.match(detailRoute, /memberCharges/)
   assert.match(memberPage, /type MemberCharge/)
   assert.match(memberPage, /\/api\/admin\/members\/charge/)
+  assert.match(memberPage, /type MemberTab = .*'charges'/)
+  assert.match(memberPage, /label: 'Charges', value: 'charges'/)
+  assert.match(memberPage, /selectedTab === 'charges'/)
   assert.match(memberPage, /Repair charge history/)
 })
 

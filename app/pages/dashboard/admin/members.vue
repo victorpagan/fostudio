@@ -6,7 +6,7 @@ const router = useRouter()
 const toast = useToast()
 
 type WaiverStatus = 'current' | 'expired' | 'missing' | 'stale_version'
-type MemberTab = 'overview' | 'activity' | 'bookings' | 'credits' | 'access'
+type MemberTab = 'overview' | 'activity' | 'bookings' | 'charges' | 'credits' | 'access'
 
 type MemberRecord = {
   membership_id: string
@@ -360,6 +360,7 @@ const tabItems: Array<{ label: string, value: MemberTab, icon: string }> = [
   { label: 'Overview', value: 'overview', icon: 'i-lucide-layout-dashboard' },
   { label: 'Activity', value: 'activity', icon: 'i-lucide-activity' },
   { label: 'Bookings', value: 'bookings', icon: 'i-lucide-calendar-days' },
+  { label: 'Charges', value: 'charges', icon: 'i-lucide-receipt-text' },
   { label: 'Credits', value: 'credits', icon: 'i-lucide-wallet-cards' },
   { label: 'Access', value: 'access', icon: 'i-lucide-key-round' }
 ]
@@ -1834,7 +1835,7 @@ onMounted(async () => {
             </div>
 
             <div
-              v-else-if="selectedTab === 'credits'"
+              v-else-if="selectedTab === 'charges'"
               class="space-y-4"
             >
               <UCard class="border-0 bg-default/50">
@@ -1982,7 +1983,12 @@ onMounted(async () => {
                   </div>
                 </div>
               </UCard>
+            </div>
 
+            <div
+              v-else-if="selectedTab === 'credits'"
+              class="space-y-4"
+            >
               <UCard class="border-0 bg-default/50">
                 <div class="font-medium">
                   Credit adjustment
