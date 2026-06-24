@@ -200,6 +200,7 @@ type MemberDetail = {
   expenses: DetailExpense[]
   manualMembershipEvents: ManualMembershipEvent[]
   memberCharges: MemberCharge[]
+  memberChargeHistoryAvailable: boolean
   summary: {
     upcomingBookings: number
     pastBookings: number
@@ -1849,11 +1850,21 @@ onMounted(async () => {
                   <UButton
                     size="sm"
                     icon="i-lucide-receipt-text"
+                    :disabled="selectedDetail?.memberChargeHistoryAvailable === false"
                     @click="openMemberChargeModal"
                   >
                     Create charge
                   </UButton>
                 </div>
+                <UAlert
+                  v-if="selectedDetail?.memberChargeHistoryAvailable === false"
+                  class="mt-4"
+                  color="warning"
+                  variant="soft"
+                  icon="i-lucide-database"
+                  title="Member charge history is not available yet"
+                  description="The admin charge audit table is not in the Supabase schema cache. Apply the latest migration or reload the Supabase API schema before creating member charges."
+                />
 
                 <div class="mt-4 grid gap-3 sm:grid-cols-2">
                   <div class="rounded-lg border border-default bg-default p-3">

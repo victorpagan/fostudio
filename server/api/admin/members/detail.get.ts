@@ -24,14 +24,21 @@ function asNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric : 0
 }
 
+function isOptionalMemberChargeHistoryError(error: { code?: string | null, message?: string | null } | null | undefined) {
+  const message = String(error?.message ?? '')
+  return error?.code === 'PGRST205'
+    || (message.includes('admin_member_charges') && message.includes('schema cache'))
+    || message.includes('Could not find the table \'public.admin_member_charges\'')
+}
+
 type SupabaseQueryResult<T = Record<string, unknown>> = {
   data?: T[] | null
-  error?: { message: string } | null
+  error?: { code?: string | null, message: string } | null
 }
 
 type SupabaseSingleResult<T = Record<string, unknown>> = {
   data?: T | null
-  error?: { message: string } | null
+  error?: { code?: string | null, message: string } | null
 }
 
 type SupabaseQueryBuilder<T = Record<string, unknown>> = PromiseLike<SupabaseQueryResult<T>> & {
@@ -255,8 +262,11 @@ export default defineEventHandler(async (event) => {
       .limit(20)
   ])
 
-  for (const result of [bookingsRes, creditsRes, referralsRes, incidentsRes, expensesRes, manualEventsRes, memberChargesRes]) {
+  for (const result of [bookingsRes, creditsRes, referralsRes, incidentsRes, expensesRes, manualEventsRes]) {
     if (result.error) throw createError({ statusCode: 500, statusMessage: result.error.message })
+  }
+  if (memberChargesRes.error && !isOptionalMemberChargeHistoryError(memberChargesRes.error)) {
+    throw createError({ statusCode: 500, statusMessage: memberChargesRes.error.message })
   }
 
   const bookings = bookingsRes.data ?? []
@@ -265,7 +275,8 @@ export default defineEventHandler(async (event) => {
   const incidents = incidentsRes.data ?? []
   const expenses = expensesRes.data ?? []
   const manualMembershipEvents = manualEventsRes.data ?? []
-  const memberCharges = memberChargesRes.data ?? []
+  const memberChargeHistoryAvailable = !memberChargesRes.error
+  const memberCharges = memberChargeHistoryAvailable ? memberChargesRes.data ?? [] : []
   const upcomingBookings = bookings.filter((booking) => {
     const endMs = Date.parse(String(booking.end_time ?? ''))
     return Number.isFinite(endMs) && endMs >= now.getTime() && booking.status !== 'canceled'
@@ -299,6 +310,7 @@ export default defineEventHandler(async (event) => {
     expenses,
     manualMembershipEvents,
     memberCharges,
+    memberChargeHistoryAvailable,
     summary: {
       upcomingBookings: upcomingBookings.length,
       pastBookings: pastBookings.length,
