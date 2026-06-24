@@ -23,6 +23,7 @@ const FOMAILER_NATIVE_TYPES = new Set([
   'booking.memberCanceled',
   'booking.memberCreated',
   'booking.memberRescheduled',
+  'billing.memberChargeReceipt',
   'contact.formSubmitted',
   'credits.topupPurchased',
   'holds.topupPurchased',

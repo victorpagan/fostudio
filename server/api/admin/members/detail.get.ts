@@ -134,6 +134,31 @@ type ManualMembershipEventRow = {
   created_at: string
 }
 
+type MemberChargeRow = {
+  id: string
+  member_user_id: string
+  customer_id: string | null
+  category: string
+  status: string
+  amount_cents: number
+  currency: string
+  reason: string
+  internal_note: string | null
+  booking_id: string | null
+  incident_id: string | null
+  square_payment_id: string | null
+  payment_status: string | null
+  charge_error: string | null
+  card_brand: string | null
+  card_last4: string | null
+  charged_by: string | null
+  charged_at: string | null
+  receipt_sent_at: string | null
+  receipt_error: string | null
+  created_at: string
+  updated_at: string
+}
+
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
   const db = supabase as unknown as UntypedSupabaseClient
@@ -185,7 +210,7 @@ export default defineEventHandler(async (event) => {
     if (result.error) throw createError({ statusCode: 500, statusMessage: result.error.message })
   }
 
-  const [bookingsRes, creditsRes, referralsRes, incidentsRes, expensesRes, manualEventsRes] = await Promise.all([
+  const [bookingsRes, creditsRes, referralsRes, incidentsRes, expensesRes, manualEventsRes, memberChargesRes] = await Promise.all([
     db
       .from<DetailBookingRow>('bookings')
       .select('id,start_time,end_time,status,notes,credits_burned,guest_name,guest_email,created_at,updated_at,booking_kind,workshop_title,workshop_link,booking_holds(id,hold_start,hold_end,hold_type)')
@@ -221,10 +246,16 @@ export default defineEventHandler(async (event) => {
       .select('id,membership_id,user_id,admin_user_id,action,tier,cadence,manual_grants_enabled,manual_expires_at,reason,payload,created_at')
       .eq('user_id', query.userId)
       .order('created_at', { ascending: false })
+      .limit(20),
+    db
+      .from<MemberChargeRow>('admin_member_charges')
+      .select('id,member_user_id,customer_id,category,status,amount_cents,currency,reason,internal_note,booking_id,incident_id,square_payment_id,payment_status,charge_error,card_brand,card_last4,charged_by,charged_at,receipt_sent_at,receipt_error,created_at,updated_at')
+      .eq('member_user_id', query.userId)
+      .order('created_at', { ascending: false })
       .limit(20)
   ])
 
-  for (const result of [bookingsRes, creditsRes, referralsRes, incidentsRes, expensesRes, manualEventsRes]) {
+  for (const result of [bookingsRes, creditsRes, referralsRes, incidentsRes, expensesRes, manualEventsRes, memberChargesRes]) {
     if (result.error) throw createError({ statusCode: 500, statusMessage: result.error.message })
   }
 
@@ -234,6 +265,7 @@ export default defineEventHandler(async (event) => {
   const incidents = incidentsRes.data ?? []
   const expenses = expensesRes.data ?? []
   const manualMembershipEvents = manualEventsRes.data ?? []
+  const memberCharges = memberChargesRes.data ?? []
   const upcomingBookings = bookings.filter((booking) => {
     const endMs = Date.parse(String(booking.end_time ?? ''))
     return Number.isFinite(endMs) && endMs >= now.getTime() && booking.status !== 'canceled'
@@ -266,6 +298,7 @@ export default defineEventHandler(async (event) => {
     incidents,
     expenses,
     manualMembershipEvents,
+    memberCharges,
     summary: {
       upcomingBookings: upcomingBookings.length,
       pastBookings: pastBookings.length,
@@ -273,7 +306,10 @@ export default defineEventHandler(async (event) => {
       totalCreditsUsed: Math.abs(credits.reduce((total, row) => total + Math.min(0, asNumber(row.delta)), 0)),
       referralsAwarded: referrals.filter(row => row.status === 'awarded').length,
       openIncidents: openIncidents.length,
-      openExpenses: openExpenses.length
+      openExpenses: openExpenses.length,
+      paidMemberChargeCents: memberCharges
+        .filter(row => String(row.status ?? '').toLowerCase() === 'paid')
+        .reduce((total, row) => total + asNumber(row.amount_cents), 0)
     }
   }
 })

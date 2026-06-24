@@ -77,6 +77,11 @@ const REGISTERED_MAIL_EVENTS: RegisteredMailEvent[] = [
     description: 'Equipment hold top-off purchase completed.'
   },
   {
+    eventType: 'billing.memberChargeReceipt',
+    category: 'critical',
+    description: 'Receipt for an admin-initiated studio repair, damage, replacement, cleaning, or other charge.'
+  },
+  {
     eventType: 'membership.doorCodeUpdated',
     category: 'critical',
     description: 'Member door code was assigned or updated.'
@@ -273,6 +278,23 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'amountDollars',
     'label',
     'paymentId'
+  ],
+  'billing.memberChargeReceipt': [
+    'customerName',
+    'customerEmail',
+    'chargeId',
+    'chargeCategory',
+    'chargeCategoryLabel',
+    'chargeReason',
+    'amountCents',
+    'amountDollars',
+    'currency',
+    'paymentId',
+    'chargedAt',
+    'cardBrand',
+    'cardLast4',
+    'bookingId',
+    'incidentId'
   ],
   'membership.doorCodeUpdated': [
     'customerName',
@@ -613,6 +635,23 @@ const EVENT_DEFAULT_COPY: Record<string, MailTemplateDefaultCopy> = {
 <p style="margin:0 0 14px;">Payment reference: {{ paymentId }}</p>
 <p style="margin:0 0 16px;"><a href="{{ manageUrl }}">Manage your bookings and holds</a></p>
 <p style="margin:16px 0 0;font-size:13px;color:#666;">Questions? Reply to this email or contact <a href="mailto:{{ supportEmail }}">{{ supportEmail }}</a>.</p>
+</div>`
+  },
+  'billing.memberChargeReceipt': {
+    subjectTemplate: 'FO Studio payment receipt',
+    preheaderTemplate: 'Your {{ chargeCategoryLabel }} payment of ${{ amountDollars }} was processed.',
+    bodyTemplate: `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;max-width:640px;margin:0 auto;">
+<h1 style="font-size:24px;margin:0 0 12px;">Payment receipt</h1>
+<p style="margin:0 0 14px;">Hi {{ customerName }}, this confirms a studio account charge was processed.</p>
+<div style="background:#f6f6f6;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin:0 0 16px;">
+<p style="margin:0 0 8px;"><strong>Charge type:</strong> {{ chargeCategoryLabel }}</p>
+<p style="margin:0 0 8px;"><strong>Amount:</strong> &#36;{{ amountDollars }}</p>
+<p style="margin:0 0 8px;"><strong>Reason:</strong> {{ chargeReason }}</p>
+<p style="margin:0 0 8px;"><strong>Card:</strong> {{ cardBrand }} ending in {{ cardLast4 }}</p>
+<p style="margin:0;"><strong>Payment reference:</strong> {{ paymentId }}</p>
+</div>
+<p style="margin:0 0 14px;">If you have questions about this charge, reply to this email or contact <a href="mailto:{{ supportEmail }}">{{ supportEmail }}</a>.</p>
+<p style="margin:16px 0 0;font-size:13px;color:#666;">FO Studio · {{ studioAddress }}</p>
 </div>`
   },
   'membership.doorCodeUpdated': {

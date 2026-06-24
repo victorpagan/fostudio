@@ -41,6 +41,7 @@ service:
         - admin_expense_reports
         - admin_incident_reports
         - admin_manual_membership_events
+        - admin_member_charges
         - analytics_ad_daily
         - analytics_outputs
         - app_error_events
@@ -94,7 +95,8 @@ service:
       - Nuxt Studio
     integration_contracts:
       square_customer_phone: "Phone values are normalized to E.164 or omitted before Square customer search/create/update calls."
-      fomailer_event_types: "Registry-backed sends include account.signup plus booking, membership, credit, hold, contact, reminder, and broadcast events."
+      square_admin_member_charges: "Admin-only member repair/damage charges use Square saved cards through admin_member_charges and stay separate from credit top-ups, memberships, and expenses."
+      fomailer_event_types: "Registry-backed sends include account.signup plus booking, membership, credit, hold, admin member charge receipt, contact, reminder, and broadcast events."
       access_incident_mail: "Lock/access incident alerts are best-effort and route through mailing.memberBroadcast to configured admin recipients."
   owned_operational_tables:
     - bookings
@@ -106,6 +108,7 @@ service:
     - lock_access_incidents
     - lock_permanent_codes
     - lock_slot_assignments
+    - admin_member_charges
     - analytics_outputs
     - analytics_ad_daily
   contacts:

@@ -105,6 +105,31 @@ type DetailCredit = {
   membership_id: string | null
 }
 
+type MemberCharge = {
+  id: string
+  member_user_id: string
+  customer_id: string | null
+  category: string
+  status: string
+  amount_cents: number
+  currency: string
+  reason: string
+  internal_note: string | null
+  booking_id: string | null
+  incident_id: string | null
+  square_payment_id: string | null
+  payment_status: string | null
+  charge_error: string | null
+  card_brand: string | null
+  card_last4: string | null
+  charged_by: string | null
+  charged_at: string | null
+  receipt_sent_at: string | null
+  receipt_error: string | null
+  created_at: string
+  updated_at: string
+}
+
 type DetailReferral = {
   id: string
   referral_code: string
@@ -174,6 +199,7 @@ type MemberDetail = {
   incidents: DetailIncident[]
   expenses: DetailExpense[]
   manualMembershipEvents: ManualMembershipEvent[]
+  memberCharges: MemberCharge[]
   summary: {
     upcomingBookings: number
     pastBookings: number
@@ -182,6 +208,7 @@ type MemberDetail = {
     referralsAwarded: number
     openIncidents: number
     openExpenses: number
+    paidMemberChargeCents: number
   }
 }
 
@@ -208,6 +235,16 @@ type ActivityItem = {
   description: string
   icon: string
   color: 'neutral' | 'primary' | 'success' | 'warning' | 'error' | 'info'
+}
+
+type SavedCardMethod = {
+  id: string
+  brand: string | null
+  last4: string | null
+  expMonth: number | null
+  expYear: number | null
+  cardholderName: string | null
+  enabled: boolean
 }
 
 const emptySummary: MembersSummary = {
@@ -250,6 +287,10 @@ const updatingDoorCode = ref(false)
 const updatingWorkshopAccess = ref(false)
 const savingManualMembership = ref(false)
 const revokingManualMembership = ref(false)
+const chargeModalOpen = ref(false)
+const chargePaymentMethodsPending = ref(false)
+const chargeSubmitting = ref(false)
+const chargePaymentMethods = ref<SavedCardMethod[]>([])
 const dashboardHydrated = ref(false)
 const membershipTierCatalog = ref<MembershipTierCatalog[]>([])
 
@@ -264,6 +305,15 @@ const manualMembershipForm = reactive({
   expiresOn: '',
   manualGrantsEnabled: false,
   reason: ''
+})
+const memberChargeForm = reactive({
+  amountDollars: '',
+  category: 'repair',
+  reason: '',
+  internalNote: '',
+  cardId: '',
+  bookingId: '',
+  incidentId: ''
 })
 
 const statusFilterItems = [
@@ -295,6 +345,14 @@ const rosterPageSizeItems = [
   { label: '25 / page', value: 25 },
   { label: '50 / page', value: 50 },
   { label: '100 / page', value: 100 }
+]
+
+const chargeCategoryItems = [
+  { label: 'Repair', value: 'repair' },
+  { label: 'Damage', value: 'damage' },
+  { label: 'Replacement', value: 'replacement' },
+  { label: 'Cleaning', value: 'cleaning' },
+  { label: 'Other', value: 'other' }
 ]
 
 const tabItems: Array<{ label: string, value: MemberTab, icon: string }> = [
@@ -330,6 +388,25 @@ const manualCadenceItems = computed(() => {
       value: variation.cadence
     }))
 })
+const memberChargeTotal = computed(() => selectedDetail.value?.summary.paidMemberChargeCents ?? 0)
+const chargeCardItems = computed(() => chargePaymentMethods.value.map(card => ({
+  label: `${card.brand ?? 'Card'} ending ${card.last4 ?? '----'}${card.expMonth && card.expYear ? ` · exp ${String(card.expMonth).padStart(2, '0')}/${String(card.expYear).slice(-2)}` : ''}`,
+  value: card.id
+})))
+const chargeBookingItems = computed(() => [
+  { label: 'No linked booking', value: '' },
+  ...(selectedDetail.value?.bookings ?? []).slice(0, 12).map(booking => ({
+    label: `${formatDate(booking.start_time)} · ${booking.status}`,
+    value: booking.id
+  }))
+])
+const chargeIncidentItems = computed(() => [
+  { label: 'No linked incident', value: '' },
+  ...(selectedDetail.value?.incidents ?? []).slice(0, 12).map(incident => ({
+    label: `${incident.title} · ${incident.status}`,
+    value: incident.id
+  }))
+])
 const filteredMembers = computed(() => {
   const query = memberSearch.value.trim().toLowerCase()
   return members.value.filter((member) => {
@@ -426,6 +503,17 @@ const activityItems = computed<ActivityItem[]>(() => {
       description: `${formatReason(credit.reason)}${credit.external_ref ? ` · ${credit.external_ref}` : ''}`,
       icon: 'i-lucide-wallet-cards',
       color: Number(credit.delta) >= 0 ? 'success' : 'warning'
+    })
+  }
+
+  for (const charge of detail.memberCharges.slice(0, 5)) {
+    items.push({
+      id: `member-charge-${charge.id}`,
+      at: charge.charged_at ?? charge.created_at,
+      label: `${formatReason(charge.category)} charge`,
+      description: `${formatMoney(charge.amount_cents)} · ${charge.status} · ${charge.reason}`,
+      icon: 'i-lucide-receipt-text',
+      color: charge.status === 'paid' ? 'success' : charge.status === 'failed' ? 'error' : 'warning'
     })
   }
 
@@ -590,6 +678,14 @@ function formatCredits(value: number | null | undefined) {
 
 function formatMoney(cents: number | null | undefined) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(cents ?? 0) / 100)
+}
+
+function moneyInputToCents(value: string | number | null | undefined) {
+  const normalized = String(value ?? '').replace(/[^0-9.]/g, '')
+  if (!normalized) return 0
+  const numeric = Number(normalized)
+  if (!Number.isFinite(numeric)) return 0
+  return Math.round(numeric * 100)
 }
 
 function formatDate(value: string | null | undefined) {
@@ -831,6 +927,82 @@ async function applyCreditAdjustment() {
     toast.add({ title: 'Could not apply credit adjustment', description: readErrorMessage(error), color: 'error' })
   } finally {
     adjustingCredits.value = false
+  }
+}
+
+async function loadChargePaymentMethods() {
+  if (!selectedMember.value) return
+  chargePaymentMethodsPending.value = true
+  try {
+    const res = await $fetch<{ methods: SavedCardMethod[], defaultCardId: string | null }>('/api/admin/members/payment-methods', {
+      query: { userId: selectedMember.value.user_id }
+    })
+    chargePaymentMethods.value = res.methods ?? []
+    memberChargeForm.cardId = res.defaultCardId ?? chargePaymentMethods.value[0]?.id ?? ''
+  } catch (error: unknown) {
+    chargePaymentMethods.value = []
+    memberChargeForm.cardId = ''
+    toast.add({ title: 'Could not load saved cards', description: readErrorMessage(error), color: 'error' })
+  } finally {
+    chargePaymentMethodsPending.value = false
+  }
+}
+
+async function openMemberChargeModal() {
+  if (!selectedMember.value) return
+  memberChargeForm.amountDollars = ''
+  memberChargeForm.category = 'repair'
+  memberChargeForm.reason = ''
+  memberChargeForm.internalNote = ''
+  memberChargeForm.bookingId = ''
+  memberChargeForm.incidentId = ''
+  memberChargeForm.cardId = ''
+  chargeModalOpen.value = true
+  await loadChargePaymentMethods()
+}
+
+async function submitMemberCharge() {
+  if (!selectedMember.value || chargeSubmitting.value) return
+  const amountCents = moneyInputToCents(memberChargeForm.amountDollars)
+  if (amountCents <= 0) {
+    toast.add({ title: 'Enter a charge amount', color: 'error' })
+    return
+  }
+  if (!memberChargeForm.cardId) {
+    toast.add({ title: 'Choose a saved card', color: 'error' })
+    return
+  }
+  if (memberChargeForm.reason.trim().length < 3) {
+    toast.add({ title: 'Add a reason for the receipt', color: 'error' })
+    return
+  }
+
+  chargeSubmitting.value = true
+  try {
+    const res = await $fetch<{ receiptSent?: boolean, receiptReason?: string }>('/api/admin/members/charge', {
+      method: 'POST',
+      body: {
+        userId: selectedMember.value.user_id,
+        cardId: memberChargeForm.cardId,
+        amountCents,
+        category: memberChargeForm.category,
+        reason: memberChargeForm.reason.trim(),
+        internalNote: memberChargeForm.internalNote.trim() || null,
+        bookingId: memberChargeForm.bookingId || null,
+        incidentId: memberChargeForm.incidentId || null
+      }
+    })
+    chargeModalOpen.value = false
+    toast.add({
+      title: 'Member charged',
+      description: res.receiptSent === false ? `Payment succeeded. Receipt not sent: ${res.receiptReason ?? 'unknown'}.` : 'Payment succeeded and the email receipt was queued.',
+      color: res.receiptSent === false ? 'warning' : 'success'
+    })
+    await refreshAll()
+  } catch (error: unknown) {
+    toast.add({ title: 'Could not charge member', description: readErrorMessage(error), color: 'error' })
+  } finally {
+    chargeSubmitting.value = false
   }
 }
 
@@ -1665,6 +1837,142 @@ onMounted(async () => {
               class="space-y-4"
             >
               <UCard class="border-0 bg-default/50">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div class="font-medium">
+                      Member charges
+                    </div>
+                    <p class="mt-1 text-xs text-dimmed">
+                      Admin-only repair, damage, replacement, cleaning, or other studio charges. Customers receive an email receipt only.
+                    </p>
+                  </div>
+                  <UButton
+                    size="sm"
+                    icon="i-lucide-receipt-text"
+                    @click="openMemberChargeModal"
+                  >
+                    Create charge
+                  </UButton>
+                </div>
+
+                <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div class="rounded-lg border border-default bg-default p-3">
+                    <div class="text-xs uppercase tracking-wide text-dimmed">
+                      Paid member charges
+                    </div>
+                    <div class="mt-2 text-2xl font-semibold">
+                      {{ formatMoney(memberChargeTotal) }}
+                    </div>
+                  </div>
+                  <div class="rounded-lg border border-default bg-default p-3">
+                    <div class="text-xs uppercase tracking-wide text-dimmed">
+                      Charge count
+                    </div>
+                    <div class="mt-2 text-2xl font-semibold">
+                      {{ selectedDetail?.memberCharges?.length ?? 0 }}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-4">
+                  <div class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+                    Repair charge history
+                  </div>
+                  <DashboardSectionState
+                    v-if="!(selectedDetail?.memberCharges?.length)"
+                    class="mt-3"
+                    state="empty"
+                    title="No member charges"
+                    description="Admin-created studio charges will appear here after a card is charged."
+                  />
+                  <div
+                    v-else
+                    class="mt-3 space-y-2"
+                  >
+                    <div
+                      v-for="charge in selectedDetail?.memberCharges ?? []"
+                      :key="charge.id"
+                      class="rounded-lg border border-default bg-default p-3 text-sm"
+                    >
+                      <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <div class="flex flex-wrap items-center gap-2">
+                            <div class="font-medium">
+                              {{ formatReason(charge.category) }} · {{ formatMoney(charge.amount_cents) }}
+                            </div>
+                            <UBadge
+                              :color="charge.status === 'paid' ? 'success' : charge.status === 'failed' ? 'error' : 'warning'"
+                              variant="soft"
+                            >
+                              {{ charge.status }}
+                            </UBadge>
+                            <UBadge
+                              v-if="charge.receipt_sent_at"
+                              color="success"
+                              variant="soft"
+                            >
+                              Receipt sent
+                            </UBadge>
+                            <UBadge
+                              v-else-if="charge.receipt_error"
+                              color="warning"
+                              variant="soft"
+                            >
+                              Receipt issue
+                            </UBadge>
+                          </div>
+                          <div class="mt-1 text-xs text-dimmed">
+                            {{ formatDate(charge.charged_at ?? charge.created_at) }}
+                            <template v-if="charge.card_last4">
+                              · {{ charge.card_brand || 'Card' }} ending {{ charge.card_last4 }}
+                            </template>
+                            <template v-if="charge.square_payment_id">
+                              · {{ charge.square_payment_id }}
+                            </template>
+                          </div>
+                          <p class="mt-2 whitespace-pre-wrap text-sm text-dimmed">
+                            {{ charge.reason }}
+                          </p>
+                          <p
+                            v-if="charge.internal_note"
+                            class="mt-2 whitespace-pre-wrap rounded-md border border-default bg-elevated/40 p-2 text-xs text-dimmed"
+                          >
+                            Internal: {{ charge.internal_note }}
+                          </p>
+                          <div
+                            v-if="charge.charge_error || charge.receipt_error"
+                            class="mt-2 text-xs text-warning"
+                          >
+                            {{ charge.charge_error || charge.receipt_error }}
+                          </div>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                          <UButton
+                            v-if="charge.booking_id"
+                            size="xs"
+                            color="neutral"
+                            variant="soft"
+                            :to="`/dashboard/admin/bookings?bookingId=${charge.booking_id}`"
+                          >
+                            Booking
+                          </UButton>
+                          <UButton
+                            v-if="charge.incident_id"
+                            size="xs"
+                            color="neutral"
+                            variant="soft"
+                            :to="`/dashboard/admin/incidents?incidentId=${charge.incident_id}`"
+                          >
+                            Incident
+                          </UButton>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </UCard>
+
+              <UCard class="border-0 bg-default/50">
                 <div class="font-medium">
                   Credit adjustment
                 </div>
@@ -1984,5 +2292,156 @@ onMounted(async () => {
         </div>
       </UCard>
     </div>
+
+    <UModal v-model:open="chargeModalOpen">
+      <template #content>
+        <UCard>
+          <template #header>
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold">
+                  Create member charge
+                </h3>
+                <p class="mt-1 text-xs text-dimmed">
+                  Charge a saved Square card and send only an email receipt to the customer.
+                </p>
+              </div>
+              <UBadge
+                color="neutral"
+                variant="soft"
+              >
+                Admin only
+              </UBadge>
+            </div>
+          </template>
+
+          <div class="space-y-4">
+            <div
+              v-if="selectedMember"
+              class="rounded-lg border border-default bg-elevated/40 p-3 text-sm"
+            >
+              <div class="font-medium">
+                {{ memberLabel(selectedMember) }}
+              </div>
+              <div class="mt-1 text-xs text-dimmed">
+                {{ selectedMember.customer_email || selectedMember.user_id }}
+              </div>
+            </div>
+
+            <DashboardSectionState
+              v-if="chargePaymentMethodsPending"
+              state="loading"
+              title="Loading saved cards"
+              description="Checking Square cards attached to this member account."
+            />
+            <UAlert
+              v-else-if="!chargePaymentMethods.length"
+              color="warning"
+              variant="soft"
+              title="No saved card available"
+              description="This member needs a saved Square card before an admin charge can be created."
+            />
+
+            <div class="grid gap-3 sm:grid-cols-2">
+              <UFormField label="Amount">
+                <UInput
+                  v-model="memberChargeForm.amountDollars"
+                  placeholder="125.00"
+                  inputmode="decimal"
+                >
+                  <template #leading>
+                    <span class="text-dimmed">$</span>
+                  </template>
+                </UInput>
+              </UFormField>
+
+              <UFormField label="Category">
+                <USelect
+                  v-model="memberChargeForm.category"
+                  :items="chargeCategoryItems"
+                />
+              </UFormField>
+
+              <UFormField
+                class="sm:col-span-2"
+                label="Saved card"
+              >
+                <USelect
+                  v-model="memberChargeForm.cardId"
+                  :items="chargeCardItems"
+                  :disabled="!chargeCardItems.length"
+                  placeholder="Choose saved card"
+                />
+              </UFormField>
+
+              <UFormField
+                class="sm:col-span-2"
+                label="Customer receipt reason"
+                description="This appears in the email receipt."
+              >
+                <UTextarea
+                  v-model="memberChargeForm.reason"
+                  :rows="3"
+                  placeholder="Repair charge for damaged paper backdrop..."
+                />
+              </UFormField>
+
+              <UFormField
+                class="sm:col-span-2"
+                label="Internal note"
+                description="Admin-only. This is not sent to the customer."
+              >
+                <UTextarea
+                  v-model="memberChargeForm.internalNote"
+                  :rows="3"
+                  placeholder="Evidence, staff context, approval notes..."
+                />
+              </UFormField>
+
+              <UFormField label="Linked booking">
+                <USelect
+                  v-model="memberChargeForm.bookingId"
+                  :items="chargeBookingItems"
+                />
+              </UFormField>
+
+              <UFormField label="Linked incident">
+                <USelect
+                  v-model="memberChargeForm.incidentId"
+                  :items="chargeIncidentItems"
+                />
+              </UFormField>
+            </div>
+          </div>
+
+          <template #footer>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <p class="text-xs text-dimmed">
+                This will immediately charge the selected saved card through Square.
+              </p>
+              <div class="flex gap-2">
+                <UButton
+                  color="neutral"
+                  variant="soft"
+                  :disabled="chargeSubmitting"
+                  @click="chargeModalOpen = false"
+                >
+                  Cancel
+                </UButton>
+                <UButton
+                  color="error"
+                  icon="i-lucide-credit-card"
+                  :loading="chargeSubmitting"
+                  :disabled="!chargePaymentMethods.length"
+                  @click="submitMemberCharge"
+                >
+                  Charge card now
+                </UButton>
+              </div>
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
   </DashboardPageScaffold>
 </template>
