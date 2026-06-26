@@ -58,6 +58,7 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 - Service Fabric should use `/health` for public reachability and `/ready` for Supabase-backed readiness.
 - Public `/ready` currently validates Supabase-backed server readiness; it does not fully validate Square, Home Assistant, Abode, Google Calendar, or internal worker auth/provider availability.
 - Access subsystem has `GET /api/admin/access/status`.
+- Nitro app-error reporting writes to `app_error_groups` and `app_error_events`, but intentionally filters expected non-internal `401`/`403` auth denials and common static/bot `404` probes so Service Fabric alerts represent actionable application failures.
 - Internal workers include `POST /api/internal/access/process`, `POST /api/internal/access/booking-sync`, `POST /api/internal/mail/reminders/process`, `GET /api/internal/analytics/outputs`, and `POST /api/internal/analytics/run`.
 - Recommended Home Assistant scheduler calls `POST /api/internal/access/process` every minute with `x-access-key`.
 - Status mapping:

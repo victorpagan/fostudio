@@ -98,6 +98,7 @@ service:
       square_admin_member_charges: "Admin-only member repair/damage charges use Square saved cards through admin_member_charges and stay separate from credit top-ups, memberships, and expenses."
       fomailer_event_types: "Registry-backed sends include account.signup plus booking, membership, credit, hold, admin member charge receipt, contact, reminder, and broadcast events."
       access_incident_mail: "Lock/access incident alerts are best-effort and route through mailing.memberBroadcast to configured admin recipients."
+      app_error_reporting: "Nitro app-error reporting writes actionable failures to app_error_events/groups while filtering expected non-internal auth denials and static/bot 404 probes."
   owned_operational_tables:
     - bookings
     - booking_holds
