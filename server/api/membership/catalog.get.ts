@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
   const { isAdmin } = await resolveServerUserRole(event, user)
   const supabase = serverSupabaseServiceRole(event)
-  const db = supabase as any
+  const db = supabase
 
   const selectWithDirectAccess = `
     id,
@@ -120,7 +120,7 @@ export default defineEventHandler(async (event) => {
 
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 
-  const baseTiers = ((data ?? []) as CatalogTierRow[])
+  const baseTiers = ((data ?? []) as unknown as CatalogTierRow[])
     .filter((tier) => {
       if (isAdmin) return true
       const tierVisible = tier.visible !== false

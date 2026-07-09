@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
   } as never)
   const cards = extractSquareCards(listRes)
 
-  const selected = cards.find((card) => readString(card, 'id') === body.cardId.trim()) ?? null
+  const selected = cards.find(card => readString(card, 'id') === body.cardId.trim()) ?? null
   if (!selected) throw createError({ statusCode: 404, statusMessage: 'Card not found for this account.' })
   const isEnabled = typeof selected.enabled === 'boolean' ? selected.enabled : true
   if (!isEnabled) throw createError({ statusCode: 409, statusMessage: 'Selected card is not available.' })

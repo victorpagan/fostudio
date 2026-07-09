@@ -16,6 +16,8 @@ service:
   deploy:
     method: "pnpm build; pnpm start"
     artifact: ".output/server/index.mjs"
+    build_env:
+      NODE_OPTIONS: "--max-old-space-size=8192"
   reachability:
     public: true
     private: true
@@ -83,6 +85,8 @@ service:
         - waiver_templates
       rpc:
         - get_secret
+        - create_confirmed_booking_with_burn_and_rate
+        - create_confirmed_booking_with_burn_no_membership_and_rate
     external:
       - Square API and webhooks
       - fomailer
@@ -99,6 +103,27 @@ service:
       fomailer_event_types: "Registry-backed sends include account.signup plus booking, membership, credit, hold, admin member charge receipt, contact, reminder, and broadcast events."
       access_incident_mail: "Lock/access incident alerts are best-effort and route through mailing.memberBroadcast to configured admin recipients."
       app_error_reporting: "Nitro app-error reporting writes actionable failures to app_error_events/groups while filtering expected non-internal auth denials and static/bot 404 probes."
+      authorization_role_source: "Admin authorization trusts Supabase app_metadata only; user_metadata is not an authorization source."
+      booking_data_api: "Public/member occupancy is served through sanitized application routes. Direct booking/hold writes are denied to anon/authenticated Data API roles and restricted burn RPCs are service-role only."
+      booking_rate_atomicity: "Booking creation, credit burn, booking_rate_kind, and rate_policy_snapshot are committed by one service-role RPC transaction."
+      rich_html_safety: "Waiver HTML is allowlist-sanitized before storage and rendering."
+      browser_security: "Production responses set CSP/HSTS/frame/MIME/referrer/permissions headers; Google Ads browser measurement requires explicit consent."
+      public_rate_limits: "Signup, checkout-signup, password recovery, and contact use process-local hashed IP/identifier limits; edge controls remain recommended for multi-dyno abuse protection."
+  background_jobs:
+    calendar_maintenance:
+      endpoint: "/api/internal/calendar/maintenance"
+      schedule: "Every 5 minutes via Supabase pg_cron + pg_net"
+      auth: "x-access-key using ACCESS_AUTOMATION_SHARED_KEY from Vault"
+      responsibilities:
+        - expire stale guest pending-payment bookings
+        - run throttled Google Calendar synchronization
+      config:
+        - CALENDAR_MAINTENANCE_URL
+    rollout_order:
+      - apply additive booking rate RPC migration
+      - deploy application routes and RPC caller
+      - apply booking Data API RLS lockdown
+      - enable calendar maintenance cron
   owned_operational_tables:
     - bookings
     - booking_holds

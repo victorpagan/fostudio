@@ -60,7 +60,7 @@ export default defineEventHandler(async (event) => {
     const primaryCustomer = await getPrimaryCustomerRowForUser(event, user.sub)
     if (primaryCustomer?.id && primaryCustomer.default_square_card_id?.trim() === body.cardId.trim()) {
       const nextDefault = cards
-        .map(card => {
+        .map((card) => {
           const id = readString(card, 'id')
           const enabled = typeof card.enabled === 'boolean' ? card.enabled : true
           if (!id || id === body.cardId.trim() || !enabled) return null

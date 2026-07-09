@@ -148,7 +148,7 @@ export const reportAppError = async (event: H3Event, input: ReportAppErrorInput)
 
     let groupId: string | null = typeof existingGroup?.id === 'string' ? existingGroup.id : null
 
-    if (groupId) {
+    if (groupId && existingGroup) {
       const sourceApps = Array.from(new Set([
         ...(Array.isArray(existingGroup.source_apps) ? existingGroup.source_apps : []),
         sourceApp

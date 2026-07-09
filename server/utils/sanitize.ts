@@ -2,7 +2,9 @@
  * Recursively sanitize an object for JSON serialization.
  * Converts BigInts to strings to avoid serialization errors.
  */
-export function sanitizeForJSON(obj: any): any {
+import type { Json } from '~~/app/types/database.types'
+
+export function sanitizeForJSON(obj: unknown): Json | undefined {
   if (obj === null || obj === undefined) {
     return obj
   }
@@ -13,15 +15,19 @@ export function sanitizeForJSON(obj: any): any {
 
   if (typeof obj === 'object') {
     if (Array.isArray(obj)) {
-      return obj.map(sanitizeForJSON)
+      return obj.map(value => sanitizeForJSON(value) ?? null)
     }
 
-    const sanitized: any = {}
+    const sanitized: Record<string, Json> = {}
     for (const [key, value] of Object.entries(obj)) {
-      sanitized[key] = sanitizeForJSON(value)
+      const safeValue = sanitizeForJSON(value)
+      if (typeof safeValue !== 'undefined') sanitized[key] = safeValue
     }
     return sanitized
   }
 
-  return obj
+  if (typeof obj === 'string' || typeof obj === 'boolean') return obj
+  if (typeof obj === 'number') return Number.isFinite(obj) ? obj : null
+
+  return undefined
 }

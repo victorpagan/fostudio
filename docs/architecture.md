@@ -10,6 +10,7 @@
 - Node server runtime via Nitro (`pnpm build`, `pnpm start` runs `node .output/server/index.mjs`).
 - Package manager: pnpm 10.28.1.
 - Key dependencies: `@nuxtjs/supabase`, Nuxt UI/Content/Image/Studio, Square SDK, FullCalendar, Luxon, PDFKit, better-sqlite3, zod, and analytics scripts via `tsx`.
+- CI runs tests, a production dependency audit, lint, typecheck, and a production build. The Nitro build receives an 8 GB Node heap budget because final server packaging can exceed Node's default heap.
 
 ## Hosting And Deploy
 
@@ -37,6 +38,7 @@
 - Home Assistant and Abode for lock/alarm access automation.
 - Google Calendar API for booking calendar sync.
 - Google Ads and Meta Marketing APIs for analytics ingestion.
+- Google Ads browser measurement is loaded only after explicit cookie consent; essential account cookies remain available after an analytics opt-out.
 - Nuxt Studio/content repository integration.
 
 ## Supabase Tables And Functions
@@ -48,7 +50,16 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 - Admin/content/ops writes: `admin_expense_reports`, `admin_incident_reports`, `admin_manual_membership_events`, `admin_member_charges`, `mail_campaigns`, `mail_campaign_templates`, `mail_campaign_template_id_history`, `mail_reminder_rules`, `mail_reminder_deliveries`, `waiver_templates`, `member_waiver_signatures`, `promo_codes`, `referral_credit_rules`, `membership_referrals`, `member_referral_codes`.
 - Analytics writes: `analytics_outputs`, `analytics_ad_daily`.
 - Shared config/mail/error reads/writes: `system_config`, `mail_template_registry`, `mail_user_preferences`, `mail_admin_copy_preferences`, `app_error_groups`, `app_error_events`, `orders2`.
-- Uses RPC `get_secret`.
+- Uses RPCs `get_secret`, `create_confirmed_booking_with_burn_and_rate`, and `create_confirmed_booking_with_burn_no_membership_and_rate`. The booking wrappers keep the booking, credit burn, rate kind, and rate-policy snapshot in one transaction and are executable only by `service_role`.
+
+## Security And Data Boundaries
+
+- Admin authorization trusts protected Supabase `app_metadata` only. User-editable `user_metadata` is never an authorization source.
+- Anonymous and member calendars are sanitized application API responses. The application reads occupancy with the server-side service role and does not expose booking rows through a public Data API policy.
+- Authenticated Data API access to `bookings` and `booking_holds` is read-only: members can read their own rows and dashboard admins can read operational rows. Booking and hold writes must pass through server routes and restricted RPCs so credit, waiver, overlap, guest, standby, and workshop rules cannot be bypassed.
+- Admin-authored waiver HTML is allowlist-sanitized before persistence and again before rendering. Executable elements, event handlers, inline styles, and unsafe link protocols are removed.
+- Production responses set CSP, HSTS, frame, MIME-sniffing, referrer, permissions, and cross-domain policy headers. The CSP explicitly permits the configured Square, Supabase, Google measurement, fonts, maps, and media dependencies.
+- Public signup, checkout-signup, password-recovery, and contact routes use hashed IP/identifier rate-limit buckets. These buckets are process-local; platform/edge rate limiting remains the preferred additional defense for multi-dyno or high-volume abuse.
 
 ## Health, Readiness, And Heartbeat
 
@@ -59,8 +70,9 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 - Public `/ready` currently validates Supabase-backed server readiness; it does not fully validate Square, Home Assistant, Abode, Google Calendar, or internal worker auth/provider availability.
 - Access subsystem has `GET /api/admin/access/status`.
 - Nitro app-error reporting writes to `app_error_groups` and `app_error_events`, but intentionally filters expected non-internal `401`/`403` auth denials and common static/bot `404` probes so Service Fabric alerts represent actionable application failures.
-- Internal workers include `POST /api/internal/access/process`, `POST /api/internal/access/booking-sync`, `POST /api/internal/mail/reminders/process`, `GET /api/internal/analytics/outputs`, and `POST /api/internal/analytics/run`.
+- Internal workers include `POST /api/internal/access/process`, `POST /api/internal/access/booking-sync`, `POST /api/internal/calendar/maintenance`, `POST /api/internal/mail/reminders/process`, `GET /api/internal/analytics/outputs`, and `POST /api/internal/analytics/run`.
 - Recommended Home Assistant scheduler calls `POST /api/internal/access/process` every minute with `x-access-key`.
+- Supabase `pg_cron`/`pg_net` calls `POST /api/internal/calendar/maintenance` every five minutes with `x-access-key`. The worker expires stale guest-payment reservations and runs throttled Google Calendar maintenance; calendar GET requests are read-only.
 - Status mapping:
   - `Up`: host responds.
   - `Ready`: app host and Supabase-backed server readiness are usable.
@@ -77,7 +89,9 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 - Access incident records are written before notification attempts. Notification email is best-effort and routes through the registry-backed `mailing.memberBroadcast` Fomailer handler to configured admin recipients so notification failure does not block incident creation.
 - Admin member charges write a pending audit row before Square is called, update to `paid` or `failed` after Square response, and send the customer only the `billing.memberChargeReceipt` email receipt on successful payment.
 - Secrets are loaded through Supabase Vault via `get_secret`; non-secret settings use `system_config` and runtime env.
+- `ACCESS_AUTOMATION_SHARED_KEY` authenticates both access and calendar-maintenance workers. `CALENDAR_MAINTENANCE_URL` in `system_config` owns the maintenance callback URL.
 - Database/RLS changes must be authored in `fosupabase`.
+- Booking hardening rollout order is additive RPC migration, application deployment, then Data API RLS lockdown and calendar cron activation. Reversing that order would temporarily break calendar reads or booking creation.
 
 ## Update Triggers
 

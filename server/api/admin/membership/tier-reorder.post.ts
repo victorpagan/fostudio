@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
   const body = bodySchema.parse(await readBody(event))
 
-  const updates = body.tiers.map((item) => (
+  const updates = body.tiers.map(item => (
     supabase
       .from('membership_tiers')
       .update({ sort_order: item.sortOrder })

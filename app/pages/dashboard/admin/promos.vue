@@ -38,6 +38,8 @@ type CreditOption = {
 const toast = useToast()
 const saving = ref(false)
 const deletingId = ref<string | null>(null)
+const deleteConfirmOpen = ref(false)
+const deleteTarget = ref<PromoCode | null>(null)
 const selectedId = ref<string | null>(null)
 
 const form = reactive({
@@ -228,13 +230,28 @@ async function savePromo() {
   }
 }
 
-async function deletePromo(id: string) {
+function openDeleteConfirmation(promo: PromoCode) {
+  deleteTarget.value = promo
+  deleteConfirmOpen.value = true
+}
+
+function closeDeleteConfirmation() {
+  if (deletingId.value) return
+  deleteConfirmOpen.value = false
+  deleteTarget.value = null
+}
+
+async function deletePromo() {
+  if (!deleteTarget.value || deletingId.value) return
+  const id = deleteTarget.value.id
   deletingId.value = id
+  let deleted = false
   try {
     await $fetch(`/api/admin/promos/${id}`, { method: 'DELETE' })
     toast.add({ title: 'Promo deleted' })
     if (selectedId.value === id) resetForm()
     await refresh()
+    deleted = true
   } catch (error: unknown) {
     toast.add({
       title: 'Could not delete promo',
@@ -243,6 +260,7 @@ async function deletePromo(id: string) {
     })
   } finally {
     deletingId.value = null
+    if (deleted) closeDeleteConfirmation()
   }
 }
 
@@ -389,7 +407,7 @@ function formatSquareSyncReason(reason: string | null | undefined) {
               color="error"
               variant="soft"
               :loading="deletingId === promo.id"
-              @click="deletePromo(promo.id)"
+              @click="openDeleteConfirmation(promo)"
             >
               Delete
             </UButton>
@@ -612,5 +630,99 @@ function formatSquareSyncReason(reason: string | null | undefined) {
         </div>
       </UCard>
     </div>
+
+    <UModal
+      v-model:open="deleteConfirmOpen"
+      :dismissible="!deletingId"
+    >
+      <template #content>
+        <UCard>
+          <template #header>
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold">
+                  Delete promo code?
+                </h3>
+                <p class="mt-1 text-xs text-dimmed">
+                  Review the discount and redemption impact before deleting it.
+                </p>
+              </div>
+              <UButton
+                icon="i-lucide-x"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                :disabled="Boolean(deletingId)"
+                @click="closeDeleteConfirmation"
+              />
+            </div>
+          </template>
+
+          <div
+            v-if="deleteTarget"
+            class="space-y-3"
+          >
+            <div class="rounded-lg border border-default p-3 text-sm">
+              <div class="flex items-center justify-between gap-2">
+                <div class="font-medium">
+                  {{ deleteTarget.code }}
+                </div>
+                <UBadge
+                  :color="deleteTarget.active ? 'success' : 'neutral'"
+                  size="xs"
+                  variant="soft"
+                >
+                  {{ deleteTarget.active ? 'active' : 'inactive' }}
+                </UBadge>
+              </div>
+              <div class="mt-2 text-dimmed">
+                {{ formatPromoValue(deleteTarget) }} · {{ formatPromoAppliesTo(deleteTarget) }}
+              </div>
+              <div class="mt-1 text-xs text-dimmed">
+                {{ deleteTarget.redemptions_count }} redemption{{ deleteTarget.redemptions_count === 1 ? '' : 's' }}
+                <span v-if="deleteTarget.max_redemptions !== null"> of {{ deleteTarget.max_redemptions }} maximum</span>
+              </div>
+            </div>
+
+            <UAlert
+              color="error"
+              variant="soft"
+              icon="i-lucide-ticket-x"
+              title="Future redemption will stop"
+              description="Checkout will no longer recognize this code. Completed purchases and prior discounts are not refunded or reversed by this action."
+            />
+            <UAlert
+              v-if="deleteTarget.square_discount_id"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-link"
+              title="The linked Square discount is not deleted"
+              :description="`Square object ${deleteTarget.square_discount_id} will remain in the Square catalog.`"
+            />
+          </div>
+
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="Boolean(deletingId)"
+                @click="closeDeleteConfirmation"
+              >
+                Keep promo
+              </UButton>
+              <UButton
+                color="error"
+                :loading="Boolean(deletingId)"
+                :disabled="!deleteTarget"
+                @click="deletePromo"
+              >
+                Delete {{ deleteTarget?.code }}
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
   </DashboardPageScaffold>
 </template>

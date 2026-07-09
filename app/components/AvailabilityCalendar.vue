@@ -52,6 +52,8 @@ type WorkshopPromo = {
   link: string | null
 }
 
+type CalendarLoadState = 'loading' | 'ready' | 'stale' | 'error'
+
 const props = withDefaults(defineProps<{
   endpoint: string // '/api/calendar/public' or '/api/calendar/member'
   fullDay?: boolean
@@ -86,11 +88,13 @@ const emit = defineEmits<{
   }): void
 }>()
 
-const loading = ref(false)
+const loadState = ref<CalendarLoadState>('loading')
+const loadErrorMessage = ref<string | null>(null)
 const events = ref<CalendarEvent[]>([])
 const visibleTitle = ref('This week')
 const visibleRange = ref('Loading schedule')
-const lastRefreshedAt = ref<string | null>(null)
+const lastUpdatedAt = ref<number | null>(null)
+const activeResponseCacheKey = ref<string | null>(null)
 const bookingWindowDays = ref<number | null>(null)
 const guestBookingStartHour = ref<number | null>(null)
 const guestBookingEndHour = ref<number | null>(null)
@@ -110,6 +114,8 @@ const responseCache = new Map<string, { storedAt: number, response: CalendarResp
 const instance = getCurrentInstance()
 const STUDIO_TZ = 'America/Los_Angeles'
 const CALENDAR_CACHE_TTL_MS = 30_000
+
+const loading = computed(() => loadState.value === 'loading')
 
 type CalendarResponse = {
   from?: string
@@ -212,8 +218,16 @@ function mapApiEventsToCalendar(events: CalendarEvent[]) {
   return events.map(mapEventToCalendarWallTime)
 }
 
-function applyCalendarResponse(res: CalendarResponse) {
-  events.value = mapApiEventsToCalendar(res.events ?? [])
+function isCalendarResponse(value: unknown): value is CalendarResponse {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && Array.isArray((value as { events?: unknown }).events)
+  )
+}
+
+function applyCalendarResponse(res: CalendarResponse, cacheKey: string, updatedAt: number) {
+  events.value = mapApiEventsToCalendar(res.events)
   bookingWindowDays.value = res.bookingWindowDays ?? null
   guestBookingStartHour.value = Number.isFinite(Number(res.guestBookingStartHour))
     ? Number(res.guestBookingStartHour)
@@ -229,11 +243,33 @@ function applyCalendarResponse(res: CalendarResponse) {
     : null
   peakWindow.value = res.peakWindow ?? null
   workshopPromo.value = res.workshopPromo ?? null
-  lastRefreshedAt.value = new Date().toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: 'America/Los_Angeles'
-  })
+  activeResponseCacheKey.value = cacheKey
+  lastUpdatedAt.value = updatedAt
+}
+
+function clearCalendarResponse() {
+  events.value = []
+  bookingWindowDays.value = null
+  guestBookingStartHour.value = null
+  guestBookingEndHour.value = null
+  guestMinBookingHours.value = null
+  guestBookingIncrementMinutes.value = null
+  peakWindow.value = null
+  workshopPromo.value = null
+  activeResponseCacheKey.value = null
+}
+
+function calendarErrorMessage(error: unknown) {
+  const maybe = error as {
+    data?: { statusMessage?: string, message?: string }
+    statusMessage?: string
+    message?: string
+  }
+  return maybe.data?.statusMessage
+    ?? maybe.data?.message
+    ?? maybe.statusMessage
+    ?? maybe.message
+    ?? 'The availability feed could not be loaded.'
 }
 
 function escapeHtml(value: string) {
@@ -259,24 +295,44 @@ async function loadEvents(rangeStart?: Date, rangeEnd?: Date, options?: { force?
   if (rangeEnd) q.to = calendarDateToStudioDate(rangeEnd).toISOString()
   const cacheKey = `${props.endpoint}:${q.from ?? ''}:${q.to ?? ''}`
   const cached = responseCache.get(cacheKey)
+  loadErrorMessage.value = null
 
   if (!options?.force && cached && Date.now() - cached.storedAt < CALENDAR_CACHE_TTL_MS) {
-    applyCalendarResponse(cached.response)
+    applyCalendarResponse(cached.response, cacheKey, cached.storedAt)
+    loadState.value = 'ready'
     return
   }
 
-  loading.value = true
+  if (cached && isCalendarResponse(cached.response)) {
+    applyCalendarResponse(cached.response, cacheKey, cached.storedAt)
+  } else if (activeResponseCacheKey.value !== cacheKey) {
+    clearCalendarResponse()
+  }
+
+  loadState.value = 'loading'
   try {
-    const res = await $fetch<CalendarResponse>(props.endpoint, { query: q })
+    const res = await $fetch<unknown>(props.endpoint, { query: q })
     if (requestId !== loadRequestId) return
-    responseCache.set(cacheKey, { storedAt: Date.now(), response: res })
+    if (!isCalendarResponse(res)) {
+      throw new Error('The availability feed returned an invalid response.')
+    }
+    const storedAt = Date.now()
+    responseCache.set(cacheKey, { storedAt, response: res })
     if (responseCache.size > 12) {
       const oldestKey = responseCache.keys().next().value
       if (oldestKey) responseCache.delete(oldestKey)
     }
-    applyCalendarResponse(res)
-  } finally {
-    if (requestId === loadRequestId) loading.value = false
+    applyCalendarResponse(res, cacheKey, storedAt)
+    loadState.value = 'ready'
+  } catch (error: unknown) {
+    if (requestId !== loadRequestId) return
+    loadErrorMessage.value = calendarErrorMessage(error)
+    if (activeResponseCacheKey.value === cacheKey) {
+      loadState.value = 'stale'
+    } else {
+      clearCalendarResponse()
+      loadState.value = 'error'
+    }
   }
 }
 
@@ -417,6 +473,7 @@ function eventDidMount(arg: { el: HTMLElement, event: { end?: Date | null, exten
 }
 
 const canSelect = computed(() => Boolean(instance?.vnode.props?.onSelect))
+const selectionEnabled = computed(() => canSelect.value && loadState.value === 'ready')
 const defaultInitialView = import.meta.client && window.matchMedia('(max-width: 767px)').matches
   ? 'timeGridDay'
   : 'timeGridWeek'
@@ -452,6 +509,46 @@ const visibleRangeLabel = computed(() => {
     return `${visibleRange.value} (${bookingWindowDays.value}-day booking reach)`
   }
   return visibleRange.value
+})
+
+const lastUpdatedLabel = computed(() => {
+  if (lastUpdatedAt.value === null) return null
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: STUDIO_TZ,
+    timeZoneName: 'short'
+  }).format(new Date(lastUpdatedAt.value))
+})
+
+const loadStateLabel = computed(() => {
+  switch (loadState.value) {
+    case 'ready': return 'Availability ready'
+    case 'stale': return 'Schedule stale'
+    case 'error': return 'Availability unavailable'
+    default: return 'Checking availability'
+  }
+})
+
+const loadStateTimeLabel = computed(() => {
+  if (!lastUpdatedLabel.value) return null
+  return loadState.value === 'ready'
+    ? `Updated ${lastUpdatedLabel.value}`
+    : `Last confirmed ${lastUpdatedLabel.value}`
+})
+
+const availabilityAlertDescription = computed(() => {
+  const lastConfirmed = lastUpdatedLabel.value
+    ? ` Last confirmed ${lastUpdatedLabel.value}.`
+    : ' No successful update yet.'
+  const detail = loadErrorMessage.value ? `${loadErrorMessage.value} ` : ''
+
+  if (loadState.value === 'stale') {
+    return `${detail}Displayed bookings may be out of date, so selection is paused.${lastConfirmed}`
+  }
+  return `${detail}Open times are not confirmed, so selection is disabled.${lastConfirmed}`
 })
 
 function formatCalendarTime(value: Date) {
@@ -577,6 +674,7 @@ function isWithinStandbyWindow(start: Date, end: Date) {
 }
 
 function selectionIsAllowed(selectionStart: Date, selectionEnd: Date, allDay?: boolean) {
+  if (!selectionEnabled.value) return false
   if (selectionStart < new Date()) return false
   if (allDay) return false
 
@@ -735,7 +833,7 @@ const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
   initialView: defaultInitialView,
   timeZone: 'UTC',
-  selectable: canSelect.value,
+  selectable: selectionEnabled.value,
   validRange: memberValidRange.value,
   selectOverlap: (event: { display: string, classNames?: string[], extendedProps?: CalendarEvent['extendedProps'] }) => {
     // Allow selecting over visual-only peak/standby shading; keep real booking/hold/block overlaps blocked.
@@ -789,7 +887,7 @@ const calendarOptions = computed(() => ({
   eventContent,
   eventDidMount,
   dateClick: (info: { view: { type: string, calendar: { changeView: (viewName: string, date: Date) => void } }, date: Date }) => {
-    if (!canSelect.value) return
+    if (!selectionEnabled.value) return
     if (info.view.type === 'dayGridMonth') {
       const calendar = info.view.calendar
       if (calendar) calendar.changeView('timeGridDay', info.date)
@@ -853,12 +951,14 @@ onUnmounted(() => {
   nowTickTimer = null
 })
 
-defineExpose({ refresh })
+defineExpose({ refresh, loadState, lastUpdatedAt })
 </script>
 
 <template>
   <div
     class="availability-shell"
+    :data-load-state="loadState"
+    :aria-busy="loading"
     :class="{
       'availability-shell--guest-compact': isGuestConstrainedFeed,
       'availability-shell--peak-highlight': peakZonesHighlighted,
@@ -958,19 +1058,62 @@ defineExpose({ refresh })
           </div>
         </div>
         <div
-          v-if="loading"
-          class="availability-chip"
+          class="availability-chip gap-1.5"
+          :class="{
+            'text-emerald-700 dark:text-emerald-300': loadState === 'ready',
+            'text-amber-700 dark:text-amber-300': loadState === 'stale',
+            'text-red-700 dark:text-red-300': loadState === 'error'
+          }"
+          role="status"
+          aria-live="polite"
         >
-          Refreshing schedule…
-        </div>
-        <div
-          v-else-if="lastRefreshedAt"
-          class="availability-chip"
-        >
-          Updated {{ lastRefreshedAt }}
+          <UIcon
+            v-if="loading"
+            name="i-lucide-loader-circle"
+            class="size-3.5 animate-spin"
+          />
+          <span
+            v-else
+            class="size-2 rounded-full"
+            :class="{
+              'bg-emerald-500': loadState === 'ready',
+              'bg-amber-500': loadState === 'stale',
+              'bg-red-500': loadState === 'error'
+            }"
+          />
+          <span>{{ loadStateLabel }}</span>
+          <span
+            v-if="loadStateTimeLabel"
+            class="opacity-75"
+          >
+            · {{ loadStateTimeLabel }}
+          </span>
         </div>
       </div>
     </div>
+
+    <UAlert
+      v-if="loadState === 'stale' || loadState === 'error'"
+      class="mb-3"
+      :color="loadState === 'stale' ? 'warning' : 'error'"
+      variant="soft"
+      :icon="loadState === 'stale' ? 'i-lucide-clock-alert' : 'i-lucide-calendar-x'"
+      :title="loadState === 'stale' ? 'Availability may be out of date' : 'Availability unavailable'"
+      :description="availabilityAlertDescription"
+    >
+      <template #actions>
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-refresh-cw"
+          :loading="loading"
+          @click="refresh"
+        >
+          Retry
+        </UButton>
+      </template>
+    </UAlert>
 
     <UAlert
       v-if="workshopPromo"
@@ -1006,19 +1149,41 @@ defineExpose({ refresh })
       </template>
     </UAlert>
 
-    <div class="relative">
+    <div
+      class="relative"
+      :aria-disabled="canSelect && !selectionEnabled"
+    >
       <FullCalendar :options="calendarOptions" />
 
       <div
         v-if="loading"
-        class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[1.25rem] bg-[rgba(250,241,224,0.58)] backdrop-blur-[1px] dark:bg-[rgba(40,40,40,0.45)]"
+        class="pointer-events-auto absolute inset-0 z-20 flex cursor-wait items-center justify-center rounded-[1.25rem] bg-[rgba(250,241,224,0.58)] backdrop-blur-[1px] dark:bg-[rgba(40,40,40,0.45)]"
       >
         <div class="flex items-center gap-2 rounded-full bg-[color:var(--gruv-bg-0)] px-3 py-1.5 text-xs font-medium text-[color:var(--gruv-ink-1)] shadow-sm dark:bg-[color:var(--gruv-bg-0)]">
           <UIcon
             name="i-lucide-loader-circle"
             class="size-4 animate-spin"
           />
-          Loading bookings…
+          Checking availability…
+        </div>
+      </div>
+
+      <div
+        v-else-if="loadState === 'error'"
+        class="pointer-events-auto absolute inset-0 z-20 flex items-center justify-center rounded-[1.25rem] bg-[rgba(250,241,224,0.82)] p-4 backdrop-blur-[1px] dark:bg-[rgba(40,40,40,0.72)]"
+        role="status"
+      >
+        <div class="max-w-sm rounded-xl border border-red-300/60 bg-[color:var(--gruv-bg-0)] p-4 text-center shadow-sm dark:border-red-800/70">
+          <UIcon
+            name="i-lucide-calendar-x"
+            class="mx-auto size-5 text-red-600 dark:text-red-400"
+          />
+          <p class="mt-2 text-sm font-semibold text-[color:var(--gruv-ink-0)]">
+            Availability unavailable
+          </p>
+          <p class="mt-1 text-xs text-[color:var(--gruv-ink-2)]">
+            Open times are not confirmed. Retry before selecting a booking time.
+          </p>
         </div>
       </div>
     </div>

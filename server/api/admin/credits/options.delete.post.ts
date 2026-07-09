@@ -18,7 +18,7 @@ function isSquareNotFoundError(error: unknown) {
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
-  const db = supabase as any
+  const db = supabase
 
   const parsed = bodySchema.safeParse(await readBody(event))
   if (!parsed.success) {

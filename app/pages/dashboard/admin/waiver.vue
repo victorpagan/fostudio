@@ -22,6 +22,8 @@ const loadingCreateDraft = ref(false)
 const loadingSaveDraft = ref(false)
 const loadingPublishDraft = ref(false)
 const selectedTemplateId = ref<string | undefined>()
+const publishConfirmOpen = ref(false)
+const publishTarget = ref<WaiverTemplate | null>(null)
 
 const form = reactive({
   title: '',
@@ -387,7 +389,9 @@ const waiverEditorHandlers = {
             .setImage({
               src: uploaded.url,
               alt: image.file.name,
-              title: image.file.name,
+              title: image.file.name
+            })
+            .updateAttributes('image', {
               style: buildEditorImageStyle('', DEFAULT_IMAGE_MAX_WIDTH)
             })
             .run()
@@ -615,7 +619,7 @@ async function saveDraft() {
   }
 }
 
-async function publishDraft() {
+function openPublishConfirmation() {
   const draftToPublish = selectedTemplate.value && !selectedTemplate.value.is_active
     ? selectedTemplate.value
     : firstDraftTemplate.value
@@ -629,7 +633,22 @@ async function publishDraft() {
     return
   }
 
+  publishTarget.value = draftToPublish
+  publishConfirmOpen.value = true
+}
+
+function closePublishConfirmation() {
+  if (loadingPublishDraft.value) return
+  publishConfirmOpen.value = false
+  publishTarget.value = null
+}
+
+async function publishDraft() {
+  const draftToPublish = publishTarget.value
+  if (!draftToPublish) return
+
   loadingPublishDraft.value = true
+  let published = false
   try {
     await $fetch<{ template: WaiverTemplate }>(`/api/admin/waiver/templates/${draftToPublish.id}/publish`, {
       method: 'POST'
@@ -640,6 +659,7 @@ async function publishDraft() {
       description: 'Members must re-sign before booking on the new version.',
       color: 'success'
     })
+    published = true
   } catch (error: unknown) {
     toast.add({
       title: 'Could not publish template',
@@ -648,6 +668,7 @@ async function publishDraft() {
     })
   } finally {
     loadingPublishDraft.value = false
+    if (published) closePublishConfirmation()
   }
 }
 
@@ -759,7 +780,7 @@ function hasPreviewBody(value: unknown) {
           color="warning"
           :loading="loadingPublishDraft"
           :disabled="!canPublishAnyDraft"
-          @click="publishDraft"
+          @click="openPublishConfirmation"
         >
           Publish Draft
         </UButton>
@@ -852,10 +873,12 @@ function hasPreviewBody(value: unknown) {
       <div class="text-sm font-medium">
         Preview
       </div>
+      <!-- eslint-disable vue/no-v-html -- previewBodyHtml is produced by the shared allowlist sanitizer. -->
       <div
         class="waiver-rich-content mt-3 max-w-none rounded-md border border-default bg-white text-slate-900 p-4 text-sm leading-6"
         v-html="previewBodyHtml"
       />
+      <!-- eslint-enable vue/no-v-html -->
       <div
         v-if="!hasPreviewBody(form.body)"
         class="mt-2 text-xs text-dimmed"
@@ -863,6 +886,92 @@ function hasPreviewBody(value: unknown) {
         No waiver body content yet.
       </div>
     </UCard>
+
+    <UModal
+      v-model:open="publishConfirmOpen"
+      :dismissible="!loadingPublishDraft"
+    >
+      <template #content>
+        <UCard>
+          <template #header>
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold">
+                  Publish waiver draft?
+                </h3>
+                <p class="mt-1 text-xs text-dimmed">
+                  Only the saved draft content will be published.
+                </p>
+              </div>
+              <UButton
+                icon="i-lucide-x"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                :disabled="loadingPublishDraft"
+                @click="closePublishConfirmation"
+              />
+            </div>
+          </template>
+
+          <div
+            v-if="publishTarget"
+            class="space-y-3"
+          >
+            <div class="rounded-lg border border-default p-3 text-sm">
+              <div class="text-xs uppercase tracking-wide text-dimmed">
+                New active waiver
+              </div>
+              <div class="mt-1 font-medium">
+                v{{ publishTarget.version }} · {{ publishTarget.title }}
+              </div>
+              <div
+                v-if="activeTemplate"
+                class="mt-2 text-xs text-dimmed"
+              >
+                Replaces v{{ activeTemplate.version }} · {{ activeTemplate.title }}
+              </div>
+            </div>
+
+            <UAlert
+              color="warning"
+              variant="soft"
+              icon="i-lucide-file-signature"
+              title="All prior signatures will become stale"
+              description="Members must sign this version before they can book again. Existing signature records are retained, but no longer satisfy the active waiver requirement."
+            />
+            <UAlert
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-lock"
+              title="Published content becomes immutable"
+              description="Future wording changes require a new draft and another publication."
+            />
+          </div>
+
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="loadingPublishDraft"
+                @click="closePublishConfirmation"
+              >
+                Keep draft
+              </UButton>
+              <UButton
+                color="warning"
+                :loading="loadingPublishDraft"
+                :disabled="!publishTarget"
+                @click="publishDraft"
+              >
+                Publish v{{ publishTarget?.version }}
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
   </DashboardPageScaffold>
 </template>
 

@@ -45,7 +45,7 @@ function buildWaitlistCheckoutUrl(origin: string, tierId: string, cadence: Waitl
 }
 
 export async function inviteWaitlistForTier(event: H3Event, tierId: string) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const capacity = await getSingleTierCapacity(supabase, tierId)
 
   if (capacity.cap === null || capacity.spotsLeft === null || capacity.spotsLeft <= 0) {

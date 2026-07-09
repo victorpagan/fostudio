@@ -821,7 +821,9 @@ watch(
       :currency="pendingTopupCurrency"
       confirm-label="Pay now"
       :busy="paymentSubmitting"
+      :error-message="paymentError"
       @confirm="confirmTopupPayment"
+      @clear-error="paymentError = null"
     />
   </div>
 </template>

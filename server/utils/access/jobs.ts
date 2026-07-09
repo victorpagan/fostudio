@@ -7,6 +7,7 @@ import { STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { createAccessIncident } from '~~/server/utils/access/incidents'
 import { computeAccessWindow, isAccessEligibleBookingStatus, isOutsideAbodeArmingGap } from '~~/server/utils/access/policy'
 import { clearLockUserCode, isLockSyncEnabled, sendAbodeAutomationEvent, setLockUserCode } from '~~/server/utils/access/providers'
+import { sanitizeForJSON } from '~~/server/utils/sanitize'
 import {
   allocateGuestSlot,
   allocateMemberSlot,
@@ -18,12 +19,12 @@ import {
 const DEFAULT_RETRY_SCHEDULE_SECONDS = [0, 60, 300, 900]
 const DEFAULT_MAX_ATTEMPTS = 4
 
-type LockAccessJobType =
-  | 'activate_member_window'
-  | 'deactivate_member_window'
-  | 'activate_guest_window'
-  | 'deactivate_guest_window'
-  | 'refresh_member_active'
+type LockAccessJobType
+  = | 'activate_member_window'
+    | 'deactivate_member_window'
+    | 'activate_guest_window'
+    | 'deactivate_guest_window'
+    | 'refresh_member_active'
 
 type BookingRow = {
   id: string
@@ -71,7 +72,7 @@ function parseRetrySchedule(value: unknown) {
 }
 
 async function getRetryScheduleSeconds(event: H3Event) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const { data, error } = await supabase
     .from('system_config')
     .select('value')
@@ -98,7 +99,7 @@ function normalizePayload(payload: unknown): Record<string, unknown> {
 }
 
 async function loadBooking(event: H3Event, bookingId: string): Promise<BookingRow | null> {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const { data, error } = await supabase
     .from('bookings')
     .select('id,user_id,status,start_time,end_time,guest_name,guest_email')
@@ -118,7 +119,7 @@ async function insertJobs(event: H3Event, jobs: Array<{
 }>) {
   if (!jobs.length) return 0
 
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const nowIso = new Date().toISOString()
 
   const { error } = await supabase
@@ -131,7 +132,7 @@ async function insertJobs(event: H3Event, jobs: Array<{
       status: 'pending',
       attempts: 0,
       max_attempts: DEFAULT_MAX_ATTEMPTS,
-      payload: job.payload ?? {},
+      payload: sanitizeForJSON(job.payload ?? {}) ?? {},
       created_at: nowIso,
       updated_at: nowIso
     })))
@@ -145,7 +146,7 @@ function randomPinCode() {
 }
 
 async function hasPinCollision(event: H3Event, pinCode: string) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
 
   const [{ data: memberCollision, error: memberErr }, { data: guestCollision, error: guestErr }] = await Promise.all([
     supabase
@@ -178,7 +179,7 @@ async function createUniqueGuestPin(event: H3Event) {
 }
 
 async function ensureGuestAccessCode(event: H3Event, booking: BookingRow) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const nowIso = new Date().toISOString()
 
   const { activateAtIso, deactivateAtIso } = computeAccessWindow(booking.start_time, booking.end_time)
@@ -275,7 +276,7 @@ async function ensureGuestAccessCode(event: H3Event, booking: BookingRow) {
 }
 
 async function clearGuestAccessCode(event: H3Event, bookingId: string, status: 'expired' | 'revoked') {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const nowIso = new Date().toISOString()
 
   const { error } = await supabase
@@ -296,7 +297,7 @@ async function clearGuestAccessCode(event: H3Event, bookingId: string, status: '
 }
 
 async function deletePendingBookingJobs(event: H3Event, bookingId: string) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const { error } = await supabase
     .from('lock_access_jobs')
     .delete()
@@ -442,7 +443,7 @@ async function hasAnotherActiveMemberWindowNow(event: H3Event, params: {
   userId: string
   excludeBookingId?: string | null
 }) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const now = DateTime.now().setZone(STUDIO_TZ)
   const startsBeforeIso = now.plus({ minutes: 30 }).toUTC().toISO()
   const endsAfterIso = now.minus({ minutes: 30 }).toUTC().toISO()
@@ -467,7 +468,7 @@ async function hasAnotherActiveMemberWindowNow(event: H3Event, params: {
 }
 
 async function listActiveMemberWindowBookings(event: H3Event, userId: string) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const now = DateTime.now().setZone(STUDIO_TZ)
   const startsBeforeIso = now.plus({ minutes: 30 }).toUTC().toISO()
   const endsAfterIso = now.minus({ minutes: 30 }).toUTC().toISO()
@@ -510,14 +511,14 @@ async function triggerAbodeArmAwayForWindowEnd(event: H3Event, params: {
 }
 
 async function markJobSucceeded(event: H3Event, jobId: number, response: Record<string, unknown>) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const nowIso = new Date().toISOString()
 
   const { error } = await supabase
     .from('lock_access_jobs')
     .update({
       status: 'succeeded',
-      last_response: response,
+      last_response: sanitizeForJSON(response) ?? null,
       processed_at: nowIso,
       updated_at: nowIso
     })
@@ -532,7 +533,7 @@ async function markJobRetryOrDead(event: H3Event, params: {
   errorMessage: string
   scheduleSeconds: number[]
 }) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const now = DateTime.now().setZone(STUDIO_TZ)
   const nowIso = now.toUTC().toISO()
   if (!nowIso) throw new Error('Could not compute retry timestamp')
@@ -592,7 +593,7 @@ async function markJobRetryOrDead(event: H3Event, params: {
 }
 
 async function claimPendingJob(event: H3Event, jobId: number) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const nowIso = new Date().toISOString()
 
   const { data: pending, error: pendingErr } = await supabase
@@ -775,7 +776,7 @@ async function runActivateGuestJob(event: H3Event, job: JobRow) {
     validUntil: accessCode.validUntil
   })
 
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const nowIso = new Date().toISOString()
   const { error: updateErr } = await supabase
     .from('booking_access_codes')
@@ -913,7 +914,7 @@ export async function processDueAccessJobs(event: H3Event, options?: { limit?: n
     }
   }
 
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const nowIso = new Date().toISOString()
   const limit = Math.max(1, Math.min(200, Number(options?.limit ?? 20)))
   const retrySchedule = await getRetryScheduleSeconds(event)

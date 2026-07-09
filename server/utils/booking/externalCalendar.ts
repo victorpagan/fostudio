@@ -1,6 +1,7 @@
-type SupabaseLike = {
-  from: (table: string) => any
-}
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '~~/app/types/database.types'
+
+type SupabaseLike = SupabaseClient<Database>
 
 export type ExternalCalendarBlock = {
   id: string

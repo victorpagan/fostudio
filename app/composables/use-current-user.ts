@@ -1,8 +1,7 @@
 /**
  * useCurrentUser — shared composable for auth user + role awareness.
  *
- * Role is read from Supabase user metadata first, then app metadata as a
- * fallback. Current roles:
+ * Role is read only from protected Supabase app metadata. Current roles:
  *   - 'admin'   — full admin access, bypasses membership guards
  *   - 'service' — privileged service account
  *   - (none)    — standard member
@@ -21,7 +20,7 @@ export const useCurrentUser = createSharedComposable(() => {
 
   const role = computed<string | null>(() => {
     if (!user.value) return null
-    return normalizeRole(user.value.user_metadata?.role)
+    return normalizeRole(user.value.app_metadata?.user_role)
       ?? normalizeRole(user.value.app_metadata?.role)
       ?? null
   })

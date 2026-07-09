@@ -2,7 +2,6 @@ import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { useSquareClient } from '~~/server/utils/square'
-import { computeCyclePriceCents } from '~~/server/utils/membership/cadencePricing'
 
 const bodySchema = z.object({
   tierId: z.string().min(1),

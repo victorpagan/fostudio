@@ -5,6 +5,7 @@ import { useSquareClient } from '~~/server/utils/square'
 import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { sendViaFomailer } from '~~/server/utils/mail/fomailer'
+import { sanitizeForJSON } from '~~/server/utils/sanitize'
 
 const bodySchema = z.object({
   token: z.string().uuid()
@@ -46,7 +47,7 @@ function cadenceLabel(cadence: CheckoutSessionRow['cadence']) {
 export default defineEventHandler(async (event) => {
   const body = bodySchema.parse(await readBody(event))
   const supabase = serverSupabaseServiceRole(event)
-  const db = supabase as any
+  const db = supabase
 
   const { data: rawSession, error: sessionErr } = await db
     .from('membership_checkout_sessions')
@@ -161,7 +162,7 @@ export default defineEventHandler(async (event) => {
   const { error: updateErr } = await db
     .from('membership_checkout_sessions')
     .update({
-      metadata
+      metadata: sanitizeForJSON(metadata) ?? {}
     })
     .eq('id', session.id)
 

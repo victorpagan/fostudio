@@ -1,3 +1,5 @@
+import { sanitizeRichHtml } from '~~/app/utils/sanitizeHtml'
+
 type TiptapMark = {
   type?: string
   attrs?: Record<string, unknown> | null
@@ -112,13 +114,13 @@ export function toRenderableHtml(input: unknown): string {
   if (typeof input === 'string') {
     const value = input.trim()
     if (!value) return ''
-    if (/<\/?[a-z][\s\S]*>/i.test(value)) return input
+    if (/<\/?[a-z][\s\S]*>/i.test(value)) return sanitizeRichHtml(input)
 
     const parsed = parseMaybeJson(value)
     const fromJson = parsed ? renderJsonToHtml(parsed) : ''
-    if (fromJson) return fromJson
+    if (fromJson) return sanitizeRichHtml(fromJson)
 
-    return normalizePlainText(input)
+    return sanitizeRichHtml(normalizePlainText(input))
   }
 
   if (input && typeof input === 'object') {
@@ -127,7 +129,7 @@ export function toRenderableHtml(input: unknown): string {
     if (typeof record.content === 'string') return toRenderableHtml(record.content)
 
     const fromJson = renderJsonToHtml(record)
-    if (fromJson) return fromJson
+    if (fromJson) return sanitizeRichHtml(fromJson)
   }
 
   return ''

@@ -17,6 +17,31 @@ const studioRepoPrivate = process.env.STUDIO_REPOSITORY_PRIVATE
   ? process.env.STUDIO_REPOSITORY_PRIVATE.toLowerCase() !== 'false'
   : true
 const studioDevEnabled = process.env.NUXT_STUDIO_DEV === 'true'
+const studioRepositoryProvider = process.env.STUDIO_REPOSITORY_PROVIDER === 'gitlab' ? 'gitlab' : 'github'
+const productionSecurityHeaders = {
+  'Content-Security-Policy': [
+    'default-src \'self\'',
+    'base-uri \'self\'',
+    'object-src \'none\'',
+    'frame-ancestors \'self\'',
+    'form-action \'self\' https://squareup.com https://*.squareup.com',
+    'script-src \'self\' \'unsafe-inline\' https://web.squarecdn.com https://www.googletagmanager.com',
+    'style-src \'self\' \'unsafe-inline\' https://fonts.googleapis.com',
+    'font-src \'self\' data: https://fonts.gstatic.com',
+    'img-src \'self\' data: blob: https:',
+    'media-src \'self\' https://res.cloudinary.com',
+    'connect-src \'self\' https://*.supabase.co wss://*.supabase.co https://web.squarecdn.com https://www.google-analytics.com https://www.googletagmanager.com',
+    'frame-src \'self\' https://web.squarecdn.com https://maps.google.com https://www.google.com',
+    'worker-src \'self\' blob:',
+    'upgrade-insecure-requests'
+  ].join('; '),
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), browsing-topics=()',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'SAMEORIGIN',
+  'X-Permitted-Cross-Domain-Policies': 'none'
+}
 
 const normalizeStudioRootDir = (value?: string) => {
   const normalized = (value ?? '').trim().replace(/^\/+|\/+$/g, '')
@@ -50,6 +75,12 @@ export default defineNuxtConfig({
       contactLocation: process.env.NUXT_PUBLIC_CONTACT_LOCATION || 'FO Studio, 3131 N. San Fernando Rd., Los Angeles, CA 90065'
     }
   },
+
+  routeRules: process.env.NODE_ENV === 'production'
+    ? {
+        '/**': { headers: productionSecurityHeaders }
+      }
+    : {},
 
   compatibilityDate: '2024-07-11',
 
@@ -100,7 +131,7 @@ export default defineNuxtConfig({
         dev: studioDevEnabled,
         route: process.env.NUXT_STUDIO_ROUTE || '/_studio',
         repository: {
-          provider: process.env.STUDIO_REPOSITORY_PROVIDER || 'github',
+          provider: studioRepositoryProvider,
           owner: process.env.STUDIO_REPOSITORY_OWNER || 'victorpagan',
           repo: process.env.STUDIO_REPOSITORY_REPO || 'fostudio',
           branch: process.env.STUDIO_REPOSITORY_BRANCH || 'main',

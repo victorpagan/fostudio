@@ -791,7 +791,9 @@ const emailEditorHandlers = {
             .setImage({
               src: uploaded.url,
               alt: image.file.name,
-              title: image.file.name,
+              title: image.file.name
+            })
+            .updateAttributes('image', {
               style: buildEditorImageStyle('', DEFAULT_IMAGE_MAX_WIDTH)
             })
             .run()

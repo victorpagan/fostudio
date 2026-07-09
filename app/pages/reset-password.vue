@@ -134,22 +134,38 @@ onMounted(() => {
 </script>
 
 <template>
-  <div v-if="verifying" class="space-y-4 text-center py-4">
-    <UIcon name="i-lucide-loader-circle" class="mx-auto h-10 w-10 animate-spin text-primary" />
+  <div
+    v-if="verifying"
+    class="space-y-4 text-center py-4"
+  >
+    <UIcon
+      name="i-lucide-loader-circle"
+      class="mx-auto h-10 w-10 animate-spin text-primary"
+    />
     <p class="text-sm text-gray-600 dark:text-gray-400">
       Verifying your reset link...
     </p>
   </div>
 
-  <div v-else-if="recoveryError" class="space-y-4 text-center py-4">
-    <UIcon name="i-lucide-circle-alert" class="mx-auto h-10 w-10 text-red-500" />
+  <div
+    v-else-if="recoveryError"
+    class="space-y-4 text-center py-4"
+  >
+    <UIcon
+      name="i-lucide-circle-alert"
+      class="mx-auto h-10 w-10 text-red-500"
+    />
     <h2 class="text-lg font-semibold">
       Reset link issue
     </h2>
     <p class="text-sm text-gray-600 dark:text-gray-400">
       {{ recoveryError }}
     </p>
-    <UButton color="neutral" variant="soft" to="/forgot-password">
+    <UButton
+      color="neutral"
+      variant="soft"
+      to="/forgot-password"
+    >
       Request a new reset link
     </UButton>
   </div>
@@ -169,7 +185,10 @@ onMounted(() => {
     </template>
 
     <template #footer>
-      <ULink to="/login" class="text-primary font-medium">Back to login</ULink>
+      <ULink
+        to="/login"
+        class="text-primary font-medium"
+      >Back to login</ULink>
     </template>
   </UAuthForm>
 </template>

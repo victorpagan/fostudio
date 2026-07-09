@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const year = new Date().getFullYear()
+const cookieConsent = useCookieConsent()
 const footerAddressLines = [
   'FO Studio',
   '3131 N. San Fernando Rd.',
@@ -11,6 +12,11 @@ const footerLinks = [
   { label: 'Contact', to: '/contact' },
   { label: 'Member login', to: '/login' }
 ]
+
+function reviewPrivacyChoices() {
+  cookieConsent.value = null
+  if (import.meta.client) window.location.reload()
+}
 </script>
 
 <template>
@@ -55,6 +61,14 @@ const footerLinks = [
             />
             <span>@fostudio.la</span>
           </a>
+
+          <button
+            type="button"
+            class="site-footer-link"
+            @click="reviewPrivacyChoices"
+          >
+            Privacy choices
+          </button>
 
           <UColorModeButton
             color="neutral"

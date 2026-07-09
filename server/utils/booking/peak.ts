@@ -1,4 +1,4 @@
-import { DateTime } from 'luxon'
+import type { DateTime } from 'luxon'
 import type { H3Event } from 'h3'
 import { getServerConfigMap } from '~~/server/utils/config/secret'
 
@@ -22,8 +22,8 @@ function asNumber(value: unknown, fallback: number) {
 function normalizeDays(value: unknown): number[] {
   const candidate = Array.isArray(value) ? value : DEFAULT_DAYS
   const normalized = candidate
-    .map((v) => Number(v))
-    .filter((v) => Number.isInteger(v) && v >= 1 && v <= 7)
+    .map(v => Number(v))
+    .filter(v => Number.isInteger(v) && v >= 1 && v <= 7)
   return normalized.length ? [...new Set(normalized)].sort((a, b) => a - b) : DEFAULT_DAYS
 }
 

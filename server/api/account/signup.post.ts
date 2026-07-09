@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { sendAccountSignupMail } from '~~/server/utils/mail/accountSignup'
+import { enforceRateLimit } from '~~/server/utils/security/rateLimit'
 
 const bodySchema = z.object({
   email: z.string().trim().email(),
@@ -17,6 +18,18 @@ export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole(event)
 
   const email = body.email.trim().toLowerCase()
+  enforceRateLimit(event, {
+    scope: 'account-signup-ip',
+    limit: 8,
+    windowMs: 60 * 60_000
+  })
+  enforceRateLimit(event, {
+    scope: 'account-signup-email',
+    limit: 3,
+    windowMs: 60 * 60_000,
+    identifier: email,
+    includeIp: false
+  })
   const firstName = body.first_name?.trim() || undefined
   const lastName = body.last_name?.trim() || undefined
   const phone = body.phone.trim()

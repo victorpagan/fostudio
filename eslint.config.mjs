@@ -2,5 +2,8 @@
 import withNuxt from './.nuxt/eslint.config.mjs'
 
 export default withNuxt({
-  // Your custom configs here
+  ignores: [
+    'app/types/database.types.ts',
+    '**/luxon.d.ts'
+  ]
 })

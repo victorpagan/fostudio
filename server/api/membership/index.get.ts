@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
     isFull: boolean
   }> = {}
 
-  const capMap = await getTierCapMap(supabase as any, (tiers ?? []).map(tier => tier.id))
+  const capMap = await getTierCapMap(supabase, (tiers ?? []).map(tier => tier.id))
   for (const tier of tiers ?? []) {
     const stats = capMap[tier.id]
     availability[tier.id] = {

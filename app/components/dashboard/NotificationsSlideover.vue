@@ -31,7 +31,10 @@ onMounted(() => {
     title="Notifications"
   >
     <template #body>
-      <div v-if="!notifications?.length" class="text-sm text-muted">
+      <div
+        v-if="!notifications?.length"
+        class="text-sm text-muted"
+      >
         No notifications yet.
       </div>
 
@@ -41,7 +44,11 @@ onMounted(() => {
         :to="n.action?.to || '#'"
         class="px-3 py-2.5 rounded-md hover:bg-elevated/50 flex items-center gap-3 relative -mx-3 first:-mt-3 last:-mb-3"
       >
-        <UChip color="error" :show="!!n.unread" inset>
+        <UChip
+          color="error"
+          :show="!!n.unread"
+          inset
+        >
           <UAvatar
             :src="n.sender?.avatar?.src"
             :alt="n.sender?.avatar?.alt || n.sender?.name || 'Notification'"
@@ -64,7 +71,10 @@ onMounted(() => {
             {{ n.body }}
           </p>
 
-          <div v-if="n.action?.label" class="mt-1 text-xs text-primary">
+          <div
+            v-if="n.action?.label"
+            class="mt-1 text-xs text-primary"
+          >
             {{ n.action.label }}
           </div>
         </div>

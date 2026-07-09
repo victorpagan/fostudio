@@ -17,17 +17,28 @@ const toast = useToast()
 type ApiErrorLike = {
   data?: {
     statusMessage?: string
+    message?: string
     code?: string
     data?: {
       code?: string
     }
   }
+  statusMessage?: string
   message?: string
 }
 
 function getApiErrorCode(error: unknown) {
   const maybe = error as ApiErrorLike
   return maybe.data?.code ?? maybe.data?.data?.code ?? null
+}
+
+function getApiErrorMessage(error: unknown, fallback = 'Please try again.') {
+  const maybe = error as ApiErrorLike
+  return maybe.data?.statusMessage
+    ?? maybe.data?.message
+    ?? maybe.statusMessage
+    ?? maybe.message
+    ?? fallback
 }
 
 type Booking = {
@@ -106,21 +117,31 @@ const hasBookingAccess = computed(() => Boolean(user.value) || isAdmin.value)
 const bookingIncrementMinutes = computed(() => hasMembership.value ? 30 : 60)
 
 // Only fetch bookings when membership is confirmed
-const { data: upcoming, refresh: refreshUpcoming } = await useAsyncData('bookings:upcoming', async () => {
+const {
+  data: upcoming,
+  pending: upcomingPending,
+  error: upcomingError,
+  refresh: refreshUpcoming
+} = await useAsyncData('bookings:upcoming', async () => {
   if (!user.value || !hasBookingAccess.value) return []
   const { data, error } = await supabase
     .from('bookings')
     .select('id, start_time, end_time, status, notes, credits_burned, booking_rate_kind, created_at, booking_holds(id,hold_start,hold_end,hold_type)')
     .eq('user_id', user.value.sub)
     .gt('end_time', nowIso.value)
-    .in('status', ['confirmed', 'requested'])
+    .in('status', ['confirmed', 'requested', 'pending_payment'])
     .order('start_time', { ascending: true })
     .limit(20)
   if (error) throw error
   return (data ?? []) as unknown as Booking[]
 })
 
-const { data: past, refresh: refreshPast } = await useAsyncData('bookings:past', async () => {
+const {
+  data: past,
+  pending: pastPending,
+  error: pastError,
+  refresh: refreshPast
+} = await useAsyncData('bookings:past', async () => {
   if (!user.value || !hasBookingAccess.value) return []
   const { data, error } = await supabase
     .from('bookings')
@@ -251,21 +272,26 @@ function goToPastPage(page: number) {
 
 async function cancelBooking(id: string): Promise<boolean> {
   cancellingId.value = id
+  const target = cancelTarget.value?.id === id
+    ? cancelTarget.value
+    : (upcoming.value ?? []).find(booking => booking.id === id) ?? null
+  const wasPendingPayment = target ? isPendingPayment(target) : false
   try {
     const result = await $fetch<{
       ok: boolean
       creditsRefunded: number
       eligible_for_refund: boolean
-      hours_until_start: number
     }>(`/api/bookings/${id}`, { method: 'DELETE' })
 
-    const msg = result.creditsRefunded > 0
-      ? `${result.creditsRefunded} credit${result.creditsRefunded === 1 ? '' : 's'} refunded to your balance.`
-      : result.hours_until_start < 24
-        ? 'No refund — cancellation within 24h of your session.'
-        : 'Booking canceled.'
+    const msg = wasPendingPayment
+      ? 'Pending payment reservation released.'
+      : result.creditsRefunded > 0
+        ? `${result.creditsRefunded} credit${result.creditsRefunded === 1 ? '' : 's'} refunded to your balance.`
+        : result.eligible_for_refund
+          ? 'Booking canceled. No credits needed to be returned.'
+          : 'Booking canceled. No credits were returned.'
 
-    toast.add({ title: 'Booking canceled', description: msg, color: 'success' })
+    toast.add({ title: wasPendingPayment ? 'Reservation released' : 'Booking canceled', description: msg, color: 'success' })
     await Promise.allSettled([
       refreshUpcoming(),
       refreshHoldSummary(),
@@ -277,8 +303,11 @@ async function cancelBooking(id: string): Promise<boolean> {
     }
     return true
   } catch (error: unknown) {
-    const maybe = error as { message?: string }
-    toast.add({ title: 'Could not cancel', description: maybe?.message ?? 'Error', color: 'error' })
+    toast.add({
+      title: 'Could not cancel',
+      description: getApiErrorMessage(error, 'The server could not confirm that this booking can be canceled.'),
+      color: 'error'
+    })
     return false
   } finally {
     cancellingId.value = null
@@ -387,16 +416,27 @@ function durationLabel(start: string, end: string) {
 }
 
 function statusColor(status: string): 'success' | 'warning' | 'error' | 'neutral' {
-  switch (status) {
+  switch (String(status ?? '').toLowerCase()) {
     case 'confirmed': return 'success'
     case 'requested': return 'warning'
+    case 'pending_payment': return 'warning'
     case 'canceled': return 'error'
+    case 'cancelled': return 'error'
     default: return 'neutral'
   }
 }
 
 function formatStatus(status: string) {
-  return status
+  const normalized = String(status ?? '').trim().toLowerCase()
+  if (normalized === 'pending_payment') return 'Pending payment'
+  if (!normalized) return 'Unknown'
+  return normalized
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, letter => letter.toUpperCase())
+}
+
+function isPendingPayment(booking: Booking) {
+  return String(booking.status ?? '').toLowerCase() === 'pending_payment'
 }
 
 function toGoogleCalendarDate(value: string) {
@@ -487,11 +527,11 @@ function hasEnded(booking: Booking) {
   return hoursUntilEnd(booking) <= 0
 }
 
-function canCancel(booking: Booking) {
+function canRequestCancellation(booking: Booking) {
   if (booking.booking_rate_kind === 'standby') return false
   const status = String(booking.status ?? '').toLowerCase()
   if (!['confirmed', 'requested', 'pending_payment'].includes(status)) return false
-  return hoursUntilStart(booking) >= 24
+  return !hasPassed(booking)
 }
 
 function hasHold(booking: Booking) {
@@ -510,10 +550,6 @@ function holdRangeLabel(booking: Booking) {
   const hold = booking.booking_holds?.[0]
   if (!hold) return null
   return formatRange(hold.hold_start, hold.hold_end)
-}
-
-function isRefundEligible(booking: Booking) {
-  return hoursUntilStart(booking) >= 24
 }
 
 function canReschedule(booking: Booking) {
@@ -587,10 +623,10 @@ function bookingManageItems(booking: Booking): DropdownMenuItem[][] {
   items.push({
     label: 'Cancel booking',
     icon: 'i-lucide-x-circle',
-    disabled: !canCancel(booking),
+    disabled: !canRequestCancellation(booking),
     onSelect: (event: Event) => {
       event.preventDefault()
-      if (!canCancel(booking)) return
+      if (!canRequestCancellation(booking)) return
       openCancelConfirm(booking)
     }
   })
@@ -1534,7 +1570,21 @@ watch(
 
             <div v-if="bookingsTab === 'active'">
               <DashboardSectionState
-                v-if="!upcoming?.length"
+                v-if="upcomingPending"
+                state="loading"
+                title="Loading upcoming bookings"
+                description="Checking your current bookings."
+              />
+              <DashboardSectionState
+                v-else-if="upcomingError"
+                state="error"
+                title="Could not load upcoming bookings"
+                description="The bookings request failed. This is not confirmation that you have no upcoming bookings."
+                show-retry
+                @retry="refreshUpcoming"
+              />
+              <DashboardSectionState
+                v-else-if="!upcoming?.length"
                 state="empty"
                 title="No upcoming bookings"
                 description="Reserve studio time to build your next session."
@@ -1583,6 +1633,12 @@ watch(
                         {{ formatRange(booking.start_time, booking.end_time).timeStr }}
                         · {{ durationLabel(booking.start_time, booking.end_time) }}
                         <span v-if="booking.credits_burned"> · {{ booking.credits_burned }} credits</span>
+                      </p>
+                      <p
+                        v-if="isPendingPayment(booking)"
+                        class="mt-1 text-xs font-medium text-amber-700 dark:text-amber-300"
+                      >
+                        Payment is pending. This time is temporarily reserved until checkout completes.
                       </p>
                       <p
                         v-if="hasHold(booking)"
@@ -1635,7 +1691,21 @@ watch(
 
             <div v-else-if="bookingsTab === 'holds'">
               <DashboardSectionState
-                v-if="!activeHoldBookings.length"
+                v-if="upcomingPending"
+                state="loading"
+                title="Loading active holds"
+                description="Checking holds attached to your bookings."
+              />
+              <DashboardSectionState
+                v-else-if="upcomingError"
+                state="error"
+                title="Could not load active holds"
+                description="The bookings request failed. This is not confirmation that you have no active holds."
+                show-retry
+                @retry="refreshUpcoming"
+              />
+              <DashboardSectionState
+                v-else-if="!activeHoldBookings.length"
                 state="empty"
                 title="No active holds"
                 description="Hold details appear here when attached to upcoming bookings."
@@ -1694,7 +1764,21 @@ watch(
 
             <div v-else>
               <DashboardSectionState
-                v-if="!past?.length"
+                v-if="pastPending"
+                state="loading"
+                title="Loading booking history"
+                description="Checking your past bookings."
+              />
+              <DashboardSectionState
+                v-else-if="pastError"
+                state="error"
+                title="Could not load booking history"
+                description="The bookings request failed. This is not confirmation that your booking history is empty."
+                show-retry
+                @retry="refreshPast"
+              />
+              <DashboardSectionState
+                v-else-if="!past?.length"
                 state="empty"
                 title="No booking history"
                 description="Completed and canceled sessions will appear here."
@@ -2120,14 +2204,14 @@ watch(
               color="warning"
               variant="soft"
               icon="i-lucide-info"
-              :description="isRefundEligible(cancelTarget) ? 'Cancellation is outside 24h and credits are expected to be refunded.' : 'Cancellation is unavailable within 24h of booking start or after it has started.'"
+              :description="isPendingPayment(cancelTarget) ? 'This pending payment reservation will be released if the server still reports it as cancelable.' : 'Cancellation eligibility and any credit return will be confirmed from the current booking state when you submit.'"
             />
             <UAlert
               v-if="hasHold(cancelTarget)"
               color="warning"
               variant="soft"
               icon="i-lucide-package"
-              :description="isRefundEligible(cancelTarget) ? 'A hold is attached. You can cancel just the hold and return a hold token, or cancel the full booking.' : 'A hold is attached. Within 24h, hold tokens are forfeited when a hold is canceled.'"
+              description="A hold is attached. You can cancel just the hold or submit the full booking cancellation; the server will confirm any hold-token return."
             />
           </div>
 
@@ -2154,7 +2238,7 @@ watch(
               <UButton
                 color="error"
                 :loading="Boolean(cancellingId)"
-                :disabled="Boolean(holdCancellingId) || !cancelTarget || !canCancel(cancelTarget)"
+                :disabled="Boolean(holdCancellingId) || !cancelTarget || !canRequestCancellation(cancelTarget)"
                 @click="confirmCancel"
               >
                 Confirm cancel

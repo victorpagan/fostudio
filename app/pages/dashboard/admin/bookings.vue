@@ -76,6 +76,8 @@ const statusFilter = ref<string>('all')
 const bookingSearch = ref('')
 const refundCredits = ref(true)
 const cancelingId = ref<string | null>(null)
+const cancelConfirmOpen = ref(false)
+const cancelTarget = ref<AdminBooking | null>(null)
 const bookingTab = ref<AdminBookingTab>('active')
 const pastPage = ref(1)
 const creatingBooking = ref(false)
@@ -153,6 +155,23 @@ const selectedMember = computed(() =>
 const selectedMemberCredits = computed(() => Math.max(0, Number(selectedMember.value?.credit_balance ?? 0)))
 
 const memberCreditWarning = computed(() => createForm.burnCredits && !!selectedMember.value && selectedMemberCredits.value <= 0)
+const cancelTargetRefundAmount = computed(() => Math.max(0, Number(cancelTarget.value?.credits_burned ?? 0)))
+const cancelTargetCanRefund = computed(() => Boolean(cancelTarget.value?.user_id) && cancelTargetRefundAmount.value > 0)
+const cancelRefundDescription = computed(() => {
+  if (!cancelTarget.value) return ''
+  if (!cancelTarget.value.user_id && cancelTargetRefundAmount.value > 0) {
+    return 'No member account is attached, so recorded credits cannot be returned.'
+  }
+  if (cancelTargetRefundAmount.value <= 0) return 'No credits were recorded for this booking.'
+  if (!refundCredits.value) return `${cancelTargetRefundAmount.value} recorded credits will not be returned.`
+  const unit = cancelTargetRefundAmount.value === 1 ? 'credit' : 'credits'
+  return `${cancelTargetRefundAmount.value} ${unit} will be returned to the member balance.`
+})
+const cancelConfirmLabel = computed(() => {
+  if (!cancelTargetCanRefund.value || !refundCredits.value) return 'Cancel booking'
+  const unit = cancelTargetRefundAmount.value === 1 ? 'credit' : 'credits'
+  return `Cancel and refund ${cancelTargetRefundAmount.value} ${unit}`
+})
 
 type TimeSlotItem = {
   label: string
@@ -560,7 +579,24 @@ function openRescheduleModal(booking: AdminBookingForReschedule) {
   openReschedule(booking)
 }
 
-async function cancelBooking(bookingId: string) {
+function openCancelConfirmation(booking: AdminBooking) {
+  cancelTarget.value = booking
+  cancelConfirmOpen.value = true
+}
+
+function closeCancelConfirmation() {
+  if (cancelingId.value) return
+  cancelConfirmOpen.value = false
+  cancelTarget.value = null
+}
+
+async function confirmCancelBooking() {
+  if (!cancelTarget.value) return
+  const canceled = await cancelBooking(cancelTarget.value.id)
+  if (canceled) closeCancelConfirmation()
+}
+
+async function cancelBooking(bookingId: string): Promise<boolean> {
   cancelingId.value = bookingId
   try {
     const res = await $fetch<{ refundedCredits: number }>('/api/admin/bookings/cancel', {
@@ -580,12 +616,14 @@ async function cancelBooking(bookingId: string) {
       description
     })
     await refresh()
+    return true
   } catch (error: unknown) {
     toast.add({
       title: 'Could not cancel booking',
       description: readErrorMessage(error),
       color: 'error'
     })
+    return false
   } finally {
     cancelingId.value = null
   }
@@ -1025,7 +1063,7 @@ async function createBookingOnBehalf() {
                         size="sm"
                         :loading="cancelingId === booking.id"
                         :disabled="booking.status === 'canceled'"
-                        @click="cancelBooking(booking.id)"
+                        @click="openCancelConfirmation(booking)"
                       >
                         Cancel booking
                       </UButton>
@@ -1106,6 +1144,93 @@ async function createBookingOnBehalf() {
         </DashboardDataPanel>
       </div>
     </DashboardPageScaffold>
+
+    <UModal
+      v-model:open="cancelConfirmOpen"
+      :dismissible="!cancelingId"
+    >
+      <template #content>
+        <UCard>
+          <template #header>
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold">
+                  Cancel booking?
+                </h3>
+                <p class="mt-1 text-xs text-dimmed">
+                  Review the booking and refund choice before continuing.
+                </p>
+              </div>
+              <UButton
+                icon="i-lucide-x"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                :disabled="Boolean(cancelingId)"
+                @click="closeCancelConfirmation"
+              />
+            </div>
+          </template>
+
+          <div
+            v-if="cancelTarget"
+            class="space-y-3"
+          >
+            <div class="rounded-lg border border-default p-3 text-sm">
+              <div class="font-medium">
+                {{ bookingLabel(cancelTarget) }}
+              </div>
+              <div class="mt-1 text-dimmed">
+                {{ formatDate(cancelTarget.start_time) }} → {{ formatDate(cancelTarget.end_time) }} (LA)
+              </div>
+              <div class="mt-1 break-all font-mono text-xs text-dimmed">
+                {{ cancelTarget.id }}
+              </div>
+            </div>
+
+            <UAlert
+              color="warning"
+              variant="soft"
+              icon="i-lucide-calendar-x"
+              title="The slot and booking access will be released"
+              :description="hasHold(cancelTarget) ? 'The attached hold will also be removed. This cannot be undone from this page.' : 'This cannot be undone from this page.'"
+            />
+
+            <div class="rounded-lg border border-default p-3">
+              <UCheckbox
+                v-model="refundCredits"
+                label="Refund recorded booking credits"
+                :disabled="!cancelTargetCanRefund || Boolean(cancelingId)"
+              />
+              <p class="mt-2 text-xs text-dimmed">
+                {{ cancelRefundDescription }}
+              </p>
+            </div>
+          </div>
+
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="Boolean(cancelingId)"
+                @click="closeCancelConfirmation"
+              >
+                Keep booking
+              </UButton>
+              <UButton
+                color="error"
+                :loading="Boolean(cancelingId)"
+                :disabled="!cancelTarget"
+                @click="confirmCancelBooking"
+              >
+                {{ cancelConfirmLabel }}
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
 
     <UModal v-model:open="createBookingOpen">
       <template #content>

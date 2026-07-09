@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
     summary: {
       tierCount: tiers?.length ?? 0,
       variationCount: variations?.length ?? 0,
-      hasTestTier: !!(tiers ?? []).find((t: any) => t.id === 'test')
+      hasTestTier: !!(tiers ?? []).find(t => t.id === 'test')
     }
   }
 })

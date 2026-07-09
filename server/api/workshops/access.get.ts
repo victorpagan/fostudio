@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
 
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const [customerResult, config] = await Promise.all([
     supabase
       .from('customers')

@@ -14,10 +14,7 @@ async function syncVariationToSquare(
   tierDisplayName: string,
   cadence: string,
   providerPlanId: string,
-  providerPlanVariationId: string,
-  monthlyPriceCents: number,
-  discountLabel: string | null,
-  currency: string
+  providerPlanVariationId: string
 ) {
   const cadenceToSquare = (cadence: string) => {
     if (cadence === 'daily') return 'DAILY'
@@ -118,10 +115,6 @@ export default defineEventHandler(async (event) => {
     for (const [tierId, tierVariations] of variationsByTier) {
       const tierDisplayName = tierMap.get(tierId) || tierId
 
-      // Find monthly variation to get base price
-      const monthlyVar = tierVariations.find(v => v.cadence === 'monthly')
-      const monthlyPriceCents = monthlyVar?.price_cents ?? 0
-
       for (const variation of tierVariations) {
         try {
           // Skip if missing provider IDs
@@ -141,10 +134,7 @@ export default defineEventHandler(async (event) => {
             tierDisplayName,
             variation.cadence,
             variation.provider_plan_id,
-            variation.provider_plan_variation_id,
-            monthlyPriceCents,
-            variation.discount_label,
-            variation.currency || 'USD'
+            variation.provider_plan_variation_id
           )
 
           results.push({

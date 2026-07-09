@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { sendViaFomailer } from '~~/server/utils/mail/fomailer'
 import { normalizeMailRecipient } from '~~/server/utils/mail/adminPayload'
+import { enforceRateLimit } from '~~/server/utils/security/rateLimit'
 
 const contactSchema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -82,6 +83,19 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = parsed.data
+
+  enforceRateLimit(event, {
+    scope: 'contact-ip',
+    limit: 6,
+    windowMs: 15 * 60_000
+  })
+  enforceRateLimit(event, {
+    scope: 'contact-email',
+    limit: 3,
+    windowMs: 60 * 60_000,
+    identifier: body.email,
+    includeIp: false
+  })
 
   // Hidden honeypot field for basic bot filtering.
   if (body.company) {

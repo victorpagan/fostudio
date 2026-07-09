@@ -19,7 +19,7 @@ function normalizeEmail(value: string | null | undefined) {
 
 export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event).catch(() => null)
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
 
   const body = bodySchema.parse(await readBody(event))
   const email = normalizeEmail(body.email ?? user?.email ?? null)

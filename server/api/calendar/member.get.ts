@@ -3,7 +3,6 @@ import { DateTime } from 'luxon'
 import { serverSupabaseClient, serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
 import { getExternalCalendarEventsInRange } from '~~/server/utils/booking/externalCalendar'
-import { maybeAutoSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 import { resolveAvailableCreditBalance } from '~~/server/utils/credits/availableBalance'
 import { getUpcomingWorkshopPromo } from '~~/server/utils/booking/workshopPromo'
 import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
@@ -12,10 +11,7 @@ import {
   loadGuestBookingPolicy,
   loadStandbyBookingPolicy
 } from '~~/server/utils/booking/guestPolicy'
-import {
-  expireStalePendingGuestBookings,
-  isActivePendingPaymentReservation
-} from '~~/server/utils/booking/pendingPayments'
+import { isActivePendingPaymentReservation } from '~~/server/utils/booking/pendingPayments'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -78,13 +74,6 @@ export default defineEventHandler(async (event) => {
     loadStandbyBookingPolicy(event)
   ])
 
-  void expireStalePendingGuestBookings(serviceRole).catch((error) => {
-    console.error('[calendar/member] pending-payment cleanup failed', error)
-  })
-  void maybeAutoSyncGoogleCalendar(event, 'calendar_member').catch((error) => {
-    console.error('[calendar/member] google auto-sync failed', error)
-  })
-
   // Fetch membership + balance in parallel so calendar reads are not serialized on account metadata.
   const [membershipResult, balanceResult] = await Promise.allSettled([
     supabase
@@ -141,20 +130,20 @@ export default defineEventHandler(async (event) => {
     externalEventsResult,
     workshopPromoResult
   ] = await Promise.allSettled([
-    supabase
+    serviceRole
       .from('bookings')
       .select('id, start_time, end_time, status, notes, credits_burned, user_id, booking_rate_kind, payment_expires_at')
       .lt('start_time', to.toISOString())
       .gt('end_time', from.toISOString())
       .in('status', ['confirmed', 'requested', 'pending_payment'])
       .order('start_time', { ascending: true }),
-    supabase
+    serviceRole
       .from('booking_holds')
       .select('id, hold_start, hold_end, bookings!inner(user_id)')
       .lt('hold_start', to.toISOString())
       .gt('hold_end', from.toISOString())
       .order('hold_start', { ascending: true }),
-    supabase
+    serviceRole
       .from('calendar_blocks')
       .select('id,start_time,end_time,reason')
       .eq('active', true)

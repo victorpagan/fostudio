@@ -40,6 +40,11 @@ type PlanVariation = {
   discount_label: string | null
 }
 
+type PlanChangeTarget = {
+  tierId: string
+  variation: PlanVariation
+}
+
 type LedgerRow = {
   id: string
   delta: number | string
@@ -257,6 +262,9 @@ const { data: tierCatalog } = await useAsyncData('dash:tierCatalog', async () =>
 
 const catalogDetailsOpen = ref(false)
 const catalogDetailsTierId = ref<string | null>(null)
+const planChangeConfirmOpen = ref(false)
+const planChangeTarget = ref<PlanChangeTarget | null>(null)
+const membershipCancelConfirmOpen = ref(false)
 const catalogDetailsTier = computed(() => {
   if (!catalogDetailsTierId.value) return null
   return (tierCatalog.value ?? []).find(tier => tier.id === catalogDetailsTierId.value) ?? null
@@ -395,6 +403,20 @@ const pendingSwapSummary = computed(() => {
 
 const currentVariation = computed(() =>
   variations.value?.find(v => v.cadence === membership.value?.cadence) ?? null
+)
+const currentMembershipDisplayName = computed(() =>
+  tier.value?.display_name
+  ?? formatMembershipTierLabel(membership.value?.tier)
+  ?? 'Membership'
+)
+const planChangeTargetName = computed(() => {
+  if (!planChangeTarget.value) return 'Membership'
+  return (tierCatalog.value ?? []).find(row => row.id === planChangeTarget.value?.tierId)?.display_name
+    ?? formatMembershipTierLabel(planChangeTarget.value.tierId)
+    ?? planChangeTarget.value.tierId
+})
+const membershipActionEffectiveLabel = computed(() =>
+  formatDateLabel(membership.value?.current_period_end ?? null) ?? 'the end of your current billing cycle'
 )
 
 const membershipIntroDescription = computed(() => {
@@ -632,6 +654,7 @@ const paymentCurrency = ref('USD')
 const paymentLabel = ref('purchase')
 const purchasePromoCode = ref('')
 const planChangePromoCode = ref('')
+const planChangeLoading = ref(false)
 const membershipCancelLoading = ref(false)
 const membershipUndoCancelLoading = ref(false)
 const topupClaimInFlight = ref(false)
@@ -777,7 +800,32 @@ const waiverStatusColor = computed(() => {
   return 'error'
 })
 
-async function schedulePlanChange(tierId: string, cadence: string) {
+function openPlanChangeConfirmation(tierId: string, variation: PlanVariation) {
+  planChangeTarget.value = {
+    tierId,
+    variation: { ...variation }
+  }
+  planChangeConfirmOpen.value = true
+}
+
+function closePlanChangeConfirmation() {
+  if (planChangeLoading.value) return
+  planChangeConfirmOpen.value = false
+  planChangeTarget.value = null
+}
+
+async function confirmPlanChange() {
+  if (!planChangeTarget.value) return
+  const changed = await schedulePlanChange(
+    planChangeTarget.value.tierId,
+    planChangeTarget.value.variation.cadence
+  )
+  if (changed) closePlanChangeConfirmation()
+}
+
+async function schedulePlanChange(tierId: string, cadence: string): Promise<boolean> {
+  if (planChangeLoading.value) return false
+  planChangeLoading.value = true
   try {
     let validatedPromoCode: string | undefined
     const promoCandidate = planChangePromoCode.value.trim().toUpperCase()
@@ -816,6 +864,7 @@ async function schedulePlanChange(tierId: string, cadence: string) {
     })
     showRefreshPageToast()
     await refreshAll()
+    return true
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
     toast.add({
@@ -823,11 +872,29 @@ async function schedulePlanChange(tierId: string, cadence: string) {
       description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error',
       color: 'error'
     })
+    return false
+  } finally {
+    planChangeLoading.value = false
   }
 }
 
-async function cancelMembershipAtPeriodEnd() {
+function openMembershipCancelConfirmation() {
+  if (!membership.value || subscriptionState.value?.pendingCancel) return
+  membershipCancelConfirmOpen.value = true
+}
+
+function closeMembershipCancelConfirmation() {
   if (membershipCancelLoading.value) return
+  membershipCancelConfirmOpen.value = false
+}
+
+async function confirmMembershipCancellation() {
+  const canceled = await cancelMembershipAtPeriodEnd()
+  if (canceled) closeMembershipCancelConfirmation()
+}
+
+async function cancelMembershipAtPeriodEnd(): Promise<boolean> {
+  if (membershipCancelLoading.value) return false
   membershipCancelLoading.value = true
   try {
     const res = await $fetch<{ effectiveDate: string | null }>('/api/membership/cancel', {
@@ -841,6 +908,7 @@ async function cancelMembershipAtPeriodEnd() {
     })
     showRefreshPageToast()
     await refreshAll()
+    return true
   } catch (error: unknown) {
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
     toast.add({
@@ -848,6 +916,7 @@ async function cancelMembershipAtPeriodEnd() {
       description: e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Unknown error',
       color: 'error'
     })
+    return false
   } finally {
     membershipCancelLoading.value = false
   }
@@ -1711,8 +1780,9 @@ onUnmounted(() => {
                       size="xs"
                       class="mt-2"
                       variant="soft"
-                      :disabled="Boolean(subscriptionState?.pendingCancel)"
-                      @click="schedulePlanChange(membership?.tier ?? 'creator', v.cadence)"
+                      :loading="planChangeLoading && planChangeTarget?.variation.cadence === v.cadence"
+                      :disabled="Boolean(subscriptionState?.pendingCancel) || planChangeLoading"
+                      @click="openPlanChangeConfirmation(membership?.tier ?? 'creator', v)"
                     >
                       Schedule {{ formatCadence(v.cadence) }}
                     </UButton>
@@ -1746,7 +1816,7 @@ onUnmounted(() => {
                   icon="i-lucide-calendar-x"
                   :loading="membershipCancelLoading"
                   :disabled="membershipCancelLoading || membershipUndoCancelLoading"
-                  @click="cancelMembershipAtPeriodEnd"
+                  @click="openMembershipCancelConfirmation"
                 >
                   Cancel at period end
                 </UButton>
@@ -1789,6 +1859,177 @@ onUnmounted(() => {
         </template>
       </div>
     </DashboardPageScaffold>
+
+    <UModal
+      v-model:open="planChangeConfirmOpen"
+      :dismissible="!planChangeLoading"
+    >
+      <template #content>
+        <UCard v-if="planChangeTarget">
+          <template #header>
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold">
+                  Schedule plan change?
+                </h3>
+                <p class="mt-1 text-xs text-dimmed">
+                  Compare the next billing cycle before confirming.
+                </p>
+              </div>
+              <UButton
+                icon="i-lucide-x"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                :disabled="planChangeLoading"
+                @click="closePlanChangeConfirmation"
+              />
+            </div>
+          </template>
+
+          <div class="space-y-3">
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div class="rounded-lg border border-default p-3 text-sm">
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  Current plan
+                </div>
+                <div class="mt-1 font-medium">
+                  {{ currentMembershipDisplayName }} · {{ formatCadence(membership?.cadence ?? null) }}
+                </div>
+                <div class="mt-2 text-xs text-dimmed">
+                  {{ currentVariation ? billedCyclePrice(currentVariation, variations ?? []) : '—' }}{{ cadencePriceSuffix(membership?.cadence ?? null) }}
+                  · {{ currentVariation?.credits_per_month ?? '—' }} {{ creditsCycleAbbrev(membership?.cadence ?? null) }}
+                </div>
+              </div>
+              <div class="rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm">
+                <div class="text-xs uppercase tracking-wide text-primary/80">
+                  Starts next cycle
+                </div>
+                <div class="mt-1 font-medium">
+                  {{ planChangeTargetName }} · {{ formatCadence(planChangeTarget.variation.cadence) }}
+                </div>
+                <div class="mt-2 text-xs text-dimmed">
+                  {{ billedCyclePrice(planChangeTarget.variation, variations ?? []) }}{{ cadencePriceSuffix(planChangeTarget.variation.cadence) }}
+                  · {{ planChangeTarget.variation.credits_per_month ?? '—' }} {{ creditsCycleAbbrev(planChangeTarget.variation.cadence) }}
+                </div>
+              </div>
+            </div>
+
+            <UAlert
+              color="warning"
+              variant="soft"
+              icon="i-lucide-calendar-sync"
+              :title="`Current plan access continues through ${membershipActionEffectiveLabel}`"
+              description="No prorated mid-cycle charge is requested. On the effective date, Square switches the billing cadence and future plan benefits and credit grants follow the target option."
+            />
+            <UAlert
+              v-if="planChangePromoCode.trim()"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-ticket-percent"
+              :title="`Promo ${planChangePromoCode.trim().toUpperCase()} will be validated`"
+              description="The promo is recorded only if scheduling succeeds and may change the listed next-cycle charge."
+            />
+          </div>
+
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="planChangeLoading"
+                @click="closePlanChangeConfirmation"
+              >
+                Keep current plan
+              </UButton>
+              <UButton
+                :loading="planChangeLoading"
+                @click="confirmPlanChange"
+              >
+                Schedule {{ formatCadence(planChangeTarget.variation.cadence) }}
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
+
+    <UModal
+      v-model:open="membershipCancelConfirmOpen"
+      :dismissible="!membershipCancelLoading"
+    >
+      <template #content>
+        <UCard v-if="membership">
+          <template #header>
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold">
+                  Cancel membership at period end?
+                </h3>
+                <p class="mt-1 text-xs text-dimmed">
+                  Review renewal and member-access consequences before continuing.
+                </p>
+              </div>
+              <UButton
+                icon="i-lucide-x"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                :disabled="membershipCancelLoading"
+                @click="closeMembershipCancelConfirmation"
+              />
+            </div>
+          </template>
+
+          <div class="space-y-3">
+            <div class="rounded-lg border border-default p-3 text-sm">
+              <div class="font-medium">
+                {{ currentMembershipDisplayName }} · {{ formatCadence(membership.cadence) }}
+              </div>
+              <div class="mt-2 text-xs text-dimmed">
+                {{ currentVariation ? billedCyclePrice(currentVariation, variations ?? []) : '—' }}{{ cadencePriceSuffix(membership.cadence) }}
+                · access through {{ membershipActionEffectiveLabel }}
+              </div>
+            </div>
+
+            <UAlert
+              color="warning"
+              variant="soft"
+              icon="i-lucide-calendar-x"
+              :title="`Automatic renewal ends ${membershipActionEffectiveLabel}`"
+              description="Your membership and current member access remain active through that date. After cancellation takes effect, member booking-window and hold benefits end."
+            />
+            <UAlert
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-receipt-text"
+              title="No immediate or prorated refund"
+              description="This schedules an end-of-cycle cancellation. It does not reverse prior charges or erase existing credit and booking history."
+            />
+          </div>
+
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="membershipCancelLoading"
+                @click="closeMembershipCancelConfirmation"
+              >
+                Keep membership
+              </UButton>
+              <UButton
+                color="warning"
+                :loading="membershipCancelLoading"
+                @click="confirmMembershipCancellation"
+              >
+                Schedule cancellation
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
 
     <UModal
       v-model:open="catalogDetailsOpen"

@@ -227,10 +227,12 @@ async function signWaiver() {
           </div>
         </template>
 
+        <!-- eslint-disable vue/no-v-html -- toRenderableHtml applies the shared allowlist sanitizer. -->
         <div
           class="waiver-rich-content max-w-none rounded-md border border-default bg-white text-slate-900 p-4 text-sm leading-6 max-h-[50vh] overflow-y-auto"
           v-html="toRenderableHtml(activeTemplate.body)"
         />
+        <!-- eslint-enable vue/no-v-html -->
 
         <div class="mt-4 space-y-3">
           <UFormField label="Legal full name">

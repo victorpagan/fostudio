@@ -10,17 +10,20 @@ const props = withDefaults(defineProps<{
   confirmLabel?: string
   busy?: boolean
   instanceKey?: string
+  errorMessage?: string | null
 }>(), {
   description: null,
   currency: 'USD',
   confirmLabel: 'Pay now',
   busy: false,
-  instanceKey: 'default'
+  instanceKey: 'default',
+  errorMessage: null
 })
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
-  confirm: [payload: { sourceId: string }]
+  'confirm': [payload: { sourceId: string }]
+  'clear-error': []
 }>()
 
 const localOpen = computed({
@@ -30,10 +33,17 @@ const localOpen = computed({
 
 const loadingCardForm = ref(false)
 const submitLoading = ref(false)
+const awaitingPayment = ref(false)
+const changingCard = ref(false)
 const formError = ref<string | null>(null)
 const cardReady = ref(false)
+const cardContainer = ref<HTMLElement | null>(null)
+const errorAlert = ref<HTMLElement | null>(null)
 
 const containerId = computed(() => `square-card-container-${props.instanceKey}`)
+const submitting = computed(() => submitLoading.value || awaitingPayment.value || props.busy)
+const activeError = computed(() => formError.value ?? props.errorMessage)
+const submitLabel = computed(() => activeError.value && cardReady.value ? 'Try payment again' : props.confirmLabel)
 
 let cardHandle: {
   tokenize: () => Promise<{ status: string, token?: string, errors?: Array<{ code?: string, message?: string, detail?: string }> }>
@@ -74,7 +84,7 @@ async function unmountCardForm() {
 }
 
 async function submit() {
-  if (submitLoading.value || props.busy) return
+  if (submitting.value || changingCard.value) return
   if (!cardHandle) {
     formError.value = 'Card form is not ready. Try again.'
     return
@@ -82,6 +92,7 @@ async function submit() {
 
   submitLoading.value = true
   formError.value = null
+  if (props.errorMessage) emit('clear-error')
   try {
     const result = await cardHandle.tokenize()
     if (result.status !== 'OK' || !result.token) {
@@ -101,7 +112,10 @@ async function submit() {
       formError.value = details || `Card tokenization failed (${result.status}).`
       return
     }
+    awaitingPayment.value = true
     emit('confirm', { sourceId: result.token })
+    await nextTick()
+    if (!props.busy && localOpen.value) awaitingPayment.value = false
   } catch (error: unknown) {
     console.error('[square/tokenize] exception', error)
     formError.value = error instanceof Error ? error.message : 'Payment failed.'
@@ -110,13 +124,46 @@ async function submit() {
   }
 }
 
+async function changeCard() {
+  if (submitting.value || changingCard.value) return
+
+  changingCard.value = true
+  formError.value = null
+  if (props.errorMessage) emit('clear-error')
+  try {
+    await unmountCardForm()
+    await mountCardForm()
+    await nextTick()
+    const focusTarget = cardContainer.value?.querySelector<HTMLElement>('iframe') ?? cardContainer.value
+    focusTarget?.focus({ preventScroll: true })
+  } finally {
+    changingCard.value = false
+  }
+}
+
+async function focusActiveError() {
+  if (!localOpen.value || !activeError.value) return
+  await nextTick()
+  errorAlert.value?.focus({ preventScroll: true })
+}
+
 watch(() => localOpen.value, async (next) => {
   if (next) {
     await mountCardForm()
+    await focusActiveError()
   } else {
     await unmountCardForm()
     formError.value = null
+    awaitingPayment.value = false
   }
+})
+
+watch(activeError, async (next) => {
+  if (next) await focusActiveError()
+})
+
+watch(() => props.busy, (next, previous) => {
+  if (!next && previous) awaitingPayment.value = false
 })
 
 onBeforeUnmount(async () => {
@@ -127,7 +174,7 @@ onBeforeUnmount(async () => {
 <template>
   <UModal
     v-model:open="localOpen"
-    :dismissible="!submitLoading && !busy"
+    :dismissible="!submitting && !changingCard"
   >
     <template #content>
       <UCard>
@@ -149,7 +196,8 @@ onBeforeUnmount(async () => {
               color="neutral"
               variant="ghost"
               size="sm"
-              :disabled="submitLoading || busy"
+              aria-label="Close payment dialog"
+              :disabled="submitting || changingCard"
               @click="localOpen = false"
             />
           </div>
@@ -171,7 +219,9 @@ onBeforeUnmount(async () => {
             </div>
             <div
               :id="containerId"
+              ref="cardContainer"
               class="rounded-lg border border-default bg-default p-3 min-h-16"
+              tabindex="-1"
             />
           </div>
 
@@ -189,31 +239,57 @@ onBeforeUnmount(async () => {
             icon="i-lucide-circle-alert"
             title="Card form not ready yet."
           />
-          <UAlert
-            v-if="formError"
-            color="error"
-            variant="soft"
-            icon="i-lucide-circle-alert"
-            :title="formError"
-          />
+          <div
+            v-if="activeError"
+            ref="errorAlert"
+            class="rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+            tabindex="-1"
+          >
+            <UAlert
+              color="error"
+              variant="soft"
+              icon="i-lucide-circle-alert"
+              title="Payment could not be completed"
+              :description="activeError"
+            />
+            <p
+              v-if="errorMessage && !formError"
+              class="mt-2 text-sm text-dimmed"
+            >
+              Review or change the card details above, then try the payment again.
+            </p>
+          </div>
         </div>
 
         <template #footer>
-          <div class="flex justify-end gap-2">
+          <div class="flex flex-wrap justify-end gap-2">
             <UButton
               color="neutral"
               variant="soft"
-              :disabled="submitLoading || busy"
+              :disabled="submitting || changingCard"
               @click="localOpen = false"
             >
               Cancel
             </UButton>
             <UButton
-              :loading="submitLoading || busy"
-              :disabled="!cardReady || loadingCardForm"
+              v-if="errorMessage && cardReady"
+              color="neutral"
+              variant="soft"
+              :loading="changingCard"
+              :disabled="submitting || loadingCardForm"
+              @click="changeCard"
+            >
+              Enter a different card
+            </UButton>
+            <UButton
+              :loading="submitting"
+              :disabled="!cardReady || loadingCardForm || changingCard"
               @click="submit"
             >
-              {{ confirmLabel }}
+              {{ submitLabel }}
             </UButton>
           </div>
         </template>

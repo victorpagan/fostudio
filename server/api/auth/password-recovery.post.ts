@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { sendViaFomailer } from '~~/server/utils/mail/fomailer'
+import { enforceRateLimit } from '~~/server/utils/security/rateLimit'
 
 const bodySchema = z.object({
   email: z.string().trim().email().max(320)
@@ -56,6 +57,18 @@ export default defineEventHandler(async (event) => {
   }
 
   const email = parsed.data.email.trim().toLowerCase()
+  enforceRateLimit(event, {
+    scope: 'password-recovery-ip',
+    limit: 6,
+    windowMs: 60 * 60_000
+  })
+  enforceRateLimit(event, {
+    scope: 'password-recovery-email',
+    limit: 3,
+    windowMs: 60 * 60_000,
+    identifier: email,
+    includeIp: false
+  })
   const runtimeConfig = useRuntimeConfig(event)
   const requestOrigin = getRequestURL(event).origin
   const configuredSiteUrl = typeof runtimeConfig.public?.siteUrl === 'string'

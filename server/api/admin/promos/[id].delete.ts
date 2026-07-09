@@ -7,7 +7,7 @@ const paramsSchema = z.object({
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
-  const db = supabase as any
+  const db = supabase
   const params = paramsSchema.parse(getRouterParams(event))
 
   const { error } = await db

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { requireServerAdmin } from '~~/server/utils/auth'
+import { sanitizeRichHtml } from '~~/app/utils/sanitizeHtml'
 import type { Json } from '~~/app/types/database.types'
 
 const paramsSchema = z.object({
@@ -35,7 +36,13 @@ export default defineEventHandler(async (event) => {
 
   const patch: Record<string, unknown> = {}
   if (body.title) patch.title = body.title
-  if (body.body) patch.body = body.body
+  if (body.body) {
+    const sanitizedBody = sanitizeRichHtml(body.body).trim()
+    if (!sanitizedBody.replace(/<[^>]*>/g, '').trim()) {
+      throw createError({ statusCode: 400, statusMessage: 'Waiver body must contain readable text.' })
+    }
+    patch.body = sanitizedBody
+  }
   if (body.metadata !== undefined) patch.metadata = JSON.parse(JSON.stringify(body.metadata)) as Json
 
   const { data, error } = await supabase

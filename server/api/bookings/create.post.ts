@@ -489,7 +489,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Workshop booking is not enabled for your account.' })
   }
 
-  const rpcName = hasActiveMembership ? 'create_confirmed_booking_with_burn' : 'create_confirmed_booking_with_burn_no_membership'
+  const ratePolicySnapshot = buildRatePolicySnapshot({
+    accountKind,
+    rateKind,
+    guestPolicy: accountKind === 'guest' ? guestPolicy : null,
+    standbyPolicy: rateKind === 'standby' ? standbyPolicy : null
+  })
+  const rpcName = hasActiveMembership
+    ? 'create_confirmed_booking_with_burn_and_rate'
+    : 'create_confirmed_booking_with_burn_no_membership_and_rate'
   const rpcBody = hasActiveMembership
     ? {
         p_user_id: user.sub,
@@ -505,7 +513,9 @@ export default defineEventHandler(async (event) => {
         p_workshop_title: workshopTitle || null,
         p_workshop_description: workshopDescription || null,
         p_workshop_link: workshopLink || null,
-        p_workshop_liability_accepted_at: workshopLiabilityAcceptedAt
+        p_workshop_liability_accepted_at: workshopLiabilityAcceptedAt,
+        p_booking_rate_kind: rateKind,
+        p_rate_policy_snapshot: ratePolicySnapshot
       }
     : {
         p_user_id: user.sub,
@@ -518,7 +528,9 @@ export default defineEventHandler(async (event) => {
         p_workshop_title: workshopTitle || null,
         p_workshop_description: workshopDescription || null,
         p_workshop_link: workshopLink || null,
-        p_workshop_liability_accepted_at: workshopLiabilityAcceptedAt
+        p_workshop_liability_accepted_at: workshopLiabilityAcceptedAt,
+        p_booking_rate_kind: rateKind,
+        p_rate_policy_snapshot: ratePolicySnapshot
       }
 
   // Call atomic RPC (booking + burn + optional hold)
@@ -555,28 +567,6 @@ export default defineEventHandler(async (event) => {
   }
 
   const bookingId = result?.[0]?.booking_id ?? null
-  if (bookingId) {
-    const snapshot = buildRatePolicySnapshot({
-      accountKind,
-      rateKind,
-      guestPolicy: accountKind === 'guest' ? guestPolicy : null,
-      standbyPolicy: rateKind === 'standby' ? standbyPolicy : null
-    })
-    const { error: rateUpdateErr } = await supabase
-      .from('bookings')
-      .update({
-        booking_rate_kind: rateKind,
-        rate_policy_snapshot: snapshot
-      } as never)
-      .eq('id', bookingId)
-    if (rateUpdateErr) {
-      console.warn('[booking/create] failed to persist booking rate metadata', {
-        bookingId,
-        rateKind,
-        error: rateUpdateErr.message
-      })
-    }
-  }
   if (bookingId) {
     await enqueueBookingAccessSync(event, {
       bookingId,

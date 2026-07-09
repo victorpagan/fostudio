@@ -13,6 +13,8 @@ type SquarePlanRow = {
 const toast = useToast()
 const selectedPlanIds = ref<string[]>([])
 const deleting = ref(false)
+const deactivateConfirmOpen = ref(false)
+const deactivationTargets = ref<SquarePlanRow[]>([])
 
 const { data, pending, refresh, error } = await useAsyncData('admin:square:plans', async () => {
   const res = await $fetch<{ plans: SquarePlanRow[] }>('/api/admin/square/subscription-plans')
@@ -21,6 +23,8 @@ const { data, pending, refresh, error } = await useAsyncData('admin:square:plans
 
 const plans = computed(() => data.value ?? [])
 const allSelected = computed(() => plans.value.length > 0 && selectedPlanIds.value.length === plans.value.length)
+const deactivationVariationCount = computed(() => deactivationTargets.value.reduce((total, plan) => total + plan.variationIds.length, 0))
+const deactivationEligibleItemCount = computed(() => deactivationTargets.value.reduce((total, plan) => total + plan.eligibleItemIds.length, 0))
 const loadErrorMessage = computed(() => {
   const message = error.value?.message?.trim()
   return message || 'Failed to load plans.'
@@ -56,9 +60,24 @@ function formatDate(value: string | null) {
   return parsed.toLocaleString()
 }
 
+function openDeactivateConfirmation() {
+  const selected = new Set(selectedPlanIds.value)
+  deactivationTargets.value = plans.value.filter(plan => selected.has(plan.id))
+  if (deactivationTargets.value.length === 0) return
+  deactivateConfirmOpen.value = true
+}
+
+function closeDeactivateConfirmation() {
+  if (deleting.value) return
+  deactivateConfirmOpen.value = false
+  deactivationTargets.value = []
+}
+
 async function deleteSelectedPlans() {
-  if (selectedPlanIds.value.length === 0 || deleting.value) return
+  const planIds = deactivationTargets.value.map(plan => plan.id)
+  if (planIds.length === 0 || deleting.value) return
   deleting.value = true
+  let completed = false
   try {
     const response = await $fetch<{
       ok: boolean
@@ -72,7 +91,7 @@ async function deleteSelectedPlans() {
       }>
     }>('/api/admin/square/subscription-plans.delete', {
       method: 'POST',
-      body: { planIds: selectedPlanIds.value }
+      body: { planIds }
     })
 
     if (response.deactivated > 0) {
@@ -99,15 +118,17 @@ async function deleteSelectedPlans() {
 
     selectedPlanIds.value = []
     await refresh()
+    completed = true
   } catch (deleteError) {
-    const message = deleteError instanceof Error ? deleteError.message : 'Delete failed'
+    const message = deleteError instanceof Error ? deleteError.message : 'Deactivation failed'
     toast.add({
-      title: 'Delete failed',
+      title: 'Deactivation failed',
       description: message,
       color: 'error'
     })
   } finally {
     deleting.value = false
+    if (completed) closeDeactivateConfirmation()
   }
 }
 </script>
@@ -125,7 +146,7 @@ async function deleteSelectedPlans() {
           color: 'warning',
           disabled: selectedPlanIds.length === 0,
           loading: deleting,
-          onSelect: deleteSelectedPlans
+          onSelect: openDeactivateConfirmation
         }"
         :secondary="[
           {
@@ -226,5 +247,91 @@ async function deleteSelectedPlans() {
         </div>
       </div>
     </UCard>
+
+    <UModal
+      v-model:open="deactivateConfirmOpen"
+      :dismissible="!deleting"
+    >
+      <template #content>
+        <UCard>
+          <template #header>
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold">
+                  Deactivate selected Square plans?
+                </h3>
+                <p class="mt-1 text-xs text-dimmed">
+                  Review the catalog objects before starting this bulk action.
+                </p>
+              </div>
+              <UButton
+                icon="i-lucide-x"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                :disabled="deleting"
+                @click="closeDeactivateConfirmation"
+              />
+            </div>
+          </template>
+
+          <div class="space-y-3">
+            <div class="max-h-64 space-y-2 overflow-y-auto pr-1">
+              <div
+                v-for="plan in deactivationTargets"
+                :key="plan.id"
+                class="rounded-lg border border-default p-3 text-sm"
+              >
+                <div class="font-medium">
+                  {{ plan.name }}
+                </div>
+                <div class="mt-1 break-all font-mono text-xs text-dimmed">
+                  {{ plan.id }}
+                </div>
+                <div class="mt-1 text-xs text-dimmed">
+                  {{ plan.variationIds.length }} variation(s) · {{ plan.eligibleItemIds.length }} eligible item(s)
+                </div>
+              </div>
+            </div>
+
+            <UAlert
+              color="warning"
+              variant="soft"
+              icon="i-lucide-circle-off"
+              :title="`${deactivationTargets.length} plan(s) and ${deactivationVariationCount} variation(s) will be deactivated`"
+              description="Square variations are processed first, followed by each subscription plan. This cannot be restored from this page."
+            />
+            <UAlert
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-receipt-text"
+              title="Existing subscriptions are not canceled"
+              :description="`These catalog options will no longer be available for new subscriptions. This request does not cancel member subscriptions, issue refunds, or deactivate the ${deactivationEligibleItemCount} linked eligible item(s).`"
+            />
+          </div>
+
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="deleting"
+                @click="closeDeactivateConfirmation"
+              >
+                Keep plans active
+              </UButton>
+              <UButton
+                color="warning"
+                :loading="deleting"
+                :disabled="deactivationTargets.length === 0"
+                @click="deleteSelectedPlans"
+              >
+                Deactivate {{ deactivationTargets.length }} plan{{ deactivationTargets.length === 1 ? '' : 's' }}
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
   </DashboardPageScaffold>
 </template>

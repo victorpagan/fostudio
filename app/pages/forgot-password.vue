@@ -51,8 +51,14 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
 </script>
 
 <template>
-  <div v-if="sent" class="space-y-4 text-center py-4">
-    <UIcon name="i-heroicons-envelope" class="mx-auto h-12 w-12 text-primary" />
+  <div
+    v-if="sent"
+    class="space-y-4 text-center py-4"
+  >
+    <UIcon
+      name="i-heroicons-envelope"
+      class="mx-auto h-12 w-12 text-primary"
+    />
     <h2 class="text-lg font-semibold">
       Check your email
     </h2>
@@ -60,7 +66,12 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
       We sent a password reset link to your email address.
       Check your inbox (and spam folder, just in case).
     </p>
-    <UButton variant="soft" color="neutral" to="/login" class="mt-2">
+    <UButton
+      variant="soft"
+      color="neutral"
+      to="/login"
+      class="mt-2"
+    >
       Back to login
     </UButton>
   </div>
@@ -81,7 +92,10 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
 
     <template #footer>
       Remember your password?
-      <ULink to="/login" class="text-primary font-medium">Sign in</ULink>
+      <ULink
+        to="/login"
+        class="text-primary font-medium"
+      >Sign in</ULink>
     </template>
   </UAuthForm>
 </template>

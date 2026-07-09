@@ -60,6 +60,9 @@ export default defineEventHandler(async (event) => {
   if (templateError) throw createError({ statusCode: 500, statusMessage: templateError.message })
 
   const templateRow = (templateRowRaw ?? null) as MailTemplateRegistryRow | null
+  if (!templateRow) {
+    throw createError({ statusCode: 400, statusMessage: `No registry entry configured for ${body.eventType}` })
+  }
   const templateId = String(templateRow?.sendgrid_template_id ?? '').trim()
   if (!templateId) {
     throw createError({

@@ -909,7 +909,9 @@ async function submitWaitlist() {
       :currency="checkoutCurrency"
       confirm-label="Pay membership"
       :busy="paymentSubmitting"
+      :error-message="errorMsg"
       @confirm="confirmCardPayment"
+      @clear-error="errorMsg = null"
     />
   </UContainer>
 </template>

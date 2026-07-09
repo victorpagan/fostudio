@@ -122,7 +122,7 @@ export async function buildSubscriptionCreatePhasesFromPlanVariation(
     let phasesSource = extractPhasesFromVariationData(variationData)
 
     let relatedOrderTemplateIds = variationRelatedObjects
-      .filter((object) => readString(object, 'type')?.toUpperCase() === 'ORDER_TEMPLATE')
+      .filter(object => readString(object, 'type')?.toUpperCase() === 'ORDER_TEMPLATE')
       .map(object => readString(object, 'id'))
       .filter((id): id is string => Boolean(id))
 
@@ -134,7 +134,7 @@ export async function buildSubscriptionCreatePhasesFromPlanVariation(
       } = await fetchCatalogObjectWithRelated(square, subscriptionPlanId)
 
       if (!phasesSource.length) {
-        const fromRelatedVariation = planRelatedObjects.find((object) => readString(object, 'id') === planVariationId) ?? null
+        const fromRelatedVariation = planRelatedObjects.find(object => readString(object, 'id') === planVariationId) ?? null
         const variationFromPlan = extractVariationData(fromRelatedVariation) ?? variationData
         phasesSource = extractPhasesFromVariationData(variationFromPlan)
         variationData = variationFromPlan
@@ -142,7 +142,7 @@ export async function buildSubscriptionCreatePhasesFromPlanVariation(
 
       if (!relatedOrderTemplateIds.length) {
         relatedOrderTemplateIds = planRelatedObjects
-          .filter((object) => readString(object, 'type')?.toUpperCase() === 'ORDER_TEMPLATE')
+          .filter(object => readString(object, 'type')?.toUpperCase() === 'ORDER_TEMPLATE')
           .map(object => readString(object, 'id'))
           .filter((id): id is string => Boolean(id))
       }
@@ -155,7 +155,7 @@ export async function buildSubscriptionCreatePhasesFromPlanVariation(
           : []
         const matchingEmbedded = embeddedVariations
           .map(entry => asRecord(entry))
-          .find((object) => readString(object, 'id') === planVariationId) ?? null
+          .find(object => readString(object, 'id') === planVariationId) ?? null
         phasesSource = extractPhasesFromVariationData(extractVariationData(matchingEmbedded))
       }
     }
@@ -222,7 +222,7 @@ export async function buildSubscriptionCreatePhasesFromPlanVariation(
       console.warn(logPrefix, 'relative-phase-missing-order-template', {
         planVariationId,
         phaseCount: phases.length,
-        phases: phases.map((phase) => ({
+        phases: phases.map(phase => ({
           ordinal: phase.ordinal ?? null,
           cadence: phase.cadence ?? null,
           planPhaseUid: phase.planPhaseUid ?? null,

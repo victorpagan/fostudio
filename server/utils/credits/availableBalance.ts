@@ -1,3 +1,6 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '~~/app/types/database.types'
+
 function toNumber(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string' && value.trim()) {
@@ -8,7 +11,7 @@ function toNumber(value: unknown) {
 }
 
 export async function resolveAvailableCreditBalance(
-  supabase: any,
+  supabase: SupabaseClient<Database>,
   userId: string
 ): Promise<number> {
   const { data: balanceRow, error: balanceErr } = await supabase
@@ -38,4 +41,3 @@ export async function resolveAvailableCreditBalance(
 
   return Math.max(0, Number(computed.toFixed(2)))
 }
-

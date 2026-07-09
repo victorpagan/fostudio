@@ -2,7 +2,7 @@ import { requireServerAdmin } from '~~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
-  const db = supabase as any
+  const db = supabase
 
   const { data, error } = await db
     .from('credit_pricing_options')

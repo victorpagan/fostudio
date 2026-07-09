@@ -1,19 +1,15 @@
 import { z } from 'zod'
 import { DateTime } from 'luxon'
-import { serverSupabaseClient, serverSupabaseServiceRole } from '#supabase/server'
+import { serverSupabaseServiceRole } from '#supabase/server'
 import { loadPeakWindowConfig, toPeakWindowPayload } from '~~/server/utils/booking/peak'
 import { getExternalCalendarEventsInRange } from '~~/server/utils/booking/externalCalendar'
-import { maybeAutoSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 import { getUpcomingWorkshopPromo } from '~~/server/utils/booking/workshopPromo'
 import {
   computeStandbyOpenWindows,
   loadGuestBookingPolicy,
   loadStandbyBookingPolicy
 } from '~~/server/utils/booking/guestPolicy'
-import {
-  expireStalePendingGuestBookings,
-  isActivePendingPaymentReservation
-} from '~~/server/utils/booking/pendingPayments'
+import { isActivePendingPaymentReservation } from '~~/server/utils/booking/pendingPayments'
 
 const qSchema = z.object({
   from: z.string().optional(),
@@ -50,7 +46,6 @@ function isActiveCalendarBooking(row: CalendarBookingRow, nowMs = Date.now()) {
 }
 
 export default defineEventHandler(async (event) => {
-  const supabase = await serverSupabaseClient(event)
   const serviceRole = serverSupabaseServiceRole(event)
   const q = qSchema.parse(getQuery(event))
   const [peakWindowConfig, guestPolicy, standbyPolicy] = await Promise.all([
@@ -63,13 +58,6 @@ export default defineEventHandler(async (event) => {
   const from = q.from ? new Date(q.from) : now
   const to = q.to ? new Date(q.to) : new Date(now.getTime() + guestPolicy.bookingWindowDays * 24 * 60 * 60 * 1000)
 
-  void expireStalePendingGuestBookings(serviceRole).catch((error) => {
-    console.error('[calendar/public] pending-payment cleanup failed', error)
-  })
-  void maybeAutoSyncGoogleCalendar(event, 'calendar_public').catch((error) => {
-    console.error('[calendar/public] google auto-sync failed', error)
-  })
-
   const [
     bookingsResult,
     holdsResult,
@@ -77,20 +65,20 @@ export default defineEventHandler(async (event) => {
     externalEventsResult,
     workshopPromoResult
   ] = await Promise.allSettled([
-    supabase
+    serviceRole
       .from('bookings')
       .select('id, start_time, end_time, status, payment_expires_at')
       .in('status', ['confirmed', 'pending_payment'])
       .lt('start_time', to.toISOString())
       .gt('end_time', from.toISOString())
       .order('start_time', { ascending: true }),
-    supabase
+    serviceRole
       .from('booking_holds')
       .select('id, hold_start, hold_end')
       .lt('hold_start', to.toISOString())
       .gt('hold_end', from.toISOString())
       .order('hold_start', { ascending: true }),
-    supabase
+    serviceRole
       .from('calendar_blocks')
       .select('id,start_time,end_time,reason')
       .eq('active', true)

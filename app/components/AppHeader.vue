@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from '@nuxt/ui'
+
 const route = useRoute()
 const isOpen = ref(false)
 const isScrolled = ref(false)
@@ -28,7 +30,7 @@ const displayName = computed(() => {
   return user.value.email ?? null
 })
 
-const accountMenuItems = computed(() => [
+const accountMenuItems = computed<DropdownMenuItem[][]>(() => [
   [{ label: displayName.value ?? 'Account', type: 'label' }],
   [
     { label: 'Dashboard', icon: 'i-lucide-layout-dashboard', to: '/dashboard' },
@@ -148,6 +150,7 @@ async function logout() {
                   variant="ghost"
                   icon="i-lucide-circle-user"
                   class="hidden sm:inline-flex"
+                  aria-label="Open account menu"
                 />
               </UDropdownMenu>
             </template>

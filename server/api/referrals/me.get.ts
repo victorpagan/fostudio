@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
   if (!user?.sub) throw createError({ statusCode: 401, statusMessage: 'Not authenticated' })
 
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const codeRow = await ensureMemberReferralCode(supabase, user.sub)
 
   const { data: rows, error } = await supabase

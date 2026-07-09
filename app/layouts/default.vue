@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const toast = useToast()
 const route = useRoute()
+const cookieConsent = useCookieConsent()
 const parallaxY = ref(0)
 const homeIntroReady = ref(false)
 let rafId: number | null = null
@@ -91,13 +92,13 @@ onMounted(async () => {
   await nextTick()
   setupSectionReveal()
 
-  const cookie = useCookie('cookie-consent')
-  if (cookie.value === 'accepted') {
+  if (cookieConsent.value) {
     return
   }
 
   toast.add({
-    title: 'We use first-party cookies to enhance your experience on our website.',
+    title: 'Privacy choices',
+    description: 'FO Studio uses essential cookies for account access. With permission, we also use Google Ads measurement to understand campaign performance.',
     duration: 0,
     close: false,
     actions: [{
@@ -105,12 +106,15 @@ onMounted(async () => {
       color: 'neutral',
       variant: 'outline',
       onClick: () => {
-        cookie.value = 'accepted'
+        cookieConsent.value = 'accepted'
       }
     }, {
       label: 'Opt out',
       color: 'neutral',
-      variant: 'ghost'
+      variant: 'ghost',
+      onClick: () => {
+        cookieConsent.value = 'rejected'
+      }
     }]
   })
 })

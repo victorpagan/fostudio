@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   const body = bodySchema.parse((await readBody(event).catch(() => ({}))) ?? {})
 
   const { data: backfilled, error: backfillErr } = await supabase.rpc('backfill_membership_credit_grants', {
-    p_membership_id: body.membershipId ?? null
+    p_membership_id: body.membershipId
   })
 
   if (backfillErr) {

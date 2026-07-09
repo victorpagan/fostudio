@@ -16,7 +16,7 @@ function readSquareObject(response: unknown) {
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
-  const db = supabase as any
+  const db = supabase
   const square = await useSquareClient(event).catch(() => null)
 
   const { data, error } = await db
@@ -60,7 +60,7 @@ export default defineEventHandler(async (event) => {
   }
 
   return {
-    promos: promos.map((promo) => ({
+    promos: promos.map(promo => ({
       ...promo,
       square_sync: statuses[promo.id] ?? { valid: false, reason: 'unknown' }
     }))

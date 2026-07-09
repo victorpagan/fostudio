@@ -16,7 +16,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   // Admins always pass through
-  const role = normalizeRole(user.value.user_metadata?.role)
+  const role = normalizeRole(user.value.app_metadata?.user_role)
     ?? normalizeRole(user.value.app_metadata?.role)
     ?? null
   if (role === 'admin' || role === 'service') return

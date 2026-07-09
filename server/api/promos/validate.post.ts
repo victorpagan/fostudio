@@ -16,7 +16,7 @@ const DEFAULT_HOLD_TOPUP_PRICE_CENTS = 2500
 
 export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole(event)
-  const db = supabase as any
+  const db = supabase
   const body = bodySchema.parse(await readBody(event))
   const promoCode = normalizePromoCode(body.promo_code)
   if (!promoCode) throw createError({ statusCode: 400, statusMessage: 'Promo code is required.' })

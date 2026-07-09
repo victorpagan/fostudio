@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { sendAccountSignupMail } from '~~/server/utils/mail/accountSignup'
+import { enforceRateLimit } from '~~/server/utils/security/rateLimit'
 
 const bodySchema = z.object({
   token: z.string().uuid(),
@@ -22,6 +23,18 @@ type CheckoutSessionRow = {
 
 export default defineEventHandler(async (event) => {
   const body = bodySchema.parse(await readBody(event))
+  enforceRateLimit(event, {
+    scope: 'checkout-signup-ip',
+    limit: 8,
+    windowMs: 60 * 60_000
+  })
+  enforceRateLimit(event, {
+    scope: 'checkout-signup-token',
+    limit: 5,
+    windowMs: 60 * 60_000,
+    identifier: body.token,
+    includeIp: false
+  })
   const supabase = serverSupabaseServiceRole(event)
 
   const { data: sessionRaw, error: sessionErr } = await supabase

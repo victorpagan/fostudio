@@ -11,7 +11,7 @@ const aliases: Record<string, string> = {
 }
 
 const rawPage = route.params.page
-const page = typeof rawPage === 'string' ? rawPage : Array.isArray(rawPage) ? rawPage[0] : ''
+const page = typeof rawPage === 'string' ? rawPage : Array.isArray(rawPage) ? (rawPage[0] ?? '') : ''
 const target = aliases[page]
 
 if (!target) {

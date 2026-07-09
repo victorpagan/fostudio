@@ -3,6 +3,7 @@ const colorMode = useColorMode()
 const route = useRoute()
 const router = useRouter()
 const nuxtApp = useNuxtApp()
+const cookieConsent = useCookieConsent()
 
 const color = computed(() => colorMode.value === 'dark' ? '#131413' : '#FCFAED')
 const sitePageTransition = { name: 'site-page', mode: 'out-in' as const }
@@ -171,26 +172,26 @@ useHead({
   }
 })
 
-if (!import.meta.dev) {
-  useHead({
-    script: [
-      {
-        key: 'google-ads-gtag-src',
-        async: true,
-        src: `https://www.googletagmanager.com/gtag/js?id=${GOOGLE_ADS_TAG_ID}`
-      },
-      {
-        key: 'google-ads-gtag-init',
-        innerHTML: [
-          'window.dataLayer = window.dataLayer || [];',
-          'function gtag(){dataLayer.push(arguments);}',
-          'gtag(\'js\', new Date());',
-          `gtag('config', '${GOOGLE_ADS_TAG_ID}');`
-        ].join('\n')
-      }
-    ]
-  })
-}
+useHead(() => !import.meta.dev && cookieConsent.value === 'accepted'
+  ? {
+      script: [
+        {
+          key: 'google-ads-gtag-src',
+          async: true,
+          src: `https://www.googletagmanager.com/gtag/js?id=${GOOGLE_ADS_TAG_ID}`
+        },
+        {
+          key: 'google-ads-gtag-init',
+          innerHTML: [
+            'window.dataLayer = window.dataLayer || [];',
+            'function gtag(){dataLayer.push(arguments);}',
+            'gtag(\'js\', new Date());',
+            `gtag('config', '${GOOGLE_ADS_TAG_ID}');`
+          ].join('\n')
+        }
+      ]
+    }
+  : {})
 
 useSeoMeta({
   twitterCard: 'summary_large_image'

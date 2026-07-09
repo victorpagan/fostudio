@@ -28,7 +28,9 @@ const { data: membership } = await useAsyncData('myMembership', async () => {
 <template>
   <UContainer class="py-10 sm:py-14">
     <div class="mx-auto max-w-3xl space-y-4">
-      <h1 class="text-3xl font-semibold tracking-tight">Onboarding</h1>
+      <h1 class="text-3xl font-semibold tracking-tight">
+        Onboarding
+      </h1>
 
       <UCard>
         <div class="text-sm text-gray-600 dark:text-gray-300">
@@ -39,8 +41,16 @@ const { data: membership } = await useAsyncData('myMembership', async () => {
           Next step: we’ll add waiver + policies + billing checkout.
         </div>
         <div class="mt-4 flex gap-2">
-          <UButton to="/dashboard" color="neutral" variant="soft">Go to dashboard</UButton>
-          <UButton :to="returnTo">{{ returnTo.startsWith('/checkout') ? 'Continue to checkout' : 'Continue' }}</UButton>
+          <UButton
+            to="/dashboard"
+            color="neutral"
+            variant="soft"
+          >
+            Go to dashboard
+          </UButton>
+          <UButton :to="returnTo">
+            {{ returnTo.startsWith('/checkout') ? 'Continue to checkout' : 'Continue' }}
+          </UButton>
         </div>
       </UCard>
     </div>

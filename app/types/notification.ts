@@ -7,7 +7,7 @@ export type Notification = {
   unread?: boolean
   sender?: {
     name: string
-    avatar?: { src?: string; alt?: string }
+    avatar?: { src?: string, alt?: string }
   }
-  action?: { label: string; to: string }
+  action?: { label: string, to: string }
 }

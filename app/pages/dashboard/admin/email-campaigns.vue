@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import DashboardAdminEmailHighFidelityEmailPreview from '~~/app/components/dashboard/admin/email/HighFidelityEmailPreview.vue'
 import { pickImageFromDevice, uploadEditorImage } from '~~/app/utils/editorImageUpload'
+import type { EditorProps } from '@tiptap/pm/view'
 
 definePageMeta({ middleware: ['admin'] })
 
@@ -1063,15 +1064,14 @@ function insertImageIntoEditorView(view: TiptapEditorView, file: File) {
   view.dispatch(transaction)
 }
 
-const campaignEditorProps = computed(() => ({
-  handlePaste: (view: TiptapEditorView, event: Event) => {
-    const clipboardEvent = event as ClipboardEvent
+const campaignEditorProps = computed<EditorProps>(() => ({
+  handlePaste: (view, clipboardEvent) => {
     const image = readClipboardImage(clipboardEvent)
     if (!image) return false
 
     try {
       clipboardEvent.preventDefault()
-      insertImageIntoEditorView(view, image)
+      insertImageIntoEditorView(view as unknown as TiptapEditorView, image)
     } catch (error: unknown) {
       toast.add({
         title: 'Could not paste image',
@@ -1081,14 +1081,13 @@ const campaignEditorProps = computed(() => ({
     }
     return true
   },
-  handleDrop: (view: TiptapEditorView, event: Event) => {
-    const dragEvent = event as DragEvent
+  handleDrop: (view, dragEvent) => {
     const image = readDroppedImage(dragEvent)
     if (!image) return false
 
     try {
       dragEvent.preventDefault()
-      insertImageIntoEditorView(view, image)
+      insertImageIntoEditorView(view as unknown as TiptapEditorView, image)
     } catch (error: unknown) {
       toast.add({
         title: 'Could not drop image',

@@ -5,7 +5,6 @@ import type { H3Event } from 'h3'
 export type RoleCarrier = {
   sub?: string | null
   app_metadata?: Record<string, unknown> | null
-  user_metadata?: Record<string, unknown> | null
 }
 
 function normalizeRole(value: unknown): string | null {
@@ -22,8 +21,8 @@ export function isAdminRole(role: string | null | undefined): boolean {
 export function readUserRole(user: RoleCarrier | null | undefined): string | null {
   if (!user) return null
 
-  const userRole = normalizeRole(user.user_metadata?.role)
-  if (userRole) return userRole
+  const appUserRole = normalizeRole(user.app_metadata?.user_role)
+  if (appUserRole) return appUserRole
 
   const appRole = normalizeRole(user.app_metadata?.role)
   if (appRole) return appRole

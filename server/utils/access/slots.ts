@@ -21,7 +21,7 @@ function isUniqueViolation(error: unknown) {
 }
 
 async function getReservedPermanentSlots(event: H3Event) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const { data, error } = await supabase
     .from('lock_permanent_codes')
     .select('slot_number')
@@ -32,7 +32,7 @@ async function getReservedPermanentSlots(event: H3Event) {
     if (code === '42P01') return new Set<number>()
     throw new Error(error.message)
   }
-  return new Set((data ?? []).map((row: any) => Number(row.slot_number)))
+  return new Set((data ?? []).map(row => Number(row.slot_number)))
 }
 
 export async function getLockSlotRanges(event: H3Event): Promise<SlotRange> {
@@ -60,7 +60,7 @@ export async function getLockSlotRanges(event: H3Event): Promise<SlotRange> {
 }
 
 export async function getActiveMemberSlot(event: H3Event, userId: string) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const { data, error } = await supabase
     .from('lock_slot_assignments')
     .select('id,slot_number,active,slot_kind,user_id')
@@ -76,7 +76,7 @@ export async function getActiveMemberSlot(event: H3Event, userId: string) {
 }
 
 export async function allocateMemberSlot(event: H3Event, userId: string) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
 
   const existing = await getActiveMemberSlot(event, userId)
   if (existing?.slot_number) {
@@ -95,7 +95,7 @@ export async function allocateMemberSlot(event: H3Event, userId: string) {
     .eq('active', true)
 
   if (usedErr) throw new Error(usedErr.message)
-  const used = new Set((usedRows ?? []).map((row: any) => Number(row.slot_number)))
+  const used = new Set((usedRows ?? []).map(row => Number(row.slot_number)))
   const reserved = await getReservedPermanentSlots(event)
 
   for (let slot = memberStart; slot <= memberEnd; slot += 1) {
@@ -130,7 +130,7 @@ export async function allocateMemberSlot(event: H3Event, userId: string) {
 }
 
 export async function getActiveGuestSlot(event: H3Event, bookingId: string) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const { data, error } = await supabase
     .from('lock_slot_assignments')
     .select('id,slot_number,active,slot_kind,booking_id')
@@ -146,7 +146,7 @@ export async function getActiveGuestSlot(event: H3Event, bookingId: string) {
 }
 
 export async function allocateGuestSlot(event: H3Event, bookingId: string) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
 
   const existing = await getActiveGuestSlot(event, bookingId)
   if (existing?.slot_number) {
@@ -165,7 +165,7 @@ export async function allocateGuestSlot(event: H3Event, bookingId: string) {
     .eq('active', true)
 
   if (usedErr) throw new Error(usedErr.message)
-  const used = new Set((usedRows ?? []).map((row: any) => Number(row.slot_number)))
+  const used = new Set((usedRows ?? []).map(row => Number(row.slot_number)))
   const reserved = await getReservedPermanentSlots(event)
 
   for (let slot = guestStart; slot <= guestEnd; slot += 1) {
@@ -200,7 +200,7 @@ export async function allocateGuestSlot(event: H3Event, bookingId: string) {
 }
 
 export async function releaseGuestSlot(event: H3Event, bookingId: string) {
-  const supabase = serverSupabaseServiceRole(event) as any
+  const supabase = serverSupabaseServiceRole(event)
   const nowIso = new Date().toISOString()
 
   const { data: rows, error: readErr } = await supabase
@@ -214,7 +214,7 @@ export async function releaseGuestSlot(event: H3Event, bookingId: string) {
 
   if (!rows?.length) return [] as number[]
 
-  const ids = rows.map((row: any) => row.id)
+  const ids = rows.map(row => row.id)
 
   const { error: updateErr } = await supabase
     .from('lock_slot_assignments')
@@ -227,5 +227,5 @@ export async function releaseGuestSlot(event: H3Event, bookingId: string) {
 
   if (updateErr) throw new Error(updateErr.message)
 
-  return rows.map((row: any) => Number(row.slot_number))
+  return rows.map(row => Number(row.slot_number))
 }

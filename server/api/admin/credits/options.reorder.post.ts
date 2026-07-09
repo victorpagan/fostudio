@@ -12,10 +12,10 @@ const bodySchema = z.object({
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
-  const db = supabase as any
+  const db = supabase
   const body = bodySchema.parse(await readBody(event))
 
-  const updates = body.options.map((item) => (
+  const updates = body.options.map(item => (
     db
       .from('credit_pricing_options')
       .update({ sort_order: item.sortOrder })

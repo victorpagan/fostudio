@@ -256,13 +256,22 @@ export default defineEventHandler(async (event) => {
   }
 
   const variationRows = enabledVariations.map((variation) => {
+    const providerPlanVariationId = variation.providerPlanVariationId?.trim()
+      || (variation.provider === 'manual' ? `manual_${body.id}_${variation.cadence}` : '')
+
+    if (!providerPlanVariationId) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `Square variation id is required for ${variation.cadence} pricing.`
+      })
+    }
+
     return {
       tier_id: body.id,
       cadence: variation.cadence,
       provider: variation.provider,
       provider_plan_id: variation.providerPlanId?.trim() ?? null,
-      provider_plan_variation_id: variation.providerPlanVariationId?.trim()
-        || (variation.provider === 'manual' ? `manual_${body.id}_${variation.cadence}` : null),
+      provider_plan_variation_id: providerPlanVariationId,
       credits_per_month: variation.creditsPerMonth,
       price_cents: variation.priceCents,
       currency: variation.currency.toUpperCase(),

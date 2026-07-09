@@ -3,7 +3,6 @@ import { DateTime } from 'luxon'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { requireServerAdmin } from '~~/server/utils/auth'
 import { getExternalCalendarEventsInRange } from '~~/server/utils/booking/externalCalendar'
-import { maybeAutoSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 import { getUpcomingWorkshopPromo } from '~~/server/utils/booking/workshopPromo'
 
 const qSchema = z.object({
@@ -44,10 +43,6 @@ export default defineEventHandler(async (event) => {
   const now = new Date()
   const from = parseQueryDate(q.from, new Date(now.getTime() - 24 * 60 * 60 * 1000))
   const to = parseQueryDate(q.to, new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000))
-
-  void maybeAutoSyncGoogleCalendar(event, 'calendar_admin').catch((error) => {
-    console.error('[admin/calendar/bookings] google sync failed', error)
-  })
 
   const [
     bookingsResult,

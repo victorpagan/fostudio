@@ -6,7 +6,7 @@ function isSchemaMissingColumnError(message: string) {
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
-  const db = supabase as any
+  const db = supabase
 
   const selectWithExpiry = `
       id,
@@ -99,7 +99,7 @@ export default defineEventHandler(async (event) => {
     membership_plan_variations?: VariationRow[]
   } & Record<string, unknown>
 
-  const tiers = ((data ?? []) as TierRow[]).map(tier => ({
+  const tiers = ((data ?? []) as unknown as TierRow[]).map(tier => ({
     ...tier,
     credit_expiry_days: Number(tier.credit_expiry_days ?? 90),
     topoff_credit_expiry_days: Number(tier.topoff_credit_expiry_days ?? 30),

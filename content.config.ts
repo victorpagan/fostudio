@@ -63,7 +63,7 @@ const createLandingSchema = () => z.object({
         buttonLabel: z.string().nonempty()
       })
     )
-  }),
+  })
 })
 
 const createFaqSchema = () => z.object({
