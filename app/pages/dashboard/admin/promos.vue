@@ -55,7 +55,7 @@ const form = reactive({
   maxRedemptions: null as number | null
 })
 
-const { data: promoRows, refresh, pending } = await useAsyncData('admin:promos', async () => {
+const { data: promoRows, refresh, pending, error: promosError } = await useAsyncData('admin:promos', async () => {
   const res = await $fetch<{ promos: PromoCode[] }>('/api/admin/promos')
   return res.promos
 })
@@ -97,6 +97,12 @@ function fromLocalInputValue(value: string) {
   return dt.toISOString()
 }
 
+function normalizeIsoDate(value: string | null) {
+  if (!value) return null
+  const dt = new Date(value)
+  return Number.isNaN(dt.getTime()) ? null : dt.toISOString()
+}
+
 function resetForm() {
   selectedId.value = null
   form.id = ''
@@ -132,8 +138,8 @@ function loadPromo(promoId: string) {
     ? promo.metadata!.applies_credit_option_keys!.map(id => String(id))
     : []
   form.active = promo.active
-  form.startsAt = promo.starts_at
-  form.endsAt = promo.ends_at
+  form.startsAt = normalizeIsoDate(promo.starts_at)
+  form.endsAt = normalizeIsoDate(promo.ends_at)
   form.maxRedemptions = promo.max_redemptions
 }
 
@@ -159,6 +165,10 @@ const validationErrors = computed(() => {
   }
   if (form.discountType === 'percent' && form.discountValue > 100) {
     errors.push('Percent discount cannot exceed 100%.')
+  }
+
+  if (form.maxRedemptions !== null && (!Number.isInteger(form.maxRedemptions) || form.maxRedemptions < 0)) {
+    errors.push('Max redemptions must be a whole number of zero or greater.')
   }
 
   const startsAtMs = form.startsAt ? Date.parse(form.startsAt) : Number.NaN
@@ -312,8 +322,29 @@ function formatSquareSyncReason(reason: string | null | undefined) {
           </UButton>
         </div>
         <div class="mt-3 space-y-2">
+          <DashboardSectionState
+            v-if="pending && !promos.length"
+            state="loading"
+            title="Loading promo codes"
+            description="Retrieving promo rules and Square sync status."
+          />
+          <DashboardSectionState
+            v-else-if="promosError"
+            state="error"
+            title="Could not load promo codes"
+            :description="readErrorMessage(promosError)"
+            show-retry
+            @retry="refresh"
+          />
+          <DashboardSectionState
+            v-else-if="!promos.length"
+            state="empty"
+            title="No promo codes yet"
+            description="Create a promo to make it available for eligible checkout flows."
+          />
           <div
             v-for="promo in promos"
+            v-else
             :key="promo.id"
             class="rounded-lg border border-default p-2"
             :class="selectedId === promo.id ? 'border-primary bg-elevated' : ''"

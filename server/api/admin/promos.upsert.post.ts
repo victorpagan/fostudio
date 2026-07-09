@@ -13,8 +13,8 @@ const bodySchema = z.object({
   appliesTierIds: z.array(z.string().min(1)).optional().default([]),
   appliesCreditOptionKeys: z.array(z.string().min(1)).optional().default([]),
   active: z.boolean().default(true),
-  startsAt: z.string().datetime().optional().nullable(),
-  endsAt: z.string().datetime().optional().nullable(),
+  startsAt: z.string().datetime({ offset: true }).optional().nullable(),
+  endsAt: z.string().datetime({ offset: true }).optional().nullable(),
   maxRedemptions: z.number().int().min(0).optional().nullable()
 })
 
@@ -86,8 +86,19 @@ function formatPercent(value: number) {
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
+  // promo_codes is not present in the generated Supabase database type yet.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
-  const body = bodySchema.parse(await readBody(event))
+  const parsedBody = bodySchema.safeParse(await readBody(event))
+  if (!parsedBody.success) {
+    const issue = parsedBody.error.issues[0]
+    const field = issue?.path.join('.') || 'request'
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Invalid ${field}: ${issue?.message ?? 'Invalid value'}`
+    })
+  }
+  const body = parsedBody.data
   const square = await useSquareClient(event)
 
   if (body.startsAt && body.endsAt && new Date(body.endsAt) <= new Date(body.startsAt)) {
