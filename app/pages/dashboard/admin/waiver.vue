@@ -435,12 +435,16 @@ const waiverEditorHandlers = {
   }
 }
 
-const { data, pending, refresh } = await useAsyncData('admin:waiver:templates', async () => {
+const { data, pending, refresh, error: loadError, status } = useAsyncData('admin:waiver:templates', async () => {
   return await $fetch<{
     templates: WaiverTemplate[]
     activeTemplate: WaiverTemplate | null
   }>('/api/admin/waiver/templates')
+}, {
+  immediate: false,
+  server: false
 })
+const templatesReady = computed(() => status.value === 'success' && !loadError.value)
 
 onMounted(() => {
   void refresh()
@@ -557,6 +561,7 @@ const getErrorMessage = (error: unknown) => {
 }
 
 async function createDraft() {
+  if (!templatesReady.value) return
   loadingCreateDraft.value = true
   try {
     const bodyHtml = getBodyHtml(form.body).trim()
@@ -584,6 +589,7 @@ async function createDraft() {
 }
 
 async function saveDraft() {
+  if (!templatesReady.value) return
   if (!selectedTemplate.value) return
   if (!canEditSelected.value) {
     toast.add({
@@ -620,6 +626,7 @@ async function saveDraft() {
 }
 
 function openPublishConfirmation() {
+  if (!templatesReady.value) return
   const draftToPublish = selectedTemplate.value && !selectedTemplate.value.is_active
     ? selectedTemplate.value
     : firstDraftTemplate.value
@@ -644,6 +651,7 @@ function closePublishConfirmation() {
 }
 
 async function publishDraft() {
+  if (!templatesReady.value) return
   const draftToPublish = publishTarget.value
   if (!draftToPublish) return
 
@@ -694,6 +702,7 @@ function hasPreviewBody(value: unknown) {
   <DashboardPageScaffold
     panel-id="admin-waiver"
     title="Waiver Templates"
+    :busy="pending || loadingCreateDraft || loadingSaveDraft || loadingPublishDraft"
   >
     <template #right>
       <DashboardActionGroup
@@ -704,274 +713,295 @@ function hasPreviewBody(value: unknown) {
             color: 'neutral',
             variant: 'soft',
             loading: pending,
+            disabled: pending,
             onSelect: () => refresh()
           }
         ]"
       />
     </template>
-    <UAlert
-      color="warning"
-      variant="soft"
-      icon="i-lucide-file-signature"
-      title="Publishing invalidates prior signatures"
-      description="When a new waiver version is published, all members must re-sign before booking."
+    <DashboardSectionState
+      v-if="loadError"
+      state="error"
+      title="Waiver templates unavailable"
+      :description="`${getErrorMessage(loadError)} Draft and publish controls are disabled so an empty fallback cannot replace live waiver content.`"
+      show-retry
+      @retry="refresh"
     />
-
-    <UCard>
-      <div class="grid gap-3 sm:grid-cols-4 text-sm">
-        <div>
-          <div class="text-xs uppercase tracking-wide text-dimmed">
-            Active version
-          </div>
-          <div class="mt-1 font-medium">
-            {{ activeTemplate ? `v${activeTemplate.version}` : '—' }}
-          </div>
-        </div>
-        <div>
-          <div class="text-xs uppercase tracking-wide text-dimmed">
-            Published
-          </div>
-          <div class="mt-1">
-            {{ formatDate(activeTemplate?.published_at ?? null) }}
-          </div>
-        </div>
-        <div class="sm:col-span-2">
-          <div class="text-xs uppercase tracking-wide text-dimmed">
-            Title
-          </div>
-          <div class="mt-1 font-medium truncate">
-            {{ activeTemplate?.title ?? 'No active template' }}
-          </div>
-        </div>
-      </div>
-    </UCard>
-
-    <UCard>
-      <div class="grid gap-3 md:grid-cols-[1fr_auto_auto_auto] md:items-end">
-        <UFormField label="Template">
-          <USelect
-            v-model="selectedTemplateId"
-            :items="templateItems"
-            placeholder="Select template"
-          />
-        </UFormField>
-
-        <UButton
-          icon="i-lucide-save"
-          :loading="loadingSaveDraft"
-          :disabled="!selectedTemplateId || !canEditSelected"
-          @click="saveDraft"
-        >
-          Save Draft
-        </UButton>
-
-        <UButton
-          icon="i-lucide-plus"
-          color="neutral"
-          variant="soft"
-          :loading="loadingCreateDraft"
-          @click="createDraft"
-        >
-          Create New Draft
-        </UButton>
-
-        <UButton
-          icon="i-lucide-upload"
-          color="warning"
-          :loading="loadingPublishDraft"
-          :disabled="!canPublishAnyDraft"
-          @click="openPublishConfirmation"
-        >
-          Publish Draft
-        </UButton>
-      </div>
-
-      <div class="mt-4 grid gap-4">
-        <UFormField
-          label="Title"
-          class="w-full"
-        >
-          <UInput
-            v-model="form.title"
-            class="w-full max-w-none"
-            placeholder="Film Objektiv Member Waiver and Studio Rules"
-          />
-        </UFormField>
-
-        <UFormField
-          label="Waiver Body"
-          class="w-full"
-        >
-          <template #description>
-            Rich text/HTML supported for member-facing waiver copy.
-          </template>
-          <UEditor
-            v-slot="{ editor }"
-            v-model="form.body"
-            content-type="html"
-            :handlers="waiverEditorHandlers"
-            :image="{ allowBase64: false }"
-            :mention="{ HTMLAttributes: { class: 'mention' } }"
-            :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
-            class="waiver-editor-shell w-full max-w-none rounded-md border border-default bg-default overflow-visible"
-            :placeholder="editorPlaceholder(form.body, 'Write waiver content...')"
-          >
-            <UEditorToolbar
-              :editor="editor"
-              :items="waiverEditorToolbarItems"
-              class="sticky top-0 inset-x-0 z-10 border-b border-default bg-default/95 p-1.5 backdrop-blur overflow-x-auto"
-            />
-            <UEditorToolbar
-              :editor="editor"
-              :items="waiverEditorBubbleToolbarItems"
-              layout="bubble"
-            />
-            <UEditorSuggestionMenu
-              :editor="editor"
-              :items="waiverSuggestionItems"
-            />
-            <UEditorMentionMenu
-              :editor="editor"
-              :items="waiverMentionItems"
-            />
-            <UEditorEmojiMenu
-              :editor="editor"
-              :items="waiverEmojiItems"
-            />
-            <UEditorDragHandle
-              v-slot="{ ui }"
-              :editor="editor"
-              :options="waiverEditorDragHandleOptions"
-              :ui="{ handle: 'translate-x-1 rounded border border-default bg-default/90' }"
-            >
-              <UButton
-                icon="i-lucide-grip-vertical"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                :class="ui.handle()"
-              />
-            </UEditorDragHandle>
-          </UEditor>
-          <p class="mt-2 text-xs text-dimmed">
-            Enter creates a new paragraph. Use Shift+Enter for a single line break.
-          </p>
-        </UFormField>
-
-        <UFormField label="Metadata (JSON)">
-          <UTextarea
-            v-model="form.metadataJson"
-            :rows="8"
-            autoresize
-            placeholder="{&quot;documentKey&quot;:&quot;member_waiver_v1&quot;}"
-          />
-        </UFormField>
-      </div>
-    </UCard>
-
-    <UCard>
-      <div class="text-sm font-medium">
-        Preview
-      </div>
-      <!-- eslint-disable vue/no-v-html -- previewBodyHtml is produced by the shared allowlist sanitizer. -->
-      <div
-        class="waiver-rich-content mt-3 max-w-none rounded-md border border-default bg-white text-slate-900 p-4 text-sm leading-6"
-        v-html="previewBodyHtml"
+    <DashboardSectionState
+      v-else-if="!templatesReady"
+      state="loading"
+      title="Loading waiver templates"
+      description="Loading active and draft waiver versions."
+    />
+    <template v-else>
+      <AppAlert
+        color="warning"
+        variant="soft"
+        icon="i-lucide-file-signature"
+        title="Publishing invalidates prior signatures"
+        description="When a new waiver version is published, all members must re-sign before booking."
       />
-      <!-- eslint-enable vue/no-v-html -->
-      <div
-        v-if="!hasPreviewBody(form.body)"
-        class="mt-2 text-xs text-dimmed"
-      >
-        No waiver body content yet.
-      </div>
-    </UCard>
 
-    <UModal
-      v-model:open="publishConfirmOpen"
-      :dismissible="!loadingPublishDraft"
-    >
-      <template #content>
-        <UCard>
-          <template #header>
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <h3 class="text-base font-semibold">
-                  Publish waiver draft?
-                </h3>
-                <p class="mt-1 text-xs text-dimmed">
-                  Only the saved draft content will be published.
-                </p>
-              </div>
-              <UButton
-                icon="i-lucide-x"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                :disabled="loadingPublishDraft"
-                @click="closePublishConfirmation"
-              />
+      <UCard>
+        <div class="grid gap-3 sm:grid-cols-4 text-sm">
+          <div>
+            <div class="text-xs uppercase tracking-wide text-dimmed">
+              Active version
             </div>
-          </template>
-
-          <div
-            v-if="publishTarget"
-            class="space-y-3"
-          >
-            <div class="rounded-lg border border-default p-3 text-sm">
-              <div class="text-xs uppercase tracking-wide text-dimmed">
-                New active waiver
-              </div>
-              <div class="mt-1 font-medium">
-                v{{ publishTarget.version }} · {{ publishTarget.title }}
-              </div>
-              <div
-                v-if="activeTemplate"
-                class="mt-2 text-xs text-dimmed"
-              >
-                Replaces v{{ activeTemplate.version }} · {{ activeTemplate.title }}
-              </div>
+            <div class="mt-1 font-medium">
+              {{ activeTemplate ? `v${activeTemplate.version}` : '—' }}
             </div>
-
-            <UAlert
-              color="warning"
-              variant="soft"
-              icon="i-lucide-file-signature"
-              title="All prior signatures will become stale"
-              description="Members must sign this version before they can book again. Existing signature records are retained, but no longer satisfy the active waiver requirement."
-            />
-            <UAlert
-              color="neutral"
-              variant="soft"
-              icon="i-lucide-lock"
-              title="Published content becomes immutable"
-              description="Future wording changes require a new draft and another publication."
-            />
           </div>
+          <div>
+            <div class="text-xs uppercase tracking-wide text-dimmed">
+              Published
+            </div>
+            <div class="mt-1">
+              {{ formatDate(activeTemplate?.published_at ?? null) }}
+            </div>
+          </div>
+          <div class="sm:col-span-2">
+            <div class="text-xs uppercase tracking-wide text-dimmed">
+              Title
+            </div>
+            <div class="mt-1 font-medium truncate">
+              {{ activeTemplate?.title ?? 'No active template' }}
+            </div>
+          </div>
+        </div>
+      </UCard>
 
-          <template #footer>
-            <div class="flex justify-end gap-2">
-              <UButton
+      <UCard>
+        <div class="grid gap-3 md:grid-cols-[1fr_auto_auto_auto] md:items-end">
+          <UFormField label="Template">
+            <USelect
+              v-model="selectedTemplateId"
+              :items="templateItems"
+              placeholder="Select template"
+            />
+          </UFormField>
+
+          <UButton
+            icon="i-lucide-save"
+            :loading="loadingSaveDraft"
+            :disabled="!selectedTemplateId || !canEditSelected"
+            @click="saveDraft"
+          >
+            Save Draft
+          </UButton>
+
+          <UButton
+            icon="i-lucide-plus"
+            color="neutral"
+            variant="soft"
+            :loading="loadingCreateDraft"
+            @click="createDraft"
+          >
+            Create New Draft
+          </UButton>
+
+          <UButton
+            icon="i-lucide-upload"
+            color="warning"
+            :loading="loadingPublishDraft"
+            :disabled="!canPublishAnyDraft"
+            @click="openPublishConfirmation"
+          >
+            Publish Draft
+          </UButton>
+        </div>
+
+        <div class="mt-4 grid gap-4">
+          <UFormField
+            label="Title"
+            class="w-full"
+          >
+            <UInput
+              v-model="form.title"
+              class="w-full max-w-none"
+              placeholder="Film Objektiv Member Waiver and Studio Rules"
+            />
+          </UFormField>
+
+          <UFormField
+            label="Waiver Body"
+            class="w-full"
+          >
+            <template #description>
+              Rich text/HTML supported for member-facing waiver copy.
+            </template>
+            <UEditor
+              v-slot="{ editor }"
+              v-model="form.body"
+              content-type="html"
+              :handlers="waiverEditorHandlers"
+              :image="{ allowBase64: false }"
+              :mention="{ HTMLAttributes: { class: 'mention' } }"
+              :ui="{ base: 'px-4 py-4 md:px-5 md:py-5' }"
+              class="waiver-editor-shell w-full max-w-none rounded-md border border-default bg-default overflow-visible"
+              :placeholder="editorPlaceholder(form.body, 'Write waiver content...')"
+            >
+              <UEditorToolbar
+                :editor="editor"
+                :items="waiverEditorToolbarItems"
+                class="sticky top-0 inset-x-0 z-10 border-b border-default bg-default/95 p-1.5 backdrop-blur overflow-x-auto"
+              />
+              <UEditorToolbar
+                :editor="editor"
+                :items="waiverEditorBubbleToolbarItems"
+                layout="bubble"
+              />
+              <UEditorSuggestionMenu
+                :editor="editor"
+                :items="waiverSuggestionItems"
+              />
+              <UEditorMentionMenu
+                :editor="editor"
+                :items="waiverMentionItems"
+              />
+              <UEditorEmojiMenu
+                :editor="editor"
+                :items="waiverEmojiItems"
+              />
+              <UEditorDragHandle
+                v-slot="{ ui }"
+                :editor="editor"
+                :options="waiverEditorDragHandleOptions"
+                :ui="{ handle: 'translate-x-1 rounded border border-default bg-default/90' }"
+              >
+                <UButton
+                  icon="i-lucide-grip-vertical"
+                  aria-label="Drag waiver block"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  :class="ui.handle()"
+                />
+              </UEditorDragHandle>
+            </UEditor>
+            <p class="mt-2 text-xs text-dimmed">
+              Enter creates a new paragraph. Use Shift+Enter for a single line break.
+            </p>
+          </UFormField>
+
+          <UFormField label="Metadata (JSON)">
+            <UTextarea
+              v-model="form.metadataJson"
+              :rows="8"
+              autoresize
+              placeholder="{&quot;documentKey&quot;:&quot;member_waiver_v1&quot;}"
+            />
+          </UFormField>
+        </div>
+      </UCard>
+
+      <UCard>
+        <div class="text-sm font-medium">
+          Preview
+        </div>
+        <!-- eslint-disable vue/no-v-html -- previewBodyHtml is produced by the shared allowlist sanitizer. -->
+        <div
+          class="waiver-rich-content mt-3 max-w-none rounded-md border border-default bg-white text-slate-900 p-4 text-sm leading-6"
+          v-html="previewBodyHtml"
+        />
+        <!-- eslint-enable vue/no-v-html -->
+        <div
+          v-if="!hasPreviewBody(form.body)"
+          class="mt-2 text-xs text-dimmed"
+        >
+          No waiver body content yet.
+        </div>
+      </UCard>
+
+      <UModal
+        v-model:open="publishConfirmOpen"
+        title="Publish waiver draft?"
+        description="Publishing makes this draft the active waiver presented to customers."
+        :dismissible="!loadingPublishDraft"
+      >
+        <template #content>
+          <UCard>
+            <template #header>
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <h3 class="text-base font-semibold">
+                    Publish waiver draft?
+                  </h3>
+                  <p class="mt-1 text-xs text-dimmed">
+                    Only the saved draft content will be published.
+                  </p>
+                </div>
+                <UButton
+                  icon="i-lucide-x"
+                  aria-label="Close waiver publish confirmation"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  :disabled="loadingPublishDraft"
+                  @click="closePublishConfirmation"
+                />
+              </div>
+            </template>
+
+            <div
+              v-if="publishTarget"
+              class="space-y-3"
+            >
+              <div class="rounded-lg border border-default p-3 text-sm">
+                <div class="text-xs uppercase tracking-wide text-dimmed">
+                  New active waiver
+                </div>
+                <div class="mt-1 font-medium">
+                  v{{ publishTarget.version }} · {{ publishTarget.title }}
+                </div>
+                <div
+                  v-if="activeTemplate"
+                  class="mt-2 text-xs text-dimmed"
+                >
+                  Replaces v{{ activeTemplate.version }} · {{ activeTemplate.title }}
+                </div>
+              </div>
+
+              <AppAlert
+                color="warning"
+                variant="soft"
+                icon="i-lucide-file-signature"
+                title="All prior signatures will become stale"
+                description="Members must sign this version before they can book again. Existing signature records are retained, but no longer satisfy the active waiver requirement."
+              />
+              <AppAlert
                 color="neutral"
                 variant="soft"
-                :disabled="loadingPublishDraft"
-                @click="closePublishConfirmation"
-              >
-                Keep draft
-              </UButton>
-              <UButton
-                color="warning"
-                :loading="loadingPublishDraft"
-                :disabled="!publishTarget"
-                @click="publishDraft"
-              >
-                Publish v{{ publishTarget?.version }}
-              </UButton>
+                icon="i-lucide-lock"
+                title="Published content becomes immutable"
+                description="Future wording changes require a new draft and another publication."
+              />
             </div>
-          </template>
-        </UCard>
-      </template>
-    </UModal>
+
+            <template #footer>
+              <div class="flex justify-end gap-2">
+                <UButton
+                  color="neutral"
+                  variant="soft"
+                  :disabled="loadingPublishDraft"
+                  @click="closePublishConfirmation"
+                >
+                  Keep draft
+                </UButton>
+                <UButton
+                  color="warning"
+                  :loading="loadingPublishDraft"
+                  :disabled="!publishTarget"
+                  @click="publishDraft"
+                >
+                  Publish v{{ publishTarget?.version }}
+                </UButton>
+              </div>
+            </template>
+          </UCard>
+        </template>
+      </UModal>
+    </template>
   </DashboardPageScaffold>
 </template>
 

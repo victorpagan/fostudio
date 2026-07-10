@@ -100,20 +100,27 @@ const nowIso = useState('dashboard:bookings:now-iso', () => new Date().toISOStri
 nowIso.value = new Date().toISOString()
 
 // Check membership status first (admins always pass)
-const { data: membershipData } = await useAsyncData('bookings:membership', async () => {
+const {
+  data: membershipData,
+  pending: membershipPending,
+  error: membershipError,
+  refresh: refreshMembership
+} = await useAsyncData('bookings:membership', async () => {
   if (!user.value) return null
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('memberships')
     .select('status, tier, cadence, current_period_end, canceled_at')
     .eq('user_id', user.value.sub)
     .maybeSingle()
+  if (error) throw error
   return data
 })
 
+const membershipResolved = computed(() => !membershipPending.value && !membershipError.value)
 const hasMembership = computed(() =>
-  isAdmin.value || resolveMembershipUiState(membershipData.value) === 'active'
+  membershipResolved.value && (isAdmin.value || resolveMembershipUiState(membershipData.value) === 'active')
 )
-const hasBookingAccess = computed(() => Boolean(user.value) || isAdmin.value)
+const hasBookingAccess = computed(() => membershipResolved.value && (Boolean(user.value) || isAdmin.value))
 const bookingIncrementMinutes = computed(() => hasMembership.value ? 30 : 60)
 
 // Only fetch bookings when membership is confirmed
@@ -147,7 +154,7 @@ const {
     .from('bookings')
     .select('id, start_time, end_time, status, notes, credits_burned, booking_rate_kind, created_at, booking_holds(id,hold_start,hold_end,hold_type)')
     .eq('user_id', user.value.sub)
-    .lte('end_time', nowIso.value)
+    .or(`end_time.lte.${nowIso.value},status.in.(canceled,cancelled)`)
     .order('start_time', { ascending: false })
     .limit(200)
   if (error) throw error
@@ -175,7 +182,7 @@ const holdEndLabel = computed(() =>
   DateTime.fromObject({ hour: holdEndHour.value, minute: 0 }, { zone: STUDIO_TZ }).toFormat('h:mm a')
 )
 
-const { data: holdSummary, refresh: refreshHoldSummary } = await useAsyncData('bookings:hold-summary', async () => {
+const { data: holdSummary, error: holdSummaryError, refresh: refreshHoldSummary } = await useAsyncData('bookings:hold-summary', async () => {
   if (!hasMembership.value) {
     return {
       paidHoldBalance: 0,
@@ -183,15 +190,7 @@ const { data: holdSummary, refresh: refreshHoldSummary } = await useAsyncData('b
       canRequestHoldNow: false
     } as HoldSummary
   }
-  try {
-    return await $fetch<HoldSummary>('/api/holds/summary')
-  } catch {
-    return {
-      paidHoldBalance: 0,
-      includedHoldsRemaining: 0,
-      canRequestHoldNow: false
-    } as HoldSummary
-  }
+  return await $fetch<HoldSummary>('/api/holds/summary')
 }, { watch: [hasMembership] })
 
 async function refreshAll() {
@@ -199,8 +198,14 @@ async function refreshAll() {
   await Promise.allSettled([
     refreshUpcoming(),
     refreshPast(),
+    refreshHoldSummary(),
     refreshSidebarMembershipCredits()
   ])
+}
+
+async function retryMembershipAndBookings() {
+  await refreshMembership()
+  if (!membershipError.value) await refreshAll()
 }
 
 async function refreshSidebarMembershipCredits() {
@@ -240,7 +245,8 @@ const rescheduleForm = reactive({
   holdPaymentMethod: 'auto' as 'auto' | 'token' | 'credits'
 })
 
-const bookingsTab = ref<BookingTab>('active')
+const requestedTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
+const bookingsTab = ref<BookingTab>(requestedTab === 'holds' || requestedTab === 'past' ? requestedTab : 'active')
 const pastPage = ref(1)
 const activeHoldBookings = computed(() =>
   (upcoming.value ?? []).filter(booking => hasHold(booking))
@@ -264,7 +270,20 @@ watch(
 
 watch(bookingsTab, (tab) => {
   if (tab === 'past' && pastPage.value < 1) pastPage.value = 1
+  const nextQuery = { ...route.query }
+  if (tab === 'active') delete nextQuery.tab
+  else nextQuery.tab = tab
+  void router.replace({ query: nextQuery })
 })
+
+watch(
+  () => route.query.tab,
+  (value) => {
+    const tab = Array.isArray(value) ? value[0] : value
+    const next = tab === 'holds' || tab === 'past' ? tab : 'active'
+    if (bookingsTab.value !== next) bookingsTab.value = next
+  }
+)
 
 function goToPastPage(page: number) {
   pastPage.value = Math.min(Math.max(1, page), pastTotalPages.value)
@@ -294,6 +313,7 @@ async function cancelBooking(id: string): Promise<boolean> {
     toast.add({ title: wasPendingPayment ? 'Reservation released' : 'Booking canceled', description: msg, color: 'success' })
     await Promise.allSettled([
       refreshUpcoming(),
+      refreshPast(),
       refreshHoldSummary(),
       refreshSidebarMembershipCredits()
     ])
@@ -439,6 +459,10 @@ function isPendingPayment(booking: Booking) {
   return String(booking.status ?? '').toLowerCase() === 'pending_payment'
 }
 
+function isCanceledBooking(booking: Booking) {
+  return ['canceled', 'cancelled'].includes(String(booking.status ?? '').toLowerCase())
+}
+
 function toGoogleCalendarDate(value: string) {
   const dt = DateTime.fromISO(value, { setZone: true })
   if (!dt.isValid) return null
@@ -567,7 +591,7 @@ function canExtend(booking: Booking) {
 function rescheduleLockReason(booking: Booking) {
   if (booking.booking_rate_kind === 'standby') return 'Standby bookings cannot be rescheduled, canceled, or extended.'
   if (hasPassed(booking)) {
-    if (!hasEnded(booking) && canExtend(booking)) return 'This booking has already started. It can only be extended'
+    if (!hasEnded(booking) && canExtend(booking)) return 'This booking has already started. It can only be extended.'
     return 'Reschedule unavailable: booking has already started/passed.'
   }
   return `Reschedule locked within ${memberRescheduleNoticeHours.value}h of start.`
@@ -615,7 +639,7 @@ function bookingManageItems(booking: Booking): DropdownMenuItem[][] {
       icon: 'i-lucide-package-x',
       onSelect: (event: Event) => {
         event.preventDefault()
-        void cancelBookingHold(booking.id)
+        openCancelConfirm(booking)
       }
     })
   }
@@ -854,7 +878,9 @@ function holdEligibilityFromLocalInputs(startValue: string, endValue: string) {
 }
 
 const rescheduleHoldEligibility = computed(() =>
-  holdEligibilityFromLocalInputs(rescheduleForm.startTime, rescheduleForm.endTime)
+  holdSummaryError.value
+    ? { eligible: false, reasons: ['Hold availability could not be loaded. Retry before adding a hold.'] }
+    : holdEligibilityFromLocalInputs(rescheduleForm.startTime, rescheduleForm.endTime)
 )
 const canShowRescheduleHoldOption = computed(() => rescheduleHoldEligibility.value.eligible)
 
@@ -1530,10 +1556,25 @@ watch(
 
       <template #default>
         <!-- ── Authenticated booking history ── -->
+        <DashboardSectionState
+          v-if="membershipPending"
+          state="loading"
+          title="Loading account access"
+          description="Checking your membership before enabling booking actions."
+        />
+        <DashboardSectionState
+          v-else-if="membershipError"
+          state="error"
+          title="Could not verify account access"
+          description="Booking history was not treated as empty and member actions remain disabled until verification succeeds."
+          show-retry
+          @retry="retryMembershipAndBookings"
+        />
         <div
+          v-else
           class="space-y-6"
         >
-          <UAlert
+          <AppAlert
             color="neutral"
             variant="soft"
             icon="i-lucide-info"
@@ -1541,8 +1582,16 @@ watch(
           />
 
           <div class="space-y-4">
-            <div class="flex flex-wrap items-center gap-2">
+            <div
+              class="flex flex-wrap items-center gap-2"
+              role="tablist"
+              aria-label="Booking sections"
+            >
               <UButton
+                id="bookings-tab-active"
+                role="tab"
+                aria-controls="bookings-panel-active"
+                :aria-selected="bookingsTab === 'active'"
                 size="sm"
                 :variant="bookingsTab === 'active' ? 'solid' : 'soft'"
                 :color="bookingsTab === 'active' ? 'primary' : 'neutral'"
@@ -1551,6 +1600,10 @@ watch(
                 Active bookings
               </UButton>
               <UButton
+                id="bookings-tab-holds"
+                role="tab"
+                aria-controls="bookings-panel-holds"
+                :aria-selected="bookingsTab === 'holds'"
                 size="sm"
                 :variant="bookingsTab === 'holds' ? 'solid' : 'soft'"
                 :color="bookingsTab === 'holds' ? 'primary' : 'neutral'"
@@ -1559,16 +1612,25 @@ watch(
                 Active holds
               </UButton>
               <UButton
+                id="bookings-tab-history"
+                role="tab"
+                aria-controls="bookings-panel-history"
+                :aria-selected="bookingsTab === 'past'"
                 size="sm"
                 :variant="bookingsTab === 'past' ? 'solid' : 'soft'"
                 :color="bookingsTab === 'past' ? 'primary' : 'neutral'"
                 @click="bookingsTab = 'past'"
               >
-                Past bookings
+                Booking history
               </UButton>
             </div>
 
-            <div v-if="bookingsTab === 'active'">
+            <div
+              v-if="bookingsTab === 'active'"
+              id="bookings-panel-active"
+              role="tabpanel"
+              aria-labelledby="bookings-tab-active"
+            >
               <DashboardSectionState
                 v-if="upcomingPending"
                 state="loading"
@@ -1689,7 +1751,12 @@ watch(
               </div>
             </div>
 
-            <div v-else-if="bookingsTab === 'holds'">
+            <div
+              v-else-if="bookingsTab === 'holds'"
+              id="bookings-panel-holds"
+              role="tabpanel"
+              aria-labelledby="bookings-tab-holds"
+            >
               <DashboardSectionState
                 v-if="upcomingPending"
                 state="loading"
@@ -1762,7 +1829,12 @@ watch(
               </div>
             </div>
 
-            <div v-else>
+            <div
+              v-else
+              id="bookings-panel-history"
+              role="tabpanel"
+              aria-labelledby="bookings-tab-history"
+            >
               <DashboardSectionState
                 v-if="pastPending"
                 state="loading"
@@ -1781,7 +1853,7 @@ watch(
                 v-else-if="!past?.length"
                 state="empty"
                 title="No booking history"
-                description="Completed and canceled sessions will appear here."
+                description="Completed sessions and canceled reservations will appear here."
                 icon="i-lucide-history"
               />
 
@@ -1829,6 +1901,7 @@ watch(
                       </div>
                       <div class="shrink-0">
                         <UDropdownMenu
+                          v-if="!isCanceledBooking(booking)"
                           :items="bookingExportItems(booking)"
                           :content="{ align: 'end' }"
                         >
@@ -1880,6 +1953,8 @@ watch(
 
     <UModal
       v-model:open="rescheduleOpen"
+      title="Reschedule booking"
+      description="Choose a new available time and review the booking before saving."
       :dismissible="!reschedulingId"
     >
       <template #content>
@@ -1894,6 +1969,7 @@ watch(
               </h3>
               <UButton
                 icon="i-lucide-x"
+                aria-label="Close reschedule dialog"
                 color="neutral"
                 variant="ghost"
                 size="sm"
@@ -1966,17 +2042,22 @@ watch(
                 <div class="flex items-center gap-1.5">
                   <UButton
                     icon="i-lucide-chevron-left"
+                    aria-label="Show previous month"
                     color="neutral"
                     variant="soft"
                     size="xs"
                     :disabled="!canGoToPrevMonth"
                     @click="goToPrevRescheduleMonth"
                   />
-                  <span class="min-w-28 text-center text-xs font-medium">
+                  <span
+                    class="min-w-28 text-center text-xs font-medium"
+                    aria-live="polite"
+                  >
                     {{ rescheduleMonthLabel }}
                   </span>
                   <UButton
                     icon="i-lucide-chevron-right"
+                    aria-label="Show next month"
                     color="neutral"
                     variant="soft"
                     size="xs"
@@ -2011,17 +2092,30 @@ watch(
               >
                 {{ rescheduleHintsError }}
               </p>
+              <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase tracking-wide text-dimmed">
+                <span>Sun</span>
+                <span>Mon</span>
+                <span>Tue</span>
+                <span>Wed</span>
+                <span>Thu</span>
+                <span>Fri</span>
+                <span>Sat</span>
+              </div>
               <div
                 class="relative"
               >
                 <div
                   class="grid grid-cols-7 gap-1.5 transition-opacity"
                   :class="rescheduleHintsLoading ? 'opacity-70' : 'opacity-100'"
+                  role="grid"
+                  :aria-label="`${rescheduleMonthLabel} reschedule availability`"
                 >
                   <button
                     v-for="(cell, idx) in rescheduleMonthCells"
                     :key="cell?.key ?? `blank-${idx}`"
                     type="button"
+                    :aria-label="cell ? `${cell.key}${cell.disabled ? ', unavailable' : ', available'}` : undefined"
+                    :aria-pressed="Boolean(cell?.selected)"
                     class="relative h-9 rounded-md border text-xs"
                     :class="cell
                       ? (cell.selected
@@ -2093,14 +2187,14 @@ watch(
               :description="`Requires a minimum booking length and an end time of ${holdMinEndLabel} or later.`"
             >
               <div class="space-y-2">
-                <UAlert
+                <AppAlert
                   v-if="rescheduleTargetHasHold"
                   color="warning"
                   variant="soft"
                   icon="i-lucide-package"
                   description="This booking currently has an overnight hold. Saving this reschedule releases it; re-enable hold below to add it again."
                 />
-                <UAlert
+                <AppAlert
                   v-if="!canShowRescheduleHoldOption"
                   color="warning"
                   variant="soft"
@@ -2165,6 +2259,8 @@ watch(
 
     <UModal
       v-model:open="cancelConfirmOpen"
+      title="Cancel booking?"
+      description="Review the booking and any attached hold before confirming cancellation."
       :dismissible="!cancellingId"
     >
       <template #content>
@@ -2176,6 +2272,7 @@ watch(
               </h3>
               <UButton
                 icon="i-lucide-x"
+                aria-label="Close cancellation confirmation"
                 color="neutral"
                 variant="ghost"
                 size="sm"
@@ -2200,13 +2297,13 @@ watch(
                 {{ formatRange(cancelTarget.start_time, cancelTarget.end_time).timeStr }}
               </div>
             </div>
-            <UAlert
+            <AppAlert
               color="warning"
               variant="soft"
               icon="i-lucide-info"
               :description="isPendingPayment(cancelTarget) ? 'This pending payment reservation will be released if the server still reports it as cancelable.' : 'Cancellation eligibility and any credit return will be confirmed from the current booking state when you submit.'"
             />
-            <UAlert
+            <AppAlert
               v-if="hasHold(cancelTarget)"
               color="warning"
               variant="soft"

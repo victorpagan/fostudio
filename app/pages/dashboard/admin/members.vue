@@ -1,4 +1,13 @@
 <script setup lang="ts">
+import { parseUsdInputToCents } from '~~/app/utils/adminMoney'
+import {
+  adminDateInputToIso,
+  adminTodayInput,
+  formatAdminDate,
+  formatAdminDateTime,
+  isoToAdminDateInput
+} from '~~/app/utils/adminTime'
+
 definePageMeta({ middleware: ['admin'] })
 
 const route = useRoute()
@@ -280,7 +289,11 @@ const memberHealthFilter = ref<'all' | 'attention' | 'waiver' | 'door_code' | 'z
 const rosterPage = ref(1)
 const rosterPageSize = ref(25)
 const membersPending = ref(false)
+const membersLoaded = ref(false)
+const membersError = ref<unknown>(null)
 const detailPending = ref(false)
+const detailLoaded = ref(false)
+const detailError = ref<unknown>(null)
 const selectedDetail = ref<MemberDetail | null>(null)
 const updatingStatus = ref(false)
 const adjustingCredits = ref(false)
@@ -294,6 +307,9 @@ const chargeSubmitting = ref(false)
 const chargePaymentMethods = ref<SavedCardMethod[]>([])
 const dashboardHydrated = ref(false)
 const membershipTierCatalog = ref<MembershipTierCatalog[]>([])
+const membershipTiersLoaded = ref(false)
+const membershipTiersError = ref<unknown>(null)
+const revokeConfirmOpen = ref(false)
 
 const statusForm = reactive({ status: 'active' })
 const creditForm = reactive({ delta: 1, reason: 'admin_adjustment', note: '' })
@@ -367,6 +383,9 @@ const tabItems: Array<{ label: string, value: MemberTab, icon: string }> = [
 
 const members = computed(() => memberRows.value)
 const selectedMember = computed(() => members.value.find(member => member.membership_id === selectedMemberId.value) ?? null)
+const canMutateMember = computed(() => dashboardHydrated.value && membersLoaded.value && !membersPending.value && !membersError.value && Boolean(selectedMember.value))
+const canUseMemberDetail = computed(() => canMutateMember.value && detailLoaded.value && !detailPending.value && !detailError.value)
+const canMutateManualMembership = computed(() => canMutateMember.value && membershipTiersLoaded.value && !membershipTiersError.value)
 const manualAssignableTiers = computed(() => membershipTierCatalog.value.filter(tier => tier.active !== false))
 const manualTierItems = computed(() => manualAssignableTiers.value.map(tier => ({
   label: `${tier.display_name ?? tier.id}${tier.visible === false || tier.direct_access_only ? ' (hidden)' : ''}`,
@@ -623,24 +642,18 @@ function cadenceLabel(value: string | null | undefined) {
 }
 
 function toDateInput(value: string | null | undefined) {
-  if (!value) return ''
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return ''
-  return dt.toISOString().slice(0, 10)
+  return isoToAdminDateInput(value)
 }
 
 function toFutureDateInput(value: string | null | undefined) {
-  if (!value) return ''
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime()) || dt.getTime() <= Date.now()) return ''
-  return dt.toISOString().slice(0, 10)
+  const input = isoToAdminDateInput(value)
+  if (!input) return ''
+  const parsed = adminDateInputToIso(input)
+  return parsed && Date.parse(parsed) > Date.now() ? input : ''
 }
 
 function dateInputToIso(value: string | null | undefined) {
-  const normalized = String(value ?? '').trim()
-  if (!normalized) return null
-  const dt = new Date(`${normalized}T00:00:00`)
-  return Number.isNaN(dt.getTime()) ? null : dt.toISOString()
+  return adminDateInputToIso(value)
 }
 
 function slugify(value: string) {
@@ -683,33 +696,15 @@ function formatMoney(cents: number | null | undefined) {
 }
 
 function moneyInputToCents(value: string | number | null | undefined) {
-  const normalized = String(value ?? '').replace(/[^0-9.]/g, '')
-  if (!normalized) return 0
-  const numeric = Number(normalized)
-  if (!Number.isFinite(numeric)) return 0
-  return Math.round(numeric * 100)
+  return parseUsdInputToCents(value) ?? 0
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return '—'
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return value
-  if (!dashboardHydrated.value) {
-    const iso = dt.toISOString()
-    return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
-  }
-  return dt.toLocaleString('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: 'America/Los_Angeles'
-  })
+  return formatAdminDateTime(value)
 }
 
 function formatShortDate(value: string | null | undefined) {
-  if (!value) return '—'
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return value
-  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' })
+  return formatAdminDate(value)
 }
 
 function memberStatusColor(status: string | null | undefined) {
@@ -783,8 +778,8 @@ function selectMember(member: MemberRecord, options: { syncRoute?: boolean } = {
   manualMembershipForm.tierId = member.tier ?? manualTierItems.value[0]?.value ?? ''
   manualMembershipForm.cadence = member.cadence ?? manualCadenceItems.value[0]?.value ?? 'monthly'
   manualMembershipForm.startsOn = isManualMembership && ['active', 'past_due'].includes(member.effective_status)
-    ? toDateInput(member.current_period_start) || new Date().toISOString().slice(0, 10)
-    : new Date().toISOString().slice(0, 10)
+    ? toDateInput(member.current_period_start) || adminTodayInput()
+    : adminTodayInput()
   manualMembershipForm.expiresOn = isManualMembership
     ? toFutureDateInput(member.manual_expires_at)
     : ''
@@ -825,10 +820,12 @@ function goToRosterPage(delta: number) {
 async function loadMembers(options: { preserveSelection?: boolean } = {}) {
   const priorUserId = selectedMember.value?.user_id ?? null
   membersPending.value = true
+  membersError.value = null
   try {
     const res = await $fetch<{ members: MemberRecord[], summary: MembersSummary }>('/api/admin/members')
     memberRows.value = res.members ?? []
     summary.value = res.summary ?? emptySummary
+    membersLoaded.value = true
     if (options.preserveSelection && priorUserId) {
       const preserved = memberRows.value.find(member => member.user_id === priorUserId)
       if (preserved) {
@@ -838,6 +835,7 @@ async function loadMembers(options: { preserveSelection?: boolean } = {}) {
     }
     if (!options.preserveSelection || !selectedMember.value) applySelectedMember(memberRows.value)
   } catch (error: unknown) {
+    membersError.value = error
     toast.add({
       title: 'Could not load members',
       description: readErrorMessage(error),
@@ -849,9 +847,11 @@ async function loadMembers(options: { preserveSelection?: boolean } = {}) {
 }
 
 async function loadMembershipTiers() {
+  membershipTiersError.value = null
   try {
     const res = await $fetch<{ tiers: MembershipTierCatalog[] }>('/api/admin/membership/tiers')
     membershipTierCatalog.value = res.tiers ?? []
+    membershipTiersLoaded.value = true
     if (!manualMembershipForm.tierId && manualTierItems.value[0]?.value) {
       manualMembershipForm.tierId = manualTierItems.value[0].value
     }
@@ -859,6 +859,7 @@ async function loadMembershipTiers() {
       manualMembershipForm.cadence = manualCadenceItems.value[0]?.value ?? 'monthly'
     }
   } catch (error: unknown) {
+    membershipTiersError.value = error
     toast.add({
       title: 'Could not load membership tiers',
       description: readErrorMessage(error),
@@ -869,9 +870,14 @@ async function loadMembershipTiers() {
 
 async function loadMemberDetail(userId: string) {
   detailPending.value = true
+  detailLoaded.value = false
+  detailError.value = null
+  selectedDetail.value = null
   try {
     selectedDetail.value = await $fetch<MemberDetail>('/api/admin/members/detail', { query: { userId } })
+    detailLoaded.value = true
   } catch (error: unknown) {
+    detailError.value = error
     selectedDetail.value = null
     toast.add({
       title: 'Could not load member detail',
@@ -889,7 +895,7 @@ async function refreshAll() {
 }
 
 async function saveMembershipStatus() {
-  if (!selectedMember.value?.membership_record_id) return
+  if (!selectedMember.value?.membership_record_id || !canMutateMember.value) return
   updatingStatus.value = true
   try {
     await $fetch('/api/admin/members/membership-status', {
@@ -909,7 +915,7 @@ async function saveMembershipStatus() {
 }
 
 async function applyCreditAdjustment() {
-  if (!selectedMember.value) return
+  if (!selectedMember.value || !canUseMemberDetail.value) return
   adjustingCredits.value = true
   try {
     await $fetch('/api/admin/members/credits-adjust', {
@@ -951,7 +957,7 @@ async function loadChargePaymentMethods() {
 }
 
 async function openMemberChargeModal() {
-  if (!selectedMember.value) return
+  if (!selectedMember.value || !canUseMemberDetail.value) return
   memberChargeForm.amountDollars = ''
   memberChargeForm.category = 'repair'
   memberChargeForm.reason = ''
@@ -964,7 +970,7 @@ async function openMemberChargeModal() {
 }
 
 async function submitMemberCharge() {
-  if (!selectedMember.value || chargeSubmitting.value) return
+  if (!selectedMember.value || chargeSubmitting.value || !canUseMemberDetail.value) return
   const amountCents = moneyInputToCents(memberChargeForm.amountDollars)
   if (amountCents <= 0) {
     toast.add({ title: 'Enter a charge amount', color: 'error' })
@@ -1009,7 +1015,7 @@ async function submitMemberCharge() {
 }
 
 async function saveDoorCode() {
-  if (!selectedMember.value || updatingDoorCode.value) return
+  if (!selectedMember.value || updatingDoorCode.value || !canMutateMember.value) return
   updatingDoorCode.value = true
   try {
     await $fetch('/api/admin/members/door-code-set', {
@@ -1029,7 +1035,7 @@ async function saveDoorCode() {
 }
 
 async function saveWorkshopAccess() {
-  if (!selectedMember.value || updatingWorkshopAccess.value) return
+  if (!selectedMember.value || updatingWorkshopAccess.value || !canMutateMember.value) return
   updatingWorkshopAccess.value = true
   try {
     await $fetch('/api/admin/members/workshop-access', {
@@ -1049,7 +1055,7 @@ async function saveWorkshopAccess() {
 }
 
 async function saveManualMembership() {
-  if (!selectedMember.value || savingManualMembership.value) return
+  if (!selectedMember.value || savingManualMembership.value || !canMutateManualMembership.value) return
   if (!manualMembershipForm.tierId) {
     toast.add({ title: 'Choose a manual membership tier', color: 'error' })
     return
@@ -1078,8 +1084,13 @@ async function saveManualMembership() {
   }
 }
 
+function requestRevokeManualMembership() {
+  if (!canMutateManualMembership.value || selectedMember.value?.membership_source !== 'manual') return
+  revokeConfirmOpen.value = true
+}
+
 async function revokeManualMembership() {
-  if (!selectedMember.value || revokingManualMembership.value) return
+  if (!selectedMember.value || revokingManualMembership.value || !canMutateManualMembership.value) return
   revokingManualMembership.value = true
   try {
     await $fetch('/api/admin/members/manual-membership.revoke', {
@@ -1090,6 +1101,7 @@ async function revokeManualMembership() {
       }
     })
     toast.add({ title: 'Manual membership revoked' })
+    revokeConfirmOpen.value = false
     await refreshAll()
     await refreshNuxtData(['dash:sidebar:membership', 'dash:sidebar:credit-cap', 'book:membership-state', 'dash:home:membership'])
   } catch (error: unknown) {
@@ -1114,6 +1126,8 @@ watch([filteredMembers, rosterTotalPages], () => {
 watch(() => selectedMember.value?.user_id, (userId) => {
   if (!userId) {
     selectedDetail.value = null
+    detailLoaded.value = false
+    detailError.value = null
     return
   }
   void loadMemberDetail(userId)
@@ -1135,6 +1149,7 @@ onMounted(async () => {
   <DashboardPageScaffold
     panel-id="admin-members"
     title="Members"
+    :busy="membersPending || detailPending"
   >
     <template #right>
       <DashboardActionGroup
@@ -1150,7 +1165,35 @@ onMounted(async () => {
       />
     </template>
 
-    <div class="space-y-4">
+    <DashboardSectionState
+      v-if="membersPending && !membersLoaded"
+      state="loading"
+      title="Loading members"
+      description="Fetching account, membership, booking, waiver, and operations signals."
+    />
+    <DashboardSectionState
+      v-else-if="membersError && !membersLoaded"
+      state="error"
+      title="Members unavailable"
+      :description="readErrorMessage(membersError)"
+      show-retry
+      @retry="() => loadMembers()"
+    />
+    <DashboardSectionState
+      v-else-if="membersError"
+      state="error"
+      color="warning"
+      icon="i-lucide-clock-alert"
+      title="Showing stale member data"
+      :description="`${readErrorMessage(membersError)} Member mutations are disabled until refresh succeeds.`"
+      show-retry
+      @retry="refreshAll"
+    />
+
+    <div
+      v-if="membersLoaded"
+      class="space-y-4"
+    >
       <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <UCard
           v-for="card in kpiCards"
@@ -1288,9 +1331,12 @@ onMounted(async () => {
                   v-for="member in paginatedMembers"
                   :key="member.membership_id"
                   class="cursor-pointer bg-default/60 transition hover:bg-elevated/60"
+                  role="link"
                   tabindex="0"
+                  :aria-label="`Open admin member record for ${memberLabel(member)}`"
                   @click="selectMember(member)"
                   @keydown.enter.prevent="selectMember(member)"
+                  @keydown.space.prevent="selectMember(member)"
                 >
                   <td class="min-w-72 px-4 py-3">
                     <div class="font-semibold text-highlighted">
@@ -1516,6 +1562,7 @@ onMounted(async () => {
                 variant="soft"
                 icon="i-lucide-refresh-cw"
                 :loading="detailPending"
+                :disabled="!canMutateMember"
                 @click="() => { if (selectedMember) void loadMemberDetail(selectedMember.user_id) }"
               >
                 Refresh detail
@@ -1531,6 +1578,7 @@ onMounted(async () => {
               :icon="tab.icon"
               :variant="selectedTab === tab.value ? 'solid' : 'soft'"
               :color="selectedTab === tab.value ? 'primary' : 'neutral'"
+              :aria-pressed="selectedTab === tab.value"
               @click="selectedTab = tab.value"
             >
               {{ tab.label }}
@@ -1543,8 +1591,16 @@ onMounted(async () => {
             title="Loading member detail"
             description="Fetching bookings, credits, referrals, incidents, and access history."
           />
+          <DashboardSectionState
+            v-else-if="detailError"
+            state="error"
+            title="Member detail unavailable"
+            :description="readErrorMessage(detailError)"
+            show-retry
+            @retry="() => { if (selectedMember) void loadMemberDetail(selectedMember.user_id) }"
+          />
 
-          <template v-else>
+          <template v-else-if="selectedDetail">
             <div
               v-if="selectedTab === 'overview'"
               class="space-y-4"
@@ -1851,13 +1907,13 @@ onMounted(async () => {
                   <UButton
                     size="sm"
                     icon="i-lucide-receipt-text"
-                    :disabled="selectedDetail?.memberChargeHistoryAvailable === false"
+                    :disabled="selectedDetail?.memberChargeHistoryAvailable === false || !canUseMemberDetail"
                     @click="openMemberChargeModal"
                   >
                     Create charge
                   </UButton>
                 </div>
-                <UAlert
+                <AppAlert
                   v-if="selectedDetail?.memberChargeHistoryAvailable === false"
                   class="mt-4"
                   color="warning"
@@ -2010,6 +2066,7 @@ onMounted(async () => {
                   <div class="flex items-end">
                     <UButton
                       :loading="adjustingCredits"
+                      :disabled="!canUseMemberDetail"
                       @click="applyCreditAdjustment"
                     >
                       Apply
@@ -2074,6 +2131,7 @@ onMounted(async () => {
                     />
                     <UButton
                       :loading="updatingDoorCode"
+                      :disabled="!canMutateMember"
                       @click="saveDoorCode"
                     >
                       Save door code
@@ -2095,6 +2153,7 @@ onMounted(async () => {
                     />
                     <UButton
                       :loading="updatingWorkshopAccess"
+                      :disabled="!canMutateMember"
                       @click="saveWorkshopAccess"
                     >
                       Save workshop access
@@ -2122,6 +2181,16 @@ onMounted(async () => {
                 </div>
 
                 <div class="mt-4 grid gap-3 lg:grid-cols-2">
+                  <DashboardSectionState
+                    v-if="membershipTiersError"
+                    class="lg:col-span-2"
+                    state="error"
+                    color="warning"
+                    title="Membership tiers unavailable"
+                    :description="readErrorMessage(membershipTiersError)"
+                    show-retry
+                    @retry="loadMembershipTiers"
+                  />
                   <UFormField label="Tier">
                     <USelect
                       v-model="manualMembershipForm.tierId"
@@ -2170,14 +2239,14 @@ onMounted(async () => {
                       color="error"
                       variant="soft"
                       :loading="revokingManualMembership"
-                      :disabled="selectedMember.membership_source !== 'manual'"
-                      @click="revokeManualMembership"
+                      :disabled="selectedMember.membership_source !== 'manual' || !canMutateManualMembership"
+                      @click="requestRevokeManualMembership"
                     >
                       Revoke manual membership
                     </UButton>
                     <UButton
                       :loading="savingManualMembership"
-                      :disabled="!manualTierItems.length || !manualCadenceItems.length"
+                      :disabled="!manualTierItems.length || !manualCadenceItems.length || !canMutateManualMembership"
                       @click="saveManualMembership"
                     >
                       Save manual membership
@@ -2269,7 +2338,7 @@ onMounted(async () => {
                   />
                   <UButton
                     :loading="updatingStatus"
-                    :disabled="!selectedMember.membership_record_id"
+                    :disabled="!selectedMember.membership_record_id || !canMutateMember"
                     @click="saveMembershipStatus"
                   >
                     Save status
@@ -2310,7 +2379,22 @@ onMounted(async () => {
       </UCard>
     </div>
 
-    <UModal v-model:open="chargeModalOpen">
+    <ConfirmDialog
+      v-model:open="revokeConfirmOpen"
+      title="Revoke this manual membership?"
+      :description="`${memberLabel(selectedMember)} will immediately lose manual membership entitlements. Existing account history, credits, and bookings remain.`"
+      confirm-label="Revoke manual membership"
+      color="error"
+      :busy="revokingManualMembership"
+      @confirm="revokeManualMembership"
+    />
+
+    <UModal
+      v-model:open="chargeModalOpen"
+      title="Create member charge"
+      description="Review the repair or operational charge before billing the member's saved Square card."
+      :dismissible="!chargeSubmitting"
+    >
       <template #content>
         <UCard>
           <template #header>
@@ -2351,7 +2435,7 @@ onMounted(async () => {
               title="Loading saved cards"
               description="Checking Square cards attached to this member account."
             />
-            <UAlert
+            <AppAlert
               v-else-if="!chargePaymentMethods.length"
               color="warning"
               variant="soft"
@@ -2449,7 +2533,7 @@ onMounted(async () => {
                   color="error"
                   icon="i-lucide-credit-card"
                   :loading="chargeSubmitting"
-                  :disabled="!chargePaymentMethods.length"
+                  :disabled="!chargePaymentMethods.length || !canUseMemberDetail"
                   @click="submitMemberCharge"
                 >
                   Charge card now

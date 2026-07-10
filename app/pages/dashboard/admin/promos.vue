@@ -316,7 +316,7 @@ function formatSquareSyncReason(reason: string | null | undefined) {
         ]"
       />
     </template>
-    <UAlert
+    <AppAlert
       color="warning"
       variant="soft"
       icon="i-lucide-ticket-percent"
@@ -600,7 +600,7 @@ function formatSquareSyncReason(reason: string | null | undefined) {
           />
         </div>
 
-        <UAlert
+        <AppAlert
           v-if="validationErrors.length"
           class="mt-4"
           color="warning"
@@ -609,7 +609,7 @@ function formatSquareSyncReason(reason: string | null | undefined) {
           :title="validationErrors[0]"
         />
 
-        <UAlert
+        <AppAlert
           v-if="selectedId && promos.find(p => p.id === selectedId)?.square_sync?.valid === false"
           class="mt-3"
           color="warning"
@@ -633,6 +633,8 @@ function formatSquareSyncReason(reason: string | null | undefined) {
 
     <UModal
       v-model:open="deleteConfirmOpen"
+      title="Delete promo code?"
+      description="Confirm before permanently deleting the selected promotion and disabling future use."
       :dismissible="!deletingId"
     >
       <template #content>
@@ -649,6 +651,7 @@ function formatSquareSyncReason(reason: string | null | undefined) {
               </div>
               <UButton
                 icon="i-lucide-x"
+                aria-label="Close promo deletion confirmation"
                 color="neutral"
                 variant="ghost"
                 size="sm"
@@ -684,14 +687,14 @@ function formatSquareSyncReason(reason: string | null | undefined) {
               </div>
             </div>
 
-            <UAlert
+            <AppAlert
               color="error"
               variant="soft"
               icon="i-lucide-ticket-x"
               title="Future redemption will stop"
               description="Checkout will no longer recognize this code. Completed purchases and prior discounts are not refunded or reversed by this action."
             />
-            <UAlert
+            <AppAlert
               v-if="deleteTarget.square_discount_id"
               color="neutral"
               variant="soft"

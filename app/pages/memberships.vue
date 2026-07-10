@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
+import { parseDiscountLabel } from '~~/app/utils/membershipDiscount'
 
 type Cadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
 
@@ -55,6 +56,14 @@ type SiteMembershipsContent = {
   plans: SiteMembershipPlan[]
 }
 
+type BookingPolicy = {
+  guestBookingWindowDays: number
+  guestBookingStartHour: number
+  guestBookingEndHour: number
+  guestMinBookingHours: number
+  guestBookingIncrementMinutes: number
+}
+
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
@@ -74,6 +83,14 @@ const { user } = useCurrentUser()
 const { data: siteMemberships } = await useAsyncData('site:memberships', async () => {
   return await queryCollection('siteMemberships').first()
 })
+
+usePublicSeo(() => resolvePublicSeo(siteMemberships.value, {
+  title: 'Photo Studio Membership Plans in Los Angeles | FO Studio',
+  description: 'Compare live FO Studio membership prices, billing cadences, credits, booking windows, peak rates, and included holds.',
+  canonicalPath: '/memberships',
+  schemaType: 'CollectionPage',
+  keywords: ['photo studio membership plans', 'Los Angeles studio membership', 'studio booking credits']
+}))
 
 const membershipsContent = computed<SiteMembershipsContent>(() => {
   const fallback: SiteMembershipsContent = {
@@ -114,11 +131,24 @@ const planContentById = computed(() => {
 const { data, refresh } = await useFetch<{ tiers: Tier[] }>('/api/membership/catalog', {
   default: () => ({ tiers: [] })
 })
+const { data: bookingPolicy } = await useFetch<BookingPolicy>('/api/bookings/policy')
 
 const tiers = computed(() => data.value?.tiers ?? [])
 const visibleTiers = computed(() => {
   return tiers.value.filter(tier => !tier.adminOnly && tier.id !== 'test')
 })
+const selectedCadenceByTier = reactive<Record<string, Cadence>>({})
+
+watch(visibleTiers, (nextTiers) => {
+  for (const tier of nextTiers) {
+    const options = sortedOptions(tier)
+    const current = selectedCadenceByTier[tier.id]
+    if (current && options.some(option => option.cadence === current)) continue
+    selectedCadenceByTier[tier.id] = options.find(option => option.cadence === 'monthly')?.cadence
+      ?? options[0]?.cadence
+      ?? 'monthly'
+  }
+}, { immediate: true })
 
 type MembershipStatusRow = {
   status: string | null
@@ -163,8 +193,13 @@ onMounted(async () => {
 })
 
 function formatMoney(cents: number, currency: string) {
-  const dollars = (cents / 100).toFixed(0)
-  return currency === 'USD' ? `$${dollars}` : `${dollars} ${currency}`
+  const hasCents = Math.abs(cents) % 100 !== 0
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: 2
+  }).format(cents / 100)
 }
 
 function sortedOptions(tier: Tier) {
@@ -177,10 +212,100 @@ function monthlyOption(tier: Tier) {
   return options.find(option => option.cadence === 'monthly') ?? options[0] ?? null
 }
 
-function monthlyStartingLabel(tier: Tier) {
-  const option = monthlyOption(tier)
-  if (!option) return 'TBD'
-  return formatMoney(option.price_cents, option.currency)
+function selectedOption(tier: Tier) {
+  const options = sortedOptions(tier)
+  const selectedCadence = selectedCadenceByTier[tier.id]
+  return options.find(option => option.cadence === selectedCadence) ?? options[0] ?? null
+}
+
+function cadenceToMonths(cadence: Cadence) {
+  if (cadence === 'monthly') return 1
+  if (cadence === 'quarterly') return 3
+  if (cadence === 'annual') return 12
+  return null
+}
+
+function billedCycleCents(tier: Tier, option: PlanOption) {
+  const months = cadenceToMonths(option.cadence)
+  if (!months) return option.price_cents
+
+  const monthlyPrice = monthlyOption(tier)?.price_cents ?? option.price_cents
+  let cyclePrice = monthlyPrice * months
+  const discount = parseDiscountLabel(option.discount_label)
+
+  if (discount.type === 'percent') {
+    const percent = Math.min(100, Math.max(0, Number(discount.amount)))
+    if (Number.isFinite(percent)) cyclePrice = Math.round(cyclePrice * (1 - percent / 100))
+  }
+  if (discount.type === 'dollar') {
+    const dollars = Math.max(0, Number(discount.amount))
+    if (Number.isFinite(dollars)) cyclePrice = Math.max(0, cyclePrice - Math.round(dollars * 100))
+  }
+
+  return cyclePrice
+}
+
+function effectiveMonthlyCents(tier: Tier, option: PlanOption) {
+  const months = cadenceToMonths(option.cadence)
+  if (!months) return null
+  return Math.round(billedCycleCents(tier, option) / months)
+}
+
+function savingsVsMonthlyCents(tier: Tier, option: PlanOption) {
+  const months = cadenceToMonths(option.cadence)
+  const monthly = monthlyOption(tier)
+  if (!months || months <= 1 || !monthly) return 0
+  return Math.max(0, monthly.price_cents * months - billedCycleCents(tier, option))
+}
+
+function cadenceLabel(cadence: Cadence) {
+  if (cadence === 'daily') return 'Daily'
+  if (cadence === 'weekly') return 'Weekly'
+  if (cadence === 'monthly') return 'Monthly'
+  if (cadence === 'quarterly') return 'Quarterly'
+  return 'Annual'
+}
+
+function cadencePriceSuffix(cadence: Cadence) {
+  if (cadence === 'daily') return '/day'
+  if (cadence === 'weekly') return '/week'
+  if (cadence === 'quarterly') return '/quarter'
+  if (cadence === 'annual') return '/year'
+  return '/month'
+}
+
+function cadenceBillingLine(cadence: Cadence) {
+  if (cadence === 'daily') return 'Billed each day'
+  if (cadence === 'weekly') return 'Billed each week'
+  if (cadence === 'quarterly') return 'Billed every 3 months'
+  if (cadence === 'annual') return 'Billed once per year'
+  return 'Billed monthly'
+}
+
+function cadenceCreditsLabel(cadence: Cadence) {
+  if (cadence === 'daily') return 'Credits / day'
+  if (cadence === 'weekly') return 'Credits / week'
+  return 'Credits / month'
+}
+
+function optionCreditsLine(option: PlanOption) {
+  if (option.cadence === 'daily') return `${option.credits_per_month} credits released per day`
+  if (option.cadence === 'weekly') return `${option.credits_per_month} credits released per week`
+  return `${option.credits_per_month} credits released monthly`
+}
+
+function formatHour(hour: number | null | undefined) {
+  const normalized = Math.max(0, Math.min(24, Math.floor(Number(hour ?? 0))))
+  if (normalized === 24) return '12 AM'
+  const suffix = normalized >= 12 ? 'PM' : 'AM'
+  const displayHour = normalized % 12 || 12
+  return `${displayHour} ${suffix}`
+}
+
+function formatHours(value: number | null | undefined) {
+  const numeric = Number(value ?? 0)
+  if (numeric === 1) return '1 hour'
+  return `${numeric} hours`
 }
 
 function formatPeakCredits(value: number) {
@@ -218,8 +343,29 @@ function tierDetail(tier: Tier) {
   return `Includes up to ${tier.holds_included} overnight equipment hold${tier.holds_included === 1 ? '' : 's'} per month. Holds are for gear/set continuity and do not reserve studio time.`
 }
 
-function monthlyCreditsPerMonth(tier: Tier) {
-  return monthlyOption(tier)?.credits_per_month ?? 0
+function selectedCredits(tier: Tier) {
+  return selectedOption(tier)?.credits_per_month ?? 0
+}
+
+function selectedCreditsLabel(tier: Tier) {
+  return cadenceCreditsLabel(selectedOption(tier)?.cadence ?? 'monthly')
+}
+
+function selectedChargeLabel(tier: Tier) {
+  const option = selectedOption(tier)
+  if (!option) return 'Pricing unavailable'
+  return `${formatMoney(billedCycleCents(tier, option), option.currency)}${cadencePriceSuffix(option.cadence)}`
+}
+
+function selectedBillingSummary(tier: Tier) {
+  const option = selectedOption(tier)
+  if (!option) return ''
+  return `${cadenceBillingLine(option.cadence)}. ${optionCreditsLine(option)}.`
+}
+
+function selectedCadenceLabel(tier: Tier) {
+  const option = selectedOption(tier)
+  return option ? cadenceLabel(option.cadence) : 'Unavailable'
 }
 
 function tierSpotsLeftValue(tier: Tier) {
@@ -229,7 +375,7 @@ function tierSpotsLeftValue(tier: Tier) {
 function tierSpotsLeftLabel(tier: Tier) {
   const spotsLeft = tierSpotsLeftValue(tier)
   if (spotsLeft === null) return 'Unlimited'
-  return `${spotsLeft} slots left`
+  return `${spotsLeft} ${spotsLeft === 1 ? 'slot' : 'slots'} left`
 }
 
 function tierSpotsLeftColor(tier: Tier): 'success' | 'warning' | 'error' | 'neutral' {
@@ -252,13 +398,15 @@ function tierCardAccentClass(tier: Tier) {
   return 'membership-plan-card--accent-a'
 }
 
-function checkoutUrl(tierId: string) {
-  const base = `/checkout?tier=${encodeURIComponent(tierId)}&returnTo=${encodeURIComponent(returnTo.value)}`
+function checkoutUrl(tierId: string, cadence: Cadence) {
+  const base = `/checkout?tier=${encodeURIComponent(tierId)}&cadence=${encodeURIComponent(cadence)}&returnTo=${encodeURIComponent(returnTo.value)}`
   return isPlanSwitchMode.value ? `${base}&mode=switch` : base
 }
 
-function onSelectTier(tierId: string) {
-  router.push(checkoutUrl(tierId))
+function onSelectTier(tier: Tier) {
+  const option = selectedOption(tier)
+  if (!option) return
+  router.push(checkoutUrl(tier.id, option.cadence))
 }
 
 function isTierBlockedForCheckout(tier: Tier) {
@@ -347,20 +495,25 @@ async function submitWaitlist() {
             </div>
             <div class="mt-5 flex flex-wrap gap-2">
               <UButton
+                to="#plans"
+                icon="i-lucide-badge-check"
+              >
+                Compare live plans
+              </UButton>
+              <UButton
                 to="/signup?returnTo=/dashboard/book"
                 color="neutral"
                 variant="soft"
                 icon="i-lucide-calendar-plus"
               >
-                Book as a guest
+                Book once as a guest
               </UButton>
               <UButton
                 to="/calendar"
                 color="neutral"
                 variant="ghost"
-                trailing-icon="i-lucide-arrow-up-right"
               >
-                View availability
+                Check availability
               </UButton>
             </div>
 
@@ -376,6 +529,9 @@ async function submitWaitlist() {
             <h2 class="memberships-info-title">
               {{ membershipsContent.creditsExplainer.title }}
             </h2>
+            <p class="mt-3 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
+              {{ membershipsContent.creditsExplainer.description }}
+            </p>
             <div class="memberships-info-list">
               <div
                 v-for="bullet in creditsBullets"
@@ -392,6 +548,90 @@ async function submitWaitlist() {
     </section>
 
     <section
+      class="editorial-section mt-8"
+      data-reveal
+      data-reveal-delay="70ms"
+    >
+      <div class="editorial-frame">
+        <div class="editorial-grid editorial-grid-plans">
+          <div class="editorial-cell editorial-meta">
+            <p class="editorial-label">
+              GUEST / MEMBER
+            </p>
+          </div>
+          <div class="editorial-cell editorial-copy editorial-copy-texture">
+            <h2 class="editorial-title">
+              {{ membershipsContent.infoPanel.title }}
+            </h2>
+            <p class="editorial-body">
+              {{ membershipsContent.infoPanel.paragraphs[0] }}
+            </p>
+          </div>
+          <div class="editorial-cell editorial-plan-list">
+            <article class="editorial-plan-card editorial-plan-card--accent-a">
+              <h3 class="editorial-plan-title">
+                Guest booking
+              </h3>
+              <p class="editorial-plan-body">
+                Best for one date before committing. An account is required, and the exact guest quote is shown in booking preview.
+              </p>
+              <ul class="space-y-2 text-sm leading-6 text-[color:var(--gruv-ink-2)]">
+                <li>Up to {{ bookingPolicy?.guestBookingWindowDays ?? 20 }} days ahead</li>
+                <li>{{ formatHour(bookingPolicy?.guestBookingStartHour ?? 9) }}-{{ formatHour(bookingPolicy?.guestBookingEndHour ?? 21) }} Los Angeles time</li>
+                <li>{{ formatHours(bookingPolicy?.guestMinBookingHours ?? 2) }} minimum, {{ bookingPolicy?.guestBookingIncrementMinutes ?? 60 }}-minute increments</li>
+              </ul>
+              <UButton
+                to="/signup?returnTo=/dashboard/book"
+                color="neutral"
+                variant="soft"
+              >
+                Create a guest account
+              </UButton>
+            </article>
+
+            <article class="editorial-plan-card editorial-plan-card--accent-b">
+              <h3 class="editorial-plan-title">
+                Member booking
+              </h3>
+              <p class="editorial-plan-body">
+                Best for recurring production. Public tiers include 24/7 access, 30-minute booking increments, in-house gear, and consumables.
+              </p>
+              <ul class="space-y-2 text-sm leading-6 text-[color:var(--gruv-ink-2)]">
+                <li>Tier-specific booking reach and peak rate</li>
+                <li>Credits that can bank up to the live plan cap</li>
+                <li>Included overnight holds vary by tier</li>
+              </ul>
+              <UButton to="#plans">
+                Choose a membership
+              </UButton>
+            </article>
+
+            <article class="editorial-plan-card editorial-plan-card--accent-c">
+              <h3 class="editorial-plan-title">
+                Self-serve activation
+              </h3>
+              <p class="editorial-plan-body">
+                Choose a tier and cadence below, review the cycle total, continue through Square payment, then create or sign in to the account that will own the membership.
+              </p>
+              <ol class="space-y-2 text-sm leading-6 text-[color:var(--gruv-ink-2)]">
+                <li>1. Select live plan pricing</li>
+                <li>2. Complete secure payment</li>
+                <li>3. Finish account activation</li>
+              </ol>
+              <NuxtLink
+                to="/policies#terms"
+                class="text-sm font-semibold underline underline-offset-4"
+              >
+                Read membership terms
+              </NuxtLink>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section
+      id="plans"
       class="editorial-section memberships-plans-section"
       data-reveal
       data-reveal-delay="110ms"
@@ -422,9 +662,9 @@ async function submitWaitlist() {
               <div class="membership-plan-upper">
                 <div class="flex items-start justify-between gap-4 membership-plan-heading">
                   <div class="membership-plan-title-wrap">
-                    <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
+                    <h3 class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
                       {{ tier.display_name }}
-                    </div>
+                    </h3>
                     <UBadge
                       v-if="tier.is_full"
                       color="error"
@@ -455,6 +695,23 @@ async function submitWaitlist() {
                     <span>{{ tierPeakRateLine(tier) }}</span>
                   </div>
                 </div>
+
+                <ul
+                  v-if="tierContent(tier.id)?.highlights?.length"
+                  class="mt-3 space-y-2 text-sm leading-6 text-[color:var(--gruv-ink-2)]"
+                >
+                  <li
+                    v-for="highlight in tierContent(tier.id)?.highlights"
+                    :key="highlight"
+                    class="flex gap-2"
+                  >
+                    <UIcon
+                      name="i-lucide-check"
+                      class="mt-1 size-4 shrink-0"
+                    />
+                    <span>{{ highlight }}</span>
+                  </li>
+                </ul>
               </div>
 
               <div class="mt-auto space-y-4 membership-plan-lower">
@@ -469,10 +726,10 @@ async function submitWaitlist() {
                   </div>
                   <div class="plan-stat text-center">
                     <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
-                      {{ monthlyCreditsPerMonth(tier) }}
+                      {{ selectedCredits(tier) }}
                     </div>
                     <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
-                      Cr / Month
+                      {{ selectedCreditsLabel(tier) }}
                     </div>
                   </div>
                   <div class="plan-stat text-center">
@@ -485,15 +742,65 @@ async function submitWaitlist() {
                   </div>
                 </div>
 
-                <div class="rounded-2xl bg-[color:var(--gruv-accent-soft)] p-4">
+                <fieldset
+                  v-if="sortedOptions(tier).length"
+                  class="space-y-2"
+                >
+                  <legend class="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
+                    Billing cadence
+                  </legend>
+                  <label
+                    v-for="option in sortedOptions(tier)"
+                    :key="option.cadence"
+                    class="block cursor-pointer rounded-xl border px-3 py-3 transition-colors"
+                    :class="selectedCadenceByTier[tier.id] === option.cadence
+                      ? 'border-[color:var(--gruv-accent)] bg-[rgba(181,118,20,0.14)]'
+                      : 'border-[color:var(--gruv-line)] bg-[color:var(--gruv-bg-0)]/50 hover:bg-[rgba(181,118,20,0.08)]'"
+                  >
+                    <input
+                      v-model="selectedCadenceByTier[tier.id]"
+                      class="sr-only"
+                      type="radio"
+                      :name="`cadence-${tier.id}`"
+                      :value="option.cadence"
+                    >
+                    <span class="flex items-start justify-between gap-3">
+                      <span>
+                        <span class="block text-sm font-semibold text-[color:var(--gruv-ink-0)]">{{ cadenceLabel(option.cadence) }}</span>
+                        <span class="mt-1 block text-xs leading-5 text-[color:var(--gruv-ink-2)]">{{ optionCreditsLine(option) }}</span>
+                      </span>
+                      <span class="text-right">
+                        <span class="block text-sm font-semibold text-[color:var(--gruv-ink-0)]">{{ formatMoney(billedCycleCents(tier, option), option.currency) }}</span>
+                        <span class="mt-1 block text-xs text-[color:var(--gruv-ink-2)]">{{ cadencePriceSuffix(option.cadence) }}</span>
+                      </span>
+                    </span>
+                    <span
+                      v-if="effectiveMonthlyCents(tier, option) !== null && option.cadence !== 'monthly'"
+                      class="mt-2 block text-xs text-[color:var(--gruv-ink-2)]"
+                    >
+                      {{ formatMoney(effectiveMonthlyCents(tier, option) ?? 0, option.currency) }}/month effective
+                    </span>
+                    <span
+                      v-if="savingsVsMonthlyCents(tier, option) > 0"
+                      class="mt-1 block text-xs font-semibold text-[color:var(--gruv-accent)]"
+                    >
+                      Save {{ formatMoney(savingsVsMonthlyCents(tier, option), option.currency) }} per billing cycle vs monthly
+                    </span>
+                  </label>
+                </fieldset>
+
+                <div
+                  v-if="selectedOption(tier)"
+                  class="rounded-2xl bg-[color:var(--gruv-accent-soft)] p-4"
+                >
                   <div class="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
-                    Starting at
+                    Selected charge
                   </div>
                   <div class="mt-2 text-3xl font-semibold text-[color:var(--gruv-ink-0)]">
-                    {{ monthlyStartingLabel(tier) }}/mo
+                    {{ selectedChargeLabel(tier) }}
                   </div>
                   <p class="mt-2 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
-                    Quarterly and annual savings are shown on the next step before checkout.
+                    {{ selectedBillingSummary(tier) }}
                   </p>
                 </div>
 
@@ -501,16 +808,18 @@ async function submitWaitlist() {
                   <UButton
                     v-if="!isTierBlockedForCheckout(tier)"
                     block
-                    @click="onSelectTier(tier.id)"
+                    :disabled="!selectedOption(tier)"
+                    @click="onSelectTier(tier)"
                   >
                     {{ isPlanSwitchMode ? `Change to ${tier.display_name}` : `Choose ${tier.display_name}` }}
+                    <span v-if="selectedOption(tier)"> · {{ selectedCadenceLabel(tier) }}</span>
                   </UButton>
                   <UButton
                     v-else
                     block
                     color="neutral"
                     variant="soft"
-                    @click="openWaitlist(tier)"
+                    @click="openWaitlist(tier, selectedOption(tier)?.cadence ?? 'monthly')"
                   >
                     Join waitlist
                   </UButton>
@@ -522,8 +831,11 @@ async function submitWaitlist() {
                   </p>
                 </div>
 
-                <div class="rounded-2xl bg-[color:var(--gruv-accent-soft)] px-4 py-3 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
-                  {{ tierDetail(tier) }}
+                <div class="space-y-2 rounded-2xl bg-[color:var(--gruv-accent-soft)] px-4 py-3 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
+                  <p v-if="tierContent(tier.id)?.detail">
+                    {{ tierContent(tier.id)?.detail }}
+                  </p>
+                  <p>{{ tierDetail(tier) }}</p>
                 </div>
               </div>
             </article>
@@ -532,7 +844,11 @@ async function submitWaitlist() {
       </div>
     </section>
 
-    <UModal v-model:open="waitlistOpen">
+    <UModal
+      v-model:open="waitlistOpen"
+      title="Join the membership waitlist"
+      description="Confirm your contact details and membership tier interest."
+    >
       <template #content>
         <UCard>
           <template #header>
@@ -550,23 +866,32 @@ async function submitWaitlist() {
                 color="neutral"
                 variant="ghost"
                 size="sm"
+                aria-label="Close waitlist form"
                 @click="waitlistOpen = false"
               />
             </div>
           </template>
 
-          <div class="space-y-3">
+          <form
+            id="membership-waitlist-form"
+            class="space-y-3"
+            @submit.prevent="submitWaitlist"
+          >
             <UFormField label="Email">
               <UInput
                 v-model="waitlistEmail"
                 type="email"
                 placeholder="you@example.com"
+                name="email"
+                autocomplete="email"
               />
             </UFormField>
             <UFormField label="Phone (optional)">
               <UInput
                 v-model="waitlistPhone"
                 placeholder="(555) 123-4567"
+                name="phone"
+                autocomplete="tel"
               />
             </UFormField>
             <UFormField label="Preferred cadence">
@@ -583,11 +908,12 @@ async function submitWaitlist() {
                 option-attribute="label"
               />
             </UFormField>
-          </div>
+          </form>
 
           <template #footer>
             <div class="flex justify-end gap-2">
               <UButton
+                type="button"
                 color="neutral"
                 variant="soft"
                 @click="waitlistOpen = false"
@@ -595,8 +921,9 @@ async function submitWaitlist() {
                 Cancel
               </UButton>
               <UButton
+                type="submit"
+                form="membership-waitlist-form"
                 :loading="waitlistSubmitting"
-                @click="submitWaitlist"
               >
                 Join waitlist
               </UButton>

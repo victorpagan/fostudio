@@ -87,6 +87,9 @@ const showCalendar = ref(false)
 const memberSearch = ref('')
 const savingBlock = ref(false)
 const deletingBlockId = ref<string | null>(null)
+const deleteBlockTarget = ref<CalendarBlock | null>(null)
+const deleteBlockConfirmOpen = ref(false)
+const dashboardHydrated = ref(false)
 const defaultCreateDate = DateTime.now().setZone('America/Los_Angeles').toISODate() ?? ''
 const createForm = reactive({
   userId: '',
@@ -105,7 +108,7 @@ const blockForm = reactive({
   notes: ''
 })
 
-const { data: bookingRows, refresh, pending } = await useAsyncData('admin:bookings', async () => {
+const { data: bookingRows, refresh, pending, error: bookingsError } = await useAsyncData('admin:bookings', async () => {
   const query = statusFilter.value === 'all'
     ? { bookingId: readQueryValue(route.query.bookingId) ?? undefined }
     : { status: statusFilter.value, bookingId: readQueryValue(route.query.bookingId) ?? undefined }
@@ -115,12 +118,12 @@ const { data: bookingRows, refresh, pending } = await useAsyncData('admin:bookin
 
 const bookings = computed(() => bookingRows.value ?? [])
 
-const { data: memberRows, refresh: refreshMembers, pending: membersPending } = await useAsyncData('admin:bookings:members', async () => {
+const { data: memberRows, refresh: refreshMembers, pending: membersPending, error: membersError } = await useAsyncData('admin:bookings:members', async () => {
   const res = await $fetch<{ members: AdminMember[] }>('/api/admin/members')
   return res.members
 })
 
-const { data: blockRows, refresh: refreshBlocks, pending: blocksPending } = await useAsyncData('admin:bookings:blocks', async () => {
+const { data: blockRows, refresh: refreshBlocks, pending: blocksPending, error: blocksError } = await useAsyncData('admin:bookings:blocks', async () => {
   const res = await $fetch<{ blocks: CalendarBlock[] }>('/api/admin/calendar/blocks', {
     query: { activeOnly: true }
   })
@@ -129,6 +132,12 @@ const { data: blockRows, refresh: refreshBlocks, pending: blocksPending } = awai
 
 const members = computed(() => memberRows.value ?? [])
 const blocks = computed(() => blockRows.value ?? [])
+const hasBookingsData = computed(() => Array.isArray(bookingRows.value))
+const hasMembersData = computed(() => Array.isArray(memberRows.value))
+const hasBlocksData = computed(() => Array.isArray(blockRows.value))
+const canMutateBookings = computed(() => dashboardHydrated.value && hasBookingsData.value && !pending.value && !bookingsError.value)
+const canUseMembers = computed(() => dashboardHydrated.value && hasMembersData.value && !membersPending.value && !membersError.value)
+const canMutateBlocks = computed(() => dashboardHydrated.value && hasBlocksData.value && !blocksPending.value && !blocksError.value)
 const sortedBlocks = computed(() => [...blocks.value].sort((left, right) => {
   return bookingStartsAtMillis(left) - bookingStartsAtMillis(right)
 }))
@@ -262,6 +271,7 @@ watch(() => blockForm.startSlot, (next) => {
 })
 
 onMounted(async () => {
+  dashboardHydrated.value = true
   await Promise.allSettled([refresh(), refreshMembers(), refreshBlocks()])
   focusLinkedBooking()
 })
@@ -281,7 +291,9 @@ watch(blockOffOpen, async (open) => {
 })
 
 const canSubmitCreateBooking = computed(() =>
-  !!createForm.userId
+  canMutateBookings.value
+  && canUseMembers.value
+  && !!createForm.userId
   && !!createForm.date
   && !!createForm.startSlot
   && !!createForm.endSlot
@@ -289,7 +301,8 @@ const canSubmitCreateBooking = computed(() =>
 )
 
 const canSubmitBlockWindow = computed(() =>
-  !!blockForm.date
+  canMutateBlocks.value
+  && !!blockForm.date
   && !!blockForm.startSlot
   && !!blockForm.endSlot
   && !savingBlock.value
@@ -576,10 +589,12 @@ const {
 })
 
 function openRescheduleModal(booking: AdminBookingForReschedule) {
+  if (!canMutateBookings.value) return
   openReschedule(booking)
 }
 
 function openCancelConfirmation(booking: AdminBooking) {
+  if (!canMutateBookings.value) return
   cancelTarget.value = booking
   cancelConfirmOpen.value = true
 }
@@ -591,7 +606,7 @@ function closeCancelConfirmation() {
 }
 
 async function confirmCancelBooking() {
-  if (!cancelTarget.value) return
+  if (!cancelTarget.value || !canMutateBookings.value) return
   const canceled = await cancelBooking(cancelTarget.value.id)
   if (canceled) closeCancelConfirmation()
 }
@@ -679,6 +694,7 @@ async function openBlockWindowFromCalendar(payload: {
   end: string
   notes?: string
 }) {
+  if (!canMutateBlocks.value) return
   await refreshBlocks()
 
   const existingBlock = blocks.value.find(block => block.id === payload.blockId) ?? null
@@ -704,6 +720,7 @@ async function openBlockWindowFromCalendar(payload: {
 }
 
 async function saveBlockWindow() {
+  if (!canMutateBlocks.value) return
   const startIso = toIsoFromDateAndSlot(blockForm.date, blockForm.startSlot)
   const endIso = toIsoFromDateAndSlot(blockForm.date, blockForm.endSlot)
   if (!startIso || !endIso) {
@@ -745,15 +762,24 @@ async function saveBlockWindow() {
   }
 }
 
-async function deleteBlockWindow(blockId: string) {
-  deletingBlockId.value = blockId
+function requestDeleteBlockWindow(block: CalendarBlock) {
+  deleteBlockTarget.value = block
+  deleteBlockConfirmOpen.value = true
+}
+
+async function deleteBlockWindow() {
+  const target = deleteBlockTarget.value
+  if (!target || !canMutateBlocks.value) return
+  deletingBlockId.value = target.id
   try {
     await $fetch('/api/admin/calendar/blocks.delete', {
       method: 'POST',
-      body: { id: blockId }
+      body: { id: target.id }
     })
     toast.add({ title: 'Block-off window removed' })
-    if (blockForm.id === blockId) resetBlockForm()
+    if (blockForm.id === target.id) resetBlockForm()
+    deleteBlockConfirmOpen.value = false
+    deleteBlockTarget.value = null
     await refreshBlocks()
   } catch (error: unknown) {
     toast.add({
@@ -767,6 +793,7 @@ async function deleteBlockWindow(blockId: string) {
 }
 
 async function createBookingOnBehalf() {
+  if (!canMutateBookings.value || !canUseMembers.value) return
   const startIso = toIsoFromDateAndSlot(createForm.date, createForm.startSlot)
   const endIso = toIsoFromDateAndSlot(createForm.date, createForm.endSlot)
   if (!createForm.userId || !startIso || !endIso) {
@@ -826,6 +853,7 @@ async function createBookingOnBehalf() {
     <DashboardPageScaffold
       panel-id="admin-bookings"
       title="Bookings"
+      :busy="pending || membersPending || blocksPending"
     >
       <template #right>
         <DashboardActionGroup
@@ -834,6 +862,7 @@ async function createBookingOnBehalf() {
             icon: 'i-lucide-plus',
             color: 'primary',
             variant: 'soft',
+            disabled: !canMutateBookings || !canUseMembers,
             onSelect: () => { createBookingOpen = true }
           }"
           :secondary="[
@@ -842,6 +871,7 @@ async function createBookingOnBehalf() {
               icon: 'i-lucide-calendar-minus',
               color: 'neutral',
               variant: 'soft',
+              disabled: !canMutateBlocks,
               onSelect: () => { blockOffOpen = true }
             },
             {
@@ -856,7 +886,33 @@ async function createBookingOnBehalf() {
         />
       </template>
 
-      <UAlert
+      <DashboardSectionState
+        v-if="pending && !hasBookingsData"
+        state="loading"
+        title="Loading bookings"
+        description="Fetching member, guest, hold, and external calendar bookings."
+      />
+      <DashboardSectionState
+        v-else-if="bookingsError && !hasBookingsData"
+        state="error"
+        title="Bookings unavailable"
+        :description="readErrorMessage(bookingsError)"
+        show-retry
+        @retry="refresh"
+      />
+      <DashboardSectionState
+        v-else-if="bookingsError"
+        state="error"
+        color="warning"
+        icon="i-lucide-clock-alert"
+        title="Showing stale booking data"
+        :description="`${readErrorMessage(bookingsError)} Booking mutations are disabled until refresh succeeds.`"
+        show-retry
+        @retry="refresh"
+      />
+
+      <AppAlert
+        v-if="hasBookingsData"
         color="warning"
         variant="soft"
         icon="i-lucide-calendar-range"
@@ -864,7 +920,7 @@ async function createBookingOnBehalf() {
         description="Review all member and guest bookings. Use admin cancel/reschedule when manual intervention is needed, or create bookings directly on behalf of members."
       />
 
-      <UCard>
+      <UCard v-if="hasBookingsData">
         <div class="flex flex-wrap items-center gap-3">
           <UFormField label="Status filter">
             <USelect
@@ -885,12 +941,16 @@ async function createBookingOnBehalf() {
         </div>
       </UCard>
 
-      <div class="space-y-4">
+      <div
+        v-if="hasBookingsData"
+        class="space-y-4"
+      >
         <div class="flex flex-wrap items-center gap-2">
           <UButton
             size="sm"
             :variant="bookingTab === 'active' ? 'solid' : 'soft'"
             :color="bookingTab === 'active' ? 'primary' : 'neutral'"
+            :aria-pressed="bookingTab === 'active'"
             @click="bookingTab = 'active'"
           >
             Active bookings
@@ -899,6 +959,7 @@ async function createBookingOnBehalf() {
             size="sm"
             :variant="bookingTab === 'holds' ? 'solid' : 'soft'"
             :color="bookingTab === 'holds' ? 'primary' : 'neutral'"
+            :aria-pressed="bookingTab === 'holds'"
             @click="bookingTab = 'holds'"
           >
             Active holds
@@ -907,6 +968,7 @@ async function createBookingOnBehalf() {
             size="sm"
             :variant="bookingTab === 'past' ? 'solid' : 'soft'"
             :color="bookingTab === 'past' ? 'primary' : 'neutral'"
+            :aria-pressed="bookingTab === 'past'"
             @click="bookingTab = 'past'"
           >
             Past bookings
@@ -1052,6 +1114,7 @@ async function createBookingOnBehalf() {
                         color="neutral"
                         variant="soft"
                         size="sm"
+                        :disabled="!canMutateBookings"
                         @click="openRescheduleModal(booking as AdminBookingForReschedule)"
                       >
                         Edit time
@@ -1062,7 +1125,7 @@ async function createBookingOnBehalf() {
                         variant="soft"
                         size="sm"
                         :loading="cancelingId === booking.id"
-                        :disabled="booking.status === 'canceled'"
+                        :disabled="booking.status === 'canceled' || !canMutateBookings"
                         @click="openCancelConfirmation(booking)"
                       >
                         Cancel booking
@@ -1147,6 +1210,8 @@ async function createBookingOnBehalf() {
 
     <UModal
       v-model:open="cancelConfirmOpen"
+      title="Cancel booking?"
+      description="Review the selected booking and cancellation consequences before confirming."
       :dismissible="!cancelingId"
     >
       <template #content>
@@ -1163,6 +1228,7 @@ async function createBookingOnBehalf() {
               </div>
               <UButton
                 icon="i-lucide-x"
+                aria-label="Close booking cancellation confirmation"
                 color="neutral"
                 variant="ghost"
                 size="sm"
@@ -1188,7 +1254,7 @@ async function createBookingOnBehalf() {
               </div>
             </div>
 
-            <UAlert
+            <AppAlert
               color="warning"
               variant="soft"
               icon="i-lucide-calendar-x"
@@ -1232,7 +1298,11 @@ async function createBookingOnBehalf() {
       </template>
     </UModal>
 
-    <UModal v-model:open="createBookingOpen">
+    <UModal
+      v-model:open="createBookingOpen"
+      title="Create booking"
+      description="Create an admin booking using the selected member, date, time, and booking options."
+    >
       <template #content>
         <UCard
           class="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-h-[calc(100dvh-4rem)]"
@@ -1254,12 +1324,22 @@ async function createBookingOnBehalf() {
                 variant="soft"
                 icon="i-lucide-refresh-cw"
                 :loading="membersPending"
+                aria-label="Refresh members"
                 @click="() => refreshMembers()"
               />
             </div>
           </template>
 
           <div class="space-y-4 pr-1">
+            <DashboardSectionState
+              v-if="membersError"
+              state="error"
+              color="warning"
+              title="Member list unavailable"
+              :description="readErrorMessage(membersError)"
+              show-retry
+              @retry="refreshMembers"
+            />
             <div class="grid gap-3 md:grid-cols-2">
               <UFormField label="Find member">
                 <UInput
@@ -1277,7 +1357,7 @@ async function createBookingOnBehalf() {
                 />
               </UFormField>
 
-              <UFormField label="Date (local)">
+              <UFormField label="Date (Los Angeles)">
                 <UInput
                   v-model="createForm.date"
                   type="date"
@@ -1319,7 +1399,7 @@ async function createBookingOnBehalf() {
               <span v-if="selectedMember.tier">· {{ selectedMember.tier }}</span>
             </div>
 
-            <UAlert
+            <AppAlert
               v-if="memberCreditWarning"
               color="warning"
               variant="soft"
@@ -1372,7 +1452,11 @@ async function createBookingOnBehalf() {
       </template>
     </UModal>
 
-    <UModal v-model:open="blockOffOpen">
+    <UModal
+      v-model:open="blockOffOpen"
+      title="Studio block-off windows"
+      description="Create or edit an admin-only unavailable period with an operational note."
+    >
       <template #content>
         <UCard
           class="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-h-[calc(100dvh-4rem)]"
@@ -1394,14 +1478,24 @@ async function createBookingOnBehalf() {
                 variant="soft"
                 icon="i-lucide-refresh-cw"
                 :loading="blocksPending"
+                aria-label="Refresh block-off windows"
                 @click="() => refreshBlocks()"
               />
             </div>
           </template>
 
           <div class="space-y-4 pr-1">
+            <DashboardSectionState
+              v-if="blocksError"
+              state="error"
+              color="warning"
+              title="Block-off windows unavailable"
+              :description="readErrorMessage(blocksError)"
+              show-retry
+              @retry="refreshBlocks"
+            />
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <UAlert
+              <AppAlert
                 color="warning"
                 variant="soft"
                 icon="i-lucide-calendar-x"
@@ -1413,6 +1507,7 @@ async function createBookingOnBehalf() {
                 color="neutral"
                 variant="soft"
                 icon="i-lucide-plus"
+                :disabled="!canMutateBlocks"
                 @click="resetBlockForm"
               >
                 New block window
@@ -1420,7 +1515,7 @@ async function createBookingOnBehalf() {
             </div>
 
             <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Date (local)">
+              <UFormField label="Date (Los Angeles)">
                 <UInput
                   v-model="blockForm.date"
                   type="date"
@@ -1482,6 +1577,7 @@ async function createBookingOnBehalf() {
                       size="xs"
                       color="neutral"
                       variant="soft"
+                      :disabled="!canMutateBlocks"
                       @click="loadBlockForm(block)"
                     >
                       Edit
@@ -1491,7 +1587,9 @@ async function createBookingOnBehalf() {
                       color="error"
                       variant="soft"
                       :loading="deletingBlockId === block.id"
-                      @click="deleteBlockWindow(block.id)"
+                      :disabled="!canMutateBlocks"
+                      :aria-label="`Delete block-off window ${block.reason || formatDate(block.start_time)}`"
+                      @click="requestDeleteBlockWindow(block)"
                     >
                       Delete
                     </UButton>
@@ -1553,6 +1651,17 @@ async function createBookingOnBehalf() {
       @prev-month="goToPrevRescheduleMonth"
       @next-month="goToNextRescheduleMonth"
       @save="saveReschedule"
+    />
+
+    <ConfirmDialog
+      v-model:open="deleteBlockConfirmOpen"
+      title="Delete this block-off window?"
+      :description="`${deleteBlockTarget?.reason || 'Studio block-off'} from ${deleteBlockTarget ? formatDate(deleteBlockTarget.start_time) : ''} to ${deleteBlockTarget ? formatDate(deleteBlockTarget.end_time) : ''} will be removed. New bookings may become available in this window.`"
+      confirm-label="Delete block-off window"
+      color="error"
+      :busy="Boolean(deletingBlockId)"
+      @confirm="deleteBlockWindow"
+      @cancel="deleteBlockTarget = null"
     />
   </div>
 </template>

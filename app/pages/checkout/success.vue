@@ -1,6 +1,12 @@
 <script setup lang="ts">
 definePageMeta({ auth: false })
 
+useNoindexSeo({
+  title: 'FO Studio membership activation',
+  description: 'Finalize a completed membership checkout and account link.',
+  canonicalPath: '/checkout/success'
+})
+
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const route = useRoute()
@@ -360,14 +366,14 @@ onBeforeUnmount(() => {
           </p>
         </div>
 
-        <UAlert
+        <AppAlert
           v-if="claimError"
           color="error"
           variant="soft"
           icon="i-lucide-circle-alert"
           :title="claimError"
         />
-        <UAlert
+        <AppAlert
           v-else-if="claimHint"
           color="warning"
           variant="soft"

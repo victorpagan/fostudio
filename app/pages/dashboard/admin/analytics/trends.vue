@@ -10,7 +10,7 @@ import {
 definePageMeta({ middleware: ['admin'] })
 
 const toast = useToast()
-const { data, pending, refresh } = await useAdminAnalyticsData('trends')
+const { data, pending, refresh, error } = await useAdminAnalyticsData('trends')
 
 const trends = computed(() => data.value?.trends)
 const generatedLabel = computed(() => formatAnalyticsDatetime(data.value?.generatedAt))
@@ -82,262 +82,256 @@ async function copyValue(value: string, label: string) {
 </script>
 
 <template>
-  <UDashboardPanel
-    id="admin-analytics-trends"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <AdminAnalyticsPage
+    panel-id="admin-analytics-trends"
+    title="Analytics · Trends"
+    :busy="pending"
+    :error="error"
+    @retry="refresh"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Analytics • Trends"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-2' }"
-      >
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-        <template #right>
-          <AnalyticsRunButton
-            size="sm"
-            @completed="() => refresh()"
-          />
-          <UButton
-            size="sm"
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-refresh-cw"
-            :loading="pending"
-            @click="() => refresh()"
-          />
-        </template>
-      </UDashboardNavbar>
+    <template #actions>
+      <AnalyticsRunButton
+        size="sm"
+        @completed="() => refresh()"
+      />
+      <IconButton
+        label="Refresh analytics trends"
+        icon="i-lucide-refresh-cw"
+        color="neutral"
+        variant="soft"
+        size="sm"
+        :loading="pending"
+        @click="() => refresh()"
+      />
     </template>
 
-    <template #body>
-      <AdminOpsShell>
-        <div class="space-y-4">
-          <AnalyticsSubnav />
+    <AppAlert
+      color="neutral"
+      variant="soft"
+      icon="i-lucide-chart-no-axes-combined"
+      :description="`Generated: ${generatedLabel}`"
+    />
 
-          <UAlert
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-chart-no-axes-combined"
-            :description="`Generated: ${generatedLabel}`"
-          />
-
-          <div class="grid gap-4 xl:grid-cols-4">
-            <UCard class="admin-panel-card border-0">
-              <template #header>
-                <div class="font-medium">
-                  Revenue by week
-                </div>
-              </template>
-              <div class="trend-chart-shell">
-                <div
-                  v-for="point in revenuePoints"
-                  :key="`revenue-${point.label}`"
-                  class="trend-chart-col"
-                >
-                  <div
-                    class="trend-chart-bar"
-                    :style="{ height: barHeight(revenuePoints, point.value) }"
-                  />
-                </div>
-              </div>
-              <div class="mt-2 space-y-1 text-xs text-dimmed">
-                <div
-                  v-for="point in revenuePoints.slice(-4)"
-                  :key="`revenue-l-${point.label}`"
-                  class="flex cursor-copy items-center justify-between rounded-md border border-default/60 px-2 py-1"
-                  role="button"
-                  tabindex="0"
-                  :title="`Click to copy ${point.label} revenue`"
-                  @click="() => copyValue(`${point.label}: ${formatAnalyticsCurrency(point.value)}`, `${point.label} revenue`)"
-                  @keydown.enter.prevent="() => copyValue(`${point.label}: ${formatAnalyticsCurrency(point.value)}`, `${point.label} revenue`)"
-                  @keydown.space.prevent="() => copyValue(`${point.label}: ${formatAnalyticsCurrency(point.value)}`, `${point.label} revenue`)"
-                >
-                  <span>{{ point.label }}</span>
-                  <span>{{ formatAnalyticsCurrency(point.value) }}</span>
-                </div>
-              </div>
-            </UCard>
-
-            <UCard class="admin-panel-card border-0">
-              <template #header>
-                <div class="font-medium">
-                  Members by week
-                </div>
-              </template>
-              <div class="trend-chart-shell">
-                <div
-                  v-for="point in memberPoints"
-                  :key="`members-${point.label}`"
-                  class="trend-chart-col"
-                >
-                  <div
-                    class="trend-chart-bar"
-                    :style="{ height: barHeight(memberPoints, point.value) }"
-                  />
-                </div>
-              </div>
-              <div class="mt-2 space-y-1 text-xs text-dimmed">
-                <div
-                  v-for="point in memberPoints.slice(-4)"
-                  :key="`members-l-${point.label}`"
-                  class="flex cursor-copy items-center justify-between rounded-md border border-default/60 px-2 py-1"
-                  role="button"
-                  tabindex="0"
-                  :title="`Click to copy ${point.label} active members`"
-                  @click="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} active members`, `${point.label} members`)"
-                  @keydown.enter.prevent="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} active members`, `${point.label} members`)"
-                  @keydown.space.prevent="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} active members`, `${point.label} members`)"
-                >
-                  <span>{{ point.label }}</span>
-                  <span>{{ formatAnalyticsNumber(point.value) }}</span>
-                </div>
-              </div>
-            </UCard>
-
-            <UCard class="admin-panel-card border-0">
-              <template #header>
-                <div class="font-medium">
-                  Utilization by week
-                </div>
-              </template>
-              <div class="trend-chart-shell">
-                <div
-                  v-for="point in utilizationPoints"
-                  :key="`util-${point.label}`"
-                  class="trend-chart-col"
-                >
-                  <div
-                    class="trend-chart-bar"
-                    :style="{ height: barHeight(utilizationPoints, point.value) }"
-                  />
-                </div>
-              </div>
-              <div class="mt-2 space-y-1 text-xs text-dimmed">
-                <div
-                  v-for="point in utilizationPoints.slice(-4)"
-                  :key="`util-l-${point.label}`"
-                  class="flex cursor-copy items-center justify-between rounded-md border border-default/60 px-2 py-1"
-                  role="button"
-                  tabindex="0"
-                  :title="`Click to copy ${point.label} utilization`"
-                  @click="() => copyValue(`${point.label}: ${(point.value * 100).toFixed(1)}%`, `${point.label} utilization`)"
-                  @keydown.enter.prevent="() => copyValue(`${point.label}: ${(point.value * 100).toFixed(1)}%`, `${point.label} utilization`)"
-                  @keydown.space.prevent="() => copyValue(`${point.label}: ${(point.value * 100).toFixed(1)}%`, `${point.label} utilization`)"
-                >
-                  <span>{{ point.label }}</span>
-                  <span>{{ (point.value * 100).toFixed(1) }}%</span>
-                </div>
-              </div>
-            </UCard>
-
-            <UCard class="admin-panel-card border-0">
-              <template #header>
-                <div class="font-medium">
-                  Open incidents by week
-                </div>
-              </template>
-              <div class="trend-chart-shell">
-                <div
-                  v-for="point in incidentOpenPoints"
-                  :key="`inc-open-${point.label}`"
-                  class="trend-chart-col"
-                >
-                  <div
-                    class="trend-chart-bar"
-                    :style="{ height: barHeight(incidentOpenPoints, point.value) }"
-                  />
-                </div>
-              </div>
-              <div class="mt-2 space-y-1 text-xs text-dimmed">
-                <div
-                  v-for="point in incidentOpenPoints.slice(-4)"
-                  :key="`inc-open-l-${point.label}`"
-                  class="flex cursor-copy items-center justify-between rounded-md border border-default/60 px-2 py-1"
-                  role="button"
-                  tabindex="0"
-                  :title="`Click to copy ${point.label} open incidents`"
-                  @click="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} open incidents`, `${point.label} open incidents`)"
-                  @keydown.enter.prevent="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} open incidents`, `${point.label} open incidents`)"
-                  @keydown.space.prevent="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} open incidents`, `${point.label} open incidents`)"
-                >
-                  <span>{{ point.label }}</span>
-                  <span>{{ formatAnalyticsNumber(point.value) }}</span>
-                </div>
-              </div>
-            </UCard>
-
-            <UCard class="admin-panel-card border-0">
-              <template #header>
-                <div class="font-medium">
-                  Paid expenses by week
-                </div>
-              </template>
-              <div class="trend-chart-shell">
-                <div
-                  v-for="point in expensePaidPoints"
-                  :key="`expense-paid-${point.label}`"
-                  class="trend-chart-col"
-                >
-                  <div
-                    class="trend-chart-bar"
-                    :style="{ height: barHeight(expensePaidPoints, point.value) }"
-                  />
-                </div>
-              </div>
-              <div class="mt-2 space-y-1 text-xs text-dimmed">
-                <div
-                  v-for="point in expensePaidPoints.slice(-4)"
-                  :key="`expense-paid-l-${point.label}`"
-                  class="flex cursor-copy items-center justify-between rounded-md border border-default/60 px-2 py-1"
-                  role="button"
-                  tabindex="0"
-                  :title="`Click to copy ${point.label} paid expenses`"
-                  @click="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} paid expenses, ${formatAnalyticsCurrency(point.amount)}`, `${point.label} paid expenses`)"
-                  @keydown.enter.prevent="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} paid expenses, ${formatAnalyticsCurrency(point.amount)}`, `${point.label} paid expenses`)"
-                  @keydown.space.prevent="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} paid expenses, ${formatAnalyticsCurrency(point.amount)}`, `${point.label} paid expenses`)"
-                >
-                  <span>{{ point.label }}</span>
-                  <span>{{ formatAnalyticsCurrency(point.amount) }}</span>
-                </div>
-              </div>
-            </UCard>
+    <div class="grid gap-4 xl:grid-cols-4">
+      <UCard class="admin-panel-card border-0">
+        <template #header>
+          <div class="font-medium">
+            Revenue by week
           </div>
-
-          <UCard class="admin-panel-card border-0">
-            <template #header>
-              <div class="flex items-center justify-between gap-2">
-                <div class="font-medium">
-                  Raw trends.json
-                </div>
-                <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="soft"
-                  icon="i-lucide-copy"
-                  @click="() => copyValue(trendsJsonText, 'Trends JSON')"
-                >
-                  Copy
-                </UButton>
-              </div>
-            </template>
-            <pre
-              class="analytics-json-block analytics-json-block--click-copy"
-              role="button"
-              tabindex="0"
-              title="Click to copy JSON"
-              @click="() => copyValue(trendsJsonText, 'Trends JSON')"
-              @keydown.enter.prevent="() => copyValue(trendsJsonText, 'Trends JSON')"
-              @keydown.space.prevent="() => copyValue(trendsJsonText, 'Trends JSON')"
-            >{{ trendsJsonText }}</pre>
-          </UCard>
+        </template>
+        <div class="trend-chart-shell">
+          <div
+            v-for="point in revenuePoints"
+            :key="`revenue-${point.label}`"
+            class="trend-chart-col"
+          >
+            <div
+              class="trend-chart-bar"
+              :style="{ height: barHeight(revenuePoints, point.value) }"
+              role="img"
+              :aria-label="`${point.label}: ${formatAnalyticsCurrency(point.value)} revenue`"
+            />
+          </div>
         </div>
-      </AdminOpsShell>
-    </template>
-  </UDashboardPanel>
+        <div class="mt-2 space-y-1 text-xs text-dimmed">
+          <div
+            v-for="point in revenuePoints.slice(-4)"
+            :key="`revenue-l-${point.label}`"
+            class="flex cursor-copy items-center justify-between rounded-md border border-default/60 px-2 py-1"
+            role="button"
+            tabindex="0"
+            :title="`Click to copy ${point.label} revenue`"
+            @click="() => copyValue(`${point.label}: ${formatAnalyticsCurrency(point.value)}`, `${point.label} revenue`)"
+            @keydown.enter.prevent="() => copyValue(`${point.label}: ${formatAnalyticsCurrency(point.value)}`, `${point.label} revenue`)"
+            @keydown.space.prevent="() => copyValue(`${point.label}: ${formatAnalyticsCurrency(point.value)}`, `${point.label} revenue`)"
+          >
+            <span>{{ point.label }}</span>
+            <span>{{ formatAnalyticsCurrency(point.value) }}</span>
+          </div>
+        </div>
+      </UCard>
+
+      <UCard class="admin-panel-card border-0">
+        <template #header>
+          <div class="font-medium">
+            Members by week
+          </div>
+        </template>
+        <div class="trend-chart-shell">
+          <div
+            v-for="point in memberPoints"
+            :key="`members-${point.label}`"
+            class="trend-chart-col"
+          >
+            <div
+              class="trend-chart-bar"
+              :style="{ height: barHeight(memberPoints, point.value) }"
+              role="img"
+              :aria-label="`${point.label}: ${formatAnalyticsNumber(point.value)} active members`"
+            />
+          </div>
+        </div>
+        <div class="mt-2 space-y-1 text-xs text-dimmed">
+          <div
+            v-for="point in memberPoints.slice(-4)"
+            :key="`members-l-${point.label}`"
+            class="flex cursor-copy items-center justify-between rounded-md border border-default/60 px-2 py-1"
+            role="button"
+            tabindex="0"
+            :title="`Click to copy ${point.label} active members`"
+            @click="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} active members`, `${point.label} members`)"
+            @keydown.enter.prevent="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} active members`, `${point.label} members`)"
+            @keydown.space.prevent="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} active members`, `${point.label} members`)"
+          >
+            <span>{{ point.label }}</span>
+            <span>{{ formatAnalyticsNumber(point.value) }}</span>
+          </div>
+        </div>
+      </UCard>
+
+      <UCard class="admin-panel-card border-0">
+        <template #header>
+          <div class="font-medium">
+            Utilization by week
+          </div>
+        </template>
+        <div class="trend-chart-shell">
+          <div
+            v-for="point in utilizationPoints"
+            :key="`util-${point.label}`"
+            class="trend-chart-col"
+          >
+            <div
+              class="trend-chart-bar"
+              :style="{ height: barHeight(utilizationPoints, point.value) }"
+              role="img"
+              :aria-label="`${point.label}: ${(point.value * 100).toFixed(1)}% utilization`"
+            />
+          </div>
+        </div>
+        <div class="mt-2 space-y-1 text-xs text-dimmed">
+          <div
+            v-for="point in utilizationPoints.slice(-4)"
+            :key="`util-l-${point.label}`"
+            class="flex cursor-copy items-center justify-between rounded-md border border-default/60 px-2 py-1"
+            role="button"
+            tabindex="0"
+            :title="`Click to copy ${point.label} utilization`"
+            @click="() => copyValue(`${point.label}: ${(point.value * 100).toFixed(1)}%`, `${point.label} utilization`)"
+            @keydown.enter.prevent="() => copyValue(`${point.label}: ${(point.value * 100).toFixed(1)}%`, `${point.label} utilization`)"
+            @keydown.space.prevent="() => copyValue(`${point.label}: ${(point.value * 100).toFixed(1)}%`, `${point.label} utilization`)"
+          >
+            <span>{{ point.label }}</span>
+            <span>{{ (point.value * 100).toFixed(1) }}%</span>
+          </div>
+        </div>
+      </UCard>
+
+      <UCard class="admin-panel-card border-0">
+        <template #header>
+          <div class="font-medium">
+            Open incidents by week
+          </div>
+        </template>
+        <div class="trend-chart-shell">
+          <div
+            v-for="point in incidentOpenPoints"
+            :key="`inc-open-${point.label}`"
+            class="trend-chart-col"
+          >
+            <div
+              class="trend-chart-bar"
+              :style="{ height: barHeight(incidentOpenPoints, point.value) }"
+              role="img"
+              :aria-label="`${point.label}: ${formatAnalyticsNumber(point.value)} open incidents`"
+            />
+          </div>
+        </div>
+        <div class="mt-2 space-y-1 text-xs text-dimmed">
+          <div
+            v-for="point in incidentOpenPoints.slice(-4)"
+            :key="`inc-open-l-${point.label}`"
+            class="flex cursor-copy items-center justify-between rounded-md border border-default/60 px-2 py-1"
+            role="button"
+            tabindex="0"
+            :title="`Click to copy ${point.label} open incidents`"
+            @click="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} open incidents`, `${point.label} open incidents`)"
+            @keydown.enter.prevent="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} open incidents`, `${point.label} open incidents`)"
+            @keydown.space.prevent="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} open incidents`, `${point.label} open incidents`)"
+          >
+            <span>{{ point.label }}</span>
+            <span>{{ formatAnalyticsNumber(point.value) }}</span>
+          </div>
+        </div>
+      </UCard>
+
+      <UCard class="admin-panel-card border-0">
+        <template #header>
+          <div class="font-medium">
+            Paid expenses by week
+          </div>
+        </template>
+        <div class="trend-chart-shell">
+          <div
+            v-for="point in expensePaidPoints"
+            :key="`expense-paid-${point.label}`"
+            class="trend-chart-col"
+          >
+            <div
+              class="trend-chart-bar"
+              :style="{ height: barHeight(expensePaidPoints, point.value) }"
+              role="img"
+              :aria-label="`${point.label}: ${formatAnalyticsNumber(point.value)} paid expenses totaling ${formatAnalyticsCurrency(point.amount)}`"
+            />
+          </div>
+        </div>
+        <div class="mt-2 space-y-1 text-xs text-dimmed">
+          <div
+            v-for="point in expensePaidPoints.slice(-4)"
+            :key="`expense-paid-l-${point.label}`"
+            class="flex cursor-copy items-center justify-between rounded-md border border-default/60 px-2 py-1"
+            role="button"
+            tabindex="0"
+            :title="`Click to copy ${point.label} paid expenses`"
+            @click="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} paid expenses, ${formatAnalyticsCurrency(point.amount)}`, `${point.label} paid expenses`)"
+            @keydown.enter.prevent="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} paid expenses, ${formatAnalyticsCurrency(point.amount)}`, `${point.label} paid expenses`)"
+            @keydown.space.prevent="() => copyValue(`${point.label}: ${formatAnalyticsNumber(point.value)} paid expenses, ${formatAnalyticsCurrency(point.amount)}`, `${point.label} paid expenses`)"
+          >
+            <span>{{ point.label }}</span>
+            <span>{{ formatAnalyticsCurrency(point.amount) }}</span>
+          </div>
+        </div>
+      </UCard>
+    </div>
+
+    <UCard class="admin-panel-card border-0">
+      <template #header>
+        <div class="flex items-center justify-between gap-2">
+          <div class="font-medium">
+            Raw trends.json
+          </div>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-copy"
+            @click="() => copyValue(trendsJsonText, 'Trends JSON')"
+          >
+            Copy
+          </UButton>
+        </div>
+      </template>
+      <pre
+        class="analytics-json-block analytics-json-block--click-copy"
+        role="button"
+        tabindex="0"
+        title="Click to copy JSON"
+        @click="() => copyValue(trendsJsonText, 'Trends JSON')"
+        @keydown.enter.prevent="() => copyValue(trendsJsonText, 'Trends JSON')"
+        @keydown.space.prevent="() => copyValue(trendsJsonText, 'Trends JSON')"
+      >{{ trendsJsonText }}</pre>
+    </UCard>
+  </AdminAnalyticsPage>
 </template>
 
 <style scoped>

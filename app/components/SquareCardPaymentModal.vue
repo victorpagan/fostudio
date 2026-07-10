@@ -41,6 +41,7 @@ const cardContainer = ref<HTMLElement | null>(null)
 const errorAlert = ref<HTMLElement | null>(null)
 
 const containerId = computed(() => `square-card-container-${props.instanceKey}`)
+const cardDetailsLabelId = computed(() => `${containerId.value}-label`)
 const submitting = computed(() => submitLoading.value || awaitingPayment.value || props.busy)
 const activeError = computed(() => formError.value ?? props.errorMessage)
 const submitLabel = computed(() => activeError.value && cardReady.value ? 'Try payment again' : props.confirmLabel)
@@ -52,6 +53,17 @@ let cardHandle: {
 
 const formattedAmount = computed(() => {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: props.currency }).format((props.amountCents || 0) / 100)
+})
+
+const accessibleDescription = computed(() => {
+  return props.description?.trim() || `Enter card details to pay ${formattedAmount.value}.`
+})
+
+const paymentStatus = computed(() => {
+  if (loadingCardForm.value) return 'Loading secure card form'
+  if (changingCard.value) return 'Loading a new card form'
+  if (submitting.value) return 'Processing payment'
+  return ''
 })
 
 async function mountCardForm() {
@@ -174,13 +186,15 @@ onBeforeUnmount(async () => {
 <template>
   <UModal
     v-model:open="localOpen"
+    :title="title"
+    :description="accessibleDescription"
     :dismissible="!submitting && !changingCard"
   >
     <template #content>
       <UCard>
         <template #header>
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div aria-hidden="true">
               <div class="text-base font-semibold">
                 {{ title }}
               </div>
@@ -191,69 +205,90 @@ onBeforeUnmount(async () => {
                 {{ description }}
               </p>
             </div>
-            <UButton
+            <IconButton
+              label="Close payment dialog"
               icon="i-lucide-x"
               color="neutral"
               variant="ghost"
               size="sm"
-              aria-label="Close payment dialog"
               :disabled="submitting || changingCard"
               @click="localOpen = false"
             />
           </div>
         </template>
 
-        <div class="space-y-4">
-          <div class="rounded-lg border border-default bg-muted/20 p-3">
-            <div class="text-xs uppercase tracking-wide text-dimmed">
+        <div
+          class="space-y-4"
+          :aria-busy="submitting || loadingCardForm || changingCard || undefined"
+        >
+          <dl class="rounded-lg border border-default bg-muted/20 p-3">
+            <dt class="text-xs uppercase tracking-wide text-dimmed">
               Amount
-            </div>
-            <div class="mt-1 text-lg font-semibold">
+            </dt>
+            <dd class="mt-1 text-lg font-semibold">
               {{ formattedAmount }}
-            </div>
-          </div>
+            </dd>
+          </dl>
 
           <div>
-            <div class="mb-2 text-xs uppercase tracking-wide text-dimmed">
+            <div
+              :id="cardDetailsLabelId"
+              class="mb-2 text-xs uppercase tracking-wide text-dimmed"
+            >
               Card details
             </div>
             <div
               :id="containerId"
               ref="cardContainer"
               class="rounded-lg border border-default bg-default p-3 min-h-16"
+              role="group"
+              :aria-labelledby="cardDetailsLabelId"
               tabindex="-1"
             />
           </div>
 
-          <UAlert
+          <AppAlert
             v-if="loadingCardForm"
+            class="app-status"
             color="neutral"
             variant="soft"
             icon="i-lucide-loader-circle"
             title="Loading secure card form..."
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            data-status-tone="neutral"
+            :ui="{ icon: 'animate-spin' }"
           />
-          <UAlert
+          <AppAlert
             v-else-if="!cardReady"
+            class="app-status"
             color="warning"
             variant="soft"
             icon="i-lucide-circle-alert"
             title="Card form not ready yet."
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            data-status-tone="warning"
           />
           <div
             v-if="activeError"
             ref="errorAlert"
             class="rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            role="alert"
-            aria-live="assertive"
-            aria-atomic="true"
             tabindex="-1"
           >
-            <UAlert
+            <AppAlert
+              class="app-status"
               color="error"
               variant="soft"
               icon="i-lucide-circle-alert"
               title="Payment could not be completed"
               :description="activeError"
+              role="alert"
+              aria-live="assertive"
+              aria-atomic="true"
+              data-status-tone="error"
             />
             <p
               v-if="errorMessage && !formError"
@@ -262,6 +297,15 @@ onBeforeUnmount(async () => {
               Review or change the card details above, then try the payment again.
             </p>
           </div>
+
+          <p
+            class="visually-hidden"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            {{ paymentStatus }}
+          </p>
         </div>
 
         <template #footer>

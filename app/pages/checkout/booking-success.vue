@@ -15,6 +15,12 @@ definePageMeta({
   // Explicitly no auth middleware — guests land here after Square checkout
 })
 
+useNoindexSeo({
+  title: 'FO Studio booking confirmation',
+  description: 'Confirm the status of a completed guest studio booking payment.',
+  canonicalPath: '/checkout/booking-success'
+})
+
 const supabase = useSupabaseClient()
 const route = useRoute()
 const user = useSupabaseUser()
@@ -137,7 +143,7 @@ function formatTime(iso: string) {
         class="text-center py-12"
       >
         <UIcon
-          name="i-heroicons-arrow-path"
+          name="i-lucide-loader-circle"
           class="animate-spin size-8 text-primary mx-auto"
         />
         <p class="mt-3 text-sm text-muted">
@@ -150,7 +156,7 @@ function formatTime(iso: string) {
         <div class="text-center space-y-2">
           <div class="mx-auto size-14 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
             <UIcon
-              name="i-heroicons-check-circle-solid"
+              name="i-lucide-circle-check-big"
               class="size-8 text-green-600 dark:text-green-400"
             />
           </div>
@@ -192,7 +198,7 @@ function formatTime(iso: string) {
               <span class="font-medium text-right max-w-xs">{{ booking.notes }}</span>
             </div>
 
-            <UDivider />
+            <USeparator />
 
             <div class="flex justify-between text-sm">
               <span class="text-muted">Booking ID</span>
@@ -234,7 +240,7 @@ function formatTime(iso: string) {
         <div class="text-center space-y-2">
           <div class="mx-auto size-14 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
             <UIcon
-              name="i-heroicons-clock"
+              name="i-lucide-clock"
               class="size-8 text-amber-600 dark:text-amber-400"
             />
           </div>
@@ -249,7 +255,7 @@ function formatTime(iso: string) {
         <UCard>
           <div class="flex items-center gap-3">
             <UIcon
-              name="i-heroicons-arrow-path"
+              name="i-lucide-loader-circle"
               class="animate-spin size-5 text-primary shrink-0"
             />
             <div>
@@ -292,7 +298,7 @@ function formatTime(iso: string) {
         <div class="text-center space-y-2">
           <div class="mx-auto size-14 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
             <UIcon
-              name="i-heroicons-exclamation-triangle"
+              name="i-lucide-triangle-alert"
               class="size-8 text-red-600 dark:text-red-400"
             />
           </div>

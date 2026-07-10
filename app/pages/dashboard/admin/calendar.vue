@@ -38,8 +38,8 @@ const calendarSettings = reactive<CalendarSettings>({
   guestPeakMultiplier: 2.5,
   guestBookingRatePerCreditCents: 3500,
   guestBookingWindowDays: 20,
-  guestBookingStartHour: 11,
-  guestBookingEndHour: 19,
+  guestBookingStartHour: 9,
+  guestBookingEndHour: 21,
   guestMinBookingHours: 2,
   guestBookingIncrementMinutes: 60,
   guestCreditExpiryDays: 30,
@@ -85,7 +85,7 @@ const guestBookingRatePerCreditDollars = computed<number>({
   }
 })
 
-const { pending, refresh } = await useAsyncData('admin:calendar:settings', async () => {
+const { pending, refresh, error: loadError, status } = useAsyncData('admin:calendar:settings', async () => {
   const res = await $fetch<{ settings: CalendarSettings }>('/api/admin/calendar/settings')
   calendarSettings.peakDays = Array.isArray(res.settings.peakDays) ? res.settings.peakDays : [1, 2, 3, 4]
   calendarSettings.peakStartHour = Number(res.settings.peakStartHour ?? 11)
@@ -93,8 +93,8 @@ const { pending, refresh } = await useAsyncData('admin:calendar:settings', async
   calendarSettings.guestPeakMultiplier = Number(res.settings.guestPeakMultiplier ?? 2.5)
   calendarSettings.guestBookingRatePerCreditCents = Number(res.settings.guestBookingRatePerCreditCents ?? 3500)
   calendarSettings.guestBookingWindowDays = Number(res.settings.guestBookingWindowDays ?? 20)
-  calendarSettings.guestBookingStartHour = Number(res.settings.guestBookingStartHour ?? 11)
-  calendarSettings.guestBookingEndHour = Number(res.settings.guestBookingEndHour ?? 19)
+  calendarSettings.guestBookingStartHour = Number(res.settings.guestBookingStartHour ?? 9)
+  calendarSettings.guestBookingEndHour = Number(res.settings.guestBookingEndHour ?? 21)
   calendarSettings.guestMinBookingHours = Number(res.settings.guestMinBookingHours ?? 2)
   calendarSettings.guestBookingIncrementMinutes = Number(res.settings.guestBookingIncrementMinutes ?? 60)
   calendarSettings.guestCreditExpiryDays = Number(res.settings.guestCreditExpiryDays ?? 30)
@@ -107,6 +107,14 @@ const { pending, refresh } = await useAsyncData('admin:calendar:settings', async
   calendarSettings.guestStandbyWindowHours = Number(res.settings.guestStandbyWindowHours ?? 6)
   calendarSettings.memberRescheduleNoticeHours = Number(res.settings.memberRescheduleNoticeHours ?? 24)
   return res.settings
+}, {
+  immediate: false,
+  server: false
+})
+const settingsReady = computed(() => status.value === 'success' && !loadError.value)
+
+onMounted(() => {
+  void refresh()
 })
 
 function formatHourLabel(value: number) {
@@ -147,6 +155,7 @@ function readErrorMessage(error: unknown) {
 }
 
 async function saveCalendarSettings() {
+  if (!settingsReady.value) return
   savingSettings.value = true
   try {
     await $fetch('/api/admin/calendar/settings.upsert', {
@@ -191,6 +200,7 @@ async function saveCalendarSettings() {
   <DashboardPageScaffold
     panel-id="admin-calendar-settings"
     title="Calendar Settings"
+    :busy="pending || savingSettings"
   >
     <template #right>
       <DashboardActionGroup
@@ -198,6 +208,7 @@ async function saveCalendarSettings() {
           label: 'Save settings',
           icon: 'i-lucide-save',
           loading: savingSettings,
+          disabled: !settingsReady,
           onSelect: () => { void saveCalendarSettings() }
         }"
         :secondary="[
@@ -207,323 +218,341 @@ async function saveCalendarSettings() {
             color: 'neutral',
             variant: 'soft',
             loading: pending,
+            disabled: pending,
             onSelect: () => { void refresh() }
           }
         ]"
       />
     </template>
-    <UAlert
-      color="warning"
-      variant="soft"
-      icon="i-lucide-calendar-clock"
-      title="Calendar controls"
-      description="Configure LA peak windows, guest behavior, and member reschedule policy."
+    <DashboardSectionState
+      v-if="loadError"
+      state="error"
+      title="Calendar policy unavailable"
+      :description="`${readErrorMessage(loadError)} Controls are disabled so fallback defaults cannot overwrite live booking rules.`"
+      show-retry
+      @retry="refresh"
     />
+    <DashboardSectionState
+      v-else-if="!settingsReady"
+      state="loading"
+      title="Loading calendar policy"
+      description="Loading peak, guest, standby, and reschedule settings."
+    />
+    <template v-else>
+      <AppAlert
+        color="warning"
+        variant="soft"
+        icon="i-lucide-calendar-clock"
+        title="Calendar controls"
+        description="Configure LA peak windows, guest behavior, and member reschedule policy."
+      />
 
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <div class="space-y-4">
-        <UCard>
-          <div class="space-y-4">
-            <div>
-              <div class="font-medium">
-                Peak window and pricing
-              </div>
-              <div class="text-sm text-dimmed">
-                Defines when peak multipliers apply for guest booking estimates.
-              </div>
-            </div>
-
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Peak days">
-                <USelectMenu
-                  v-model="selectedPeakDays"
-                  multiple
-                  :items="peakDayItems"
-                />
-              </UFormField>
-              <UFormField label="Guest peak multiplier">
-                <UInput
-                  v-model.number="calendarSettings.guestPeakMultiplier"
-                  type="number"
-                  step="0.25"
-                  min="1"
-                />
-              </UFormField>
-              <UFormField label="Peak start hour (LA)">
-                <UInput
-                  v-model.number="calendarSettings.peakStartHour"
-                  type="number"
-                  min="0"
-                  max="23"
-                />
-              </UFormField>
-              <UFormField label="Peak end hour (LA)">
-                <UInput
-                  v-model.number="calendarSettings.peakEndHour"
-                  type="number"
-                  min="1"
-                  max="24"
-                />
-              </UFormField>
-            </div>
-          </div>
-        </UCard>
-
-        <UCard>
-          <div class="space-y-4">
-            <div>
-              <div class="font-medium">
-                Guest access window
-              </div>
-              <div class="text-sm text-dimmed">
-                Controls guest visibility, hourly access range, and base credit pricing.
-              </div>
-            </div>
-
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Guest rate per credit ($)">
-                <UInput
-                  v-model.number="guestBookingRatePerCreditDollars"
-                  type="number"
-                  min="1"
-                  step="0.01"
-                />
-              </UFormField>
-              <UFormField label="Guest booking window (days)">
-                <UInput
-                  v-model.number="calendarSettings.guestBookingWindowDays"
-                  type="number"
-                  min="1"
-                  max="60"
-                />
-              </UFormField>
-              <UFormField label="Guest start hour (LA)">
-                <UInput
-                  v-model.number="calendarSettings.guestBookingStartHour"
-                  type="number"
-                  min="0"
-                  max="23"
-                />
-              </UFormField>
-              <UFormField label="Guest end hour (LA)">
-                <UInput
-                  v-model.number="calendarSettings.guestBookingEndHour"
-                  type="number"
-                  min="1"
-                  max="24"
-                />
-              </UFormField>
-              <UFormField label="Guest minimum booking (hours)">
-                <UInput
-                  v-model.number="calendarSettings.guestMinBookingHours"
-                  type="number"
-                  min="0.5"
-                  max="24"
-                  step="0.5"
-                />
-              </UFormField>
-              <UFormField label="Guest increment (minutes)">
-                <UInput
-                  v-model.number="calendarSettings.guestBookingIncrementMinutes"
-                  type="number"
-                  min="15"
-                  max="240"
-                  step="15"
-                />
-              </UFormField>
-              <UFormField label="Guest credit expiry (days)">
-                <UInput
-                  v-model.number="calendarSettings.guestCreditExpiryDays"
-                  type="number"
-                  min="1"
-                  max="365"
-                />
-              </UFormField>
-              <UFormField label="Payment reservation (minutes)">
-                <UInput
-                  v-model.number="calendarSettings.guestPendingPaymentHoldMinutes"
-                  type="number"
-                  min="1"
-                  max="120"
-                />
-              </UFormField>
-            </div>
-          </div>
-        </UCard>
-
-        <UCard>
-          <div class="space-y-4">
-            <div class="flex items-start justify-between gap-4">
+      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div class="space-y-4">
+          <UCard>
+            <div class="space-y-4">
               <div>
                 <div class="font-medium">
-                  Standby booking
+                  Peak window and pricing
                 </div>
                 <div class="text-sm text-dimmed">
-                  Same-day discounted bookings for qualifying open slots.
+                  Defines when peak multipliers apply for guest booking estimates.
                 </div>
               </div>
-              <USwitch
-                v-model="calendarSettings.standbyEnabled"
-                label="Enabled"
-              />
-            </div>
 
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Minimum open slot (hours)">
-                <UInput
-                  v-model.number="calendarSettings.standbyMinOpenSlotHours"
-                  type="number"
-                  min="1"
-                  max="24"
-                  step="0.5"
-                />
-              </UFormField>
-              <UFormField label="Standby multiplier">
-                <UInput
-                  v-model.number="calendarSettings.standbyDiscountMultiplier"
-                  type="number"
-                  min="0.05"
-                  max="1"
-                  step="0.05"
-                />
-              </UFormField>
-              <UFormField label="Member standby start hour">
-                <UInput
-                  v-model.number="calendarSettings.memberStandbyStartHour"
-                  type="number"
-                  min="0"
-                  max="23"
-                />
-              </UFormField>
-              <UFormField label="Member standby reach (hours)">
-                <UInput
-                  v-model.number="calendarSettings.memberStandbyWindowHours"
-                  type="number"
-                  min="1"
-                  max="24"
-                  step="0.5"
-                />
-              </UFormField>
-              <UFormField label="Guest standby reach (hours)">
-                <UInput
-                  v-model.number="calendarSettings.guestStandbyWindowHours"
-                  type="number"
-                  min="1"
-                  max="24"
-                  step="0.5"
-                />
-              </UFormField>
-            </div>
-          </div>
-        </UCard>
-
-        <UCard>
-          <div class="space-y-4">
-            <div>
-              <div class="font-medium">
-                Member reschedule policy
-              </div>
-              <div class="text-sm text-dimmed">
-                Sets required lead time before members can reschedule existing bookings.
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField label="Peak days">
+                  <USelectMenu
+                    v-model="selectedPeakDays"
+                    multiple
+                    :items="peakDayItems"
+                  />
+                </UFormField>
+                <UFormField label="Guest peak multiplier">
+                  <UInput
+                    v-model.number="calendarSettings.guestPeakMultiplier"
+                    type="number"
+                    step="0.25"
+                    min="1"
+                  />
+                </UFormField>
+                <UFormField label="Peak start hour (LA)">
+                  <UInput
+                    v-model.number="calendarSettings.peakStartHour"
+                    type="number"
+                    min="0"
+                    max="23"
+                  />
+                </UFormField>
+                <UFormField label="Peak end hour (LA)">
+                  <UInput
+                    v-model.number="calendarSettings.peakEndHour"
+                    type="number"
+                    min="1"
+                    max="24"
+                  />
+                </UFormField>
               </div>
             </div>
+          </UCard>
 
-            <UFormField
-              label="Member reschedule notice (hours)"
-              class="max-w-sm"
-            >
-              <UInput
-                v-model.number="calendarSettings.memberRescheduleNoticeHours"
-                type="number"
-                min="1"
-                max="240"
-              />
-            </UFormField>
-          </div>
-        </UCard>
+          <UCard>
+            <div class="space-y-4">
+              <div>
+                <div class="font-medium">
+                  Guest access window
+                </div>
+                <div class="text-sm text-dimmed">
+                  Controls guest visibility, hourly access range, and base credit pricing.
+                </div>
+              </div>
+
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField label="Guest rate per credit ($)">
+                  <UInput
+                    v-model.number="guestBookingRatePerCreditDollars"
+                    type="number"
+                    min="1"
+                    step="0.01"
+                  />
+                </UFormField>
+                <UFormField label="Guest booking window (days)">
+                  <UInput
+                    v-model.number="calendarSettings.guestBookingWindowDays"
+                    type="number"
+                    min="1"
+                    max="60"
+                  />
+                </UFormField>
+                <UFormField label="Guest start hour (LA)">
+                  <UInput
+                    v-model.number="calendarSettings.guestBookingStartHour"
+                    type="number"
+                    min="0"
+                    max="23"
+                  />
+                </UFormField>
+                <UFormField label="Guest end hour (LA)">
+                  <UInput
+                    v-model.number="calendarSettings.guestBookingEndHour"
+                    type="number"
+                    min="1"
+                    max="24"
+                  />
+                </UFormField>
+                <UFormField label="Guest minimum booking (hours)">
+                  <UInput
+                    v-model.number="calendarSettings.guestMinBookingHours"
+                    type="number"
+                    min="0.5"
+                    max="24"
+                    step="0.5"
+                  />
+                </UFormField>
+                <UFormField label="Guest increment (minutes)">
+                  <UInput
+                    v-model.number="calendarSettings.guestBookingIncrementMinutes"
+                    type="number"
+                    min="15"
+                    max="240"
+                    step="15"
+                  />
+                </UFormField>
+                <UFormField label="Guest credit expiry (days)">
+                  <UInput
+                    v-model.number="calendarSettings.guestCreditExpiryDays"
+                    type="number"
+                    min="1"
+                    max="365"
+                  />
+                </UFormField>
+                <UFormField label="Payment reservation (minutes)">
+                  <UInput
+                    v-model.number="calendarSettings.guestPendingPaymentHoldMinutes"
+                    type="number"
+                    min="1"
+                    max="120"
+                  />
+                </UFormField>
+              </div>
+            </div>
+          </UCard>
+
+          <UCard>
+            <div class="space-y-4">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="font-medium">
+                    Standby booking
+                  </div>
+                  <div class="text-sm text-dimmed">
+                    Same-day discounted bookings for qualifying open slots.
+                  </div>
+                </div>
+                <USwitch
+                  v-model="calendarSettings.standbyEnabled"
+                  label="Enabled"
+                  aria-label="Standby bookings enabled"
+                />
+              </div>
+
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField label="Minimum open slot (hours)">
+                  <UInput
+                    v-model.number="calendarSettings.standbyMinOpenSlotHours"
+                    type="number"
+                    min="1"
+                    max="24"
+                    step="0.5"
+                  />
+                </UFormField>
+                <UFormField label="Standby multiplier">
+                  <UInput
+                    v-model.number="calendarSettings.standbyDiscountMultiplier"
+                    type="number"
+                    min="0.05"
+                    max="1"
+                    step="0.05"
+                  />
+                </UFormField>
+                <UFormField label="Member standby start hour">
+                  <UInput
+                    v-model.number="calendarSettings.memberStandbyStartHour"
+                    type="number"
+                    min="0"
+                    max="23"
+                  />
+                </UFormField>
+                <UFormField label="Member standby reach (hours)">
+                  <UInput
+                    v-model.number="calendarSettings.memberStandbyWindowHours"
+                    type="number"
+                    min="1"
+                    max="24"
+                    step="0.5"
+                  />
+                </UFormField>
+                <UFormField label="Guest standby reach (hours)">
+                  <UInput
+                    v-model.number="calendarSettings.guestStandbyWindowHours"
+                    type="number"
+                    min="1"
+                    max="24"
+                    step="0.5"
+                  />
+                </UFormField>
+              </div>
+            </div>
+          </UCard>
+
+          <UCard>
+            <div class="space-y-4">
+              <div>
+                <div class="font-medium">
+                  Member reschedule policy
+                </div>
+                <div class="text-sm text-dimmed">
+                  Sets required lead time before members can reschedule existing bookings.
+                </div>
+              </div>
+
+              <UFormField
+                label="Member reschedule notice (hours)"
+                class="max-w-sm"
+              >
+                <UInput
+                  v-model.number="calendarSettings.memberRescheduleNoticeHours"
+                  type="number"
+                  min="1"
+                  max="240"
+                />
+              </UFormField>
+            </div>
+          </UCard>
+        </div>
+
+        <aside class="space-y-4 xl:sticky xl:top-4 self-start">
+          <UCard>
+            <div class="text-sm font-medium">
+              Policy summary
+            </div>
+            <dl class="mt-3 space-y-2 text-sm">
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Peak days
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ calendarPolicySummary.peakDayLabel }}
+                </dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Peak window
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ calendarPolicySummary.peakWindowLabel }}
+                </dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Guest pricing
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ calendarPolicySummary.guestRateLabel }}
+                </dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Guest booking window
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ calendarPolicySummary.guestWindowLabel }}
+                </dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Guest access hours
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ calendarPolicySummary.guestHoursLabel }}
+                </dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Guest duration
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ calendarPolicySummary.guestMinimumLabel }}
+                </dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Guest expiry
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ calendarPolicySummary.guestExpiryLabel }}
+                </dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Standby
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ calendarPolicySummary.standbyLabel }}
+                </dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Member notice
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ calendarPolicySummary.memberNoticeLabel }}
+                </dd>
+              </div>
+            </dl>
+          </UCard>
+        </aside>
       </div>
-
-      <aside class="space-y-4 xl:sticky xl:top-4 self-start">
-        <UCard>
-          <div class="text-sm font-medium">
-            Policy summary
-          </div>
-          <dl class="mt-3 space-y-2 text-sm">
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Peak days
-              </dt>
-              <dd class="font-medium text-right">
-                {{ calendarPolicySummary.peakDayLabel }}
-              </dd>
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Peak window
-              </dt>
-              <dd class="font-medium text-right">
-                {{ calendarPolicySummary.peakWindowLabel }}
-              </dd>
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Guest pricing
-              </dt>
-              <dd class="font-medium text-right">
-                {{ calendarPolicySummary.guestRateLabel }}
-              </dd>
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Guest booking window
-              </dt>
-              <dd class="font-medium text-right">
-                {{ calendarPolicySummary.guestWindowLabel }}
-              </dd>
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Guest access hours
-              </dt>
-              <dd class="font-medium text-right">
-                {{ calendarPolicySummary.guestHoursLabel }}
-              </dd>
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Guest duration
-              </dt>
-              <dd class="font-medium text-right">
-                {{ calendarPolicySummary.guestMinimumLabel }}
-              </dd>
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Guest expiry
-              </dt>
-              <dd class="font-medium text-right">
-                {{ calendarPolicySummary.guestExpiryLabel }}
-              </dd>
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Standby
-              </dt>
-              <dd class="font-medium text-right">
-                {{ calendarPolicySummary.standbyLabel }}
-              </dd>
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Member notice
-              </dt>
-              <dd class="font-medium text-right">
-                {{ calendarPolicySummary.memberNoticeLabel }}
-              </dd>
-            </div>
-          </dl>
-        </UCard>
-      </aside>
-    </div>
+    </template>
   </DashboardPageScaffold>
 </template>

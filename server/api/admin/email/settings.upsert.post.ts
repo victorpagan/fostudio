@@ -12,13 +12,25 @@ const templateSchema = z.object({
   bodyTemplate: z.string().max(200_000).optional().default('')
 })
 
+const adminCopiesSchema = z.object({
+  criticalEnabled: z.coerce.boolean().default(true),
+  nonCriticalEnabled: z.coerce.boolean().default(false),
+  recipients: z.array(z.string().trim().email().max(320)).max(20).default([])
+})
+
+const eventTypeSchema = z.string().trim().min(3).max(160).regex(/^[A-Za-z0-9._-]+$/)
+
 const bodySchema = z.object({
-  adminCopies: z.object({
-    criticalEnabled: z.coerce.boolean().default(true),
-    nonCriticalEnabled: z.coerce.boolean().default(false),
-    recipients: z.array(z.string().trim().email().max(320)).max(20).default([])
-  }),
-  templates: z.array(templateSchema).max(300).default([])
+  adminCopies: adminCopiesSchema.optional(),
+  templates: z.array(templateSchema).max(300).optional(),
+  deleteEventTypes: z.array(eventTypeSchema).max(300).optional().default([])
+}).superRefine((body, context) => {
+  if (!body.adminCopies && body.templates == null && body.deleteEventTypes.length === 0) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Provide adminCopies, templates, or explicit deleteEventTypes.'
+    })
+  }
 })
 
 function parseInlineStyle(style: string) {
@@ -106,11 +118,13 @@ export default defineEventHandler(async (event) => {
   const body = bodySchema.parse(await readBody(event))
   const excludedEventTypes = new Set(['order.confirmation'])
 
-  const recipients = [...new Set(
-    body.adminCopies.recipients
-      .map(value => value.trim().toLowerCase())
-      .filter(Boolean)
-  )]
+  const recipients = body.adminCopies
+    ? [...new Set(
+        body.adminCopies.recipients
+          .map(value => value.trim().toLowerCase())
+          .filter(Boolean)
+      )]
+    : []
 
   const normalizedTemplates = new Map<string, {
     event_type: string
@@ -123,7 +137,7 @@ export default defineEventHandler(async (event) => {
     body_template: string | null
   }>()
 
-  for (const template of body.templates) {
+  for (const template of body.templates ?? []) {
     const eventType = template.eventType.trim()
     if (excludedEventTypes.has(eventType)) continue
     const unsupportedSubject = findUnsupportedTemplateSyntax(template.subjectTemplate)
@@ -162,26 +176,20 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { error: prefError } = await supabase
-    .from('mail_admin_copy_preferences')
-    .upsert([{
-      scope: 'global',
-      critical_enabled: body.adminCopies.criticalEnabled,
-      non_critical_enabled: body.adminCopies.nonCriticalEnabled,
-      recipients
-    }], { onConflict: 'scope' })
+  if (body.adminCopies) {
+    const { error: prefError } = await supabase
+      .from('mail_admin_copy_preferences')
+      .upsert([{
+        scope: 'global',
+        critical_enabled: body.adminCopies.criticalEnabled,
+        non_critical_enabled: body.adminCopies.nonCriticalEnabled,
+        recipients
+      }], { onConflict: 'scope' })
 
-  if (prefError) throw createError({ statusCode: 500, statusMessage: prefError.message })
-
-  const templates = [...normalizedTemplates.values()]
-  const { data: existingTemplatesRaw, error: existingTemplatesError } = await supabase
-    .from('mail_template_registry')
-    .select('event_type')
-
-  if (existingTemplatesError) {
-    throw createError({ statusCode: 500, statusMessage: existingTemplatesError.message })
+    if (prefError) throw createError({ statusCode: 500, statusMessage: prefError.message })
   }
 
+  const templates = [...normalizedTemplates.values()]
   if (templates.length > 0) {
     const { error: templatesError } = await supabase
       .from('mail_template_registry')
@@ -190,11 +198,8 @@ export default defineEventHandler(async (event) => {
     if (templatesError) throw createError({ statusCode: 500, statusMessage: templatesError.message })
   }
 
-  const incomingEventTypes = new Set(templates.map(template => template.event_type))
-  const eventTypesToDelete = (existingTemplatesRaw ?? [])
-    .map((row: { event_type: string }) => row.event_type)
-    .filter((eventType: string) => !excludedEventTypes.has(eventType))
-    .filter((eventType: string) => !incomingEventTypes.has(eventType))
+  const eventTypesToDelete = [...new Set(body.deleteEventTypes)]
+    .filter(eventType => !excludedEventTypes.has(eventType))
 
   if (eventTypesToDelete.length > 0) {
     const { error: deleteError } = await supabase
@@ -205,5 +210,10 @@ export default defineEventHandler(async (event) => {
     if (deleteError) throw createError({ statusCode: 500, statusMessage: deleteError.message })
   }
 
-  return { ok: true }
+  return {
+    ok: true,
+    updatedTemplates: templates.map(template => template.event_type),
+    deletedTemplates: eventTypesToDelete,
+    adminCopiesUpdated: Boolean(body.adminCopies)
+  }
 })

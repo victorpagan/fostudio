@@ -125,6 +125,8 @@ const reordering = ref(false)
 const syncingAllVariations = ref(false)
 const selectedTierId = ref<string | null>(null)
 const draggedTierId = ref<string | null>(null)
+const deleteTierOpen = ref(false)
+const syncAllOpen = ref(false)
 
 const form = reactive<TierForm>({
   id: '',
@@ -146,13 +148,24 @@ const form = reactive<TierForm>({
   variations: defaultVariations()
 })
 
-const { data: tierRows, refresh } = await useAsyncData('admin:subscription:tiers', async () => {
+const {
+  data: tierRows,
+  refresh,
+  pending: tierPending,
+  error: tierLoadError,
+  status: tierLoadStatus
+} = useAsyncData('admin:subscription:tiers', async () => {
   const res = await $fetch<{ tiers: TierRecord[] }>('/api/admin/membership/tiers')
   return res.tiers
+}, {
+  immediate: false,
+  server: false
 })
 
 const reorderedTiers = ref<TierRecord[]>([])
 const tiers = computed(() => tierRows.value ?? [])
+const tiersReady = computed(() => tierLoadStatus.value === 'success' && !tierLoadError.value)
+const pageBusy = computed(() => loading.value || tierPending.value || savingAndSyncing.value || deleting.value || reordering.value || syncingAllVariations.value)
 
 function normalizeErrorMessage(message: string) {
   const trimmed = message.trim()
@@ -200,9 +213,7 @@ watch(
 )
 
 onMounted(() => {
-  if (!tierRows.value?.length) {
-    void reloadTiers()
-  }
+  void reloadTiers()
 })
 
 function resetForm() {
@@ -319,7 +330,7 @@ function buildTierReorderPayload(rows: TierRecord[]): TierReorderItem[] {
 }
 
 async function persistTierReorder(nextTiers: TierRecord[]) {
-  if (!nextTiers.length) return
+  if (!tiersReady.value || !nextTiers.length) return
   reordering.value = true
   try {
     await $fetch('/api/admin/membership/tier-reorder', {
@@ -339,6 +350,20 @@ async function persistTierReorder(nextTiers: TierRecord[]) {
   } finally {
     reordering.value = false
   }
+}
+
+async function moveTier(tierId: string, direction: -1 | 1) {
+  if (!tiersReady.value || reordering.value) return
+  const nextOrder = [...reorderedTiers.value]
+  const fromIndex = nextOrder.findIndex(tier => tier.id === tierId)
+  const toIndex = fromIndex + direction
+  if (fromIndex < 0 || toIndex < 0 || toIndex >= nextOrder.length) return
+
+  const [moved] = nextOrder.splice(fromIndex, 1)
+  if (!moved) return
+  nextOrder.splice(toIndex, 0, moved)
+  reorderedTiers.value = nextOrder
+  await persistTierReorder(nextOrder)
 }
 
 function onTierDragStart(event: DragEvent, tierId: string) {
@@ -417,6 +442,7 @@ function getTierPayloadBase() {
 }
 
 async function saveTier() {
+  if (!tiersReady.value) return
   savingAndSyncing.value = true
   try {
     const invalidDiscount = getInvalidActiveDiscountInput()
@@ -562,13 +588,11 @@ async function saveTier() {
 }
 
 async function deleteTier() {
+  if (!tiersReady.value) return
   if (!form.id) {
     toast.add({ title: 'Select a tier first', color: 'warning' })
     return
   }
-  const confirmed = window.confirm('Delete this tier from Square and the database? If it has membership history, it will be archived instead.')
-  if (!confirmed) return
-
   deleting.value = true
   try {
     const res = await $fetch<{ mode: 'deleted' | 'archived', squareWarnings?: string[] }>('/api/admin/membership/tier-delete', {
@@ -590,6 +614,7 @@ async function deleteTier() {
     }
     resetForm()
     await reloadTiers()
+    deleteTierOpen.value = false
   } catch (error: unknown) {
     toast.add({
       title: 'Could not delete tier',
@@ -602,8 +627,7 @@ async function deleteTier() {
 }
 
 async function syncAllVariations() {
-  const confirmed = window.confirm('Sync all active membership variations to Square? This updates plan phases with cadence multipliers and discounts.')
-  if (!confirmed) return
+  if (!tiersReady.value) return
 
   syncingAllVariations.value = true
   try {
@@ -632,6 +656,7 @@ async function syncAllVariations() {
         color: 'error'
       })
     }
+    syncAllOpen.value = false
   } catch (error: unknown) {
     toast.add({
       title: 'Could not sync variations',
@@ -648,6 +673,7 @@ async function syncAllVariations() {
   <DashboardPageScaffold
     panel-id="admin-subscriptions"
     title="Subscriptions Creator"
+    :busy="pageBusy"
   >
     <template #right>
       <DashboardActionGroup
@@ -657,7 +683,8 @@ async function syncAllVariations() {
           color: 'primary',
           variant: 'soft',
           loading: syncingAllVariations,
-          onSelect: syncAllVariations
+          disabled: !tiersReady,
+          onSelect: () => { syncAllOpen = true }
         }"
         :secondary="[
           {
@@ -666,6 +693,7 @@ async function syncAllVariations() {
             color: 'neutral',
             variant: 'soft',
             loading: loading,
+            disabled: tierPending,
             onSelect: reloadTiers
           }
         ]"
@@ -675,8 +703,25 @@ async function syncAllVariations() {
       fallback-tag="div"
       fallback="Loading subscription management..."
     >
-      <div class="space-y-4">
-        <UAlert
+      <DashboardSectionState
+        v-if="tierLoadError"
+        state="error"
+        title="Membership tiers unavailable"
+        :description="`${readErrorMessage(tierLoadError)} Tier controls are disabled so defaults cannot overwrite live settings.`"
+        show-retry
+        @retry="reloadTiers"
+      />
+      <DashboardSectionState
+        v-else-if="!tiersReady"
+        state="loading"
+        title="Loading membership tiers"
+        description="Loading the current database and Square-linked plan configuration."
+      />
+      <div
+        v-else
+        class="space-y-4"
+      >
+        <AppAlert
           color="warning"
           variant="soft"
           icon="i-lucide-badge-check"
@@ -711,37 +756,59 @@ async function syncAllVariations() {
                 No tiers found yet. Hit refresh to load.
               </div>
               <template v-else>
-                <button
-                  v-for="tier in reorderedTiers"
+                <div
+                  v-for="(tier, tierIndex) in reorderedTiers"
                   :key="tier.id"
-                  class="group/row w-full rounded-lg border border-default p-2 text-left text-sm transition hover:bg-elevated"
+                  class="group/row flex w-full items-center gap-1 rounded-lg border border-default p-1 text-sm transition hover:bg-elevated"
                   :class="selectedTierId === tier.id ? 'bg-elevated border-primary' : ''"
                   draggable="true"
                   @dragstart="onTierDragStart($event, tier.id)"
                   @dragover="onTierDragOver"
                   @drop="onTierDrop($event, tier.id)"
                   @dragend="onTierDragEnd"
-                  @click="loadTier(tier.id)"
                 >
-                  <div class="flex min-h-6 items-center gap-2">
-                    <UIcon
-                      name="i-lucide-grip-vertical"
-                      class="size-4 flex-shrink-0 text-dimmed opacity-70 group-hover/row:opacity-100"
-                    />
-                    <span class="min-w-0 flex-1 truncate font-medium">{{ tier.display_name }}</span>
-                    <UBadge
-                      :color="tier.active ? 'success' : 'neutral'"
+                  <button
+                    type="button"
+                    class="min-w-0 flex-1 rounded-md p-1 text-left"
+                    @click="loadTier(tier.id)"
+                  >
+                    <div class="flex min-h-6 items-center gap-2">
+                      <UIcon
+                        name="i-lucide-grip-vertical"
+                        class="size-4 flex-shrink-0 text-dimmed opacity-70 group-hover/row:opacity-100"
+                        aria-hidden="true"
+                      />
+                      <span class="min-w-0 flex-1 truncate font-medium">{{ tier.display_name }}</span>
+                      <UBadge
+                        :color="tier.active ? 'success' : 'neutral'"
+                        size="xs"
+                        variant="soft"
+                        class="shrink-0"
+                      >
+                        {{ tier.active ? 'active' : 'inactive' }}
+                      </UBadge>
+                    </div>
+                    <div class="mt-1 truncate text-xs text-dimmed">
+                      {{ tier.id }}
+                    </div>
+                  </button>
+                  <div class="flex shrink-0 flex-col">
+                    <IconButton
+                      :label="`Move ${tier.display_name} up`"
+                      icon="i-lucide-chevron-up"
                       size="xs"
-                      variant="soft"
-                      class="shrink-0"
-                    >
-                      {{ tier.active ? 'active' : 'inactive' }}
-                    </UBadge>
+                      :disabled="tierIndex === 0 || reordering"
+                      @click.stop="moveTier(tier.id, -1)"
+                    />
+                    <IconButton
+                      :label="`Move ${tier.display_name} down`"
+                      icon="i-lucide-chevron-down"
+                      size="xs"
+                      :disabled="tierIndex === reorderedTiers.length - 1 || reordering"
+                      @click.stop="moveTier(tier.id, 1)"
+                    />
                   </div>
-                  <div class="mt-1 text-xs text-dimmed truncate">
-                    {{ tier.id }}
-                  </div>
-                </button>
+                </div>
                 <div
                   v-if="reordering"
                   class="text-xs text-dimmed"
@@ -965,6 +1032,7 @@ async function syncAllVariations() {
             <div class="mt-4 flex flex-wrap gap-2">
               <UButton
                 :loading="savingAndSyncing"
+                :disabled="!tiersReady"
                 @click="saveTier"
               >
                 Save tier
@@ -972,6 +1040,7 @@ async function syncAllVariations() {
               <UButton
                 color="neutral"
                 variant="soft"
+                :disabled="!tiersReady"
                 @click="duplicateTier"
               >
                 Duplicate tier
@@ -980,7 +1049,8 @@ async function syncAllVariations() {
                 color="error"
                 variant="soft"
                 :loading="deleting"
-                @click="deleteTier"
+                :disabled="!tiersReady || !form.id"
+                @click="deleteTierOpen = true"
               >
                 Delete tier
               </UButton>
@@ -989,5 +1059,28 @@ async function syncAllVariations() {
         </div>
       </div>
     </ClientOnly>
+
+    <ConfirmDialog
+      v-model:open="deleteTierOpen"
+      title="Delete or archive this tier?"
+      :description="`This will remove ${form.displayName || form.id || 'the selected tier'} from Square and the database. Tiers with membership history are archived instead of deleted.`"
+      confirm-label="Delete tier"
+      busy-label="Deleting tier"
+      color="error"
+      :busy="deleting"
+      :disabled="!tiersReady || !form.id"
+      @confirm="deleteTier"
+    />
+
+    <ConfirmDialog
+      v-model:open="syncAllOpen"
+      title="Sync all active variations to Square?"
+      description="This updates active Square plan phases using the currently saved cadence multipliers and discounts. Unsaved form changes are not included."
+      confirm-label="Sync all variations"
+      busy-label="Syncing variations"
+      :busy="syncingAllVariations"
+      :disabled="!tiersReady"
+      @confirm="syncAllVariations"
+    />
   </DashboardPageScaffold>
 </template>

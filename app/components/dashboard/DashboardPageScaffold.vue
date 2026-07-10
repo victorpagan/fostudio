@@ -5,10 +5,14 @@ withDefaults(defineProps<{
   panelClass?: string
   navbarClass?: string
   useOpsShell?: boolean
+  busy?: boolean
+  contentLabel?: string
 }>(), {
   panelClass: 'min-h-0 flex-1 admin-ops-panel',
   navbarClass: 'admin-ops-navbar',
-  useOpsShell: true
+  useOpsShell: true,
+  busy: false,
+  contentLabel: undefined
 })
 </script>
 
@@ -16,6 +20,7 @@ withDefaults(defineProps<{
   <UDashboardPanel
     :id="panelId"
     :class="panelClass"
+    :aria-busy="busy || undefined"
     :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
   >
     <template #header>
@@ -37,7 +42,10 @@ withDefaults(defineProps<{
     </template>
 
     <template #body>
-      <AdminOpsShell v-if="useOpsShell">
+      <AdminOpsShell
+        v-if="useOpsShell"
+        :label="contentLabel || `${title} content`"
+      >
         <slot />
       </AdminOpsShell>
       <slot v-else />

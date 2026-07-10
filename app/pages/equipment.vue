@@ -54,6 +54,14 @@ const { data: siteEquipment } = await useAsyncData('site:equipment', async () =>
   return await queryCollection('siteEquipment').first()
 })
 
+usePublicSeo(() => resolvePublicSeo(siteEquipment.value, {
+  title: 'Included Studio Equipment & Lighting | FO Studio Los Angeles',
+  description: 'See FO Studio\'s existing Profoto D2 strobes, modifiers, grip, backdrop system, 25x30 ft cyclorama, and core production tools.',
+  canonicalPath: '/equipment',
+  schemaType: 'ItemPage',
+  keywords: ['studio equipment included', 'Profoto D2 Los Angeles', 'cyclorama studio gear']
+}))
+
 const content = computed<SiteEquipmentContent>(() => {
   return (siteEquipment.value as SiteEquipmentContent | null) ?? fallbackContent
 })
@@ -70,6 +78,12 @@ const content = computed<SiteEquipmentContent>(() => {
           <p class="editorial-label">
             Equipment
           </p>
+          <h1 class="editorial-title mt-2">
+            {{ content.heroTitle }}
+          </h1>
+          <p class="editorial-body">
+            {{ content.heroBody }}
+          </p>
         </div>
       </section>
 
@@ -81,9 +95,9 @@ const content = computed<SiteEquipmentContent>(() => {
         <div class="equipment-card-grid lg:grid-cols-3">
           <UCard class="equipment-card">
             <template #header>
-              <div class="equipment-card-title">
+              <h2 class="equipment-card-title">
                 {{ content.includedHeader }}
-              </div>
+              </h2>
             </template>
 
             <ul class="equipment-list">
@@ -103,9 +117,9 @@ const content = computed<SiteEquipmentContent>(() => {
 
           <UCard class="equipment-card">
             <template #header>
-              <div class="equipment-card-title">
+              <h2 class="equipment-card-title">
                 {{ content.equipmentListHeader }}
-              </div>
+              </h2>
             </template>
 
             <ul class="equipment-list">
@@ -125,9 +139,9 @@ const content = computed<SiteEquipmentContent>(() => {
 
           <UCard class="equipment-card">
             <template #header>
-              <div class="equipment-card-title">
+              <h2 class="equipment-card-title">
                 {{ content.guidelinesHeader }}
-              </div>
+              </h2>
             </template>
 
             <ul class="equipment-list">
@@ -149,9 +163,9 @@ const content = computed<SiteEquipmentContent>(() => {
         <UCard class="equipment-card equipment-cta-card">
           <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div class="equipment-cta-title">
+              <h2 class="equipment-cta-title">
                 {{ content.cta.title }}
-              </div>
+              </h2>
               <p class="equipment-cta-body">
                 {{ content.cta.body }}
               </p>

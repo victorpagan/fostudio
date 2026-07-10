@@ -128,11 +128,15 @@ export default defineEventHandler(async (event) => {
   let hasActiveMembership = false
 
   if (mode === 'member' && user) {
-    const { data: membership } = await supabase
+    const { data: membership, error: membershipError } = await supabase
       .from('memberships')
       .select('tier,status,current_period_end,canceled_at')
       .eq('user_id', user.sub)
       .maybeSingle()
+
+    if (membershipError) {
+      throw createError({ statusCode: 500, statusMessage: membershipError.message })
+    }
 
     remainingCredits = await resolveAvailableCreditBalance(supabase, user.sub)
 

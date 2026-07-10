@@ -8,6 +8,7 @@ export default defineEventHandler(async (event) => {
     pendingRes,
     deadRes,
     openIncidentsRes,
+    deadJobsRes,
     recentJobsRes,
     recentIncidentsRes
   ] = await Promise.all([
@@ -26,6 +27,12 @@ export default defineEventHandler(async (event) => {
     db
       .from('lock_access_jobs')
       .select('id,job_type,status,booking_id,user_id,run_at,attempts,max_attempts,last_error,created_at,updated_at')
+      .eq('status', 'dead')
+      .order('updated_at', { ascending: false })
+      .limit(50),
+    db
+      .from('lock_access_jobs')
+      .select('id,job_type,status,booking_id,user_id,run_at,attempts,max_attempts,last_error,created_at,updated_at')
       .order('updated_at', { ascending: false })
       .limit(20),
     db
@@ -39,6 +46,7 @@ export default defineEventHandler(async (event) => {
     pendingRes.error,
     deadRes.error,
     openIncidentsRes.error,
+    deadJobsRes.error,
     recentJobsRes.error,
     recentIncidentsRes.error
   ].filter(Boolean)
@@ -53,6 +61,7 @@ export default defineEventHandler(async (event) => {
       deadJobs: deadRes.count ?? 0,
       openIncidents: openIncidentsRes.count ?? 0
     },
+    deadJobs: deadJobsRes.data ?? [],
     recentJobs: recentJobsRes.data ?? [],
     recentIncidents: recentIncidentsRes.data ?? []
   }

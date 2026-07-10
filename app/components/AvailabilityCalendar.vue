@@ -108,6 +108,7 @@ const lastLoadRangeEnd = ref<Date | null>(null)
 const activeLegendPopup = ref<'peak' | 'standby' | null>(null)
 const peakZonesHighlighted = ref(false)
 const standbyZonesHighlighted = ref(false)
+const calendarRef = ref<InstanceType<typeof FullCalendar> | null>(null)
 let nowTickTimer: ReturnType<typeof setInterval> | null = null
 let loadRequestId = 0
 const responseCache = new Map<string, { storedAt: number, response: CalendarResponse }>()
@@ -474,9 +475,7 @@ function eventDidMount(arg: { el: HTMLElement, event: { end?: Date | null, exten
 
 const canSelect = computed(() => Boolean(instance?.vnode.props?.onSelect))
 const selectionEnabled = computed(() => canSelect.value && loadState.value === 'ready')
-const defaultInitialView = import.meta.client && window.matchMedia('(max-width: 767px)').matches
-  ? 'timeGridDay'
-  : 'timeGridWeek'
+const defaultInitialView = 'timeGridWeek'
 const dayHeaderFormat = {
   weekday: 'short',
   month: 'short',
@@ -829,6 +828,13 @@ const calendarSlotMaxTime = computed(() => {
   return hourToTimeLabel(guestBookingEndHour.value)
 })
 
+const calendarScrollTime = computed(() => {
+  if (isGuestConstrainedFeed.value && guestBookingStartHour.value !== null) {
+    return hourToTimeLabel(guestBookingStartHour.value)
+  }
+  return '08:00:00'
+})
+
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
   initialView: defaultInitialView,
@@ -857,9 +863,12 @@ const calendarOptions = computed(() => ({
   now: studioInstantToCalendarIso(new Date(nowTickMs.value)),
   nowIndicator: true,
   allDaySlot: false,
-  height: isGuestConstrainedFeed.value ? 800 : 'auto',
+  // Keep 24-hour member calendars usable without rendering a multi-screen grid.
+  height: isGuestConstrainedFeed.value ? 680 : 760,
   slotMinTime: calendarSlotMinTime.value,
   slotMaxTime: calendarSlotMaxTime.value,
+  scrollTime: calendarScrollTime.value,
+  scrollTimeReset: false,
   snapDuration: calendarSnapDuration.value,
   slotDuration: calendarSlotDuration.value,
   slotLabelInterval: calendarSlotLabelInterval.value,
@@ -936,6 +945,9 @@ const calendarOptions = computed(() => ({
 }))
 
 onMounted(() => {
+  if (window.matchMedia('(max-width: 767px)').matches) {
+    nextTick(() => calendarRef.value?.getApi().changeView('timeGridDay'))
+  }
   nowTickTimer = setInterval(() => {
     const nowMs = Date.now()
     nowTickMs.value = nowMs
@@ -957,6 +969,8 @@ defineExpose({ refresh, loadState, lastUpdatedAt })
 <template>
   <div
     class="availability-shell"
+    role="region"
+    aria-label="Studio availability calendar"
     :data-load-state="loadState"
     :aria-busy="loading"
     :class="{
@@ -1092,7 +1106,7 @@ defineExpose({ refresh, loadState, lastUpdatedAt })
       </div>
     </div>
 
-    <UAlert
+    <AppAlert
       v-if="loadState === 'stale' || loadState === 'error'"
       class="mb-3"
       :color="loadState === 'stale' ? 'warning' : 'error'"
@@ -1113,9 +1127,9 @@ defineExpose({ refresh, loadState, lastUpdatedAt })
           Retry
         </UButton>
       </template>
-    </UAlert>
+    </AppAlert>
 
-    <UAlert
+    <AppAlert
       v-if="workshopPromo"
       class="mb-3"
       color="warning"
@@ -1147,13 +1161,16 @@ defineExpose({ refresh, loadState, lastUpdatedAt })
           </UButton>
         </div>
       </template>
-    </UAlert>
+    </AppAlert>
 
     <div
       class="relative"
       :aria-disabled="canSelect && !selectionEnabled"
     >
-      <FullCalendar :options="calendarOptions" />
+      <FullCalendar
+        ref="calendarRef"
+        :options="calendarOptions"
+      />
 
       <div
         v-if="loading"

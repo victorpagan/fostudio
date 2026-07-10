@@ -18,6 +18,23 @@ type SiteFaqContent = {
   items: Array<{ q: string, a: string }>
 }
 
+type BookingPolicy = {
+  memberRescheduleNoticeHours: number
+  guestBookingWindowDays: number
+  guestBookingStartHour: number
+  guestBookingEndHour: number
+  guestMinBookingHours: number
+  guestBookingIncrementMinutes: number
+  workshopCreditMultiplier: number
+}
+
+type CatalogTier = {
+  id: string
+  adminOnly?: boolean
+  booking_window_days: number
+  peak_multiplier: number
+}
+
 const fallbackContent: SiteFaqContent = {
   hero: {
     kicker: 'FAQ',
@@ -33,7 +50,11 @@ const fallbackContent: SiteFaqContent = {
   items: [
     {
       q: 'Do I need a membership to book the studio?',
-      a: 'No. Create a free account from the signup page, then book as a guest from the dashboard. Membership becomes the better fit when you need repeat access, a longer booking window, lower effective rates, and member benefits.'
+      a: 'No. Create an account, then book under the current guest policy. Membership is designed for recurring access and adds tier-based booking reach, member credits, and included benefits.'
+    },
+    {
+      q: 'What is different about guest and member booking?',
+      a: 'Guests currently book up to {{guestBookingWindowDays}} days ahead, during {{guestBookingHours}}, with a {{guestMinimum}} minimum and {{guestIncrement}} increments. Members have 24/7 access, 30-minute increments, tier-based booking windows, and member credits and benefits.'
     },
     {
       q: 'What is included with memberships?',
@@ -53,7 +74,7 @@ const fallbackContent: SiteFaqContent = {
     },
     {
       q: 'What is the difference between peak and off-peak time?',
-      a: 'Off-peak time uses the base rate of 1 credit per hour. Peak windows use the tier’s peak-hour credit rate (for example 2, 1.5, or 1.25 credits per hour) so the calendar stays fair during the busiest production hours.'
+      a: 'Off-peak member time uses the base rate of 1 credit per hour. Peak windows use the live multiplier for the selected tier, currently {{peakRateRange}}. Booking preview identifies peak time before confirmation.'
     },
     {
       q: 'Can I try the studio before joining a membership?',
@@ -61,15 +82,27 @@ const fallbackContent: SiteFaqContent = {
     },
     {
       q: 'What happens if I need to cancel a booking?',
-      a: 'Member reschedules are available until {{memberRescheduleNoticeHours}} hours before the booking start. Cancellation and refund treatment depends on timing, so if a session needs to move, do it as early as possible.'
+      a: 'Standard member reschedules are available until {{memberRescheduleNoticeHours}} hours before the booking start. The dashboard asks the server to confirm cancellation eligibility and any credit return. Standby bookings cannot be canceled, rescheduled, or extended after purchase.'
     },
     {
       q: 'How far ahead can I book?',
-      a: 'That depends on the membership tier. Higher tiers can see and reserve farther into the calendar. Guest bookings are intentionally limited to a shorter window.'
+      a: 'Guests currently book up to {{guestBookingWindowDays}} days ahead. Public membership tiers currently provide {{memberBookingWindowRange}} of booking reach, depending on the tier.'
     },
     {
       q: 'Can I hold equipment or keep a setup overnight?',
       a: 'Membership tiers include a monthly overnight-hold cap. Holds require a minimum booking length and a late-enough booking end time based on studio policy. Hold time does not count toward booking hours, and door locks do not work during hold hours unless staff is contacted first.'
+    },
+    {
+      q: 'How does same-day standby work?',
+      a: 'Standby appears only when the live calendar identifies an eligible same-day opening. Booking preview confirms the rate and eligibility, and only one standby booking is allowed per account per day. Purchased standby bookings cannot be canceled, rescheduled, extended, or chained.'
+    },
+    {
+      q: 'Who can use a referral code?',
+      a: 'A referral code applies only to a new member’s first successful activation. It must belong to another currently entitled member. Live tier and cadence rules determine reward credits after activation.'
+    },
+    {
+      q: 'Who can create a workshop booking?',
+      a: 'Workshop-hosting mode requires an authenticated account with an active membership and workshop booking enabled for that account. Workshop time currently uses {{workshopMultiplier}}x credits.'
     },
     {
       q: 'Do you support film shooters?',
@@ -83,9 +116,12 @@ const fallbackContent: SiteFaqContent = {
 }
 
 const { data: bookingPolicy } = await useAsyncData('faq:bookings:policy', async () => {
-  return await $fetch<{ memberRescheduleNoticeHours: number }>('/api/bookings/policy')
+  return await $fetch<BookingPolicy>('/api/bookings/policy')
 })
 const memberRescheduleNoticeHours = computed(() => Number(bookingPolicy.value?.memberRescheduleNoticeHours ?? 24))
+const { data: catalog } = await useFetch<{ tiers: CatalogTier[] }>('/api/membership/catalog', {
+  default: () => ({ tiers: [] })
+})
 const { data: siteFaq } = await useAsyncData('site:faq', async () => {
   try {
     return await queryCollection('siteFaq').first()
@@ -97,12 +133,88 @@ const pageContent = computed<SiteFaqContent>(() => {
   return (siteFaq.value as SiteFaqContent | null) ?? fallbackContent
 })
 
+const publicTiers = computed(() => (catalog.value?.tiers ?? [])
+  .filter(tier => !tier.adminOnly && tier.id !== 'test'))
+
+const memberBookingWindowRange = computed(() => {
+  const values = publicTiers.value
+    .map(tier => Number(tier.booking_window_days))
+    .filter(value => Number.isFinite(value) && value > 0)
+  if (!values.length) return 'tier-specific'
+  const minimum = Math.min(...values)
+  const maximum = Math.max(...values)
+  return minimum === maximum ? `${minimum} days` : `${minimum}-${maximum} days`
+})
+
+const peakRateRange = computed(() => {
+  const values = publicTiers.value
+    .map(tier => Number(tier.peak_multiplier))
+    .filter(value => Number.isFinite(value) && value >= 1)
+  if (!values.length) return 'the rate shown on each live plan'
+  const minimum = Math.min(...values)
+  const maximum = Math.max(...values)
+  const format = (value: number) => Number.isInteger(value) ? value.toString() : value.toFixed(2).replace(/\.?0+$/, '')
+  return minimum === maximum ? `${format(minimum)}x` : `${format(minimum)}x-${format(maximum)}x`
+})
+
+function formatHour(hour: number | null | undefined) {
+  const parsed = Number(hour)
+  const normalized = Number.isFinite(parsed) ? Math.max(0, Math.min(24, Math.floor(parsed))) : 0
+  if (normalized === 24) return '12 AM'
+  return `${normalized % 12 || 12} ${normalized >= 12 ? 'PM' : 'AM'}`
+}
+
+function formatHours(value: number | null | undefined) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return '2-hour'
+  return `${parsed.toFixed(Number.isInteger(parsed) ? 0 : 1)}-hour`
+}
+
+function resolveAnswer(answer: string) {
+  return answer
+    .replaceAll('{{memberRescheduleNoticeHours}}', `${memberRescheduleNoticeHours.value}`)
+    .replaceAll('{{guestBookingWindowDays}}', `${bookingPolicy.value?.guestBookingWindowDays ?? 20}`)
+    .replaceAll('{{guestBookingHours}}', `${formatHour(bookingPolicy.value?.guestBookingStartHour ?? 9)}-${formatHour(bookingPolicy.value?.guestBookingEndHour ?? 21)} Los Angeles time`)
+    .replaceAll('{{guestMinimum}}', formatHours(bookingPolicy.value?.guestMinBookingHours ?? 2))
+    .replaceAll('{{guestIncrement}}', `${bookingPolicy.value?.guestBookingIncrementMinutes ?? 60}-minute`)
+    .replaceAll('{{memberBookingWindowRange}}', memberBookingWindowRange.value)
+    .replaceAll('{{peakRateRange}}', peakRateRange.value)
+    .replaceAll('{{workshopMultiplier}}', `${bookingPolicy.value?.workshopCreditMultiplier ?? 2}`)
+}
+
 const faqs = computed(() => [
   ...(pageContent.value.items ?? []).map(item => ({
     question: item.q,
-    answer: item.a.replaceAll('{{memberRescheduleNoticeHours}}', `${memberRescheduleNoticeHours.value}`)
+    answer: resolveAnswer(item.a)
   }))
 ])
+
+usePublicSeo(() => {
+  const seo = resolvePublicSeo(siteFaq.value, {
+    title: 'FO Studio FAQ | Memberships, Credits, Booking & Holds',
+    description: 'Verified answers about FO Studio memberships, guest booking, credits, standby, referrals, workshops, equipment, and holds.',
+    canonicalPath: '/faq',
+    schemaType: 'FAQPage',
+    keywords: ['photo studio FAQ', 'membership credits', 'guest studio booking']
+  })
+
+  return {
+    ...seo,
+    structuredData: {
+      '@type': 'FAQPage',
+      'name': seo.title,
+      'description': seo.description,
+      'mainEntity': faqs.value.map(faq => ({
+        '@type': 'Question',
+        'name': faq.question,
+        'acceptedAnswer': {
+          '@type': 'Answer',
+          'text': faq.answer
+        }
+      }))
+    }
+  }
+})
 
 const openItem = ref<number | null>(0)
 </script>
@@ -117,7 +229,13 @@ const openItem = ref<number | null>(0)
         <div class="faq-hero-grid">
           <div class="faq-hero-main">
             <p class="editorial-label">
-              FAQ
+              {{ pageContent.hero.kicker }}
+            </p>
+            <h1 class="editorial-title mt-2">
+              {{ pageContent.hero.title }}
+            </h1>
+            <p class="editorial-body">
+              {{ pageContent.hero.description }}
             </p>
           </div>
 
@@ -149,33 +267,42 @@ const openItem = ref<number | null>(0)
         data-reveal
         data-reveal-delay="85ms"
       >
-        <div
+        <article
           v-for="(faq, index) in faqs"
           :key="faq.question"
           class="faq-item"
         >
-          <button
-            class="faq-item-trigger"
-            @click="openItem = openItem === index ? null : index"
-          >
-            <span class="faq-item-question">
-              {{ faq.question }}
-            </span>
-            <UIcon
-              :name="openItem === index ? 'i-heroicons-chevron-up' : 'i-heroicons-chevron-down'"
-              class="faq-item-chevron"
-            />
-          </button>
+          <h2 class="m-0">
+            <button
+              :id="`faq-trigger-${index}`"
+              type="button"
+              class="faq-item-trigger"
+              :aria-expanded="openItem === index"
+              :aria-controls="`faq-panel-${index}`"
+              @click="openItem = openItem === index ? null : index"
+            >
+              <span class="faq-item-question">
+                {{ faq.question }}
+              </span>
+              <UIcon
+                :name="openItem === index ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                class="faq-item-chevron"
+              />
+            </button>
+          </h2>
 
           <div
             v-if="openItem === index"
+            :id="`faq-panel-${index}`"
             class="faq-item-content"
+            role="region"
+            :aria-labelledby="`faq-trigger-${index}`"
           >
             <p class="faq-item-answer">
               {{ faq.answer }}
             </p>
           </div>
-        </div>
+        </article>
       </section>
     </div>
   </UContainer>

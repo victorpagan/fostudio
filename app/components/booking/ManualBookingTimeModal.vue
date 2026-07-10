@@ -740,6 +740,8 @@ watch([
 <template>
   <UModal
     :open="open"
+    :title="title"
+    :description="description"
     @update:open="emit('update:open', $event)"
   >
     <template #content>
@@ -759,6 +761,7 @@ watch([
             </div>
             <UButton
               icon="i-lucide-x"
+              aria-label="Close booking time picker"
               color="neutral"
               variant="ghost"
               size="sm"
@@ -784,17 +787,22 @@ watch([
               <div class="flex items-center gap-1.5">
                 <UButton
                   icon="i-lucide-chevron-left"
+                  aria-label="Show previous month"
                   color="neutral"
                   variant="soft"
                   size="xs"
                   :disabled="!canGoToPrevMonth"
                   @click="goToPrevMonth"
                 />
-                <span class="min-w-28 text-center text-xs font-medium">
+                <span
+                  class="min-w-28 text-center text-xs font-medium"
+                  aria-live="polite"
+                >
                   {{ availabilityMonthLabel }}
                 </span>
                 <UButton
                   icon="i-lucide-chevron-right"
+                  aria-label="Show next month"
                   color="neutral"
                   variant="soft"
                   size="xs"
@@ -831,12 +839,24 @@ watch([
             </p>
             <p
               v-if="availabilityError"
-              class="text-xs text-red-500 dark:text-red-400"
+              class="flex flex-wrap items-center gap-2 text-xs text-red-500 dark:text-red-400"
             >
-              {{ availabilityError }}
+              <span>{{ availabilityError }}</span>
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="soft"
+                :loading="availabilityLoading"
+                @click="loadAvailabilityForCurrentMonth(true)"
+              >
+                Retry
+              </UButton>
             </p>
 
-            <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase tracking-wide text-dimmed">
+            <div
+              class="grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase tracking-wide text-dimmed"
+              role="row"
+            >
               <span>Sun</span>
               <span>Mon</span>
               <span>Tue</span>
@@ -849,6 +869,8 @@ watch([
               <div
                 class="grid grid-cols-7 gap-1.5 transition-opacity"
                 :class="availabilityLoading ? 'opacity-70' : 'opacity-100'"
+                role="grid"
+                :aria-label="`${availabilityMonthLabel} availability`"
               >
                 <button
                   v-for="(cell, idx) in availabilityMonthCells"
@@ -856,6 +878,8 @@ watch([
                   type="button"
                   class="relative h-9 rounded-md border text-xs transition"
                   :title="cell?.tooltip"
+                  :aria-label="cell?.tooltip"
+                  :aria-pressed="Boolean(cell?.selected)"
                   :class="cell
                     ? (cell.selected
                       ? (cell.disabled

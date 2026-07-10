@@ -270,7 +270,7 @@ async function signWaiver() {
         </div>
       </UCard>
 
-      <UAlert
+      <AppAlert
         v-else-if="!pending"
         color="error"
         variant="soft"

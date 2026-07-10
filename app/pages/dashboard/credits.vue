@@ -65,7 +65,12 @@ type PaymentMethodsResponse = {
   defaultCardId?: string | null
 }
 
-const { data: membership } = await useAsyncData('dash:credits:membership', async () => {
+const {
+  data: membership,
+  pending: membershipPending,
+  error: membershipError,
+  refresh: refreshMembership
+} = await useAsyncData('dash:credits:membership', async () => {
   if (!user.value) return null
   const { data, error } = await supabase
     .from('memberships')
@@ -76,9 +81,11 @@ const { data: membership } = await useAsyncData('dash:credits:membership', async
   return data as MembershipRow | null
 })
 
-const hasActiveMembership = computed(() => resolveMembershipUiState(membership.value) === 'active')
+const membershipState = computed(() => resolveMembershipUiState(membership.value))
+const membershipResolved = computed(() => !membershipPending.value && !membershipError.value)
+const hasActiveMembership = computed(() => membershipResolved.value && membershipState.value === 'active')
 
-const { data: balance, refresh: refreshBalance } = await useAsyncData('dash:credits:balance', async () => {
+const { data: balance, error: balanceError, refresh: refreshBalance } = await useAsyncData('dash:credits:balance', async () => {
   if (!user.value) return 0
   const { data, error } = await supabase
     .from('credit_balance')
@@ -89,7 +96,12 @@ const { data: balance, refresh: refreshBalance } = await useAsyncData('dash:cred
   return asNumber(data?.balance)
 }, { watch: [user, hasActiveMembership] })
 
-const { data: ledger, refresh: refreshLedger } = await useAsyncData('dash:credits:ledger', async () => {
+const {
+  data: ledger,
+  pending: ledgerPending,
+  error: ledgerError,
+  refresh: refreshLedger
+} = await useAsyncData('dash:credits:ledger', async () => {
   if (!user.value) return []
   const { data, error } = await supabase
     .from('credits_ledger')
@@ -101,13 +113,18 @@ const { data: ledger, refresh: refreshLedger } = await useAsyncData('dash:credit
   return (data ?? []) as LedgerRow[]
 }, { watch: [user, hasActiveMembership] })
 
-const { data: topupOptions, refresh: refreshTopupOptions, pending: topupOptionsPending } = await useAsyncData('dash:credits:topups', async () => {
+const {
+  data: topupOptions,
+  refresh: refreshTopupOptions,
+  pending: topupOptionsPending,
+  error: topupOptionsError
+} = await useAsyncData('dash:credits:topups', async () => {
   if (!user.value) return []
   const res = await $fetch<{ options: CreditTopupOption[] }>('/api/credits/topup/options')
   return res?.options ?? []
 }, { watch: [user, hasActiveMembership] })
 
-const { data: creditSummary, refresh: refreshCreditSummary } = await useAsyncData('dash:credits:summary', async () => {
+const { data: creditSummary, error: creditSummaryError, refresh: refreshCreditSummary } = await useAsyncData('dash:credits:summary', async () => {
   if (!user.value) return null
   const res = await $fetch<{ summary: CreditSummary | null }>('/api/credits/summary')
   return res.summary
@@ -131,6 +148,7 @@ const topupLoadingKey = ref<string | null>(null)
 const topupClaimInFlight = ref(false)
 const topupClaimingFromRoute = ref(false)
 const paymentModalOpen = ref(false)
+const savedCardConfirmOpen = ref(false)
 const paymentSubmitting = ref(false)
 const paymentError = ref<string | null>(null)
 const pendingTopupToken = ref<string | null>(null)
@@ -140,6 +158,23 @@ const pendingTopupLabel = ref('credits')
 const promoCode = ref('')
 const dashboardHydrated = ref(false)
 const activeCreditsTab = ref<'buy' | 'history'>('buy')
+const defaultSavedCard = computed(() => savedCards.value.find(card => card.id === defaultSavedCardId.value) ?? null)
+const nonMemberCreditsTitle = computed(() => {
+  if (membershipState.value === 'past_due') return 'Membership payment is past due'
+  if (membershipState.value === 'pending_checkout') return 'Membership checkout is incomplete'
+  if (membershipState.value === 'canceled') return 'Buying credits after cancellation'
+  if (membershipState.value === 'inactive') return 'Buying credits with an expired membership'
+  return 'Buying credits as a guest'
+})
+const nonMemberCreditsDescription = computed(() => {
+  if (membershipState.value === 'past_due') {
+    return 'Member benefits are paused until billing recovers. Credit purchases and bookings currently follow confirmed non-member account rules.'
+  }
+  if (membershipState.value === 'pending_checkout') {
+    return 'Payment has not activated member benefits yet. Credit purchases and bookings follow confirmed non-member account rules until checkout completes.'
+  }
+  return 'Guest bookings use higher credit rates and are limited to the guest booking window. Buy a bundle here or choose a time first and pay only the credit shortfall during booking.'
+})
 
 function asNumber(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) return value
@@ -258,7 +293,8 @@ function showRefreshPageToast() {
 }
 
 async function refreshAll() {
-  await Promise.all([
+  await Promise.allSettled([
+    refreshMembership(),
     refreshBalance(),
     refreshCreditSummary(),
     refreshLedger(),
@@ -291,7 +327,7 @@ async function startTopup(optionKey: string) {
     pendingTopupCurrency.value = String(res.currency ?? 'USD').toUpperCase()
     pendingTopupLabel.value = typeof res.label === 'string' && res.label.trim() ? res.label.trim() : 'credits'
     if (defaultSavedCardId.value) {
-      await confirmTopupCardOnFile(defaultSavedCardId.value)
+      savedCardConfirmOpen.value = true
       return
     }
     paymentModalOpen.value = true
@@ -313,6 +349,17 @@ async function confirmTopupPayment(payload: { sourceId: string }) {
 
 async function confirmTopupCardOnFile(cardId: string) {
   await processTopupPayment({ cardId })
+}
+
+async function confirmSavedCardTopup() {
+  if (!defaultSavedCardId.value) return
+  await confirmTopupCardOnFile(defaultSavedCardId.value)
+  if (!paymentError.value) savedCardConfirmOpen.value = false
+}
+
+function useAnotherCardForTopup() {
+  savedCardConfirmOpen.value = false
+  paymentModalOpen.value = true
 }
 
 async function processTopupPayment(payload: { sourceId?: string, cardId?: string }) {
@@ -353,6 +400,7 @@ async function processTopupPayment(payload: { sourceId?: string, cardId?: string
     const e = error as { data?: { statusMessage?: string }, statusMessage?: string, message?: string }
     paymentError.value = e.data?.statusMessage ?? e.statusMessage ?? e.message ?? 'Could not complete top-up payment.'
     if (payload.cardId) {
+      savedCardConfirmOpen.value = false
       paymentModalOpen.value = true
       await refreshPaymentMethods()
     }
@@ -486,14 +534,31 @@ watch(
           ]"
         />
       </template>
-      <div class="space-y-4">
+      <DashboardSectionState
+        v-if="membershipPending"
+        state="loading"
+        title="Loading credit pricing context"
+        description="Checking membership before showing member or non-member purchase guidance."
+      />
+      <DashboardSectionState
+        v-else-if="membershipError"
+        state="error"
+        title="Could not verify membership"
+        description="Credit purchases are disabled rather than falling back to guest pricing."
+        show-retry
+        @retry="refreshMembership"
+      />
+      <div
+        v-else
+        class="space-y-4"
+      >
         <DashboardDismissibleIntro
           v-if="!hasActiveMembership"
           storage-key="credits-guest-intro"
           color="warning"
           icon="i-lucide-wallet-cards"
-          title="Buying credits as a guest"
-          description="Guest credits use premium pricing, expire sooner, and can be used for bookings between 11am and 7pm. Buy a bundle here or choose a time first and pay only the credit shortfall during booking."
+          :title="nonMemberCreditsTitle"
+          :description="nonMemberCreditsDescription"
         >
           <template #actions>
             <UButton
@@ -506,9 +571,9 @@ watch(
               size="xs"
               color="neutral"
               variant="soft"
-              to="/dashboard/membership"
+              :to="membershipState === 'past_due' ? '/dashboard/profile' : '/dashboard/membership'"
             >
-              Compare memberships
+              {{ membershipState === 'past_due' ? 'Review billing' : membershipState === 'pending_checkout' ? 'Finish checkout' : 'Compare memberships' }}
             </UButton>
           </template>
         </DashboardDismissibleIntro>
@@ -547,7 +612,16 @@ watch(
                   Total credits
                 </div>
                 <div class="mt-1 text-3xl font-semibold">
-                  {{ formatCredits(displayedCreditBalance) }}
+                  <span
+                    v-if="!balanceError && !creditSummaryError"
+                    :class="displayedCreditBalance < 0 ? 'text-error' : ''"
+                  >
+                    {{ formatCredits(displayedCreditBalance) }}
+                  </span>
+                  <span
+                    v-else
+                    class="text-dimmed"
+                  >—</span>
                 </div>
                 <div class="mt-1 text-xs text-dimmed">
                   Plan bank: {{ formatCredits(creditSummary?.bankBalance ?? 0) }}
@@ -585,7 +659,36 @@ watch(
               Top-off credits expire after {{ creditSummary.topoffCreditExpiryDays }} days.
             </p>
 
-            <UAlert
+            <AppAlert
+              v-if="balanceError || creditSummaryError"
+              color="error"
+              variant="soft"
+              icon="i-lucide-circle-alert"
+              title="Credit balance unavailable"
+              description="The displayed fallback is not confirmation of a zero balance. Retry before making a purchase decision."
+            >
+              <template #actions>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  @click="refreshBalance(); refreshCreditSummary()"
+                >
+                  Retry balance
+                </UButton>
+              </template>
+            </AppAlert>
+
+            <AppAlert
+              v-else-if="displayedCreditBalance < 0"
+              color="error"
+              variant="soft"
+              icon="i-lucide-circle-minus"
+              title="Credit balance below zero"
+              :description="`Your balance is ${formatCredits(displayedCreditBalance)} credits. New credits first cover this negative balance.`"
+            />
+
+            <AppAlert
               v-if="creditSummary?.overCap"
               color="warning"
               variant="soft"
@@ -594,7 +697,7 @@ watch(
               description="New plan credits are paused until your plan bank drops back under cap."
             />
 
-            <UAlert
+            <AppAlert
               v-else-if="creditSummary?.atCap"
               color="info"
               variant="soft"
@@ -603,7 +706,7 @@ watch(
               description="New plan-credit minting is paused until your plan bank drops under cap."
             />
 
-            <UAlert
+            <AppAlert
               v-if="creditSummary?.expiringSoonCredits && creditSummary.expiringSoonCredits > 0"
               color="warning"
               variant="soft"
@@ -614,8 +717,16 @@ watch(
           </div>
         </UCard>
 
-        <div class="flex flex-wrap items-center gap-2">
+        <div
+          class="flex flex-wrap items-center gap-2"
+          role="tablist"
+          aria-label="Credit sections"
+        >
           <UButton
+            id="credits-tab-buy"
+            role="tab"
+            aria-controls="credits-panel-buy"
+            :aria-selected="activeCreditsTab === 'buy'"
             size="sm"
             :color="activeCreditsTab === 'buy' ? 'primary' : 'neutral'"
             :variant="activeCreditsTab === 'buy' ? 'solid' : 'soft'"
@@ -625,6 +736,10 @@ watch(
             Buy credits
           </UButton>
           <UButton
+            id="credits-tab-history"
+            role="tab"
+            aria-controls="credits-panel-history"
+            :aria-selected="activeCreditsTab === 'history'"
             size="sm"
             :color="activeCreditsTab === 'history' ? 'primary' : 'neutral'"
             :variant="activeCreditsTab === 'history' ? 'solid' : 'soft'"
@@ -635,7 +750,12 @@ watch(
           </UButton>
         </div>
 
-        <UCard v-if="activeCreditsTab === 'buy'">
+        <UCard
+          v-if="activeCreditsTab === 'buy'"
+          id="credits-panel-buy"
+          role="tabpanel"
+          aria-labelledby="credits-tab-buy"
+        >
           <div class="space-y-3">
             <div class="flex items-center justify-between">
               <div>
@@ -647,14 +767,14 @@ watch(
                     Top-off credits can be purchased anytime while membership is active.
                   </template>
                   <template v-else>
-                    Guest credit bundles use premium pricing and expire after {{ creditSummary?.topoffCreditExpiryDays ?? 30 }} days.
+                    Guest bookings consume credits at the current guest rate. Purchased credits expire after {{ creditSummary?.topoffCreditExpiryDays ?? 30 }} days.
                   </template>
                 </div>
                 <div
                   v-if="hasSavedCardOnFile"
                   class="mt-1 text-xs text-dimmed"
                 >
-                  Charges use your saved card on file by default.
+                  A confirmation appears before any saved card is charged.
                 </div>
               </div>
             </div>
@@ -666,7 +786,7 @@ watch(
               Finalizing your recent credit payment…
             </div>
 
-            <UAlert
+            <AppAlert
               v-if="paymentError"
               color="error"
               variant="soft"
@@ -688,6 +808,15 @@ watch(
             >
               Loading available top-up options…
             </div>
+
+            <DashboardSectionState
+              v-else-if="topupOptionsError"
+              state="error"
+              title="Could not load credit options"
+              description="No empty purchase state was assumed."
+              show-retry
+              @retry="refreshTopupOptions"
+            />
 
             <div
               v-else-if="!canBuyTopoff"
@@ -763,7 +892,12 @@ watch(
           </div>
         </UCard>
 
-        <UCard v-else>
+        <UCard
+          v-else
+          id="credits-panel-history"
+          role="tabpanel"
+          aria-labelledby="credits-tab-history"
+        >
           <div class="flex items-center justify-between gap-2">
             <div>
               <div class="text-xs text-dimmed uppercase tracking-wide">
@@ -775,12 +909,27 @@ watch(
             </div>
           </div>
 
-          <div
-            v-if="!ledger?.length"
-            class="mt-4 text-sm text-dimmed"
-          >
-            No credit activity yet.
-          </div>
+          <DashboardSectionState
+            v-if="ledgerPending"
+            class="mt-4"
+            state="loading"
+            title="Loading credit history"
+          />
+          <DashboardSectionState
+            v-else-if="ledgerError"
+            class="mt-4"
+            state="error"
+            title="Could not load credit history"
+            description="No empty history state was assumed."
+            show-retry
+            @retry="refreshLedger"
+          />
+          <DashboardSectionState
+            v-else-if="!ledger?.length"
+            class="mt-4"
+            state="empty"
+            title="No credit activity yet"
+          />
 
           <div
             v-else
@@ -811,6 +960,68 @@ watch(
         </UCard>
       </div>
     </DashboardPageScaffold>
+
+    <UModal
+      v-model:open="savedCardConfirmOpen"
+      title="Confirm saved-card charge"
+      description="Review the purchase amount and saved card before Square processes the payment."
+      :dismissible="!paymentSubmitting"
+    >
+      <template #content>
+        <UCard v-if="defaultSavedCard && pendingTopupToken">
+          <template #header>
+            <h3 class="text-base font-semibold">
+              Confirm saved-card charge
+            </h3>
+          </template>
+          <div class="space-y-3 text-sm">
+            <p class="text-dimmed">
+              Confirm the amount and card before Square processes this purchase.
+            </p>
+            <div class="rounded-lg border border-default p-3 space-y-2">
+              <div class="flex justify-between gap-3">
+                <span class="text-dimmed">Purchase</span>
+                <span class="font-medium">{{ pendingTopupLabel }}</span>
+              </div>
+              <div class="flex justify-between gap-3">
+                <span class="text-dimmed">Amount</span>
+                <span class="font-medium">{{ formatPrice(pendingTopupAmountCents, pendingTopupCurrency) }}</span>
+              </div>
+              <div class="flex justify-between gap-3">
+                <span class="text-dimmed">Card</span>
+                <span class="font-medium">{{ defaultSavedCard.brand ?? 'Card' }} •••• {{ defaultSavedCard.last4 ?? '----' }}</span>
+              </div>
+            </div>
+          </div>
+          <template #footer>
+            <div class="flex flex-wrap justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="paymentSubmitting"
+                @click="savedCardConfirmOpen = false"
+              >
+                Cancel
+              </UButton>
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="paymentSubmitting"
+                @click="useAnotherCardForTopup"
+              >
+                Use another card
+              </UButton>
+              <UButton
+                :loading="paymentSubmitting"
+                @click="confirmSavedCardTopup"
+              >
+                Charge {{ formatPrice(pendingTopupAmountCents, pendingTopupCurrency) }}
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
 
     <SquareCardPaymentModal
       v-model:open="paymentModalOpen"

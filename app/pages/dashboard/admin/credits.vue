@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { formatCentsForUsdInput, parseUsdInputToCents } from '~/utils/adminMoney'
+import { adminDatetimeInputToIso, isoToAdminDatetimeInput } from '~/utils/adminTime'
+
 definePageMeta({ middleware: ['admin'] })
 
 type CreditOption = {
@@ -43,6 +46,12 @@ const activeCreditsTab = ref('catalog')
 const pending = ref(false)
 const loadingCreditPolicy = ref(false)
 const optionRows = ref<CreditOption[]>([])
+const optionsLoaded = ref(false)
+const optionsError = ref<string | null>(null)
+const creditPolicyLoaded = ref(false)
+const creditPolicyError = ref<string | null>(null)
+const dashboardHydrated = ref(false)
+const deleteConfirmOpen = ref(false)
 
 const creditPolicy = reactive({
   creditExpiryDays: 90,
@@ -51,19 +60,8 @@ const creditPolicy = reactive({
   referralRules: [] as ReferralRuleForm[]
 })
 
-const usdAmountRegex = /^\d+(?:\.\d{1,2})?$/
-
 function centsToDollars(cents: number | null | undefined) {
-  return ((Number(cents ?? 0) || 0) / 100).toFixed(2)
-}
-
-function parseDollarsToCents(value: string | null | undefined) {
-  const trimmed = (value ?? '').trim()
-  if (!trimmed) return null
-  if (!usdAmountRegex.test(trimmed)) return null
-  const parsed = Number(trimmed)
-  if (!Number.isFinite(parsed) || parsed < 0) return null
-  return Math.round(parsed * 100)
+  return formatCentsForUsdInput(cents)
 }
 
 const form = reactive({
@@ -90,6 +88,19 @@ const cadenceOptions = [
 
 const options = computed(() => optionRows.value)
 const pageLoading = computed(() => pending.value || loadingCreditPolicy.value)
+const hasAllData = computed(() => optionsLoaded.value && creditPolicyLoaded.value)
+const canMutateOptions = computed(() =>
+  dashboardHydrated.value
+  && optionsLoaded.value
+  && !pending.value
+  && !optionsError.value
+)
+const canMutateCreditPolicy = computed(() =>
+  dashboardHydrated.value
+  && creditPolicyLoaded.value
+  && !loadingCreditPolicy.value
+  && !creditPolicyError.value
+)
 const reorderedOptions = ref<CreditOption[]>([])
 const selectedOption = computed(() => options.value.find(option => option.id === selectedId.value) ?? null)
 const activeOptionCount = computed(() => options.value.filter(option => option.active).length)
@@ -147,13 +158,16 @@ function applyCreditPolicySettings(settings: CreditSettingsPayload) {
 
 async function refresh() {
   pending.value = true
+  optionsError.value = null
   try {
     const res = await $fetch<{ options: CreditOption[] }>('/api/admin/credits/options')
     optionRows.value = Array.isArray(res.options) ? res.options : []
+    optionsLoaded.value = true
   } catch (error: unknown) {
+    optionsError.value = readErrorMessage(error)
     toast.add({
       title: 'Could not load credit options',
-      description: readErrorMessage(error),
+      description: optionsError.value,
       color: 'error'
     })
   } finally {
@@ -163,13 +177,16 @@ async function refresh() {
 
 async function refreshCreditPolicy() {
   loadingCreditPolicy.value = true
+  creditPolicyError.value = null
   try {
     const res = await $fetch<{ settings: CreditSettingsPayload }>('/api/admin/credits/settings')
     applyCreditPolicySettings(res.settings)
+    creditPolicyLoaded.value = true
   } catch (error: unknown) {
+    creditPolicyError.value = readErrorMessage(error)
     toast.add({
       title: 'Could not load credit settings',
-      description: readErrorMessage(error),
+      description: creditPolicyError.value,
       color: 'error'
     })
   } finally {
@@ -178,6 +195,7 @@ async function refreshCreditPolicy() {
 }
 
 function addReferralRule() {
+  if (!canMutateCreditPolicy.value) return
   creditPolicy.referralRules.push({
     tierId: '',
     cadence: 'monthly',
@@ -187,6 +205,7 @@ function addReferralRule() {
 }
 
 function removeReferralRule(index: number) {
+  if (!canMutateCreditPolicy.value) return
   creditPolicy.referralRules.splice(index, 1)
 }
 
@@ -201,25 +220,6 @@ function formatCredits(value: number | null | undefined) {
   const parsed = Number(value ?? 0)
   if (!Number.isFinite(parsed)) return '0'
   return Number.isInteger(parsed) ? parsed.toString() : parsed.toFixed(2).replace(/\.?0+$/, '')
-}
-
-function toLocalInputValue(value: string | null) {
-  if (!value) return ''
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return ''
-  const year = dt.getFullYear()
-  const month = `${dt.getMonth() + 1}`.padStart(2, '0')
-  const day = `${dt.getDate()}`.padStart(2, '0')
-  const hour = `${dt.getHours()}`.padStart(2, '0')
-  const minute = `${dt.getMinutes()}`.padStart(2, '0')
-  return `${year}-${month}-${day}T${hour}:${minute}`
-}
-
-function fromLocalInputValue(value: string) {
-  if (!value.trim()) return null
-  const dt = new Date(value)
-  if (Number.isNaN(dt.getTime())) return null
-  return dt.toISOString()
 }
 
 function resetForm() {
@@ -238,11 +238,13 @@ function resetForm() {
 }
 
 function startNewOption() {
+  if (!canMutateOptions.value) return
   activeCreditsTab.value = 'catalog'
   resetForm()
 }
 
 function loadOption(optionId: string) {
+  if (!optionsLoaded.value) return
   const option = options.value.find(row => row.id === optionId)
   if (!option) return
   selectedId.value = option.id
@@ -271,6 +273,7 @@ watch(options, (next) => {
 }, { immediate: true })
 
 onMounted(() => {
+  dashboardHydrated.value = true
   void refreshCreditsPage()
 })
 
@@ -282,7 +285,7 @@ function buildOptionReorderPayload(rows: CreditOption[]) {
 }
 
 async function persistOptionReorder(nextOptions: CreditOption[]) {
-  if (!nextOptions.length) return
+  if (!canMutateOptions.value || !nextOptions.length) return
   reordering.value = true
   try {
     await $fetch('/api/admin/credits/options.reorder', {
@@ -335,14 +338,34 @@ async function onOptionDrop(event: DragEvent, targetOptionId: string) {
   await persistOptionReorder(nextOrder)
 }
 
+async function moveOption(optionId: string, direction: -1 | 1) {
+  if (!canMutateOptions.value) return
+  const nextOrder = [...reorderedOptions.value]
+  const fromIndex = nextOrder.findIndex(option => option.id === optionId)
+  const toIndex = fromIndex + direction
+  if (fromIndex < 0 || toIndex < 0 || toIndex >= nextOrder.length) return
+  const [moved] = nextOrder.splice(fromIndex, 1)
+  if (!moved) return
+  nextOrder.splice(toIndex, 0, moved)
+  reorderedOptions.value = nextOrder
+  await persistOptionReorder(nextOrder)
+}
+
+function onOptionKeydown(event: KeyboardEvent, optionId: string) {
+  if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return
+  event.preventDefault()
+  void moveOption(optionId, event.key === 'ArrowUp' ? -1 : 1)
+}
+
 function onOptionDragEnd() {
   draggedOptionId.value = null
 }
 
 async function saveAndSyncSquare() {
+  if (!canMutateOptions.value) return
   savingAndSyncing.value = true
   try {
-    const basePriceCents = parseDollarsToCents(form.basePriceDollars)
+    const basePriceCents = parseUsdInputToCents(form.basePriceDollars)
     if (basePriceCents === null || basePriceCents <= 0) {
       toast.add({
         title: 'Invalid base price',
@@ -352,7 +375,7 @@ async function saveAndSyncSquare() {
       return
     }
 
-    const salePriceCents = form.salePriceDollars.trim() ? parseDollarsToCents(form.salePriceDollars) : null
+    const salePriceCents = form.salePriceDollars.trim() ? parseUsdInputToCents(form.salePriceDollars) : null
     if (form.salePriceDollars.trim() && (salePriceCents === null || salePriceCents <= 0)) {
       toast.add({
         title: 'Invalid sale price',
@@ -401,15 +424,17 @@ async function saveAndSyncSquare() {
   }
 }
 
-async function deleteOption() {
+function requestDeleteOption() {
   if (!form.id) {
     toast.add({ title: 'Select a credit option first', color: 'warning' })
     return
   }
+  if (!canMutateOptions.value) return
+  deleteConfirmOpen.value = true
+}
 
-  const confirmed = window.confirm('Delete this credit option? This will remove the linked Square item and delete the option from the database.')
-  if (!confirmed) return
-
+async function deleteOption() {
+  if (!form.id || !canMutateOptions.value) return
   deleting.value = true
   try {
     await $fetch('/api/admin/credits/options.delete', {
@@ -417,6 +442,7 @@ async function deleteOption() {
       body: { id: form.id }
     })
     toast.add({ title: 'Credit option deleted' })
+    deleteConfirmOpen.value = false
     resetForm()
     await refresh()
   } catch (error: unknown) {
@@ -431,6 +457,7 @@ async function deleteOption() {
 }
 
 async function reconcilePendingTopups() {
+  if (!canMutateOptions.value) return
   reconcilingTopups.value = true
   try {
     const res = await $fetch<{
@@ -458,6 +485,7 @@ async function reconcilePendingTopups() {
 }
 
 async function saveCreditPolicy() {
+  if (!canMutateCreditPolicy.value) return
   savingCreditPolicy.value = true
   try {
     const referralRules = creditPolicy.referralRules
@@ -496,12 +524,14 @@ async function saveCreditPolicy() {
   <DashboardPageScaffold
     panel-id="admin-credits"
     title="Credits"
+    :busy="pageLoading"
   >
     <template #right>
       <DashboardActionGroup
         :primary="{
           label: 'New option',
           icon: 'i-lucide-plus',
+          disabled: !canMutateOptions,
           onSelect: startNewOption
         }"
         :secondary="[
@@ -517,7 +547,33 @@ async function saveCreditPolicy() {
       />
     </template>
 
-    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <DashboardSectionState
+      v-if="(!optionsLoaded && pending) || (!creditPolicyLoaded && loadingCreditPolicy)"
+      state="loading"
+      title="Loading credit operations"
+      description="Loading the top-up catalog and credit policy before actions are enabled."
+    />
+    <DashboardSectionState
+      v-else-if="(!optionsLoaded && optionsError) || (!creditPolicyLoaded && creditPolicyError)"
+      state="error"
+      title="Credit operations are unavailable"
+      :description="optionsError || creditPolicyError"
+      show-retry
+      @retry="refreshCreditsPage"
+    />
+    <AppAlert
+      v-else-if="optionsError || creditPolicyError"
+      color="warning"
+      variant="soft"
+      icon="i-lucide-database-zap"
+      title="Showing stale credit data"
+      :description="optionsError || creditPolicyError || undefined"
+    />
+
+    <div
+      v-if="hasAllData"
+      class="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
+    >
       <UCard class="admin-panel-card border-0">
         <div class="flex items-start justify-between gap-3">
           <div>
@@ -599,7 +655,10 @@ async function saveCreditPolicy() {
       </UCard>
     </div>
 
-    <div class="space-y-4">
+    <div
+      v-if="optionsLoaded || creditPolicyLoaded"
+      class="space-y-4"
+    >
       <UTabs
         v-model="activeCreditsTab"
         :items="creditTabs"
@@ -610,7 +669,7 @@ async function saveCreditPolicy() {
       />
 
       <div
-        v-if="activeCreditsTab === 'catalog'"
+        v-if="activeCreditsTab === 'catalog' && optionsLoaded"
         class="grid gap-4 lg:grid-cols-[20rem_minmax(0,1fr)]"
       >
         <UCard class="admin-panel-card border-0">
@@ -649,12 +708,15 @@ async function saveCreditPolicy() {
               :key="option.id"
               class="w-full rounded-lg border border-default p-3 text-left text-sm transition hover:bg-elevated"
               :class="selectedId === option.id ? 'border-primary bg-elevated' : ''"
-              draggable="true"
+              :draggable="canMutateOptions"
+              :aria-pressed="selectedId === option.id"
+              :aria-label="`${option.label}. Press Alt plus Up or Down Arrow to reorder.`"
               @dragstart="onOptionDragStart($event, option.id)"
               @dragover="onOptionDragOver"
               @drop="onOptionDrop($event, option.id)"
               @dragend="onOptionDragEnd"
               @click="loadOption(option.id)"
+              @keydown="onOptionKeydown($event, option.id)"
             >
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
@@ -797,16 +859,16 @@ async function saveCreditPolicy() {
                 </UFormField>
                 <UFormField label="Sale starts">
                   <UInput
-                    :model-value="toLocalInputValue(form.saleStartsAt)"
+                    :model-value="isoToAdminDatetimeInput(form.saleStartsAt)"
                     type="datetime-local"
-                    @update:model-value="(value) => { form.saleStartsAt = fromLocalInputValue(String(value ?? '')) }"
+                    @update:model-value="(value) => { form.saleStartsAt = adminDatetimeInputToIso(String(value ?? '')) }"
                   />
                 </UFormField>
                 <UFormField label="Sale ends">
                   <UInput
-                    :model-value="toLocalInputValue(form.saleEndsAt)"
+                    :model-value="isoToAdminDatetimeInput(form.saleEndsAt)"
                     type="datetime-local"
-                    @update:model-value="(value) => { form.saleEndsAt = fromLocalInputValue(String(value ?? '')) }"
+                    @update:model-value="(value) => { form.saleEndsAt = adminDatetimeInputToIso(String(value ?? '')) }"
                   />
                 </UFormField>
               </div>
@@ -827,14 +889,15 @@ async function saveCreditPolicy() {
                     color: 'error',
                     variant: 'soft',
                     loading: deleting,
-                    disabled: !form.id,
-                    onSelect: deleteOption
+                    disabled: !form.id || !canMutateOptions,
+                    onSelect: requestDeleteOption
                   }
                 ]"
                 :primary="{
                   label: 'Save and sync',
                   icon: 'i-lucide-cloud-upload',
                   loading: savingAndSyncing,
+                  disabled: !canMutateOptions,
                   onSelect: saveAndSyncSquare
                 }"
               />
@@ -844,7 +907,7 @@ async function saveCreditPolicy() {
       </div>
 
       <UCard
-        v-else-if="activeCreditsTab === 'policy'"
+        v-else-if="activeCreditsTab === 'policy' && creditPolicyLoaded"
         class="admin-panel-card border-0 max-w-4xl"
       >
         <template #header>
@@ -860,6 +923,7 @@ async function saveCreditPolicy() {
             <UButton
               size="sm"
               :loading="savingCreditPolicy || loadingCreditPolicy"
+              :disabled="!canMutateCreditPolicy"
               @click="saveCreditPolicy"
             >
               Save policy
@@ -904,7 +968,7 @@ async function saveCreditPolicy() {
       </UCard>
 
       <UCard
-        v-else-if="activeCreditsTab === 'referrals'"
+        v-else-if="activeCreditsTab === 'referrals' && creditPolicyLoaded"
         class="admin-panel-card border-0"
       >
         <template #header>
@@ -923,6 +987,7 @@ async function saveCreditPolicy() {
                 color="neutral"
                 variant="soft"
                 icon="i-lucide-plus"
+                :disabled="!canMutateCreditPolicy"
                 @click="addReferralRule"
               >
                 Add rule
@@ -930,6 +995,7 @@ async function saveCreditPolicy() {
               <UButton
                 size="sm"
                 :loading="savingCreditPolicy || loadingCreditPolicy"
+                :disabled="!canMutateCreditPolicy"
                 @click="saveCreditPolicy"
               >
                 Save rewards
@@ -976,6 +1042,8 @@ async function saveCreditPolicy() {
                 color="neutral"
                 variant="ghost"
                 icon="i-lucide-trash-2"
+                :disabled="!canMutateCreditPolicy"
+                :aria-label="`Remove referral rule ${index + 1}`"
                 @click="removeReferralRule(index)"
               >
                 Remove
@@ -1033,7 +1101,7 @@ async function saveCreditPolicy() {
       </UCard>
 
       <UCard
-        v-else
+        v-else-if="activeCreditsTab === 'maintenance' && optionsLoaded"
         class="admin-panel-card border-0 max-w-3xl"
       >
         <template #header>
@@ -1056,6 +1124,7 @@ async function saveCreditPolicy() {
             variant="soft"
             icon="i-lucide-rotate-cw"
             :loading="reconcilingTopups"
+            :disabled="!canMutateOptions"
             @click="reconcilePendingTopups"
           >
             Reconcile top-ups
@@ -1063,5 +1132,17 @@ async function saveCreditPolicy() {
         </div>
       </UCard>
     </div>
+
+    <ConfirmDialog
+      v-model:open="deleteConfirmOpen"
+      title="Delete credit option?"
+      :description="`Delete ${form.label || form.key || 'this credit option'} from the catalog and remove its linked Square item. This cannot be undone.`"
+      confirm-label="Delete option"
+      busy-label="Deleting option"
+      color="error"
+      :busy="deleting"
+      :disabled="!canMutateOptions"
+      @confirm="deleteOption"
+    />
   </DashboardPageScaffold>
 </template>

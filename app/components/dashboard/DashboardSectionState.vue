@@ -22,80 +22,39 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   retry: []
 }>()
-
-const computedColor = computed(() => {
-  if (props.color) return props.color
-  switch (props.state) {
-    case 'error':
-      return 'error'
-    case 'success':
-      return 'success'
-    case 'loading':
-      return 'neutral'
-    default:
-      return 'neutral'
-  }
-})
-
-const computedIcon = computed(() => {
-  if (props.icon) return props.icon
-  switch (props.state) {
-    case 'loading':
-      return 'i-lucide-loader-circle'
-    case 'empty':
-      return 'i-lucide-inbox'
-    case 'error':
-      return 'i-lucide-circle-alert'
-    case 'success':
-      return 'i-lucide-circle-check'
-    default:
-      return 'i-lucide-info'
-  }
-})
-
-const computedTitle = computed(() => {
-  if (props.title) return props.title
-  switch (props.state) {
-    case 'loading':
-      return 'Loading'
-    case 'empty':
-      return 'Nothing to show'
-    case 'error':
-      return 'Something went wrong'
-    case 'success':
-      return 'Done'
-    default:
-      return undefined
-  }
-})
-
-const showState = computed(() => props.state !== 'idle')
 </script>
 
 <template>
-  <div class="space-y-3">
-    <UAlert
-      v-if="showState"
-      variant="soft"
-      :color="computedColor"
-      :icon="computedIcon"
-      :title="computedTitle || undefined"
-      :description="description || undefined"
+  <AsyncState
+    v-bind="props"
+    @retry="emit('retry')"
+  >
+    <template
+      v-if="$slots.title"
+      #title
     >
-      <template #actions>
-        <slot name="actions" />
-        <UButton
-          v-if="showRetry"
-          size="xs"
-          color="neutral"
-          variant="soft"
-          @click="emit('retry')"
-        >
-          {{ retryLabel }}
-        </UButton>
-      </template>
-    </UAlert>
+      <slot name="title" />
+    </template>
 
-    <slot />
-  </div>
+    <template
+      v-if="$slots.description"
+      #description
+    >
+      <slot name="description" />
+    </template>
+
+    <template
+      v-if="$slots.actions"
+      #actions
+    >
+      <slot name="actions" />
+    </template>
+
+    <template
+      v-if="$slots.default"
+      #default
+    >
+      <slot />
+    </template>
+  </AsyncState>
 </template>

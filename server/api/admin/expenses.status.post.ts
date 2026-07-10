@@ -10,6 +10,22 @@ const bodySchema = z.object({
   status: z.enum(EXPENSE_STATUSES),
   rejectionReason: z.string().trim().max(1200).nullable().optional(),
   paymentReference: z.string().trim().max(240).nullable().optional()
+}).superRefine((body, ctx) => {
+  if (body.status === 'rejected' && (body.rejectionReason?.trim().length ?? 0) < 3) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['rejectionReason'],
+      message: 'Rejection reason must contain at least 3 characters.'
+    })
+  }
+
+  if (body.status === 'paid' && (body.paymentReference?.trim().length ?? 0) < 2) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['paymentReference'],
+      message: 'Payment reference is required when marking an expense paid.'
+    })
+  }
 })
 
 const allowedTransitions: Record<ExpenseStatus, ExpenseStatus[]> = {

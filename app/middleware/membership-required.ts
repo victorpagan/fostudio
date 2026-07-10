@@ -1,7 +1,7 @@
 /**
  * membership-required.ts
- * Ensures the user has an active membership before accessing protected pages.
- * Admins bypass this check so they can access all dashboard pages.
+ * Requires active membership where the route demands it, otherwise permits
+ * authenticated accounts with credits. Admins bypass member guards.
  */
 import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
@@ -30,12 +30,19 @@ export default defineNuxtRouteMiddleware(async (to) => {
     .maybeSingle()
 
   if (error) {
-    // Fail closed on DB errors — send to memberships with context
+    // Fail closed without presenting an unknown account as a guest.
     console.error('[membership-required] DB error:', error.message)
-    return navigateTo(`/memberships?returnTo=${encodeURIComponent(to.fullPath)}&reason=error`)
+    return navigateTo(`/dashboard/membership?returnTo=${encodeURIComponent(to.fullPath)}&reason=error`)
   }
 
-  if (resolveMembershipUiState(data) === 'active') return
+  const membershipState = resolveMembershipUiState(data)
+  if (membershipState === 'active') return
+
+  // Workshop booking is an active-membership benefit. Guest credits do not
+  // grant access even though they can unlock other member-dashboard routes.
+  if (to.path === '/dashboard/workshops') {
+    return navigateTo(`/dashboard/membership?returnTo=${encodeURIComponent(to.fullPath)}&reason=workshop`)
+  }
 
   const { data: balanceRow, error: balanceErr } = await supabase
     .from('credit_balance')
@@ -45,7 +52,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   if (balanceErr) {
     console.error('[membership-required] credit_balance error:', balanceErr.message)
-    return navigateTo(`/memberships?returnTo=${encodeURIComponent(to.fullPath)}&reason=error`)
+    return navigateTo(`/dashboard/membership?returnTo=${encodeURIComponent(to.fullPath)}&reason=error`)
   }
 
   const remainingCredits = Number(balanceRow?.balance ?? 0)

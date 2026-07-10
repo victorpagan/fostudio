@@ -12,16 +12,35 @@ const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const { isAdmin } = useCurrentUser()
 const currentUserId = computed(() => user.value?.sub ?? user.value?.id ?? null)
-const { data: membershipData } = await useAsyncData('book:membership-state', async () => {
+type MembershipRow = {
+  status: string | null
+  current_period_end: string | null
+  canceled_at: string | null
+  membership_source: string | null
+  billing_provider: string | null
+}
+
+const {
+  data: membershipData,
+  pending: membershipPending,
+  error: membershipError,
+  refresh: refreshMembership
+} = await useAsyncData('book:membership-state', async () => {
   if (!user.value) return null
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('memberships')
-    .select('status,current_period_end,canceled_at')
+    .select('status,current_period_end,canceled_at,membership_source,billing_provider')
     .eq('user_id', user.value.sub)
     .maybeSingle()
-  return data
+  if (error) throw error
+  return data as MembershipRow | null
 })
-const hasActiveMembership = computed(() => resolveMembershipUiState(membershipData.value) === 'active')
+const membershipState = computed(() => resolveMembershipUiState(membershipData.value))
+const membershipResolved = computed(() => !membershipPending.value && !membershipError.value)
+const hasActiveMembership = computed(() => membershipResolved.value && membershipState.value === 'active')
+const isManualMembership = computed(() =>
+  (membershipData.value?.membership_source ?? membershipData.value?.billing_provider ?? '').toLowerCase() === 'manual'
+)
 type BookingPolicy = {
   memberRescheduleNoticeHours: number
   holdCreditCost: number
@@ -51,23 +70,8 @@ type HoldSummary = {
 const { data: bookingPolicy } = await useAsyncData('book:policy', async () => {
   return await $fetch<BookingPolicy>('/api/bookings/policy')
 })
-const { data: holdSummary, refresh: refreshHoldSummary } = await useAsyncData('book:hold-summary', async () => {
-  try {
-    return await $fetch<HoldSummary>('/api/holds/summary')
-  } catch {
-    return {
-      activeHoldCap: 0,
-      activeHoldSlotsRemaining: 0,
-      holdsIncluded: 0,
-      activeHolds: 0,
-      holdsUsedThisCycle: 0,
-      cycleStartIso: null,
-      cycleEndIso: null,
-      paidHoldBalance: 0,
-      includedHoldsRemaining: 0,
-      canRequestHoldNow: false
-    } as HoldSummary
-  }
+const { data: holdSummary, error: holdSummaryError, refresh: refreshHoldSummary } = await useAsyncData('book:hold-summary', async () => {
+  return await $fetch<HoldSummary>('/api/holds/summary')
 })
 const memberRescheduleNoticeHours = computed(() => Number(bookingPolicy.value?.memberRescheduleNoticeHours ?? 24))
 const holdCreditCost = computed(() => Number(bookingPolicy.value?.holdCreditCost ?? 2))
@@ -156,6 +160,8 @@ const manualBookingOpen = ref(false)
 const confirming = ref(false)
 const ownBookingActionOpen = ref(false)
 const ownBookingActionLoading = ref(false)
+const ownBookingDestructiveConfirmOpen = ref(false)
+const ownBookingDestructiveAction = ref<'cancel' | 'restart' | null>(null)
 
 // Selected time slot
 const selected = ref<{ start: Date, end: Date } | null>(null)
@@ -212,6 +218,7 @@ function validateHoldWindowForSelection(start: Date, end: Date) {
 
 const holdSelectionEligibility = computed(() => {
   if (!selected.value) return { eligible: false, reasons: ['Select a time slot to check hold eligibility.'] }
+  if (holdSummaryError.value) return { eligible: false, reasons: ['Hold availability could not be loaded. Retry before adding a hold.'] }
   const base = validateHoldWindowForSelection(selected.value.start, selected.value.end)
   if (!base.eligible) return base
   const activeSlotsRemaining = Math.max(0, Number(holdSummary.value?.activeHoldSlotsRemaining ?? 0))
@@ -227,7 +234,7 @@ const holdSelectionEligibility = computed(() => {
   return { eligible: true, reasons: [] as string[] }
 })
 
-const isGuestBooking = computed(() => !hasActiveMembership.value)
+const isGuestBooking = computed(() => membershipResolved.value && !hasActiveMembership.value)
 const manualBookingIncrementMinutes = computed(() =>
   hasActiveMembership.value ? 30 : Math.max(15, Number(bookingPolicy.value?.guestBookingIncrementMinutes ?? 60))
 )
@@ -238,10 +245,10 @@ const manualBookingDefaultDurationMinutes = computed(() =>
   hasActiveMembership.value ? 60 : manualBookingMinDurationMinutes.value
 )
 const manualBookingStartHour = computed(() =>
-  hasActiveMembership.value ? 0 : Math.max(0, Math.min(23, Number(bookingPolicy.value?.guestBookingStartHour ?? 11)))
+  hasActiveMembership.value ? 0 : Math.max(0, Math.min(23, Number(bookingPolicy.value?.guestBookingStartHour ?? 9)))
 )
 const manualBookingEndHour = computed(() =>
-  hasActiveMembership.value ? 24 : Math.max(manualBookingStartHour.value + 1, Math.min(24, Number(bookingPolicy.value?.guestBookingEndHour ?? 19)))
+  hasActiveMembership.value ? 24 : Math.max(manualBookingStartHour.value + 1, Math.min(24, Number(bookingPolicy.value?.guestBookingEndHour ?? 21)))
 )
 
 // Credit preview must be initialized before canShowHoldOption is watched.
@@ -276,6 +283,7 @@ watch(canShowHoldOption, (allowed) => {
 })
 
 const calendarRef = ref<{ refresh: () => Promise<void> | void } | null>(null)
+const bookingIntentConsumed = ref(false)
 
 function refreshCalendar() {
   void calendarRef.value?.refresh()
@@ -292,7 +300,7 @@ async function refreshCreditBalance() {
       .maybeSingle()
 
     if (error) throw error
-    creditBalance.value = Math.max(0, Number(data?.balance ?? 0))
+    creditBalance.value = Number(data?.balance ?? 0)
   } catch (error) {
     console.error('[book] failed to load credit balance', error)
   } finally {
@@ -323,6 +331,7 @@ async function fetchPreview(start: Date, end: Date) {
 }
 
 function onSelect(payload: { start: Date, end: Date, rateKind?: 'standard' | 'standby' }) {
+  if (!membershipResolved.value) return
   const nextRateKind = payload.rateKind === 'standby' ? 'standby' : 'standard'
   form.rateKind = nextRateKind
   selected.value = payload
@@ -337,7 +346,46 @@ function onSelect(payload: { start: Date, end: Date, rateKind?: 'standard' | 'st
   fetchPreview(payload.start, payload.end)
 }
 
+function readQueryString(value: unknown) {
+  const first = Array.isArray(value) ? value[0] : value
+  return typeof first === 'string' ? first : undefined
+}
+
+watch(
+  [
+    membershipResolved,
+    () => route.query.start,
+    () => route.query.end,
+    () => route.query.rateKind
+  ],
+  ([resolved, rawStart, rawEnd, rawRateKind]) => {
+    if (!resolved || bookingIntentConsumed.value) return
+    const startValue = readQueryString(rawStart)
+    const endValue = readQueryString(rawEnd)
+    if (!startValue || !endValue) return
+
+    bookingIntentConsumed.value = true
+    const start = new Date(startValue)
+    const end = new Date(endValue)
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start) {
+      onSelect({
+        start,
+        end,
+        rateKind: readQueryString(rawRateKind) === 'standby' ? 'standby' : 'standard'
+      })
+    }
+
+    const nextQuery = { ...route.query }
+    delete nextQuery.start
+    delete nextQuery.end
+    delete nextQuery.rateKind
+    void router.replace({ query: nextQuery })
+  },
+  { immediate: true }
+)
+
 function openManualBookingModal() {
+  if (!membershipResolved.value) return
   manualBookingOpen.value = true
 }
 
@@ -432,7 +480,7 @@ const ownBookingLockReason = computed(() => {
     return 'Standby bookings are locked after purchase and cannot be canceled, rescheduled, or extended.'
   }
   if (ownBookingHasPassed.value) {
-    if (ownBookingCanExtend.value) return 'This booking has already started. It can only be extended'
+    if (ownBookingCanExtend.value) return 'This booking has already started. It can only be extended.'
     return 'This booking has already started or passed and can no longer be modified or canceled.'
   }
   if (!isAdmin.value && ownBookingWithinNoticeWindow.value) return `Members cannot modify/cancel within ${memberRescheduleNoticeHours.value} hours of start.`
@@ -464,6 +512,18 @@ function closeOwnBookingActions(options?: { force?: boolean }) {
   ownBookingActionOpen.value = false
   clickedBookingNoteDraft.value = ''
   clickedBooking.value = null
+}
+
+function requestOwnBookingDestructiveAction(action: 'cancel' | 'restart') {
+  if (!clickedBooking.value?.bookingId || ownBookingActionLoading.value) return
+  ownBookingDestructiveAction.value = action
+  ownBookingDestructiveConfirmOpen.value = true
+}
+
+function closeOwnBookingDestructiveConfirmation() {
+  if (ownBookingActionLoading.value) return
+  ownBookingDestructiveConfirmOpen.value = false
+  ownBookingDestructiveAction.value = null
 }
 
 async function saveClickedBookingNote() {
@@ -511,6 +571,8 @@ async function cancelClickedBooking() {
     await $fetch(`/api/bookings/${clickedBooking.value.bookingId}`, { method: 'DELETE' })
     toast.add({ title: ownBookingIsPendingPayment.value ? 'Pending reservation released' : 'Booking canceled', color: 'success' })
     closeOwnBookingActions({ force: true })
+    ownBookingDestructiveConfirmOpen.value = false
+    ownBookingDestructiveAction.value = null
     refreshCalendar()
     await Promise.allSettled([
       refreshCreditBalance(),
@@ -532,39 +594,7 @@ async function cancelClickedBooking() {
 async function manageClickedBooking() {
   if (!clickedBooking.value?.bookingId) return
   if (ownBookingIsPendingPayment.value) {
-    const target = clickedBooking.value
-    const start = new Date(target.start)
-    const end = new Date(target.end)
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
-      toast.add({
-        title: 'Cannot restart reservation',
-        description: 'The pending reservation has an invalid time range.',
-        color: 'warning'
-      })
-      return
-    }
-
-    ownBookingActionLoading.value = true
-    try {
-      await $fetch(`/api/bookings/${target.bookingId}`, { method: 'DELETE' })
-      closeOwnBookingActions({ force: true })
-      refreshCalendar()
-      onSelect({ start, end })
-      toast.add({
-        title: 'Reservation released',
-        description: 'Review the same time again or close the modal and choose a different slot.',
-        color: 'success'
-      })
-    } catch (error: unknown) {
-      const maybe = error as ApiErrorLike
-      toast.add({
-        title: 'Could not release reservation',
-        description: maybe.data?.statusMessage ?? maybe.message ?? 'Unknown error',
-        color: 'error'
-      })
-    } finally {
-      ownBookingActionLoading.value = false
-    }
+    requestOwnBookingDestructiveAction('restart')
     return
   }
   if (!ownBookingCanModify.value) {
@@ -572,6 +602,53 @@ async function manageClickedBooking() {
     return
   }
   await router.push(`/dashboard/bookings?reschedule=${encodeURIComponent(clickedBooking.value.bookingId)}`)
+}
+
+async function restartPendingBooking() {
+  if (!clickedBooking.value?.bookingId || !ownBookingIsPendingPayment.value) return
+  const target = clickedBooking.value
+  const start = new Date(target.start)
+  const end = new Date(target.end)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+    toast.add({
+      title: 'Cannot restart reservation',
+      description: 'The pending reservation has an invalid time range.',
+      color: 'warning'
+    })
+    return
+  }
+
+  ownBookingActionLoading.value = true
+  try {
+    await $fetch(`/api/bookings/${target.bookingId}`, { method: 'DELETE' })
+    ownBookingDestructiveConfirmOpen.value = false
+    ownBookingDestructiveAction.value = null
+    closeOwnBookingActions({ force: true })
+    refreshCalendar()
+    onSelect({ start, end })
+    toast.add({
+      title: 'Reservation released',
+      description: 'Review the same time again or close the modal and choose a different slot.',
+      color: 'success'
+    })
+  } catch (error: unknown) {
+    const maybe = error as ApiErrorLike
+    toast.add({
+      title: 'Could not release reservation',
+      description: maybe.data?.statusMessage ?? maybe.message ?? 'Unknown error',
+      color: 'error'
+    })
+  } finally {
+    ownBookingActionLoading.value = false
+  }
+}
+
+async function confirmOwnBookingDestructiveAction() {
+  if (ownBookingDestructiveAction.value === 'restart') {
+    await restartPendingBooking()
+    return
+  }
+  if (ownBookingDestructiveAction.value === 'cancel') await cancelClickedBooking()
 }
 
 async function extendClickedBooking() {
@@ -584,7 +661,7 @@ async function extendClickedBooking() {
 }
 
 async function confirmBooking() {
-  if (!selected.value) return
+  if (!selected.value || !membershipResolved.value) return
   if (hasInsufficientCredits.value && hasActiveMembership.value) {
     toast.add({
       title: 'Insufficient credits',
@@ -643,7 +720,7 @@ async function confirmBooking() {
       return
     }
     if (isHoldError(msg)) {
-      await router.push('/dashboard/membership#holds')
+      await router.push('/dashboard/bookings?tab=holds')
     }
   } finally {
     confirming.value = false
@@ -746,6 +823,7 @@ function formatPrice(cents: number) {
           :primary="{
             label: 'Create booking',
             icon: 'i-lucide-calendar-plus',
+            disabled: !membershipResolved,
             onSelect: openManualBookingModal
           }"
           :secondary="[
@@ -760,12 +838,26 @@ function formatPrice(cents: number) {
         />
       </template>
       <div class="w-full space-y-4">
+        <DashboardSectionState
+          v-if="membershipPending"
+          state="loading"
+          title="Loading booking access"
+          description="Checking your membership before applying member or guest booking rules."
+        />
+        <DashboardSectionState
+          v-else-if="membershipError"
+          state="error"
+          title="Could not verify booking access"
+          description="Your account was not switched to guest pricing. Retry before choosing a booking time."
+          show-retry
+          @retry="refreshMembership"
+        />
         <DashboardDismissibleIntro
-          v-if="hasActiveMembership"
+          v-else-if="hasActiveMembership"
           storage-key="booking-member-intro"
           color="info"
           icon="i-lucide-calendar-plus"
-          title="Create a studio booking"
+          :title="isManualMembership ? 'Create a booking with your assigned membership' : 'Create a studio booking'"
           description="Click and drag on the calendar, or use Create booking to choose a date and time. Your tier's booking window, peak-hour credit rate, and reschedule notice rules apply."
         >
           <template #actions>
@@ -788,7 +880,7 @@ function formatPrice(cents: number) {
         </DashboardDismissibleIntro>
 
         <DashboardDismissibleIntro
-          v-else
+          v-else-if="membershipState === 'none'"
           storage-key="booking-guest-intro"
           color="warning"
           icon="i-lucide-badge-alert"
@@ -814,7 +906,47 @@ function formatPrice(cents: number) {
           </template>
         </DashboardDismissibleIntro>
 
+        <AppAlert
+          v-else
+          color="warning"
+          variant="soft"
+          icon="i-lucide-badge-alert"
+          :title="membershipState === 'past_due'
+            ? 'Membership payment is past due'
+            : membershipState === 'pending_checkout'
+              ? 'Membership checkout is incomplete'
+              : membershipState === 'canceled'
+                ? 'Membership canceled'
+                : 'Membership expired'"
+          :description="membershipState === 'past_due'
+            ? 'Member booking benefits are paused. Until billing is restored, confirmed guest rules and pricing apply.'
+            : membershipState === 'pending_checkout'
+              ? 'Complete checkout to activate member booking rules. You can still use confirmed guest booking access in the meantime.'
+              : 'Member booking benefits are no longer active. Confirmed guest rules and pricing apply.'"
+        >
+          <template #actions>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="soft"
+              to="/dashboard/membership"
+            >
+              Review membership
+            </UButton>
+          </template>
+        </AppAlert>
+
+        <AppAlert
+          v-if="membershipResolved && creditBalance < 0"
+          color="error"
+          variant="soft"
+          icon="i-lucide-circle-minus"
+          title="Credit balance below zero"
+          :description="`Your account balance is ${creditBalance} credits. Add credits before confirming a member booking.`"
+        />
+
         <AvailabilityCalendar
+          v-if="membershipResolved"
           ref="calendarRef"
           endpoint="/api/calendar/member"
           @select="onSelect"
@@ -824,6 +956,7 @@ function formatPrice(cents: number) {
     </DashboardPageScaffold>
 
     <ManualBookingTimeModal
+      v-if="membershipResolved"
       v-model:open="manualBookingOpen"
       title="Create booking"
       description="Choose a date and time instead of dragging on the calendar."
@@ -840,6 +973,8 @@ function formatPrice(cents: number) {
     <!-- Booking confirmation modal -->
     <UModal
       v-model:open="open"
+      title="Create booking"
+      description="Review the selected studio time, credit cost, and booking options before confirming."
       :dismissible="!confirming"
     >
       <template #content>
@@ -854,6 +989,7 @@ function formatPrice(cents: number) {
               </h3>
               <UButton
                 icon="i-lucide-x"
+                aria-label="Close booking review"
                 color="neutral"
                 variant="ghost"
                 size="sm"
@@ -972,7 +1108,7 @@ function formatPrice(cents: number) {
                 @update:model-value="form.rateKind = $event ? 'standby' : 'standard'"
               />
 
-              <UAlert
+              <AppAlert
                 v-if="hasInsufficientCredits"
                 class="mt-2"
                 color="warning"
@@ -982,7 +1118,7 @@ function formatPrice(cents: number) {
                 :description="`This booking needs ${requiredCredits} credits, but you currently have ${creditBalance}.`"
               />
 
-              <UAlert
+              <AppAlert
                 v-if="isGuestBooking && guestShortfallCredits > 0"
                 class="mt-2"
                 color="info"
@@ -992,7 +1128,7 @@ function formatPrice(cents: number) {
                 :description="`You have ${preview?.remainingCredits ?? creditBalance} credits available. Checkout will charge only the ${guestShortfallCredits} credit shortfall.`"
               />
 
-              <UAlert
+              <AppAlert
                 v-if="hasActiveMembership && !canShowHoldOption"
                 class="mt-2"
                 color="warning"
@@ -1064,6 +1200,8 @@ function formatPrice(cents: number) {
 
     <UModal
       v-model:open="ownBookingActionOpen"
+      title="Manage booking"
+      description="Review booking details and the actions currently available for this reservation."
       :dismissible="!ownBookingActionLoading"
     >
       <template #content>
@@ -1089,7 +1227,7 @@ function formatPrice(cents: number) {
           </template>
 
           <div class="space-y-2 pr-1 text-sm">
-            <UAlert
+            <AppAlert
               v-if="ownBookingIsPendingPayment"
               color="info"
               variant="soft"
@@ -1097,7 +1235,7 @@ function formatPrice(cents: number) {
               :title="ownBookingPendingExpiresLabel ? `Held until ${ownBookingPendingExpiresLabel}` : 'Payment is pending'"
               description="This slot is temporarily held while checkout is pending. Restarting releases the hold and opens this time for review again."
             />
-            <UAlert
+            <AppAlert
               v-if="ownBookingLockReason"
               color="warning"
               variant="soft"
@@ -1160,9 +1298,55 @@ function formatPrice(cents: number) {
                 class="disabled:opacity-100"
                 :loading="ownBookingActionLoading"
                 :disabled="!ownBookingCanCancel"
-                @click="cancelClickedBooking"
+                @click="requestOwnBookingDestructiveAction('cancel')"
               >
                 {{ ownBookingIsPendingPayment ? 'Release reservation' : 'Cancel booking' }}
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
+
+    <UModal
+      v-model:open="ownBookingDestructiveConfirmOpen"
+      :title="ownBookingDestructiveAction === 'restart' ? 'Release this reservation?' : 'Cancel this booking?'"
+      description="Confirm before releasing reserved studio time."
+      :dismissible="!ownBookingActionLoading"
+    >
+      <template #content>
+        <UCard v-if="clickedBooking && ownBookingDestructiveAction">
+          <template #header>
+            <h3 class="text-base font-semibold">
+              {{ ownBookingDestructiveAction === 'restart' ? 'Release this reservation?' : 'Cancel this booking?' }}
+            </h3>
+          </template>
+          <div class="space-y-3 text-sm">
+            <p class="text-dimmed">
+              {{ ownBookingDestructiveAction === 'restart'
+                ? 'Releasing the pending reservation makes this time available again before you review a replacement booking.'
+                : 'This releases the studio time. The server will determine whether any credits are returned.' }}
+            </p>
+            <div class="rounded-lg border border-default p-3">
+              {{ formatDateTime(new Date(clickedBooking.start)) }} to {{ formatDateTime(new Date(clickedBooking.end)) }}
+            </div>
+          </div>
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="ownBookingActionLoading"
+                @click="closeOwnBookingDestructiveConfirmation"
+              >
+                Keep booking
+              </UButton>
+              <UButton
+                color="error"
+                :loading="ownBookingActionLoading"
+                @click="confirmOwnBookingDestructiveAction"
+              >
+                {{ ownBookingDestructiveAction === 'restart' ? 'Release and review' : 'Confirm cancellation' }}
               </UButton>
             </div>
           </template>

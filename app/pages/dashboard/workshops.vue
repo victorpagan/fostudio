@@ -30,6 +30,9 @@ type HoldSummary = {
 
 type WorkshopAccess = {
   workshopBookingEnabled: boolean
+  accountEnabled: boolean
+  membershipEligible: boolean
+  reason: string | null
   workshopCreditMultiplier: number
 }
 
@@ -57,7 +60,12 @@ type ApiErrorLike = {
   message?: string
 }
 
-const { data: workshopAccess, refresh: refreshWorkshopAccess } = await useAsyncData('workshop:access', async () => {
+const {
+  data: workshopAccess,
+  pending: workshopAccessPending,
+  error: workshopAccessError,
+  refresh: refreshWorkshopAccess
+} = await useAsyncData('workshop:access', async () => {
   return await $fetch<WorkshopAccess>('/api/workshops/access')
 })
 
@@ -65,22 +73,8 @@ const { data: bookingPolicy } = await useAsyncData('workshop:policy', async () =
   return await $fetch<BookingPolicy>('/api/bookings/policy')
 })
 
-const { data: holdSummary, refresh: refreshHoldSummary } = await useAsyncData('workshop:hold-summary', async () => {
-  try {
-    return await $fetch<HoldSummary>('/api/holds/summary')
-  } catch {
-    return {
-      activeHoldSlotsRemaining: 0,
-      holdsIncluded: 0,
-      activeHolds: 0,
-      holdsUsedThisCycle: 0,
-      cycleStartIso: null,
-      cycleEndIso: null,
-      paidHoldBalance: 0,
-      includedHoldsRemaining: 0,
-      canRequestHoldNow: false
-    } as HoldSummary
-  }
+const { data: holdSummary, error: holdSummaryError, refresh: refreshHoldSummary } = await useAsyncData('workshop:hold-summary', async () => {
+  return await $fetch<HoldSummary>('/api/holds/summary')
 })
 
 const holdCreditCost = computed(() => Number(bookingPolicy.value?.holdCreditCost ?? 2))
@@ -157,6 +151,7 @@ function validateHoldWindowForSelection(start: Date, end: Date) {
 
 const holdSelectionEligibility = computed(() => {
   if (!selected.value) return { eligible: false, reasons: ['Select a time slot to check hold eligibility.'] }
+  if (holdSummaryError.value) return { eligible: false, reasons: ['Hold availability could not be loaded. Retry before adding a hold.'] }
   const base = validateHoldWindowForSelection(selected.value.start, selected.value.end)
   if (!base.eligible) return base
   const activeSlotsRemaining = Math.max(0, Number(holdSummary.value?.activeHoldSlotsRemaining ?? 0))
@@ -196,7 +191,7 @@ async function refreshCreditBalance() {
       .eq('user_id', currentUserId.value)
       .maybeSingle()
     if (error) throw error
-    creditBalance.value = Math.max(0, Number(data?.balance ?? 0))
+    creditBalance.value = Number(data?.balance ?? 0)
   } catch (error) {
     console.error('[workshops] failed to load credit balance', error)
   } finally {
@@ -376,7 +371,7 @@ function formatPeakCredits(value: number) {
           :primary="{
             label: 'Create workshop',
             icon: 'i-lucide-calendar-plus',
-            disabled: !workshopAccess?.workshopBookingEnabled,
+            disabled: workshopAccessPending || Boolean(workshopAccessError) || !workshopAccess?.workshopBookingEnabled,
             onSelect: openManualWorkshopModal
           }"
           :secondary="[
@@ -392,7 +387,23 @@ function formatPeakCredits(value: number) {
       </template>
 
       <div class="space-y-4">
-        <UAlert
+        <DashboardSectionState
+          v-if="workshopAccessPending"
+          state="loading"
+          title="Checking workshop eligibility"
+          description="Verifying both your active membership and account-level workshop access."
+        />
+        <DashboardSectionState
+          v-else-if="workshopAccessError"
+          state="error"
+          title="Could not verify workshop eligibility"
+          description="Workshop creation remains disabled until account eligibility can be confirmed."
+          show-retry
+          @retry="refreshWorkshopAccess"
+        />
+
+        <AppAlert
+          v-else
           color="info"
           variant="soft"
           icon="i-lucide-megaphone"
@@ -400,13 +411,13 @@ function formatPeakCredits(value: number) {
           :description="`Workshop bookings consume ${workshopAccess?.workshopCreditMultiplier ?? 2}x credits per hour and can optionally publish a global workshop promo on calendars.`"
         />
 
-        <UAlert
+        <AppAlert
           v-if="!workshopAccess?.workshopBookingEnabled"
           color="warning"
           variant="soft"
           icon="i-lucide-ban"
           title="Workshop booking is disabled"
-          description="Ask an admin to enable workshop booking on your account."
+          :description="workshopAccess?.reason ?? 'Ask an admin to enable workshop booking on your account.'"
         >
           <template #actions>
             <UButton
@@ -417,19 +428,28 @@ function formatPeakCredits(value: number) {
               Back to standard booking
             </UButton>
           </template>
-        </UAlert>
+        </AppAlert>
 
         <AvailabilityCalendar
-          v-if="workshopAccess?.workshopBookingEnabled"
+          v-if="!workshopAccessPending && !workshopAccessError && workshopAccess?.workshopBookingEnabled"
           :key="calendarKey"
           endpoint="/api/calendar/member?booking_kind=workshop"
           @select="onSelect"
         />
         <DashboardSectionState
-          v-else
+          v-else-if="!workshopAccessPending && !workshopAccessError"
           state="empty"
           title="Workshop booking unavailable"
-          description="Workshop booking access must be enabled on your account by an admin."
+          :description="workshopAccess?.reason ?? 'Workshop booking requires an active membership and account approval.'"
+        />
+
+        <AppAlert
+          v-if="creditBalance < 0"
+          color="error"
+          variant="soft"
+          icon="i-lucide-circle-minus"
+          title="Credit balance below zero"
+          :description="`Your account balance is ${creditBalance} credits. Add credits before creating a workshop.`"
         />
       </div>
     </DashboardPageScaffold>
@@ -451,6 +471,8 @@ function formatPeakCredits(value: number) {
 
     <UModal
       v-model:open="open"
+      title="Create workshop booking"
+      description="Review the workshop schedule, promotion details, credit cost, and liability acknowledgement."
       :dismissible="!confirming"
     >
       <template #content>
@@ -465,6 +487,7 @@ function formatPeakCredits(value: number) {
               </h3>
               <UButton
                 icon="i-lucide-x"
+                aria-label="Close workshop booking"
                 color="neutral"
                 variant="ghost"
                 size="sm"
@@ -549,7 +572,7 @@ function formatPeakCredits(value: number) {
                 </div>
               </div>
 
-              <UAlert
+              <AppAlert
                 v-if="hasInsufficientCredits"
                 class="mt-2"
                 color="warning"
@@ -558,7 +581,7 @@ function formatPeakCredits(value: number) {
                 :description="`This workshop booking needs ${requiredCredits} credits, but you currently have ${creditBalance}.`"
               />
 
-              <UAlert
+              <AppAlert
                 v-if="!canShowHoldOption"
                 class="mt-2"
                 color="warning"

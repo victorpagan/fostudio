@@ -2,6 +2,12 @@
 <script setup lang="ts">
 definePageMeta({ auth: false })
 
+useNoindexSeo({
+  title: 'Create an FO Studio account',
+  description: 'Create an account to continue a guest booking or membership activation.',
+  canonicalPath: '/signup'
+})
+
 type TierId = string
 type Cadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
 
@@ -22,6 +28,7 @@ const returnTo = computed(() => {
   if (typeof value === 'string' && value.startsWith('/')) return value
   return '/onboarding'
 })
+const loginTo = computed(() => `/login?returnTo=${encodeURIComponent(returnTo.value)}`)
 
 const RETURN_TO_PARSE_BASE = 'https://fo.studio'
 
@@ -46,6 +53,25 @@ const selectedPlan = computed(() => {
   }
 
   return selected
+})
+
+const selectedBookingIntent = computed(() => {
+  try {
+    const target = new URL(returnTo.value, RETURN_TO_PARSE_BASE)
+    if (target.pathname !== '/dashboard/book') return null
+
+    const start = new Date(target.searchParams.get('start') ?? '')
+    const end = new Date(target.searchParams.get('end') ?? '')
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null
+
+    return {
+      start,
+      end,
+      rateKind: target.searchParams.get('rateKind') === 'standby' ? 'standby' as const : 'standard' as const
+    }
+  } catch {
+    return null
+  }
 })
 
 const checkoutTokenFromReturnTo = computed(() => {
@@ -164,6 +190,18 @@ function cadenceLabel(value: Cadence | null) {
   if (value === 'monthly') return 'Monthly'
   if (value === 'quarterly') return 'Quarterly'
   return 'Annual'
+}
+
+function formatBookingIntent(value: Date) {
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/Los_Angeles',
+    timeZoneName: 'short'
+  }).format(value)
 }
 
 function mapSignupError(error: unknown) {
@@ -332,14 +370,17 @@ async function handleSignup() {
           </div>
         </template>
 
-        <div class="space-y-5">
-          <UAlert
+        <form
+          class="space-y-5"
+          @submit.prevent="handleSignup"
+        >
+          <AppAlert
             v-if="errorMsg"
             color="error"
             variant="soft"
             :title="errorMsg"
           />
-          <UAlert
+          <AppAlert
             v-if="successMsg"
             color="success"
             variant="soft"
@@ -395,7 +436,22 @@ async function handleSignup() {
             </div>
           </div>
 
-          <UAlert
+          <div
+            v-else-if="selectedBookingIntent"
+            class="rounded-2xl border border-default bg-elevated/60 p-4"
+          >
+            <div class="text-xs font-semibold uppercase tracking-[0.18em] text-dimmed">
+              Selected {{ selectedBookingIntent.rateKind === 'standby' ? 'standby request' : 'guest time' }}
+            </div>
+            <p class="mt-2 font-semibold text-highlighted">
+              {{ formatBookingIntent(selectedBookingIntent.start) }} to {{ formatBookingIntent(selectedBookingIntent.end) }}
+            </p>
+            <p class="mt-2 text-xs leading-5 text-dimmed">
+              The time remains in your booking return URL. The authenticated booking preview will recheck availability, eligibility, and price before confirmation.
+            </p>
+          </div>
+
+          <AppAlert
             v-if="missingCheckoutToken"
             color="warning"
             variant="soft"
@@ -411,6 +467,7 @@ async function handleSignup() {
               <UInput
                 v-model="form.firstName"
                 placeholder="First name"
+                name="first-name"
                 autocomplete="given-name"
               />
             </UFormField>
@@ -418,6 +475,7 @@ async function handleSignup() {
               <UInput
                 v-model="form.lastName"
                 placeholder="Last name"
+                name="last-name"
                 autocomplete="family-name"
               />
             </UFormField>
@@ -433,7 +491,9 @@ async function handleSignup() {
                 v-model="form.email"
                 type="email"
                 placeholder="Email"
+                name="email"
                 autocomplete="email"
+                required
                 :disabled="isCheckoutLinkedSignup"
               />
             </UFormField>
@@ -446,7 +506,9 @@ async function handleSignup() {
                 v-model="form.phone"
                 type="tel"
                 placeholder="Phone"
+                name="phone"
                 autocomplete="tel"
+                required
               />
             </UFormField>
           </div>
@@ -459,24 +521,44 @@ async function handleSignup() {
               v-model="form.password"
               type="password"
               placeholder="Password"
+              name="password"
               autocomplete="new-password"
+              minlength="8"
+              required
             />
           </UFormField>
 
           <div class="text-xs text-gray-500 dark:text-gray-400">
-            By continuing, you agree to the studio rules and policies.
+            By continuing, you agree to the
+            <NuxtLink
+              to="/policies#terms"
+              class="font-medium underline underline-offset-2"
+            >terms</NuxtLink>
+            and booking rules, and acknowledge the
+            <NuxtLink
+              to="/policies#privacy"
+              class="font-medium underline underline-offset-2"
+            >privacy notice</NuxtLink>.
           </div>
 
           <div class="flex gap-2">
             <UButton
+              type="submit"
               :loading="loading"
               :disabled="loading"
               class="w-full"
-              @click="handleSignup"
             >
               Create account
             </UButton>
           </div>
+
+          <p class="text-center text-sm text-dimmed">
+            Already have an account?
+            <NuxtLink
+              :to="loginTo"
+              class="font-medium text-primary underline underline-offset-2"
+            >Log in and continue</NuxtLink>.
+          </p>
 
           <div class="rounded-2xl border border-default bg-muted/40 p-4 text-sm text-dimmed">
             <div class="font-medium text-highlighted">
@@ -488,7 +570,7 @@ async function handleSignup() {
               <div>{{ hasPlanContext ? 'Finish membership checkout' : 'Book as guest or join' }}</div>
             </div>
           </div>
-        </div>
+        </form>
       </UCard>
     </div>
   </UContainer>

@@ -160,7 +160,7 @@ async function deleteSelectedPlans() {
         ]"
       />
     </template>
-    <UAlert
+    <AppAlert
       color="warning"
       variant="soft"
       icon="i-lucide-triangle-alert"
@@ -250,6 +250,8 @@ async function deleteSelectedPlans() {
 
     <UModal
       v-model:open="deactivateConfirmOpen"
+      title="Deactivate selected Square plans?"
+      description="Confirm before deactivating the selected plans in Square and hiding their linked variations."
       :dismissible="!deleting"
     >
       <template #content>
@@ -266,6 +268,7 @@ async function deleteSelectedPlans() {
               </div>
               <UButton
                 icon="i-lucide-x"
+                aria-label="Close plan deactivation confirmation"
                 color="neutral"
                 variant="ghost"
                 size="sm"
@@ -294,14 +297,14 @@ async function deleteSelectedPlans() {
               </div>
             </div>
 
-            <UAlert
+            <AppAlert
               color="warning"
               variant="soft"
               icon="i-lucide-circle-off"
               :title="`${deactivationTargets.length} plan(s) and ${deactivationVariationCount} variation(s) will be deactivated`"
               description="Square variations are processed first, followed by each subscription plan. This cannot be restored from this page."
             />
-            <UAlert
+            <AppAlert
               color="neutral"
               variant="soft"
               icon="i-lucide-receipt-text"

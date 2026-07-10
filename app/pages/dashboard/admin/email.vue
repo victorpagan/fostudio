@@ -152,12 +152,17 @@ const toast = useToast()
 const saving = ref(false)
 const sendingTest = ref(false)
 const pending = ref(false)
+const settingsLoadState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const settingsLoadError = ref<string | null>(null)
 const recipientsInput = ref('')
+const adminCopiesSnapshot = ref('')
 const testRecipient = ref('')
 const templates = ref<AdminMailTemplate[]>([])
 const availableVariablesByEvent = ref<Record<string, string[]>>({ '*': [] })
 const selectedTemplateIndex = ref(0)
 const templateDraft = ref<AdminMailTemplate | null>(null)
+const discardTemplateDialogOpen = ref(false)
+const pendingTemplateSelectionIndex = ref<number | null>(null)
 const reminderRules = ref<ReminderRuleDraft[]>([])
 const reminderDeliveries = ref<ReminderDelivery[]>([])
 const reminderPending = ref(false)
@@ -274,6 +279,7 @@ function applySettings(res: AdminEmailSettingsResponse) {
   adminCopies.criticalEnabled = Boolean(res.adminCopies.criticalEnabled)
   adminCopies.nonCriticalEnabled = Boolean(res.adminCopies.nonCriticalEnabled)
   recipientsInput.value = (res.adminCopies.recipients ?? []).join('\n')
+  adminCopiesSnapshot.value = serializeAdminCopies()
   templates.value = (res.templates ?? []).map(template => ({
     eventType: template.eventType,
     sendgridTemplateId: normalizeTemplateId(template.sendgridTemplateId),
@@ -301,10 +307,15 @@ function applySettings(res: AdminEmailSettingsResponse) {
 
 async function loadSettings(options: { silent?: boolean } = {}) {
   pending.value = true
+  settingsLoadState.value = 'loading'
+  settingsLoadError.value = null
   try {
     const res = await $fetch<AdminEmailSettingsResponse>('/api/admin/email/settings')
     applySettings(res)
+    settingsLoadState.value = 'ready'
   } catch (error: unknown) {
+    settingsLoadState.value = 'error'
+    settingsLoadError.value = readErrorMessage(error)
     if (!options.silent) {
       toast.add({
         title: 'Could not load email settings',
@@ -315,6 +326,17 @@ async function loadSettings(options: { silent?: boolean } = {}) {
   } finally {
     pending.value = false
   }
+}
+
+const settingsReady = computed(() => settingsLoadState.value === 'ready')
+const adminCopiesDirty = computed(() => settingsReady.value && serializeAdminCopies() !== adminCopiesSnapshot.value)
+
+function serializeAdminCopies() {
+  return JSON.stringify({
+    criticalEnabled: adminCopies.criticalEnabled,
+    nonCriticalEnabled: adminCopies.nonCriticalEnabled,
+    recipients: parseRecipients(recipientsInput.value)
+  })
 }
 
 function formatReminderOffsetsInput(offsets: number[]) {
@@ -478,7 +500,14 @@ async function refreshReminders() {
   ])
 }
 
+function warnBeforeRegistryUnload(event: BeforeUnloadEvent) {
+  if (!templateDraftDirty.value && !adminCopiesDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
 onMounted(() => {
+  window.addEventListener('beforeunload', warnBeforeRegistryUnload)
   void Promise.all([
     loadSettings({ silent: true }),
     loadReminderSettings({ silent: true }),
@@ -1391,7 +1420,27 @@ const registryPreviewHtml = computed(() => {
   return renderHandlebarsLikeTemplate(REGISTRY_BASE_PREVIEW_TEMPLATE, context)
 })
 
-function selectTemplate(index: number) {
+function normalizedTemplatePayload(template: AdminMailTemplate) {
+  return {
+    eventType: template.eventType.trim(),
+    sendgridTemplateId: normalizeTemplateId(template.sendgridTemplateId),
+    category: template.category,
+    active: Boolean(template.active),
+    description: template.description.trim(),
+    subjectTemplate: template.subjectTemplate,
+    preheaderTemplate: template.preheaderTemplate,
+    bodyTemplate: template.bodyTemplate
+  }
+}
+
+const templateDraftDirty = computed(() => {
+  const draft = templateDraft.value
+  const persisted = templates.value[selectedTemplateIndex.value]
+  if (!draft || !persisted) return false
+  return JSON.stringify(normalizedTemplatePayload(draft)) !== JSON.stringify(normalizedTemplatePayload(persisted))
+})
+
+function commitTemplateSelection(index: number) {
   const selected = templates.value[index]
   if (!selected) return
   selectedTemplateIndex.value = index
@@ -1400,7 +1449,25 @@ function selectTemplate(index: number) {
   testRecipient.value = fallbackRecipient
 }
 
-async function saveSettings(options: { silentSuccessToast?: boolean } = {}): Promise<boolean> {
+function selectTemplate(index: number) {
+  if (index === selectedTemplateIndex.value) return
+  if (templateDraftDirty.value) {
+    pendingTemplateSelectionIndex.value = index
+    discardTemplateDialogOpen.value = true
+    return
+  }
+  commitTemplateSelection(index)
+}
+
+function discardTemplateChangesAndContinue() {
+  const nextIndex = pendingTemplateSelectionIndex.value
+  pendingTemplateSelectionIndex.value = null
+  discardTemplateDialogOpen.value = false
+  if (nextIndex != null) commitTemplateSelection(nextIndex)
+}
+
+async function saveAdminCopySettings(): Promise<boolean> {
+  if (!settingsReady.value) return false
   saving.value = true
   try {
     const payload = {
@@ -1408,19 +1475,7 @@ async function saveSettings(options: { silentSuccessToast?: boolean } = {}): Pro
         criticalEnabled: adminCopies.criticalEnabled,
         nonCriticalEnabled: adminCopies.nonCriticalEnabled,
         recipients: parseRecipients(recipientsInput.value)
-      },
-      templates: templates.value
-        .map(template => ({
-          eventType: template.eventType.trim(),
-          sendgridTemplateId: normalizeTemplateId(template.sendgridTemplateId),
-          category: template.category,
-          active: Boolean(template.active),
-          description: template.description.trim(),
-          subjectTemplate: template.subjectTemplate,
-          preheaderTemplate: template.preheaderTemplate,
-          bodyTemplate: template.bodyTemplate
-        }))
-        .filter(template => template.eventType && template.sendgridTemplateId)
+      }
     }
 
     await $fetch('/api/admin/email/settings.upsert', {
@@ -1428,10 +1483,8 @@ async function saveSettings(options: { silentSuccessToast?: boolean } = {}): Pro
       body: payload
     })
 
-    if (!options.silentSuccessToast) {
-      toast.add({ title: 'Email settings saved', color: 'success' })
-    }
-    await loadSettings({ silent: true })
+    adminCopiesSnapshot.value = serializeAdminCopies()
+    toast.add({ title: 'Admin copy settings saved', color: 'success' })
     return true
   } catch (error: unknown) {
     toast.add({
@@ -1448,9 +1501,27 @@ async function saveSettings(options: { silentSuccessToast?: boolean } = {}): Pro
 async function saveSelectedTemplate() {
   const index = selectedTemplateIndex.value
   const draft = templateDraft.value
-  if (!draft) return
-  templates.value[index] = { ...draft }
-  await saveSettings({ silentSuccessToast: false })
+  if (!draft || !settingsReady.value) return
+
+  saving.value = true
+  try {
+    await $fetch('/api/admin/email/settings.upsert', {
+      method: 'POST',
+      body: {
+        templates: [normalizedTemplatePayload(draft)]
+      }
+    })
+    templates.value[index] = { ...draft }
+    toast.add({ title: 'Template settings saved', color: 'success' })
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not save template settings',
+      description: readErrorMessage(error),
+      color: 'error'
+    })
+  } finally {
+    saving.value = false
+  }
 }
 
 async function sendTemplateTest() {
@@ -1467,7 +1538,14 @@ async function sendTemplateTest() {
       method: 'POST',
       body: {
         eventType: draft.eventType,
-        recipient: testRecipient.value.trim() || undefined
+        recipient: testRecipient.value.trim() || undefined,
+        templateDraft: {
+          sendgridTemplateId: normalizeTemplateId(draft.sendgridTemplateId),
+          active: draft.active,
+          subjectTemplate: draft.subjectTemplate,
+          preheaderTemplate: draft.preheaderTemplate,
+          bodyTemplate: draft.bodyTemplate
+        }
       }
     })
 
@@ -1483,7 +1561,7 @@ async function sendTemplateTest() {
 
     toast.add({
       title: 'Test email sent',
-      description: `Sent to ${res.recipient} using sample dynamic data.`,
+      description: `Sent the current editor draft to ${res.recipient} using sample dynamic data.`,
       color: 'success'
     })
   } catch (error: unknown) {
@@ -1518,6 +1596,7 @@ watch(() => templateDraft.value?.sendgridTemplateId, (value) => {
 }, { immediate: true })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', warnBeforeRegistryUnload)
   clearSendgridLookupTimer()
 })
 </script>
@@ -1537,6 +1616,7 @@ onBeforeUnmount(() => {
               color: 'neutral',
               variant: 'soft',
               loading: pending,
+              disabled: templateDraftDirty || adminCopiesDirty,
               onSelect: () => loadSettings()
             }
           ]"
@@ -1574,6 +1654,16 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <AppAlert
+        v-if="settingsLoadState === 'error'"
+        color="error"
+        variant="soft"
+        icon="i-lucide-triangle-alert"
+        title="Email settings are unavailable"
+        :description="settingsLoadError || 'The registry could not be loaded. Editing is disabled to protect live mappings.'"
+        :actions="[{ label: 'Retry', color: 'error', variant: 'soft', onClick: () => loadSettings() }]"
+      />
+
       <div class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div class="space-y-4">
           <UCard v-if="templateDraft">
@@ -1587,13 +1677,23 @@ onBeforeUnmount(() => {
                     Edit SendGrid mapping and copy for the selected event type.
                   </div>
                 </div>
-                <UBadge
-                  :color="templateDraft.active ? 'success' : 'neutral'"
-                  variant="soft"
-                  size="sm"
-                >
-                  {{ templateDraft.active ? 'active' : 'inactive' }}
-                </UBadge>
+                <div class="flex flex-wrap items-center gap-2">
+                  <UBadge
+                    v-if="templateDraftDirty"
+                    color="warning"
+                    variant="soft"
+                    size="sm"
+                  >
+                    Unsaved changes
+                  </UBadge>
+                  <UBadge
+                    :color="templateDraft.active ? 'success' : 'neutral'"
+                    variant="soft"
+                    size="sm"
+                  >
+                    {{ templateDraft.active ? 'active' : 'inactive' }}
+                  </UBadge>
+                </div>
               </div>
 
               <div class="grid gap-3 md:grid-cols-2">
@@ -1802,6 +1902,7 @@ onBeforeUnmount(() => {
                   >
                     <UButton
                       icon="i-lucide-grip-vertical"
+                      aria-label="Drag editor block"
                       color="neutral"
                       variant="ghost"
                       size="sm"
@@ -1956,7 +2057,7 @@ onBeforeUnmount(() => {
                   icon="i-lucide-send"
                   class="w-full sm:w-auto"
                   :loading="sendingTest"
-                  :disabled="!hasTemplateId(templateDraft)"
+                  :disabled="!settingsReady || !hasTemplateId(templateDraft)"
                   @click="sendTemplateTest"
                 >
                   Send test email
@@ -1964,6 +2065,7 @@ onBeforeUnmount(() => {
                 <UButton
                   class="w-full sm:w-auto"
                   :loading="saving"
+                  :disabled="!settingsReady || !templateDraftDirty"
                   @click="saveSelectedTemplate"
                 >
                   Save template settings
@@ -2054,7 +2156,10 @@ onBeforeUnmount(() => {
                         {{ rule.description }}
                       </p>
                     </div>
-                    <USwitch v-model="rule.enabled" />
+                    <USwitch
+                      v-model="rule.enabled"
+                      :aria-label="`${rule.eventType} reminder enabled`"
+                    />
                   </div>
 
                   <div class="grid gap-2 sm:grid-cols-2">
@@ -2170,7 +2275,11 @@ onBeforeUnmount(() => {
                     Forward a copy of critical notifications to admin inboxes.
                   </div>
                 </div>
-                <USwitch v-model="adminCopies.criticalEnabled" />
+                <USwitch
+                  v-model="adminCopies.criticalEnabled"
+                  :disabled="!settingsReady"
+                  aria-label="Critical email copies enabled"
+                />
               </div>
 
               <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2">
@@ -2182,7 +2291,11 @@ onBeforeUnmount(() => {
                     Keep disabled by default to reduce noise.
                   </div>
                 </div>
-                <USwitch v-model="adminCopies.nonCriticalEnabled" />
+                <USwitch
+                  v-model="adminCopies.nonCriticalEnabled"
+                  :disabled="!settingsReady"
+                  aria-label="Non-critical email copies enabled"
+                />
               </div>
 
               <UFormField
@@ -2193,6 +2306,7 @@ onBeforeUnmount(() => {
                   v-model="recipientsInput"
                   :rows="4"
                   class="w-full"
+                  :disabled="!settingsReady"
                   placeholder="ops@fostudio.com&#10;support@fostudio.com"
                 />
               </UFormField>
@@ -2201,7 +2315,8 @@ onBeforeUnmount(() => {
                 <UButton
                   class="w-full sm:w-auto"
                   :loading="saving"
-                  @click="saveSettings()"
+                  :disabled="!settingsReady || !adminCopiesDirty"
+                  @click="() => { void saveAdminCopySettings() }"
                 >
                   Save admin copy settings
                 </UButton>
@@ -2265,13 +2380,42 @@ onBeforeUnmount(() => {
                 v-if="templates.length === 0"
                 class="rounded-md border border-dashed border-default px-3 py-4 text-sm text-dimmed text-center"
               >
-                No event mappings available.
+                {{ settingsLoadState === 'error' ? 'Registry unavailable. Retry before editing.' : 'No event mappings available.' }}
               </div>
             </div>
           </UCard>
         </aside>
       </div>
     </DashboardPageScaffold>
+
+    <UModal
+      v-model:open="discardTemplateDialogOpen"
+      title="Discard unsaved template changes?"
+      description="The selected registry draft has changes that have not been saved."
+    >
+      <template #body>
+        <p class="text-sm text-muted">
+          Switching registry events now will discard the current subject, preheader, body, and routing edits.
+        </p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton
+            color="neutral"
+            variant="soft"
+            @click="discardTemplateDialogOpen = false; pendingTemplateSelectionIndex = null"
+          >
+            Keep editing
+          </UButton>
+          <UButton
+            color="error"
+            @click="discardTemplateChangesAndContinue"
+          >
+            Discard and switch
+          </UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>
 

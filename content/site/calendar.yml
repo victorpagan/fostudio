@@ -1,12 +1,12 @@
 hero:
   kicker: Availability
-  title: Studio availability and booking options
-  description: Check the public calendar, compare memberships, or create an account to book a guest session before committing.
+  title: Check real studio availability before you create an account.
+  description: Occupied blocks come from the public calendar feed. Select an eligible open guest time to carry it into signup, or compare memberships for 24/7 access and longer planning reach.
 nextMovePanel:
-  title: Try the studio before joining
+  title: Guest or member?
   points:
-    - We allow guest bookings for people who want to try FO Studio before choosing a membership.
-    - Create a free account from the signup page, then use the dashboard booking calendar to book as a guest.
+    - Guest booking is for one-off sessions and follows the live guest window, hours, minimum duration, and checkout rate.
+    - Membership is for recurring production and adds 24/7 access, 30-minute booking increments, tier-based planning reach, and included benefits.
   primaryCta:
     label: Sign up to book as a guest
     to: /signup?returnTo=/dashboard/book
@@ -14,11 +14,11 @@ nextMovePanel:
     label: Compare memberships
     to: /memberships
 readingPanel:
-  title: Check availability before you book
+  title: How to read this calendar
   points:
     - Warm blocks mark hold windows where a set stays built overnight.
-    - Neutral blocks show confirmed bookings that are no longer available.
-    - Use week view for planning. Guests can create an account and book from the dashboard if they want to try the studio before committing to a membership.
+    - Neutral or dark blocks are unavailable studio time; temporarily reserved blocks may reopen if checkout is not completed.
+    - Peak shading changes credit use, not availability. A standby zone appears only when today's live policy identifies an eligible same-day opening.
 seo:
   title: Studio Availability Calendar | FO Studio Los Angeles
   description: Check FO Studio availability, active booking blocks, and next steps to reserve the studio as a member or guest.

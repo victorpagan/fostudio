@@ -9,7 +9,7 @@ import {
 definePageMeta({ middleware: ['admin'] })
 
 const toast = useToast()
-const { data, pending, refresh } = await useAdminAnalyticsData('alerts')
+const { data, pending, refresh, error } = await useAdminAnalyticsData('alerts')
 
 const alerts = computed(() => data.value?.alerts ?? [])
 const generatedLabel = computed(() => formatAnalyticsDatetime(data.value?.generatedAt))
@@ -46,135 +46,119 @@ async function copyValue(value: string, label: string) {
 </script>
 
 <template>
-  <UDashboardPanel
-    id="admin-analytics-alerts"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <AdminAnalyticsPage
+    panel-id="admin-analytics-alerts"
+    title="Analytics · Alerts"
+    :busy="pending"
+    :error="error"
+    @retry="refresh"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Analytics • Alerts"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-2' }"
-      >
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-        <template #right>
-          <AnalyticsRunButton
-            size="sm"
-            @completed="() => refresh()"
-          />
-          <UButton
-            size="sm"
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-refresh-cw"
-            :loading="pending"
-            @click="() => refresh()"
-          />
-        </template>
-      </UDashboardNavbar>
+    <template #actions>
+      <AnalyticsRunButton
+        size="sm"
+        @completed="() => refresh()"
+      />
+      <IconButton
+        label="Refresh analytics alerts"
+        icon="i-lucide-refresh-cw"
+        color="neutral"
+        variant="soft"
+        size="sm"
+        :loading="pending"
+        @click="() => refresh()"
+      />
     </template>
 
-    <template #body>
-      <AdminOpsShell>
-        <div class="space-y-4">
-          <AnalyticsSubnav />
+    <AppAlert
+      color="neutral"
+      variant="soft"
+      icon="i-lucide-bell-ring"
+      :description="`Generated: ${generatedLabel}`"
+    />
 
-          <UAlert
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-bell-ring"
-            :description="`Generated: ${generatedLabel}`"
-          />
-
-          <UCard class="admin-panel-card border-0">
-            <template #header>
-              <div class="font-medium">
-                Triggered alerts
-              </div>
-            </template>
-
-            <div
-              v-if="alerts.length === 0"
-              class="text-sm text-dimmed"
-            >
-              No active alerts.
-            </div>
-
-            <div
-              v-else
-              class="space-y-2"
-            >
-              <div
-                v-for="(alert, idx) in alerts"
-                :key="`${alert.type}-${idx}`"
-                class="rounded-lg border border-default p-3 cursor-copy"
-                role="button"
-                tabindex="0"
-                :title="`Click to copy alert: ${alert.title}`"
-                @click="() => copyValue(`[${alert.severity}] ${alert.title}\n${alert.detail}`, `${alert.title} alert`)"
-                @keydown.enter.prevent="() => copyValue(`[${alert.severity}] ${alert.title}\n${alert.detail}`, `${alert.title} alert`)"
-                @keydown.space.prevent="() => copyValue(`[${alert.severity}] ${alert.title}\n${alert.detail}`, `${alert.title} alert`)"
-              >
-                <div>
-                  <div class="flex items-start justify-between gap-3">
-                    <div>
-                      <div class="font-medium text-sm">
-                        {{ alert.title }}
-                      </div>
-                      <div class="mt-1 text-xs text-dimmed uppercase tracking-wide">
-                        {{ alert.type }}
-                      </div>
-                      <p class="mt-1 text-sm text-toned">
-                        {{ alert.detail }}
-                      </p>
-                    </div>
-                    <UBadge
-                      :color="alertColor(alert.severity as AnalyticsSeverity)"
-                      variant="soft"
-                      size="xs"
-                    >
-                      {{ alert.severity }}
-                    </UBadge>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </UCard>
-
-          <UCard class="admin-panel-card border-0">
-            <template #header>
-              <div class="flex items-center justify-between gap-2">
-                <div class="font-medium">
-                  Raw alerts.json
-                </div>
-                <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="soft"
-                  icon="i-lucide-copy"
-                  @click="() => copyValue(alertsJsonText, 'Alerts JSON')"
-                >
-                  Copy
-                </UButton>
-              </div>
-            </template>
-            <pre
-              class="analytics-json-block analytics-json-block--click-copy"
-              role="button"
-              tabindex="0"
-              title="Click to copy JSON"
-              @click="() => copyValue(alertsJsonText, 'Alerts JSON')"
-              @keydown.enter.prevent="() => copyValue(alertsJsonText, 'Alerts JSON')"
-              @keydown.space.prevent="() => copyValue(alertsJsonText, 'Alerts JSON')"
-            >{{ alertsJsonText }}</pre>
-          </UCard>
+    <UCard class="admin-panel-card border-0">
+      <template #header>
+        <div class="font-medium">
+          Triggered alerts
         </div>
-      </AdminOpsShell>
-    </template>
-  </UDashboardPanel>
+      </template>
+
+      <div
+        v-if="alerts.length === 0"
+        class="text-sm text-dimmed"
+      >
+        No active alerts.
+      </div>
+
+      <div
+        v-else
+        class="space-y-2"
+      >
+        <div
+          v-for="(alert, idx) in alerts"
+          :key="`${alert.type}-${idx}`"
+          class="rounded-lg border border-default p-3 cursor-copy"
+          role="button"
+          tabindex="0"
+          :title="`Click to copy alert: ${alert.title}`"
+          @click="() => copyValue(`[${alert.severity}] ${alert.title}\n${alert.detail}`, `${alert.title} alert`)"
+          @keydown.enter.prevent="() => copyValue(`[${alert.severity}] ${alert.title}\n${alert.detail}`, `${alert.title} alert`)"
+          @keydown.space.prevent="() => copyValue(`[${alert.severity}] ${alert.title}\n${alert.detail}`, `${alert.title} alert`)"
+        >
+          <div>
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="font-medium text-sm">
+                  {{ alert.title }}
+                </div>
+                <div class="mt-1 text-xs text-dimmed uppercase tracking-wide">
+                  {{ alert.type }}
+                </div>
+                <p class="mt-1 text-sm text-toned">
+                  {{ alert.detail }}
+                </p>
+              </div>
+              <UBadge
+                :color="alertColor(alert.severity as AnalyticsSeverity)"
+                variant="soft"
+                size="xs"
+              >
+                {{ alert.severity }}
+              </UBadge>
+            </div>
+          </div>
+        </div>
+      </div>
+    </UCard>
+
+    <UCard class="admin-panel-card border-0">
+      <template #header>
+        <div class="flex items-center justify-between gap-2">
+          <div class="font-medium">
+            Raw alerts.json
+          </div>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-copy"
+            @click="() => copyValue(alertsJsonText, 'Alerts JSON')"
+          >
+            Copy
+          </UButton>
+        </div>
+      </template>
+      <pre
+        class="analytics-json-block analytics-json-block--click-copy"
+        role="button"
+        tabindex="0"
+        title="Click to copy JSON"
+        @click="() => copyValue(alertsJsonText, 'Alerts JSON')"
+        @keydown.enter.prevent="() => copyValue(alertsJsonText, 'Alerts JSON')"
+        @keydown.space.prevent="() => copyValue(alertsJsonText, 'Alerts JSON')"
+      >{{ alertsJsonText }}</pre>
+    </UCard>
+  </AdminAnalyticsPage>
 </template>
 
 <style scoped>

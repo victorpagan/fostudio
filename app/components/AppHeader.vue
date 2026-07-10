@@ -128,8 +128,15 @@ async function logout() {
                 to="/login"
                 class="site-auth-link hidden sm:inline-flex"
               >
-                Login/Sign Up
+                Log in
               </NuxtLink>
+              <UButton
+                to="/memberships#plans"
+                size="sm"
+                class="hidden sm:inline-flex"
+              >
+                Choose a plan
+              </UButton>
             </template>
 
             <template v-else>
@@ -156,7 +163,7 @@ async function logout() {
             </template>
 
             <UButton
-              :icon="isOpen ? 'i-heroicons-x-mark' : 'i-heroicons-bars-3'"
+              :icon="isOpen ? 'i-lucide-x' : 'i-lucide-menu'"
               color="neutral"
               variant="ghost"
               :aria-label="isOpen ? 'Close menu' : 'Open menu'"
@@ -192,11 +199,18 @@ async function logout() {
 
           <template v-if="!isAuthed">
             <NuxtLink
+              to="/memberships#plans"
+              class="site-mobile-link font-semibold"
+              @click="isOpen = false"
+            >
+              Choose a membership
+            </NuxtLink>
+            <NuxtLink
               to="/login"
               class="site-mobile-link"
               @click="isOpen = false"
             >
-              Login/Sign Up
+              Log in
             </NuxtLink>
           </template>
 

@@ -30,6 +30,9 @@ type SidebarMembershipRow = {
   status: string | null
   current_period_end: string | null
   canceled_at: string | null
+  membership_source: string | null
+  billing_provider: string | null
+  manual_expires_at: string | null
 }
 
 type SidebarLinkGroup = {
@@ -42,18 +45,28 @@ type SidebarWorkshopAccess = {
   workshopBookingEnabled: boolean
 }
 
-const { data: sidebarMembership } = await useAsyncData('dash:sidebar:membership', async () => {
+const {
+  data: sidebarMembership,
+  pending: sidebarMembershipPending,
+  error: sidebarMembershipError,
+  refresh: refreshSidebarMembership
+} = await useAsyncData('dash:sidebar:membership', async () => {
   if (!user.value?.sub) return null
   const { data, error } = await supabase
     .from('memberships')
-    .select('tier,cadence,status,current_period_end,canceled_at')
+    .select('tier,cadence,status,current_period_end,canceled_at,membership_source,billing_provider,manual_expires_at')
     .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
   return data as SidebarMembershipRow | null
 }, { watch: [() => user.value?.sub] })
 
-const { data: sidebarCredits } = await useAsyncData('dash:sidebar:credits', async () => {
+const {
+  data: sidebarCredits,
+  pending: sidebarCreditsPending,
+  error: sidebarCreditsError,
+  refresh: refreshSidebarCredits
+} = await useAsyncData('dash:sidebar:credits', async () => {
   if (!user.value?.sub) return null
   const { data, error } = await supabase
     .from('credit_balance')
@@ -66,11 +79,7 @@ const { data: sidebarCredits } = await useAsyncData('dash:sidebar:credits', asyn
 
 const { data: sidebarWorkshopAccess } = await useAsyncData('dash:sidebar:workshop-access', async () => {
   if (!user.value?.sub) return null
-  try {
-    return await $fetch<SidebarWorkshopAccess>('/api/workshops/access')
-  } catch {
-    return null
-  }
+  return await $fetch<SidebarWorkshopAccess>('/api/workshops/access')
 }, { watch: [() => user.value?.sub] })
 
 const { data: sidebarCreditCap } = await useAsyncData('dash:sidebar:credit-cap', async () => {
@@ -88,11 +97,21 @@ const { data: sidebarCreditCap } = await useAsyncData('dash:sidebar:credit-cap',
 }, { watch: [() => sidebarMembership.value?.tier] })
 
 const sidebarMembershipState = computed(() => resolveMembershipUiState(sidebarMembership.value))
+const sidebarMembershipExpired = computed(() => {
+  if (sidebarMembershipState.value !== 'inactive') return false
+  const end = sidebarMembership.value?.manual_expires_at ?? sidebarMembership.value?.current_period_end
+  if (!end) return false
+  const endMs = new Date(end).getTime()
+  return Number.isFinite(endMs) && endMs <= Date.now()
+})
+const sidebarIsManualMembership = computed(() =>
+  (sidebarMembership.value?.membership_source ?? sidebarMembership.value?.billing_provider ?? '').toLowerCase() === 'manual'
+)
 
 const sidebarTierLabel = computed(() => {
   const row = sidebarMembership.value
   if (!row) return null
-  if (!['active', 'past_due', 'pending_checkout'].includes(sidebarMembershipState.value)) return null
+  if (sidebarMembershipState.value === 'none') return null
   const tierLabel = formatMembershipTierLabel(row.tier)
   const cadence = row.cadence ?? null
   return [tierLabel, cadence].filter(Boolean).join(' · ')
@@ -100,11 +119,16 @@ const sidebarTierLabel = computed(() => {
 
 const sidebarMembershipCta = computed(() => {
   if (sidebarMembershipState.value === 'active') return { label: 'Manage membership', to: '/dashboard/membership' }
-  if (sidebarMembershipState.value === 'pending_checkout') return { label: 'Finish checkout', to: '/dashboard/memberships' }
+  if (sidebarMembershipState.value === 'past_due') return { label: 'Review billing', to: '/dashboard/profile' }
+  if (sidebarMembershipState.value === 'pending_checkout') return { label: 'Finish checkout', to: '/dashboard/membership' }
   return { label: 'Get membership', to: '/dashboard/memberships' }
 })
 
-const sidebarStatusLabel = computed(() => sidebarMembershipState.value.replace(/_/g, ' '))
+const sidebarStatusLabel = computed(() => {
+  if (sidebarIsManualMembership.value && sidebarMembershipState.value === 'active') return 'manual · active'
+  if (sidebarMembershipExpired.value) return 'expired'
+  return sidebarMembershipState.value.replace(/_/g, ' ')
+})
 
 const sidebarStatusColor = computed(() => {
   if (sidebarMembershipState.value === 'active') return 'success'
@@ -114,6 +138,7 @@ const sidebarStatusColor = computed(() => {
 })
 
 const showSidebarBalanceCta = computed(() => {
+  if (sidebarMembershipPending.value || sidebarMembershipError.value || sidebarCreditsError.value) return false
   if (sidebarMembershipState.value !== 'active') return true
   return (sidebarCredits.value ?? 0) <= 0
 })
@@ -706,12 +731,28 @@ onBeforeUnmount(() => {
           v-if="!collapsed && !isAdminSidebarMode"
           class="mt-4 border-default/70 bg-elevated/60"
         >
-          <div class="space-y-2">
+          <DashboardSectionState
+            v-if="sidebarMembershipPending"
+            state="loading"
+            title="Loading membership"
+          />
+          <DashboardSectionState
+            v-else-if="sidebarMembershipError"
+            state="error"
+            title="Membership unavailable"
+            description="Account status was not treated as guest."
+            show-retry
+            @retry="refreshSidebarMembership"
+          />
+          <div
+            v-else
+            class="space-y-2"
+          >
             <div class="text-[11px] uppercase tracking-wide text-dimmed">
               Membership
             </div>
             <div class="text-sm font-medium">
-              {{ sidebarTierLabel ?? 'No active membership' }}
+              {{ sidebarTierLabel ?? 'No membership' }}
             </div>
             <div>
               <UBadge
@@ -725,14 +766,25 @@ onBeforeUnmount(() => {
             <div class="space-y-1.5 text-xs">
               <div class="flex items-center justify-between text-dimmed">
                 <span>Credits</span>
-                <span>
+                <span v-if="sidebarCreditsPending">Loading…</span>
+                <span
+                  v-else-if="sidebarCreditsError"
+                  class="text-error"
+                >Unavailable</span>
+                <span
+                  v-else
+                  :class="sidebarCreditsValue < 0 ? 'font-medium text-error' : ''"
+                >
                   {{ formatSidebarCreditValue(sidebarCreditsValue) }}
                   <template v-if="sidebarMaxBank > 0">
                     / {{ formatSidebarCreditValue(sidebarMaxBank) }}
                   </template>
                 </span>
               </div>
-              <div class="h-2 overflow-hidden rounded-full bg-muted">
+              <div
+                v-if="!sidebarCreditsError"
+                class="h-2 overflow-hidden rounded-full bg-muted"
+              >
                 <div
                   class="h-full rounded-full transition-all duration-300"
                   :class="sidebarCreditsOverCap ? 'bg-red-500' : 'bg-primary'"
@@ -745,6 +797,21 @@ onBeforeUnmount(() => {
               >
                 Over cap
               </div>
+              <div
+                v-else-if="sidebarCreditsValue < 0"
+                class="text-[11px] font-medium text-error"
+              >
+                Balance below zero
+              </div>
+              <UButton
+                v-if="sidebarCreditsError"
+                size="xs"
+                color="neutral"
+                variant="soft"
+                @click="() => refreshSidebarCredits()"
+              >
+                Retry credits
+              </UButton>
             </div>
             <div
               v-if="showSidebarBalanceCta"

@@ -6,6 +6,7 @@ definePageMeta({ middleware: ['admin'] })
 const toast = useToast()
 const loading = ref(false)
 const handbook = ref<HandbookPayload | null>(null)
+const loadError = ref<string | null>(null)
 const search = ref('')
 const activeTab = ref('quick')
 
@@ -27,9 +28,11 @@ function readErrorMessage(error: unknown) {
 
 async function loadHandbook() {
   loading.value = true
+  loadError.value = null
   try {
     handbook.value = await $fetch<HandbookPayload>('/api/admin/studio-handbook')
   } catch (error: unknown) {
+    loadError.value = readErrorMessage(error)
     toast.add({
       title: 'Could not load handbook',
       description: readErrorMessage(error),
@@ -150,6 +153,7 @@ function downloadPdf() {
   <DashboardPageScaffold
     panel-id="admin-studio-handbook"
     title="Studio Handbook"
+    :busy="loading"
   >
     <template #right>
       <DashboardActionGroup
@@ -171,7 +175,24 @@ function downloadPdf() {
       />
     </template>
 
-    <AdminOpsShell>
+    <div class="space-y-4">
+      <DashboardSectionState
+        v-if="loadError && !handbook"
+        state="error"
+        title="Handbook unavailable"
+        :description="loadError"
+        show-retry
+        @retry="loadHandbook"
+      />
+      <AppAlert
+        v-else-if="loadError"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-triangle-alert"
+        title="Showing the last loaded handbook"
+        :description="`${loadError} Refresh again before relying on live rates or operational status.`"
+      />
+
       <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <UCard class="admin-panel-card border-0">
           <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -840,6 +861,6 @@ function downloadPdf() {
           </UCard>
         </div>
       </div>
-    </AdminOpsShell>
+    </div>
   </DashboardPageScaffold>
 </template>

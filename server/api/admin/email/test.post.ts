@@ -7,7 +7,14 @@ import { applyRenderedRegistryCopy } from '~~/server/utils/mail/render'
 
 const bodySchema = z.object({
   eventType: z.string().trim().min(3).max(160).regex(/^[A-Za-z0-9._-]+$/),
-  recipient: z.string().trim().email().max(320).optional()
+  recipient: z.string().trim().email().max(320).optional(),
+  templateDraft: z.object({
+    sendgridTemplateId: z.string().trim().min(3).max(255),
+    active: z.coerce.boolean().default(true),
+    subjectTemplate: z.string().max(300).optional().default(''),
+    preheaderTemplate: z.string().max(300).optional().default(''),
+    bodyTemplate: z.string().max(200_000).optional().default('')
+  }).optional()
 })
 
 type MailTemplateRegistryRow = {
@@ -51,15 +58,27 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Recipient email is required' })
   }
 
-  const { data: templateRowRaw, error: templateError } = await supabase
-    .from('mail_template_registry')
-    .select('event_type,sendgrid_template_id,active,subject_template,preheader_template,body_template')
-    .eq('event_type', body.eventType)
-    .maybeSingle()
+  let templateRow: MailTemplateRegistryRow | null = null
+  if (body.templateDraft) {
+    templateRow = {
+      event_type: body.eventType,
+      sendgrid_template_id: body.templateDraft.sendgridTemplateId,
+      active: body.templateDraft.active,
+      subject_template: body.templateDraft.subjectTemplate || null,
+      preheader_template: body.templateDraft.preheaderTemplate || null,
+      body_template: body.templateDraft.bodyTemplate || null
+    }
+  } else {
+    const { data: templateRowRaw, error: templateError } = await supabase
+      .from('mail_template_registry')
+      .select('event_type,sendgrid_template_id,active,subject_template,preheader_template,body_template')
+      .eq('event_type', body.eventType)
+      .maybeSingle()
 
-  if (templateError) throw createError({ statusCode: 500, statusMessage: templateError.message })
+    if (templateError) throw createError({ statusCode: 500, statusMessage: templateError.message })
+    templateRow = (templateRowRaw ?? null) as MailTemplateRegistryRow | null
+  }
 
-  const templateRow = (templateRowRaw ?? null) as MailTemplateRegistryRow | null
   if (!templateRow) {
     throw createError({ statusCode: 400, statusMessage: `No registry entry configured for ${body.eventType}` })
   }
@@ -115,6 +134,7 @@ export default defineEventHandler(async (event) => {
     eventType: body.eventType,
     recipient,
     isActive: templateRow?.active !== false,
+    testedDraft: Boolean(body.templateDraft),
     mailer: sendResult.ok ? sendResult.data : { reason: sendResult.reason ?? 'unknown' }
   }
 })

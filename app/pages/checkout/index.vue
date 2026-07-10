@@ -2,6 +2,12 @@
 import { normalizeDiscountLabel, parseDiscountLabel } from '~~/app/utils/membershipDiscount'
 import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
+useNoindexSeo({
+  title: 'FO Studio membership checkout',
+  description: 'Review a selected membership cadence and continue to secure payment.',
+  canonicalPath: '/checkout'
+})
+
 type Cadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
 type PlanOption = {
   cadence: Cadence
@@ -597,14 +603,14 @@ async function submitWaitlist() {
         </UBadge>
       </div>
 
-      <UAlert
+      <AppAlert
         v-if="errorMsg"
         color="error"
         variant="soft"
         icon="i-lucide-circle-alert"
         :title="errorMsg"
       />
-      <UAlert
+      <AppAlert
         v-if="tierAtCapacity"
         color="warning"
         variant="soft"
@@ -613,7 +619,7 @@ async function submitWaitlist() {
         description="New member checkout is paused for this tier. Join the waitlist and we will email you when a spot opens."
       />
 
-      <UAlert
+      <AppAlert
         v-if="isPlanSwitchMode"
         color="neutral"
         variant="soft"
@@ -621,7 +627,7 @@ async function submitWaitlist() {
         title="Changes apply at the next billing cycle"
         description="Upgrades and downgrades are scheduled to your next billing renewal date. We do not apply prorated mid-cycle membership changes."
       />
-      <UAlert
+      <AppAlert
         v-if="isPlanSwitchMode && !user"
         color="warning"
         variant="soft"
@@ -702,6 +708,8 @@ async function submitWaitlist() {
               v-model="guestEmail"
               type="email"
               placeholder="you@example.com"
+              name="checkout-email"
+              autocomplete="email"
             />
             <p class="text-xs text-dimmed">
               You’ll enter payment details securely in-app through Square, then create or sign in to your account on the success page to claim this membership.
@@ -724,23 +732,29 @@ async function submitWaitlist() {
             </p>
           </div>
 
-          <div
+          <fieldset
             v-if="!isTestTier && sortedOptions.length > 0"
             class="space-y-2 pt-2"
           >
-            <div class="text-sm font-medium">
+            <legend class="text-sm font-medium">
               Choose billing cadence
-            </div>
+            </legend>
             <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              <button
+              <label
                 v-for="option in sortedOptions"
                 :key="option.cadence"
-                class="rounded-xl border px-3 py-3 text-left transition-colors"
+                class="cursor-pointer rounded-xl border px-3 py-3 text-left transition-colors"
                 :class="selectedCadence === option.cadence
                   ? 'border-[color:var(--gruv-accent)] bg-[rgba(181,118,20,0.12)]'
                   : 'border-[color:var(--gruv-line)] hover:bg-[rgba(181,118,20,0.08)]'"
-                @click="selectedCadence = option.cadence"
               >
+                <input
+                  v-model="selectedCadence"
+                  class="sr-only"
+                  type="radio"
+                  name="billing-cadence"
+                  :value="option.cadence"
+                >
                 <div class="text-sm font-semibold">
                   {{ formatCadence(option.cadence).split(' (')[0] }}
                 </div>
@@ -765,14 +779,14 @@ async function submitWaitlist() {
                 >
                   {{ getDiscountLabel(option.discount_label) }}
                 </div>
-              </button>
+              </label>
             </div>
             <p class="text-xs text-dimmed">
-              Longer billing cadences can reduce effective monthly cost. Credits still release month by month.
+              Quarterly and annual credits release month by month. Daily and weekly options use the release period shown above.
             </p>
-          </div>
+          </fieldset>
 
-          <UAlert
+          <AppAlert
             v-if="isTestTier"
             class="mt-3"
             color="warning"
@@ -815,6 +829,7 @@ async function submitWaitlist() {
                 <UInput
                   v-model="promoCode"
                   placeholder="SPRING20"
+                  name="promo-code"
                   autocomplete="off"
                   class="min-w-52"
                 />
@@ -843,11 +858,12 @@ async function submitWaitlist() {
             <UFormField
               class="mt-3"
               label="Referral code (optional)"
-              description="Applied on successful first membership activation."
+              description="Eligible only on your first successful membership activation. Use another currently entitled member's code; the live tier and cadence rule determines any reward after activation."
             >
               <UInput
                 v-model="referralCode"
                 placeholder="FRIEND123"
+                name="referral-code"
                 autocomplete="off"
                 class="max-w-sm"
               />
@@ -859,6 +875,24 @@ async function submitWaitlist() {
           >
             Confirming here schedules your plan change with Square for your next billing cycle.
           </div>
+
+          <p class="mt-3 text-xs leading-6 text-dimmed">
+            By continuing, you agree to the
+            <NuxtLink
+              to="/policies#terms"
+              class="font-medium underline underline-offset-2"
+            >membership terms</NuxtLink>
+            and
+            <NuxtLink
+              to="/policies#cancellations"
+              class="font-medium underline underline-offset-2"
+            >cancellation rules</NuxtLink>,
+            and acknowledge the
+            <NuxtLink
+              to="/policies#privacy"
+              class="font-medium underline underline-offset-2"
+            >privacy notice</NuxtLink>.
+          </p>
 
           <div class="mt-4 flex gap-2">
             <UButton

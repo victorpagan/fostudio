@@ -21,6 +21,10 @@ type MembershipRow = {
   current_period_end: string | null
   canceled_at: string | null
   square_plan_variation_id: string | null
+  membership_source: string | null
+  billing_provider: string | null
+  manual_grants_enabled: boolean | null
+  manual_expires_at: string | null
 }
 
 type TierRow = {
@@ -117,6 +121,8 @@ type CatalogTier = {
 
 type SubscriptionState = {
   hasManagedSubscription: boolean
+  isManualMembership?: boolean
+  message?: string | null
   currentPeriodEnd: string | null
   pendingSwap: {
     actionId: string | null
@@ -161,11 +167,16 @@ type CreditSummary = {
 }
 
 // ── Current membership ─────────────────────────────────────────────────────
-const { data: membership, refresh } = await useAsyncData('dash:membership', async () => {
+const {
+  data: membership,
+  pending: membershipPending,
+  error: membershipError,
+  refresh
+} = await useAsyncData('dash:membership', async () => {
   if (!user.value) return null
   const { data, error } = await supabase
     .from('memberships')
-    .select('id, tier, cadence, status, created_at, current_period_end, canceled_at, square_plan_variation_id')
+    .select('id, tier, cadence, status, created_at, current_period_end, canceled_at, square_plan_variation_id, membership_source, billing_provider, manual_grants_enabled, manual_expires_at')
     .eq('user_id', user.value.sub)
     .maybeSingle()
   if (error) throw error
@@ -226,13 +237,23 @@ function getDiscountLabel(label?: string | null) {
 const membershipState = computed(() => {
   return resolveMembershipUiState(membership.value)
 })
+const isManualMembership = computed(() =>
+  (membership.value?.membership_source ?? membership.value?.billing_provider ?? '').toLowerCase() === 'manual'
+)
+const isMembershipExpired = computed(() => {
+  if (membershipState.value !== 'inactive') return false
+  const value = membership.value?.manual_expires_at ?? membership.value?.current_period_end
+  if (!value) return false
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) && time <= Date.now()
+})
 
 const showCatalog = computed(() =>
   membershipState.value === 'none' || membershipState.value === 'inactive' || membershipState.value === 'canceled'
 )
 const hasActiveMembership = computed(() => membershipState.value === 'active')
 
-const { data: balance, refresh: refreshBalance } = await useAsyncData('dash:membership:credits:balance', async () => {
+const { data: balance, error: balanceError, refresh: refreshBalance } = await useAsyncData('dash:membership:credits:balance', async () => {
   if (!user.value || !hasActiveMembership.value) return null
   const { data, error } = await supabase
     .from('credit_balance')
@@ -255,7 +276,12 @@ const { data: _ledger, refresh: refreshLedger } = await useAsyncData('dash:membe
   return (data ?? []) as LedgerRow[]
 }, { watch: [user, membershipState] })
 
-const { data: tierCatalog } = await useAsyncData('dash:tierCatalog', async () => {
+const {
+  data: tierCatalog,
+  pending: tierCatalogPending,
+  error: tierCatalogError,
+  refresh: refreshTierCatalog
+} = await useAsyncData('dash:tierCatalog', async () => {
   const res = await $fetch<{ tiers: CatalogTier[] }>('/api/membership/catalog')
   return res?.tiers ?? []
 }, { watch: [user] })
@@ -279,10 +305,21 @@ function openCatalogTierDetails(tierId: string) {
   catalogDetailsOpen.value = true
 }
 
-const { data: subscriptionState, refresh: refreshSubscriptionState } = await useAsyncData('dash:membership:subscription-state', async () => {
+const {
+  data: subscriptionState,
+  pending: subscriptionStatePending,
+  error: subscriptionStateError,
+  refresh: refreshSubscriptionState
+} = await useAsyncData('dash:membership:subscription-state', async () => {
   if (!user.value || !hasActiveMembership.value) return null
   return await $fetch<SubscriptionState>('/api/membership/subscription-state')
 }, { watch: [user, membershipState] })
+
+const canManageSquareMembership = computed(() =>
+  hasActiveMembership.value
+  && !isManualMembership.value
+  && Boolean(subscriptionState.value?.hasManagedSubscription)
+)
 
 const { data: topupOptions, refresh: refreshTopupOptions, pending: topupOptionsPending } = await useAsyncData('dash:membership:topup-options', async () => {
   if (!user.value || !hasActiveMembership.value) return []
@@ -290,7 +327,7 @@ const { data: topupOptions, refresh: refreshTopupOptions, pending: topupOptionsP
   return res?.options ?? []
 }, { watch: [user, membershipState] })
 
-const { data: creditSummary, refresh: refreshCreditSummary } = await useAsyncData('dash:membership:credits:summary', async () => {
+const { data: creditSummary, error: creditSummaryError, refresh: refreshCreditSummary } = await useAsyncData('dash:membership:credits:summary', async () => {
   if (!user.value || !hasActiveMembership.value) return null
   const res = await $fetch<{ summary: CreditSummary | null }>('/api/credits/summary')
   return res.summary
@@ -427,7 +464,10 @@ const membershipIntroDescription = computed(() => {
     const cadence = formatCadence(membership.value?.cadence ?? null)
     const credits = currentVariation.value?.credits_per_month ?? null
     const creditLine = credits !== null ? `${credits} credits per ${creditsCycleLabel(membership.value?.cadence ?? null).toLowerCase()}` : 'monthly credits'
-    return `${tierName} (${cadence}) includes ${creditLine}, a ${tier.value?.booking_window_days ?? 'member'}-day booking window, member peak rates, and hold privileges where available.`
+    const source = isManualMembership.value
+      ? `This admin-assigned membership${membership.value?.manual_expires_at ? ` runs through ${formatDateLabel(membership.value.manual_expires_at) ?? membership.value.manual_expires_at}` : ' has no scheduled expiration'}.`
+      : `${tierName} (${cadence}) includes ${creditLine}.`
+    return `${source} It includes a ${tier.value?.booking_window_days ?? 'member'}-day booking window, member peak rates, and hold privileges where available.`
   }
 
   return 'Guests can book with premium credits between 11am and 7pm, but have a shorter booking window, whole-hour bookings only, no overnight holds, and higher peak-hour credit costs. Membership unlocks lower effective rates, longer booking windows, 30-minute slots, and member holds.'
@@ -441,6 +481,7 @@ const defaultSavedCardId = computed(() => {
   if (preferred && savedCards.value.some(card => card.id === preferred)) return preferred
   return savedCards.value[0]?.id ?? null
 })
+const defaultSavedCard = computed(() => savedCards.value.find(card => card.id === defaultSavedCardId.value) ?? null)
 
 const nextPaymentDate = computed(() => parseDate(membership.value?.current_period_end ?? null))
 
@@ -455,6 +496,7 @@ const daysUntilNextPayment = computed(() => {
 
 const showNextPaymentReminder = computed(() => {
   if (!hasActiveMembership.value || subscriptionState.value?.pendingCancel) return false
+  if (balanceError.value || creditSummaryError.value) return false
   if (!nextPaymentDate.value) return false
   const outOfCredits = displayedCreditBalance.value <= 0
   const renewalSoon = (daysUntilNextPayment.value ?? 999) <= 7
@@ -462,12 +504,16 @@ const showNextPaymentReminder = computed(() => {
 })
 
 const nextPaymentReminderTitle = computed(() => {
+  if (displayedCreditBalance.value < 0) return 'Credit balance below zero'
   if (displayedCreditBalance.value <= 0) return 'You are out of credits'
   return 'Renewal coming up'
 })
 
 const nextPaymentReminderDescription = computed(() => {
   const next = formatDateLabel(membership.value?.current_period_end ?? null) ?? 'your next billing date'
+  if (displayedCreditBalance.value < 0) {
+    return `Your balance is ${displayedCreditBalance.value} credits. New credits first cover this negative balance; your next membership payment is scheduled for ${next}.`
+  }
   if (displayedCreditBalance.value <= 0) {
     return `Your next membership payment is scheduled for ${next}.`
   }
@@ -619,7 +665,9 @@ function memberSince(createdAt: string | null) {
 }
 
 function formatStatus(status: string | null | undefined) {
-  return status || '—'
+  const normalized = (status ?? '').trim().toLowerCase()
+  if (!normalized) return '—'
+  return normalized.replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase())
 }
 
 function formatDateLabel(value: string | null | undefined) {
@@ -646,6 +694,7 @@ function _formatLedgerTimestamp(value: string) {
 const topupLoadingKey = ref<string | null>(null)
 const holdTopupLoading = ref(false)
 const paymentModalOpen = ref(false)
+const savedCardConfirmOpen = ref(false)
 const paymentSubmitting = ref(false)
 const paymentFlow = ref<'credits' | 'holds' | null>(null)
 const paymentToken = ref<string | null>(null)
@@ -773,6 +822,7 @@ async function refreshAll() {
     refresh(),
     refreshTier(),
     refreshVariations(),
+    refreshTierCatalog(),
     refreshSubscriptionState(),
     refreshBalance(),
     refreshCreditSummary(),
@@ -968,7 +1018,7 @@ async function _startTopup(optionKey: string) {
     paymentCurrency.value = String(res.currency ?? 'USD').toUpperCase()
     paymentLabel.value = typeof res.label === 'string' && res.label.trim() ? res.label.trim() : 'credit top-up'
     if (defaultSavedCardId.value) {
-      await processPayment({ cardId: defaultSavedCardId.value })
+      savedCardConfirmOpen.value = true
       return
     }
     paymentModalOpen.value = true
@@ -1006,7 +1056,7 @@ async function _startHoldTopup() {
     paymentCurrency.value = String(res.currency ?? 'USD').toUpperCase()
     paymentLabel.value = typeof res.label === 'string' && res.label.trim() ? res.label.trim() : 'hold purchase'
     if (defaultSavedCardId.value) {
-      await processPayment({ cardId: defaultSavedCardId.value })
+      savedCardConfirmOpen.value = true
       return
     }
     paymentModalOpen.value = true
@@ -1024,6 +1074,17 @@ async function _startHoldTopup() {
 
 async function confirmModalPayment(payload: { sourceId: string }) {
   await processPayment({ sourceId: payload.sourceId })
+}
+
+async function confirmSavedCardPayment() {
+  if (!defaultSavedCardId.value) return
+  savedCardConfirmOpen.value = false
+  await processPayment({ cardId: defaultSavedCardId.value })
+}
+
+function useAnotherCard() {
+  savedCardConfirmOpen.value = false
+  paymentModalOpen.value = true
 }
 
 function getErrorMessage(error: unknown) {
@@ -1368,13 +1429,30 @@ onUnmounted(() => {
           ]"
         />
       </template>
-      <div class="space-y-4">
+      <DashboardSectionState
+        v-if="membershipPending"
+        state="loading"
+        title="Loading membership"
+        description="Checking your current plan and billing source."
+      />
+      <DashboardSectionState
+        v-else-if="membershipError"
+        state="error"
+        title="Could not load membership"
+        description="No guest or inactive state was assumed. Retry to load the current membership record."
+        show-retry
+        @retry="refresh"
+      />
+      <div
+        v-else
+        class="space-y-4"
+      >
         <DashboardDismissibleIntro
           v-if="hasActiveMembership"
           storage-key="membership-member-intro"
           color="success"
           icon="i-lucide-badge-check"
-          title="Your membership"
+          :title="isManualMembership ? 'Your assigned membership' : 'Your membership'"
           :description="membershipIntroDescription"
         >
           <template #actions>
@@ -1422,7 +1500,7 @@ onUnmounted(() => {
         </DashboardDismissibleIntro>
 
         <!-- ── No membership: inline tier picker ──────────────────────── -->
-        <template v-if="membershipState === 'none' || (showCatalog && tierCatalog?.length)">
+        <template v-if="showCatalog">
           <UCard
             v-if="membershipState === 'none'"
             class="mb-2"
@@ -1444,18 +1522,33 @@ onUnmounted(() => {
           </UCard>
 
           <!-- Canceled/inactive state notice -->
-          <UAlert
+          <AppAlert
             v-if="membershipState === 'canceled' || membershipState === 'inactive'"
             color="error"
             variant="soft"
             icon="i-lucide-circle-off"
-            title="Membership ended"
-            description="Your previous membership has ended. Pick a plan below to reactivate."
+            :title="isMembershipExpired ? 'Membership expired' : 'Membership ended'"
+            :description="isMembershipExpired
+              ? 'The membership period has expired. Existing credits and booking history remain available; choose a plan below to restore member benefits.'
+              : 'Your previous membership has ended. Pick a plan below to reactivate.'"
           />
 
           <!-- Tier cards -->
+          <DashboardSectionState
+            v-if="tierCatalogPending"
+            state="loading"
+            title="Loading membership options"
+          />
+          <DashboardSectionState
+            v-else-if="tierCatalogError"
+            state="error"
+            title="Could not load membership options"
+            description="Plan options are unavailable right now; this is not confirmation that no plans are offered."
+            show-retry
+            @retry="refreshTierCatalog"
+          />
           <div
-            v-if="tierCatalog?.length"
+            v-else-if="tierCatalog?.length"
             class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
           >
             <UCard
@@ -1543,20 +1636,17 @@ onUnmounted(() => {
             </UCard>
           </div>
 
-          <div
-            v-else-if="showCatalog"
-            class="flex items-center justify-center py-10"
-          >
-            <UIcon
-              name="i-lucide-loader-circle"
-              class="size-6 animate-spin text-dimmed"
-            />
-          </div>
+          <DashboardSectionState
+            v-else
+            state="empty"
+            title="No membership options available"
+            description="There are no active plans available for checkout right now."
+          />
         </template>
 
         <!-- ── Pending checkout ────────────────────────────────────────── -->
         <template v-else-if="membershipState === 'pending_checkout'">
-          <UAlert
+          <AppAlert
             color="warning"
             variant="soft"
             title="Checkout not completed"
@@ -1593,14 +1683,28 @@ onUnmounted(() => {
         <!-- ── Active or other states: plan summary ───────────────────── -->
         <template v-else>
           <!-- Status banner for non-active states -->
-          <UAlert
+          <AppAlert
             v-if="membershipState !== 'active'"
             :color="statusColor"
             variant="soft"
-            :title="membershipState === 'past_due' ? 'Payment past due' : 'Membership inactive'"
-            description="Please update your payment method or contact support."
-          />
-          <UAlert
+            :title="membershipState === 'past_due' ? 'Membership payment is past due' : 'Membership inactive'"
+            :description="membershipState === 'past_due'
+              ? 'Your plan remains on the account, but member booking and hold benefits are paused until billing recovers. Review saved cards or contact support.'
+              : 'Member benefits are not currently available. Review the status details or contact support.'"
+          >
+            <template #actions>
+              <UButton
+                v-if="membershipState === 'past_due'"
+                size="xs"
+                color="neutral"
+                variant="soft"
+                to="/dashboard/profile"
+              >
+                Review saved cards
+              </UButton>
+            </template>
+          </AppAlert>
+          <AppAlert
             v-if="subscriptionState?.pendingSwap"
             color="info"
             variant="soft"
@@ -1608,7 +1712,7 @@ onUnmounted(() => {
             :title="`Plan change scheduled${subscriptionState?.pendingSwap?.target?.displayName ? `: ${subscriptionState.pendingSwap.target.displayName}` : ''}`"
             :description="pendingSwapSummary ?? `This change takes effect on ${formatDateLabel(subscriptionState.pendingSwap.effectiveDate) ?? 'your next billing cycle'}.`"
           />
-          <UAlert
+          <AppAlert
             v-if="subscriptionState?.pendingCancel"
             color="warning"
             variant="soft"
@@ -1616,13 +1720,21 @@ onUnmounted(() => {
             :title="'Cancellation scheduled'"
             :description="`Your membership remains active through ${formatDateLabel(subscriptionState.pendingCancel.effectiveDate) ?? 'the current billing cycle end'}.`"
           />
-          <UAlert
+          <AppAlert
             v-if="showNextPaymentReminder"
             color="info"
             variant="soft"
             icon="i-lucide-calendar-clock"
             :title="nextPaymentReminderTitle"
             :description="nextPaymentReminderDescription"
+          />
+          <AppAlert
+            v-if="hasActiveMembership && (balanceError || creditSummaryError)"
+            color="error"
+            variant="soft"
+            icon="i-lucide-circle-alert"
+            title="Credit balance unavailable"
+            description="No zero or negative balance was assumed. Use Refresh before relying on credit reminders."
           />
 
           <!-- Plan summary -->
@@ -1644,6 +1756,13 @@ onUnmounted(() => {
                   >
                     {{ formatStatus(membership?.status) }}
                   </UBadge>
+                  <UBadge
+                    v-if="isManualMembership"
+                    color="info"
+                    variant="soft"
+                  >
+                    Admin assigned
+                  </UBadge>
                 </div>
 
                 <p
@@ -1655,16 +1774,24 @@ onUnmounted(() => {
 
                 <div class="pt-2 border-t border-default space-y-2 text-sm">
                   <div class="flex justify-between">
-                    <span class="text-dimmed">Billing cycle</span>
+                    <span class="text-dimmed">{{ isManualMembership ? 'Grant cadence' : 'Billing cycle' }}</span>
                     <span>{{ formatCadence(membership?.cadence ?? null) }}</span>
                   </div>
                   <div class="flex justify-between">
                     <span class="text-dimmed">Billing price</span>
-                    <span>{{ currentVariation ? billedCyclePrice(currentVariation, variations ?? []) : '—' }}{{ cadencePriceSuffix(membership?.cadence ?? null) }}</span>
+                    <span v-if="isManualMembership">Not billed through FO Studio</span>
+                    <span v-else>{{ currentVariation ? billedCyclePrice(currentVariation, variations ?? []) : '—' }}{{ cadencePriceSuffix(membership?.cadence ?? null) }}</span>
                   </div>
                   <div class="flex justify-between">
                     <span class="text-dimmed">{{ creditsCycleLabel(membership?.cadence ?? null) }}</span>
-                    <span>{{ currentVariation?.credits_per_month ?? '—' }}</span>
+                    <span>{{ isManualMembership && !membership?.manual_grants_enabled ? 'No recurring grants' : currentVariation?.credits_per_month ?? '—' }}</span>
+                  </div>
+                  <div
+                    v-if="isManualMembership"
+                    class="flex justify-between"
+                  >
+                    <span class="text-dimmed">Assignment ends</span>
+                    <span>{{ formatDateLabel(membership?.manual_expires_at) ?? 'No scheduled expiration' }}</span>
                   </div>
                   <div class="flex justify-between">
                     <span class="text-dimmed">Member since</span>
@@ -1706,15 +1833,47 @@ onUnmounted(() => {
             <div class="space-y-5">
               <div>
                 <div class="text-sm font-medium">
-                  Billing and membership actions
+                  {{ isManualMembership ? 'Assigned membership' : 'Billing and membership actions' }}
                 </div>
                 <p class="mt-1 text-xs text-dimmed">
-                  Changes sync to Square and take effect on the next billing cycle.
+                  {{ isManualMembership
+                    ? 'This membership is assigned and maintained by FO Studio staff, not Square.'
+                    : 'Eligible changes sync to Square and take effect on the next billing cycle.' }}
                 </p>
               </div>
 
+              <AppAlert
+                v-if="isManualMembership"
+                color="info"
+                variant="soft"
+                icon="i-lucide-user-cog"
+                title="Admin-assigned membership"
+                :description="subscriptionState?.message ?? 'Contact FO Studio to change or end this assignment. Square billing and self-service cancellation do not apply.'"
+              />
+              <DashboardSectionState
+                v-else-if="subscriptionStatePending"
+                state="loading"
+                title="Loading billing controls"
+              />
+              <DashboardSectionState
+                v-else-if="subscriptionStateError"
+                state="error"
+                title="Billing controls unavailable"
+                description="No subscription action is available until Square subscription state can be verified."
+                show-retry
+                @retry="refreshSubscriptionState"
+              />
+              <AppAlert
+                v-else-if="membershipState === 'past_due'"
+                color="warning"
+                variant="soft"
+                icon="i-lucide-credit-card"
+                title="Resolve billing before changing the plan"
+                description="Update a saved card or contact support. Plan changes and cancellation controls are hidden while billing is past due."
+              />
+
               <div
-                v-if="(variations?.length ?? 0) > 1"
+                v-if="canManageSquareMembership && (variations?.length ?? 0) > 1"
                 class="space-y-3 border-t border-default pt-4"
               >
                 <div class="text-sm font-medium">
@@ -1792,6 +1951,7 @@ onUnmounted(() => {
 
               <div class="flex flex-wrap gap-2">
                 <UButton
+                  v-if="canManageSquareMembership"
                   color="neutral"
                   variant="soft"
                   icon="i-lucide-list-checks"
@@ -1800,6 +1960,7 @@ onUnmounted(() => {
                   Browse memberships
                 </UButton>
                 <UButton
+                  v-if="canManageSquareMembership"
                   color="neutral"
                   variant="ghost"
                   icon="i-lucide-rotate-ccw"
@@ -1810,7 +1971,7 @@ onUnmounted(() => {
                   Undo cancel
                 </UButton>
                 <UButton
-                  v-if="!subscriptionState?.pendingCancel"
+                  v-if="canManageSquareMembership && !subscriptionState?.pendingCancel"
                   color="warning"
                   variant="soft"
                   icon="i-lucide-calendar-x"
@@ -1822,7 +1983,7 @@ onUnmounted(() => {
                 </UButton>
               </div>
               <p class="text-xs text-dimmed">
-                If status looks out of sync after an update, use refresh from the top-right of this page.
+                Use the page-level refresh action if membership or billing status looks out of sync.
               </p>
 
               <div class="border-t border-default pt-4">
@@ -1862,6 +2023,8 @@ onUnmounted(() => {
 
     <UModal
       v-model:open="planChangeConfirmOpen"
+      title="Confirm membership change"
+      description="Review the new plan, billing cadence, and effective date before continuing."
       :dismissible="!planChangeLoading"
     >
       <template #content>
@@ -1878,6 +2041,7 @@ onUnmounted(() => {
               </div>
               <UButton
                 icon="i-lucide-x"
+                aria-label="Close membership change confirmation"
                 color="neutral"
                 variant="ghost"
                 size="sm"
@@ -1915,14 +2079,14 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <UAlert
+            <AppAlert
               color="warning"
               variant="soft"
               icon="i-lucide-calendar-sync"
               :title="`Current plan access continues through ${membershipActionEffectiveLabel}`"
               description="No prorated mid-cycle charge is requested. On the effective date, Square switches the billing cadence and future plan benefits and credit grants follow the target option."
             />
-            <UAlert
+            <AppAlert
               v-if="planChangePromoCode.trim()"
               color="neutral"
               variant="soft"
@@ -1956,6 +2120,8 @@ onUnmounted(() => {
 
     <UModal
       v-model:open="membershipCancelConfirmOpen"
+      title="Cancel membership at period end?"
+      description="Review renewal and member-access consequences before continuing."
       :dismissible="!membershipCancelLoading"
     >
       <template #content>
@@ -1972,6 +2138,7 @@ onUnmounted(() => {
               </div>
               <UButton
                 icon="i-lucide-x"
+                aria-label="Close membership cancellation confirmation"
                 color="neutral"
                 variant="ghost"
                 size="sm"
@@ -1992,14 +2159,14 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <UAlert
+            <AppAlert
               color="warning"
               variant="soft"
               icon="i-lucide-calendar-x"
               :title="`Automatic renewal ends ${membershipActionEffectiveLabel}`"
               description="Your membership and current member access remain active through that date. After cancellation takes effect, member booking-window and hold benefits end."
             />
-            <UAlert
+            <AppAlert
               color="neutral"
               variant="soft"
               icon="i-lucide-receipt-text"
@@ -2033,6 +2200,8 @@ onUnmounted(() => {
 
     <UModal
       v-model:open="catalogDetailsOpen"
+      title="Membership plan details"
+      description="Review pricing, credits, booking access, and plan policies."
       :dismissible="true"
     >
       <template #content>
@@ -2049,6 +2218,7 @@ onUnmounted(() => {
               </div>
               <UButton
                 icon="i-lucide-x"
+                aria-label="Close membership details"
                 color="neutral"
                 variant="ghost"
                 size="sm"
@@ -2100,6 +2270,68 @@ onUnmounted(() => {
               </ul>
             </div>
           </div>
+        </UCard>
+      </template>
+    </UModal>
+
+    <UModal
+      v-model:open="savedCardConfirmOpen"
+      title="Confirm saved-card charge"
+      description="Review the purchase amount and saved card before Square processes the payment."
+      :dismissible="!paymentSubmitting"
+    >
+      <template #content>
+        <UCard v-if="defaultSavedCard && paymentToken">
+          <template #header>
+            <h3 class="text-base font-semibold">
+              Confirm saved-card charge
+            </h3>
+          </template>
+          <div class="space-y-3 text-sm">
+            <p class="text-dimmed">
+              Square will process this charge only after you confirm.
+            </p>
+            <div class="rounded-lg border border-default p-3 space-y-2">
+              <div class="flex justify-between gap-3">
+                <span class="text-dimmed">Purchase</span>
+                <span class="font-medium">{{ paymentLabel }}</span>
+              </div>
+              <div class="flex justify-between gap-3">
+                <span class="text-dimmed">Amount</span>
+                <span class="font-medium">{{ formatPrice(paymentAmountCents, paymentCurrency) }}</span>
+              </div>
+              <div class="flex justify-between gap-3">
+                <span class="text-dimmed">Card</span>
+                <span class="font-medium">{{ defaultSavedCard.brand ?? 'Card' }} •••• {{ defaultSavedCard.last4 ?? '----' }}</span>
+              </div>
+            </div>
+          </div>
+          <template #footer>
+            <div class="flex flex-wrap justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="paymentSubmitting"
+                @click="savedCardConfirmOpen = false"
+              >
+                Cancel
+              </UButton>
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="paymentSubmitting"
+                @click="useAnotherCard"
+              >
+                Use another card
+              </UButton>
+              <UButton
+                :loading="paymentSubmitting"
+                @click="confirmSavedCardPayment"
+              >
+                Charge {{ formatPrice(paymentAmountCents, paymentCurrency) }}
+              </UButton>
+            </div>
+          </template>
         </UCard>
       </template>
     </UModal>

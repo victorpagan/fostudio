@@ -194,9 +194,11 @@ const queryParams = computed(() => ({
   bucket: activeRange.value.bucket
 }))
 
-const { data, pending, refresh } = await useAsyncData<OpsResponse>('admin:overview:ops:v2', async () => {
+const { data, pending, refresh, error: loadError } = await useAsyncData<OpsResponse>('admin:overview:ops:v2', async () => {
   return await $fetch('/api/admin/ops', { query: queryParams.value })
 }, { watch: [queryParams] })
+
+const hasOpsData = computed(() => Boolean(data.value))
 
 const opsScrollRef = ref<HTMLElement | null>(null)
 const opsCanScrollUp = ref(false)
@@ -398,14 +400,14 @@ const criticalPressureSources = computed(() => ([
     title: 'Open lock incidents',
     count: Number(data.value?.summary?.openLockIncidents ?? 0),
     description: 'Incidents where lock actions or state checks need manual follow-up.',
-    to: '/dashboard/admin/door-codes'
+    to: '/dashboard/admin/door-codes?accessTab=jobs'
   },
   {
     id: 'dead-jobs',
     title: 'Dead lock jobs',
     count: Number(data.value?.summary?.deadLockJobs ?? 0),
     description: 'Background lock jobs that exhausted retries and require retry/remediation.',
-    to: '/dashboard/admin/door-codes'
+    to: '/dashboard/admin/door-codes?accessTab=jobs'
   },
   {
     id: 'admin-incidents',
@@ -456,6 +458,12 @@ function formatMoney(cents: number | null | undefined) {
     .format((Number(cents ?? 0) || 0) / 100)
 }
 
+function readErrorMessage(error: unknown) {
+  if (!error || typeof error !== 'object') return 'Unknown error'
+  const maybe = error as { data?: { statusMessage?: string }, message?: string }
+  return maybe.data?.statusMessage ?? maybe.message ?? 'Unknown error'
+}
+
 function formatShortDate(value: string | null | undefined) {
   if (!value) return '—'
   const parsed = DateTime.fromISO(value, { zone: 'utc' })
@@ -492,6 +500,19 @@ function barSegmentHeight(value: number) {
   return `${Math.max(2, Math.round((Math.max(0, value) / max) * 100))}%`
 }
 
+const revenueChartAriaLabel = computed(() => {
+  if (!revenueSeries.value.length) return `No revenue trend data for ${rangeLabel.value}.`
+  const points = revenueSeries.value
+    .map(point => `${point.label}: ${formatMoney(point.totalCents)}`)
+    .join('; ')
+  return `Revenue trend for ${rangeLabel.value}. ${points}`
+})
+
+const revenueMixAriaLabel = computed(() => {
+  const summary = data.value?.summary
+  return `Revenue mix for ${rangeLabel.value}: membership ${formatMoney(summary?.membershipRevenueCents)}, credit topups ${formatMoney(summary?.creditTopupRevenueCents)}, hold topups ${formatMoney(summary?.holdTopupRevenueCents)}.`
+})
+
 const accessStatus = computed(() => data.value?.accessStatus ?? {
   pendingJobs: 0,
   deadJobs: 0,
@@ -507,6 +528,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
     panel-id="admin-overview"
     title="Ops Overview"
     :use-ops-shell="false"
+    :busy="pending"
   >
     <template #right>
       <DashboardActionGroup
@@ -522,7 +544,37 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
         ]"
       />
     </template>
-    <div class="admin-ops-shell-frame h-full">
+    <DashboardSectionState
+      v-if="pending && !hasOpsData"
+      class="m-4 sm:m-5 md:m-6"
+      state="loading"
+      title="Loading operations overview"
+      description="Fetching revenue, access, incident, expense, and member activity."
+    />
+    <DashboardSectionState
+      v-else-if="loadError && !hasOpsData"
+      class="m-4 sm:m-5 md:m-6"
+      state="error"
+      title="Operations overview unavailable"
+      :description="readErrorMessage(loadError)"
+      show-retry
+      @retry="refresh"
+    />
+    <DashboardSectionState
+      v-else-if="loadError"
+      class="m-4 sm:m-5 md:m-6 mb-0"
+      state="error"
+      color="warning"
+      icon="i-lucide-clock-alert"
+      title="Showing stale operations data"
+      description="The refresh failed. Existing values remain visible and may be out of date."
+      show-retry
+      @retry="refresh"
+    />
+    <div
+      v-if="hasOpsData"
+      class="admin-ops-shell-frame h-full"
+    >
       <div
         class="admin-ops-shell-shadow admin-ops-shell-shadow--top"
         :class="{ 'is-visible': opsCanScrollUp }"
@@ -551,6 +603,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                   size="xs"
                   :color="periodMode === mode.value ? 'primary' : 'neutral'"
                   :variant="periodMode === mode.value ? 'solid' : 'ghost'"
+                  :aria-pressed="periodMode === mode.value"
                   @click="periodMode = mode.value"
                 >
                   {{ mode.label }}
@@ -564,6 +617,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                 color="neutral"
                 variant="ghost"
                 icon="i-lucide-chevron-left"
+                aria-label="Previous reporting period"
                 @click="stepPeriod(-1)"
               />
               <div class="admin-range-label text-center">
@@ -575,6 +629,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                 color="neutral"
                 variant="ghost"
                 icon="i-lucide-chevron-right"
+                aria-label="Next reporting period"
                 :disabled="!canStepForward"
                 @click="stepPeriod(1)"
               />
@@ -695,11 +750,14 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                 <div
                   class="admin-revenue-chart"
                   :style="{ minWidth: revenueChartMinWidth }"
+                  role="img"
+                  :aria-label="revenueChartAriaLabel"
                 >
                   <div
                     v-for="point in revenueSeries"
                     :key="point.key"
                     class="admin-revenue-chart-col"
+                    aria-hidden="true"
                   >
                     <div class="admin-revenue-bar-shell">
                       <div class="admin-revenue-bar-stack">
@@ -735,6 +793,7 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                   :step="1"
                   :value="revenueSeekValue"
                   :disabled="revenueSeekMax <= 0"
+                  aria-label="Scroll revenue chart horizontally"
                   @input="onRevenueSeekInput"
                 >
               </div>
@@ -832,6 +891,8 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                 <div
                   class="admin-mix-ring"
                   :style="revenueMixStyle"
+                  role="img"
+                  :aria-label="revenueMixAriaLabel"
                 />
                 <div class="space-y-1.5 text-xs text-dimmed">
                   <div>Membership: <span class="text-highlighted">{{ formatMoney(data?.summary?.membershipRevenueCents) }}</span></div>
@@ -883,6 +944,15 @@ const accessStatus = computed(() => data.value?.accessStatus ?? {
                   </UBadge>
                 </div>
               </div>
+              <UButton
+                class="mt-3"
+                size="xs"
+                color="neutral"
+                variant="soft"
+                to="/dashboard/admin/door-codes?accessTab=jobs"
+              >
+                Open access queue
+              </UButton>
             </UCard>
 
             <UCard class="admin-panel-card border-0 md:col-span-2">

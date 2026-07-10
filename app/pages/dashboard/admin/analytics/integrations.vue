@@ -80,7 +80,7 @@ const form = reactive<AdsIntegrationSettings>({
 
 const conversionActionsInput = ref(form.meta.conversionActionTypes.join(', '))
 
-const { pending, refresh } = await useAsyncData('admin:analytics:integrations:settings', async () => {
+const { pending, refresh, error, status } = useAsyncData('admin:analytics:integrations:settings', async () => {
   const res = await $fetch<{ settings: AdsIntegrationSettings }>('/api/admin/analytics/integrations/settings')
   const settings = res.settings
 
@@ -106,7 +106,12 @@ const { pending, refresh } = await useAsyncData('admin:analytics:integrations:se
   conversionActionsInput.value = form.meta.conversionActionTypes.join(', ')
 
   return res
+}, {
+  immediate: false,
+  server: false
 })
+
+const settingsReady = computed(() => status.value === 'success' && !error.value)
 
 onMounted(() => {
   void refresh()
@@ -157,7 +162,9 @@ const lastSyncSummary = computed(() => {
   return `Fetched ${fetched} rows, wrote ${upserted} rows.`
 })
 
-async function saveSettings() {
+async function saveSettings(options: { notify?: boolean } = {}) {
+  if (!settingsReady.value) return false
+
   saving.value = true
   try {
     const conversionActionTypes = conversionActionsInput.value
@@ -190,26 +197,35 @@ async function saveSettings() {
       }
     })
 
-    toast.add({
-      title: 'Analytics integrations saved',
-      color: 'success'
-    })
+    if (options.notify !== false) {
+      toast.add({
+        title: 'Analytics integrations saved',
+        color: 'success'
+      })
+    }
 
     await refresh()
+    return true
   } catch (error: unknown) {
     toast.add({
       title: 'Could not save analytics integrations',
       description: readErrorMessage(error),
       color: 'error'
     })
+    return false
   } finally {
     saving.value = false
   }
 }
 
 async function syncNow(dryRun = false) {
+  if (!settingsReady.value) return
+
   syncing.value = true
   try {
+    const saved = await saveSettings({ notify: false })
+    if (!saved) return
+
     const res = await $fetch<SyncResponse>('/api/admin/analytics/integrations/sync', {
       method: 'POST',
       body: { dryRun }
@@ -238,234 +254,229 @@ async function syncNow(dryRun = false) {
 </script>
 
 <template>
-  <UDashboardPanel
-    id="admin-analytics-integrations"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <AdminAnalyticsPage
+    panel-id="admin-analytics-integrations"
+    title="Analytics Integrations"
+    :busy="pending || saving || syncing"
+    :error="error"
+    @retry="refresh"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Analytics Integrations"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-2' }"
-      >
-        <template #leading>
-          <UDashboardSidebarCollapse />
+    <template #actions>
+      <AnalyticsRunButton
+        size="sm"
+        @completed="() => refresh()"
+      />
+      <IconButton
+        label="Refresh analytics integrations"
+        size="sm"
+        color="neutral"
+        variant="soft"
+        icon="i-lucide-refresh-cw"
+        :loading="pending"
+        @click="() => refresh()"
+      />
+    </template>
+
+    <template v-if="settingsReady">
+      <AppAlert
+        color="info"
+        variant="soft"
+        icon="i-lucide-megaphone"
+        title="Meta Marketing API includes Instagram placements"
+        description="Use your Meta Ads account credentials. Campaign performance reflects Instagram placements served through Meta."
+      />
+
+      <AppAlert
+        color="warning"
+        variant="soft"
+        icon="i-lucide-shield"
+        title="Store secret values in Supabase secrets"
+        description="These settings store secret names only. Set the actual token values in your secure secrets store."
+      />
+
+      <UCard class="admin-panel-card border-0">
+        <template #header>
+          <div class="font-medium">
+            Sync controls
+          </div>
         </template>
-        <template #right>
-          <AnalyticsRunButton
-            size="sm"
-            @completed="() => refresh()"
+
+        <div class="grid gap-3 md:grid-cols-2">
+          <SwitchRow
+            v-model="form.syncEnabled"
+            label="Enable ads sync"
+            description="Allow scheduled and manual ad-platform synchronization."
           />
+          <UFormField label="Lookback days">
+            <UInput
+              v-model.number="form.lookbackDays"
+              type="number"
+              min="1"
+              max="365"
+            />
+          </UFormField>
+        </div>
+      </UCard>
+
+      <UCard class="admin-panel-card border-0">
+        <template #header>
+          <div class="font-medium">
+            Google Ads API
+          </div>
+        </template>
+
+        <div class="grid gap-3 md:grid-cols-2">
+          <SwitchRow
+            v-model="form.google.enabled"
+            label="Enable Google Ads sync"
+            description="Import Google Ads performance when credentials are configured."
+          />
+          <UFormField label="API version">
+            <UInput
+              v-model="form.google.apiVersion"
+              placeholder="v23"
+            />
+          </UFormField>
+          <UFormField label="Customer ID">
+            <UInput
+              v-model="form.google.customerId"
+              placeholder="1234567890"
+            />
+          </UFormField>
+          <UFormField label="Login customer ID (optional)">
+            <UInput
+              v-model="form.google.loginCustomerId"
+              placeholder="0987654321"
+            />
+          </UFormField>
+          <UFormField label="Developer token secret name">
+            <UInput v-model="form.google.developerTokenSecretName" />
+          </UFormField>
+          <UFormField label="OAuth client ID secret name">
+            <UInput v-model="form.google.clientIdSecretName" />
+          </UFormField>
+          <UFormField label="OAuth client secret name">
+            <UInput v-model="form.google.clientSecretSecretName" />
+          </UFormField>
+          <UFormField label="OAuth refresh token secret name">
+            <UInput v-model="form.google.refreshTokenSecretName" />
+          </UFormField>
+        </div>
+      </UCard>
+
+      <UCard class="admin-panel-card border-0">
+        <template #header>
+          <div class="font-medium">
+            Meta Marketing API (Facebook + Instagram)
+          </div>
+        </template>
+
+        <div class="grid gap-3 md:grid-cols-2">
+          <SwitchRow
+            v-model="form.meta.enabled"
+            label="Enable Meta sync"
+            description="Import Facebook and Instagram placement performance."
+          />
+          <UFormField label="API version">
+            <UInput
+              v-model="form.meta.apiVersion"
+              placeholder="v25.0"
+            />
+          </UFormField>
+          <UFormField label="Ad account ID">
+            <UInput
+              v-model="form.meta.adAccountId"
+              placeholder="123456789012345"
+            />
+          </UFormField>
+          <UFormField label="Access token secret name">
+            <UInput v-model="form.meta.accessTokenSecretName" />
+          </UFormField>
+          <UFormField
+            label="Conversion action types"
+            description="Comma-separated Meta action_type values used as conversions."
+            class="md:col-span-2"
+          >
+            <UTextarea
+              v-model="conversionActionsInput"
+              :rows="3"
+            />
+          </UFormField>
+        </div>
+      </UCard>
+
+      <UCard class="admin-panel-card border-0">
+        <template #header>
+          <div class="font-medium">
+            Last sync status
+          </div>
+        </template>
+
+        <div class="text-sm text-dimmed">
+          Last sync at: {{ formatDateTime(form.lastSyncAt) }}
+        </div>
+        <div class="mt-1 text-sm">
+          {{ lastSyncSummary }}
+        </div>
+
+        <div class="mt-3 grid gap-2 md:grid-cols-2">
+          <div
+            v-for="(provider, providerIndex) in lastSyncProviders"
+            :key="provider.platform || providerIndex"
+            class="rounded-md border border-default p-3 text-sm"
+          >
+            <div class="font-medium capitalize">
+              {{ provider.platform || 'provider' }}
+            </div>
+            <div class="text-dimmed">
+              enabled: {{ provider.enabled ? 'yes' : 'no' }} · ok: {{ provider.ok ? 'yes' : 'no' }}
+            </div>
+            <div
+              v-if="provider.skippedReason"
+              class="mt-1 text-dimmed"
+            >
+              {{ provider.skippedReason }}
+            </div>
+            <div
+              v-if="provider.error"
+              class="mt-1 text-error"
+            >
+              {{ provider.error }}
+            </div>
+            <div class="mt-1 text-dimmed">
+              fetched: {{ Number(provider.fetchedRows ?? 0) }} · upserted: {{ Number(provider.upsertedRows ?? 0) }}
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-2">
           <UButton
-            size="sm"
+            :loading="saving"
+            :disabled="!settingsReady || syncing"
+            @click="saveSettings()"
+          >
+            Save settings
+          </UButton>
+          <UButton
             color="neutral"
             variant="soft"
-            icon="i-lucide-refresh-cw"
-            :loading="pending"
-            @click="() => refresh()"
-          />
-        </template>
-      </UDashboardNavbar>
-    </template>
-
-    <template #body>
-      <AdminOpsShell>
-        <div class="space-y-4">
-          <AnalyticsSubnav />
-
-          <UAlert
-            color="info"
+            :loading="syncing"
+            :disabled="!settingsReady || saving"
+            @click="syncNow(true)"
+          >
+            Test sync (dry-run)
+          </UButton>
+          <UButton
+            color="primary"
             variant="soft"
-            icon="i-lucide-megaphone"
-            title="Meta Marketing API includes Instagram placements"
-            description="Use your Meta Ads account credentials. Campaign performance reflects Instagram placements served through Meta."
-          />
-
-          <UAlert
-            color="warning"
-            variant="soft"
-            icon="i-lucide-shield"
-            title="Store secret values in Supabase secrets"
-            description="These settings store secret names only. Set the actual token values in your secure secrets store."
-          />
-
-          <UCard class="admin-panel-card border-0">
-            <template #header>
-              <div class="font-medium">
-                Sync controls
-              </div>
-            </template>
-
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Enable ads sync">
-                <USwitch v-model="form.syncEnabled" />
-              </UFormField>
-              <UFormField label="Lookback days">
-                <UInput
-                  v-model.number="form.lookbackDays"
-                  type="number"
-                  min="1"
-                  max="365"
-                />
-              </UFormField>
-            </div>
-          </UCard>
-
-          <UCard class="admin-panel-card border-0">
-            <template #header>
-              <div class="font-medium">
-                Google Ads API
-              </div>
-            </template>
-
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Enable Google Ads sync">
-                <USwitch v-model="form.google.enabled" />
-              </UFormField>
-              <UFormField label="API version">
-                <UInput
-                  v-model="form.google.apiVersion"
-                  placeholder="v23"
-                />
-              </UFormField>
-              <UFormField label="Customer ID">
-                <UInput
-                  v-model="form.google.customerId"
-                  placeholder="1234567890"
-                />
-              </UFormField>
-              <UFormField label="Login customer ID (optional)">
-                <UInput
-                  v-model="form.google.loginCustomerId"
-                  placeholder="0987654321"
-                />
-              </UFormField>
-              <UFormField label="Developer token secret name">
-                <UInput v-model="form.google.developerTokenSecretName" />
-              </UFormField>
-              <UFormField label="OAuth client ID secret name">
-                <UInput v-model="form.google.clientIdSecretName" />
-              </UFormField>
-              <UFormField label="OAuth client secret name">
-                <UInput v-model="form.google.clientSecretSecretName" />
-              </UFormField>
-              <UFormField label="OAuth refresh token secret name">
-                <UInput v-model="form.google.refreshTokenSecretName" />
-              </UFormField>
-            </div>
-          </UCard>
-
-          <UCard class="admin-panel-card border-0">
-            <template #header>
-              <div class="font-medium">
-                Meta Marketing API (Facebook + Instagram)
-              </div>
-            </template>
-
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Enable Meta sync">
-                <USwitch v-model="form.meta.enabled" />
-              </UFormField>
-              <UFormField label="API version">
-                <UInput
-                  v-model="form.meta.apiVersion"
-                  placeholder="v25.0"
-                />
-              </UFormField>
-              <UFormField label="Ad account ID">
-                <UInput
-                  v-model="form.meta.adAccountId"
-                  placeholder="123456789012345"
-                />
-              </UFormField>
-              <UFormField label="Access token secret name">
-                <UInput v-model="form.meta.accessTokenSecretName" />
-              </UFormField>
-              <UFormField
-                label="Conversion action types"
-                description="Comma-separated Meta action_type values used as conversions."
-                class="md:col-span-2"
-              >
-                <UTextarea
-                  v-model="conversionActionsInput"
-                  :rows="3"
-                />
-              </UFormField>
-            </div>
-          </UCard>
-
-          <UCard class="admin-panel-card border-0">
-            <template #header>
-              <div class="font-medium">
-                Last sync status
-              </div>
-            </template>
-
-            <div class="text-sm text-dimmed">
-              Last sync at: {{ formatDateTime(form.lastSyncAt) }}
-            </div>
-            <div class="mt-1 text-sm">
-              {{ lastSyncSummary }}
-            </div>
-
-            <div class="mt-3 grid gap-2 md:grid-cols-2">
-              <div
-                v-for="(provider, providerIndex) in lastSyncProviders"
-                :key="provider.platform || providerIndex"
-                class="rounded-md border border-default p-3 text-sm"
-              >
-                <div class="font-medium capitalize">
-                  {{ provider.platform || 'provider' }}
-                </div>
-                <div class="text-dimmed">
-                  enabled: {{ provider.enabled ? 'yes' : 'no' }} · ok: {{ provider.ok ? 'yes' : 'no' }}
-                </div>
-                <div
-                  v-if="provider.skippedReason"
-                  class="mt-1 text-dimmed"
-                >
-                  {{ provider.skippedReason }}
-                </div>
-                <div
-                  v-if="provider.error"
-                  class="mt-1 text-error"
-                >
-                  {{ provider.error }}
-                </div>
-                <div class="mt-1 text-dimmed">
-                  fetched: {{ Number(provider.fetchedRows ?? 0) }} · upserted: {{ Number(provider.upsertedRows ?? 0) }}
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-4 flex flex-wrap gap-2">
-              <UButton
-                :loading="saving"
-                @click="saveSettings"
-              >
-                Save settings
-              </UButton>
-              <UButton
-                color="neutral"
-                variant="soft"
-                :loading="syncing"
-                @click="syncNow(true)"
-              >
-                Test sync (dry-run)
-              </UButton>
-              <UButton
-                color="primary"
-                variant="soft"
-                :loading="syncing"
-                @click="syncNow(false)"
-              >
-                Sync now
-              </UButton>
-            </div>
-          </UCard>
+            :loading="syncing"
+            :disabled="!settingsReady || saving"
+            @click="syncNow(false)"
+          >
+            Sync now
+          </UButton>
         </div>
-      </AdminOpsShell>
+      </UCard>
     </template>
-  </UDashboardPanel>
+  </AdminAnalyticsPage>
 </template>

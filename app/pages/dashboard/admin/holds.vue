@@ -28,7 +28,7 @@ const form = reactive<HoldSettings>({
   holdTopupSquareVariationId: ''
 })
 
-const { pending, refresh } = await useAsyncData('admin:holds:settings', async () => {
+const { pending, refresh, error: loadError, status } = useAsyncData('admin:holds:settings', async () => {
   const res = await $fetch<{ settings: HoldSettings }>('/api/admin/holds/settings')
   form.holdCreditCost = Number(res.settings.holdCreditCost ?? 2)
   form.minHoldBookingHours = Number(res.settings.minHoldBookingHours ?? 4)
@@ -40,6 +40,14 @@ const { pending, refresh } = await useAsyncData('admin:holds:settings', async ()
   form.holdTopupSquareItemId = String(res.settings.holdTopupSquareItemId ?? '')
   form.holdTopupSquareVariationId = String(res.settings.holdTopupSquareVariationId ?? '')
   return res.settings
+}, {
+  immediate: false,
+  server: false
+})
+const settingsReady = computed(() => status.value === 'success' && !loadError.value)
+
+onMounted(() => {
+  void refresh()
 })
 
 const holdTopupPriceDollars = computed({
@@ -77,6 +85,7 @@ function readErrorMessage(error: unknown) {
 }
 
 async function saveSettings() {
+  if (!settingsReady.value) return
   saving.value = true
   try {
     await $fetch('/api/admin/holds/settings.upsert', {
@@ -118,6 +127,7 @@ async function saveSettings() {
   <DashboardPageScaffold
     panel-id="admin-holds"
     title="Holds"
+    :busy="pending || saving"
   >
     <template #right>
       <DashboardActionGroup
@@ -125,6 +135,7 @@ async function saveSettings() {
           label: 'Save settings',
           icon: 'i-lucide-save',
           loading: saving,
+          disabled: !settingsReady,
           onSelect: () => { void saveSettings() }
         }"
         :secondary="[
@@ -134,189 +145,206 @@ async function saveSettings() {
             color: 'neutral',
             variant: 'soft',
             loading: pending,
+            disabled: pending,
             onSelect: () => refresh()
           }
         ]"
       />
     </template>
-    <UAlert
-      color="warning"
-      variant="soft"
-      icon="i-lucide-package-plus"
-      title="Hold top-up settings"
-      description="Configure hold fallback and top-up pricing, then sync a single hold item in Square for tracking."
+    <DashboardSectionState
+      v-if="loadError"
+      state="error"
+      title="Hold settings unavailable"
+      :description="`${readErrorMessage(loadError)} Controls are disabled so fallback defaults cannot overwrite live pricing or policy.`"
+      show-retry
+      @retry="refresh"
     />
+    <DashboardSectionState
+      v-else-if="!settingsReady"
+      state="loading"
+      title="Loading hold settings"
+      description="Loading current hold policy and Square product linkage."
+    />
+    <template v-else>
+      <AppAlert
+        color="warning"
+        variant="soft"
+        icon="i-lucide-package-plus"
+        title="Hold top-up settings"
+        description="Configure hold fallback and top-up pricing, then sync a single hold item in Square for tracking."
+      />
 
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <div class="space-y-4">
-        <UCard>
-          <div class="space-y-4">
-            <div>
-              <div class="font-medium">
-                Hold policy rules
+      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div class="space-y-4">
+          <UCard>
+            <div class="space-y-4">
+              <div>
+                <div class="font-medium">
+                  Hold policy rules
+                </div>
+                <div class="text-sm text-dimmed">
+                  Rules that gate who can request overnight holds and how fallback billing works.
+                </div>
               </div>
-              <div class="text-sm text-dimmed">
-                Rules that gate who can request overnight holds and how fallback billing works.
+
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField label="Minimum booking hours for hold">
+                  <UInput
+                    v-model.number="form.minHoldBookingHours"
+                    type="number"
+                    min="1"
+                    max="24"
+                  />
+                </UFormField>
+                <UFormField label="Hold credit fallback cost">
+                  <UInput
+                    v-model.number="form.holdCreditCost"
+                    type="number"
+                    min="0"
+                    max="50"
+                  />
+                </UFormField>
+                <UFormField label="Hold requires booking end hour (LA)">
+                  <UInput
+                    v-model.number="form.holdMinEndHour"
+                    type="number"
+                    min="0"
+                    max="23"
+                  />
+                </UFormField>
+                <UFormField label="Hold ends next day at hour (LA)">
+                  <UInput
+                    v-model.number="form.holdEndHour"
+                    type="number"
+                    min="0"
+                    max="23"
+                  />
+                </UFormField>
               </div>
             </div>
+          </UCard>
 
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Minimum booking hours for hold">
-                <UInput
-                  v-model.number="form.minHoldBookingHours"
-                  type="number"
-                  min="1"
-                  max="24"
-                />
-              </UFormField>
-              <UFormField label="Hold credit fallback cost">
-                <UInput
-                  v-model.number="form.holdCreditCost"
-                  type="number"
-                  min="0"
-                  max="50"
-                />
-              </UFormField>
-              <UFormField label="Hold requires booking end hour (LA)">
-                <UInput
-                  v-model.number="form.holdMinEndHour"
-                  type="number"
-                  min="0"
-                  max="23"
-                />
-              </UFormField>
-              <UFormField label="Hold ends next day at hour (LA)">
-                <UInput
-                  v-model.number="form.holdEndHour"
-                  type="number"
-                  min="0"
-                  max="23"
-                />
-              </UFormField>
-            </div>
-          </div>
-        </UCard>
-
-        <UCard>
-          <div class="space-y-4">
-            <div>
-              <div class="font-medium">
-                Hold top-up product
+          <UCard>
+            <div class="space-y-4">
+              <div>
+                <div class="font-medium">
+                  Hold top-up product
+                </div>
+                <div class="text-sm text-dimmed">
+                  Product details used when syncing a single hold add-on into Square.
+                </div>
               </div>
-              <div class="text-sm text-dimmed">
-                Product details used when syncing a single hold add-on into Square.
+
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField label="Hold top-up label">
+                  <UInput v-model="form.holdTopupLabel" />
+                </UFormField>
+                <UFormField label="Holds granted per purchase">
+                  <UInput
+                    v-model.number="form.holdTopupQuantity"
+                    type="number"
+                    min="1"
+                    max="50"
+                  />
+                </UFormField>
+                <UFormField label="Hold top-up price ($)">
+                  <UInput
+                    v-model.number="holdTopupPriceDollars"
+                    type="number"
+                    min="1"
+                    max="1000"
+                    step="0.01"
+                  />
+                </UFormField>
+              </div>
+
+              <div class="rounded-md border border-default/80 bg-default/40 p-3 text-xs">
+                <div class="font-medium text-highlighted">
+                  Square linkage
+                </div>
+                <div class="mt-2 space-y-1 text-dimmed">
+                  <div>Item ID: {{ form.holdTopupSquareItemId || 'Not linked' }}</div>
+                  <div>Variation ID: {{ form.holdTopupSquareVariationId || 'Not linked' }}</div>
+                </div>
               </div>
             </div>
+          </UCard>
+        </div>
 
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField label="Hold top-up label">
-                <UInput v-model="form.holdTopupLabel" />
-              </UFormField>
-              <UFormField label="Holds granted per purchase">
-                <UInput
-                  v-model.number="form.holdTopupQuantity"
-                  type="number"
-                  min="1"
-                  max="50"
-                />
-              </UFormField>
-              <UFormField label="Hold top-up price ($)">
-                <UInput
-                  v-model.number="holdTopupPriceDollars"
-                  type="number"
-                  min="1"
-                  max="1000"
-                  step="0.01"
-                />
-              </UFormField>
+        <aside class="space-y-4 xl:sticky xl:top-4 self-start">
+          <UCard>
+            <div class="text-sm font-medium">
+              Policy summary
             </div>
+            <dl class="mt-3 space-y-2 text-sm">
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Minimum booking
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ holdPolicySummary.minBookingHours }} hour{{ holdPolicySummary.minBookingHours === 1 ? '' : 's' }}
+                </dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Earliest hold trigger
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ holdPolicySummary.minEndLabel }}
+                </dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Hold release time
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ holdPolicySummary.holdEndsLabel }} (next day)
+                </dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Fallback charge
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ holdPolicySummary.fallbackCreditCost }} credit{{ holdPolicySummary.fallbackCreditCost === 1 ? '' : 's' }}
+                </dd>
+              </div>
+            </dl>
+          </UCard>
 
-            <div class="rounded-md border border-default/80 bg-default/40 p-3 text-xs">
-              <div class="font-medium text-highlighted">
-                Square linkage
-              </div>
-              <div class="mt-2 space-y-1 text-dimmed">
-                <div>Item ID: {{ form.holdTopupSquareItemId || 'Not linked' }}</div>
-                <div>Variation ID: {{ form.holdTopupSquareVariationId || 'Not linked' }}</div>
-              </div>
+          <UCard>
+            <div class="text-sm font-medium">
+              Top-up summary
             </div>
-          </div>
-        </UCard>
+            <dl class="mt-3 space-y-2 text-sm">
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Product label
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ holdTopupSummary.label }}
+                </dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Grants per purchase
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ holdTopupSummary.quantity }} hold{{ holdTopupSummary.quantity === 1 ? '' : 's' }}
+                </dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="text-dimmed">
+                  Price
+                </dt>
+                <dd class="font-medium text-right">
+                  {{ holdTopupSummary.priceLabel }}
+                </dd>
+              </div>
+            </dl>
+          </UCard>
+        </aside>
       </div>
-
-      <aside class="space-y-4 xl:sticky xl:top-4 self-start">
-        <UCard>
-          <div class="text-sm font-medium">
-            Policy summary
-          </div>
-          <dl class="mt-3 space-y-2 text-sm">
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Minimum booking
-              </dt>
-              <dd class="font-medium text-right">
-                {{ holdPolicySummary.minBookingHours }} hour{{ holdPolicySummary.minBookingHours === 1 ? '' : 's' }}
-              </dd>
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Earliest hold trigger
-              </dt>
-              <dd class="font-medium text-right">
-                {{ holdPolicySummary.minEndLabel }}
-              </dd>
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Hold release time
-              </dt>
-              <dd class="font-medium text-right">
-                {{ holdPolicySummary.holdEndsLabel }} (next day)
-              </dd>
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Fallback charge
-              </dt>
-              <dd class="font-medium text-right">
-                {{ holdPolicySummary.fallbackCreditCost }} credit{{ holdPolicySummary.fallbackCreditCost === 1 ? '' : 's' }}
-              </dd>
-            </div>
-          </dl>
-        </UCard>
-
-        <UCard>
-          <div class="text-sm font-medium">
-            Top-up summary
-          </div>
-          <dl class="mt-3 space-y-2 text-sm">
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Product label
-              </dt>
-              <dd class="font-medium text-right">
-                {{ holdTopupSummary.label }}
-              </dd>
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Grants per purchase
-              </dt>
-              <dd class="font-medium text-right">
-                {{ holdTopupSummary.quantity }} hold{{ holdTopupSummary.quantity === 1 ? '' : 's' }}
-              </dd>
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <dt class="text-dimmed">
-                Price
-              </dt>
-              <dd class="font-medium text-right">
-                {{ holdTopupSummary.priceLabel }}
-              </dd>
-            </div>
-          </dl>
-        </UCard>
-      </aside>
-    </div>
+    </template>
   </DashboardPageScaffold>
 </template>

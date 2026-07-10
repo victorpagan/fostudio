@@ -197,7 +197,7 @@ function openTierDetails(tierId: string) {
         />
       </template>
       <div class="space-y-4">
-        <UAlert
+        <AppAlert
           v-if="catalogError"
           color="error"
           variant="soft"
@@ -206,7 +206,7 @@ function openTierDetails(tierId: string) {
           :description="catalogError.message"
         />
 
-        <UAlert
+        <AppAlert
           v-else-if="!catalogPending && !tiers.length"
           color="warning"
           variant="soft"
@@ -377,6 +377,8 @@ function openTierDetails(tierId: string) {
 
     <UModal
       v-model:open="waitlistOpen"
+      title="Join the membership waitlist"
+      description="Confirm your interest and contact details for this membership tier."
       :dismissible="true"
     >
       <template #content>
@@ -393,6 +395,7 @@ function openTierDetails(tierId: string) {
               </div>
               <UButton
                 icon="i-lucide-x"
+                aria-label="Close waitlist dialog"
                 color="neutral"
                 variant="ghost"
                 size="sm"
@@ -440,6 +443,8 @@ function openTierDetails(tierId: string) {
 
     <UModal
       v-model:open="detailsOpen"
+      title="Membership details"
+      description="Review pricing, credits, booking access, and plan policies."
       :dismissible="true"
     >
       <template #content>
@@ -456,6 +461,7 @@ function openTierDetails(tierId: string) {
               </div>
               <UButton
                 icon="i-lucide-x"
+                aria-label="Close membership details"
                 color="neutral"
                 variant="ghost"
                 size="sm"

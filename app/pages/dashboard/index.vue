@@ -42,11 +42,16 @@ type DoorCodeState = {
 }
 
 // Membership
-const { data: membership } = await useAsyncData('dash:home:membership', async () => {
+const {
+  data: membership,
+  pending: membershipPending,
+  error: membershipError,
+  refresh: refreshMembership
+} = await useAsyncData('dash:home:membership', async () => {
   if (!user.value) return null
   const { data, error } = await supabase
     .from('memberships')
-    .select('id, tier, cadence, status, created_at, current_period_end, canceled_at')
+    .select('id, tier, cadence, status, created_at, current_period_end, canceled_at, membership_source, billing_provider, manual_expires_at')
     .eq('user_id', user.value.sub)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -56,7 +61,12 @@ const { data: membership } = await useAsyncData('dash:home:membership', async ()
 })
 
 // Real credit balance from the credit_balance view
-const { data: creditBalance } = await useAsyncData('dash:home:credits', async () => {
+const {
+  data: creditBalance,
+  pending: creditsPending,
+  error: creditsError,
+  refresh: refreshCredits
+} = await useAsyncData('dash:home:credits', async () => {
   if (!user.value) return null
   const { data, error } = await supabase
     .from('credit_balance')
@@ -68,29 +78,49 @@ const { data: creditBalance } = await useAsyncData('dash:home:credits', async ()
 })
 
 // Upcoming bookings count for quick display
-const { data: upcomingCount } = await useAsyncData('dash:home:upcoming', async () => {
+const {
+  data: upcomingCount,
+  pending: upcomingPending,
+  error: upcomingError,
+  refresh: refreshUpcoming
+} = await useAsyncData('dash:home:upcoming', async () => {
   if (!user.value) return 0
   const { count, error } = await supabase
     .from('bookings')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', user.value.sub)
     .gte('start_time', new Date().toISOString())
-    .in('status', ['confirmed', 'requested'])
-  if (error) return 0
+    .in('status', ['confirmed', 'requested', 'pending_payment'])
+  if (error) throw error
   return count ?? 0
 })
 
-const { data: holdSummary } = await useAsyncData('dash:home:holds', async () => {
+const {
+  data: holdSummary,
+  pending: holdsPending,
+  error: holdsError,
+  refresh: refreshHolds
+} = await useAsyncData('dash:home:holds', async () => {
   if (!user.value) return null
   return await $fetch<HoldSummary>('/api/holds/summary')
 })
 
-const { data: waiverState } = await useAsyncData('dash:home:waiver', async () => {
+const {
+  data: waiverState,
+  pending: waiverPending,
+  error: waiverError,
+  refresh: refreshWaiver
+} = await useAsyncData('dash:home:waiver', async () => {
   if (!user.value) return null
   return await $fetch<WaiverDashboardState>('/api/waiver/current')
 })
 
-const { data: doorCodeState } = await useAsyncData('dash:home:door-code', async () => {
+const {
+  data: doorCodeState,
+  pending: doorCodePending,
+  error: doorCodeError,
+  refresh: refreshDoorCode
+} = await useAsyncData('dash:home:door-code', async () => {
   if (!user.value) return null
   return await $fetch<DoorCodeState>('/api/membership/door-code')
 })
@@ -98,9 +128,22 @@ const { data: doorCodeState } = await useAsyncData('dash:home:door-code', async 
 const membershipState = computed(() => {
   return resolveMembershipUiState(membership.value)
 })
-const isGuestAccount = computed(() => membershipState.value !== 'active' && !isAdmin.value)
+const membershipResolved = computed(() => !membershipPending.value && !membershipError.value)
+const isGuestAccount = computed(() => membershipResolved.value && membershipState.value === 'none' && !isAdmin.value)
+const isManualMembership = computed(() => {
+  const row = membership.value as { membership_source?: string | null, billing_provider?: string | null } | null
+  return (row?.membership_source ?? row?.billing_provider ?? '').toLowerCase() === 'manual'
+})
+const membershipExpired = computed(() => {
+  if (membershipState.value !== 'inactive') return false
+  const row = membership.value as { manual_expires_at?: string | null, current_period_end?: string | null } | null
+  const value = row?.manual_expires_at ?? row?.current_period_end
+  if (!value) return false
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) && time <= Date.now()
+})
 
-const { data: subscriptionState } = await useAsyncData('dash:home:subscription-state', async () => {
+const { data: subscriptionState, error: subscriptionStateError, refresh: refreshSubscriptionState } = await useAsyncData('dash:home:subscription-state', async () => {
   if (!user.value) return null
   return await $fetch<{
     pendingSwap: {
@@ -200,12 +243,26 @@ const pendingCancelSummary = computed(() => {
   >
     <div class="w-full space-y-4">
       <!-- Admin bypass notice -->
-      <UAlert
+      <AppAlert
         v-if="isAdmin"
         color="primary"
         variant="soft"
         title="Admin access"
         description="You are viewing the dashboard as an admin. Membership guards are bypassed."
+      />
+      <DashboardSectionState
+        v-else-if="membershipPending"
+        state="loading"
+        title="Loading account status"
+        description="Checking membership before choosing member or guest dashboard guidance."
+      />
+      <DashboardSectionState
+        v-else-if="membershipError"
+        state="error"
+        title="Could not load membership"
+        description="Your account was not treated as a guest. Retry to restore membership-aware actions."
+        show-retry
+        @retry="refreshMembership"
       />
       <DashboardDismissibleIntro
         v-else-if="isGuestAccount"
@@ -245,7 +302,7 @@ const pendingCancelSummary = computed(() => {
         storage-key="dashboard-member-intro"
         color="success"
         icon="i-lucide-badge-check"
-        title="Membership active"
+        :title="isManualMembership ? 'Assigned membership active' : 'Membership active'"
         :description="tierLabel ? `Plan: ${tierLabel}` : 'Welcome back!'"
       >
         <template #actions>
@@ -265,7 +322,60 @@ const pendingCancelSummary = computed(() => {
           </UButton>
         </template>
       </DashboardDismissibleIntro>
-      <UAlert
+      <AppAlert
+        v-else-if="membershipState === 'past_due'"
+        color="error"
+        variant="soft"
+        icon="i-lucide-credit-card"
+        title="Membership payment is past due"
+        description="Member booking and hold benefits are paused until billing is restored. Your plan and account history remain visible."
+      >
+        <template #actions>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="soft"
+            to="/dashboard/profile"
+          >
+            Review billing
+          </UButton>
+        </template>
+      </AppAlert>
+      <AppAlert
+        v-else-if="membershipState === 'pending_checkout'"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-clock"
+        title="Membership checkout incomplete"
+        description="Payment has not activated this membership yet. Finish checkout or refresh the status before relying on member benefits."
+      >
+        <template #actions>
+          <UButton
+            size="xs"
+            to="/dashboard/membership"
+          >
+            Finish membership setup
+          </UButton>
+        </template>
+      </AppAlert>
+      <AppAlert
+        v-else
+        color="warning"
+        variant="soft"
+        icon="i-lucide-badge-x"
+        :title="membershipExpired ? 'Membership expired' : 'Membership ended'"
+        description="Member benefits are no longer active. Existing credits and booking history remain available under current account rules."
+      >
+        <template #actions>
+          <UButton
+            size="xs"
+            to="/dashboard/membership"
+          >
+            Compare memberships
+          </UButton>
+        </template>
+      </AppAlert>
+      <AppAlert
         v-if="pendingCancelSummary"
         class="mt-3"
         color="warning"
@@ -274,6 +384,25 @@ const pendingCancelSummary = computed(() => {
         title="Cancellation scheduled"
         :description="pendingCancelSummary"
       />
+      <AppAlert
+        v-if="membershipState === 'active' && subscriptionStateError"
+        color="error"
+        variant="soft"
+        icon="i-lucide-circle-alert"
+        title="Subscription details unavailable"
+        description="The stored membership remains visible, but pending billing changes could not be verified."
+      >
+        <template #actions>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="soft"
+            @click="() => refreshSubscriptionState()"
+          >
+            Retry
+          </UButton>
+        </template>
+      </AppAlert>
     </div>
     <!-- Stat cards -->
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -288,7 +417,24 @@ const pendingCancelSummary = computed(() => {
               Credits
             </div>
             <div class="mt-1 text-3xl font-semibold tabular-nums">
-              <span v-if="creditBalance !== null">{{ creditBalance }}</span>
+              <UIcon
+                v-if="creditsPending"
+                name="i-lucide-loader-circle"
+                class="size-5 animate-spin text-dimmed"
+              />
+              <UButton
+                v-else-if="creditsError"
+                size="xs"
+                color="neutral"
+                variant="soft"
+                @click="() => refreshCredits()"
+              >
+                Retry
+              </UButton>
+              <span
+                v-else-if="creditBalance !== null"
+                :class="Number(creditBalance) < 0 ? 'text-error' : ''"
+              >{{ creditBalance }}</span>
               <span
                 v-else
                 class="text-dimmed text-xl"
@@ -300,12 +446,31 @@ const pendingCancelSummary = computed(() => {
               Holds left
             </div>
             <div class="mt-1 text-3xl font-semibold tabular-nums">
-              {{ holdSummary?.includedHoldsRemaining ?? 0 }}
+              <UIcon
+                v-if="holdsPending"
+                name="i-lucide-loader-circle"
+                class="size-5 animate-spin text-dimmed"
+              />
+              <UButton
+                v-else-if="holdsError"
+                size="xs"
+                color="neutral"
+                variant="soft"
+                @click="() => refreshHolds()"
+              >
+                Retry
+              </UButton>
+              <template v-else>
+                {{ holdSummary?.includedHoldsRemaining ?? 0 }}
+              </template>
             </div>
           </div>
         </div>
         <div class="mt-3 text-xs text-dimmed">
-          <template v-if="creditBalance === null">
+          <template v-if="creditsError || holdsError">
+            One or more balances are unavailable. No zero balance was assumed.
+          </template>
+          <template v-else-if="creditBalance === null">
             Credits appear once your first invoice is paid.
           </template>
           <template v-else>
@@ -325,7 +490,7 @@ const pendingCancelSummary = computed(() => {
             size="sm"
             color="neutral"
             variant="soft"
-            to="/dashboard/membership#holds"
+            to="/dashboard/bookings?tab=holds"
           >
             Manage holds
           </UButton>
@@ -349,10 +514,31 @@ const pendingCancelSummary = computed(() => {
           Upcoming
         </div>
         <div class="mt-2 text-4xl font-semibold tabular-nums">
-          {{ upcomingCount ?? 0 }}
+          <UIcon
+            v-if="upcomingPending"
+            name="i-lucide-loader-circle"
+            class="size-6 animate-spin text-dimmed"
+          />
+          <UButton
+            v-else-if="upcomingError"
+            size="xs"
+            color="neutral"
+            variant="soft"
+            @click="() => refreshUpcoming()"
+          >
+            Retry
+          </UButton>
+          <template v-else>
+            {{ upcomingCount ?? 0 }}
+          </template>
         </div>
         <div class="mt-1.5 text-xs text-dimmed">
-          {{ upcomingCount === 1 ? 'upcoming booking' : 'upcoming bookings' }}
+          <template v-if="upcomingError">
+            Booking count unavailable; zero was not assumed.
+          </template>
+          <template v-else>
+            {{ upcomingCount === 1 ? 'upcoming booking' : 'upcoming bookings' }}
+          </template>
         </div>
         <div class="mt-4 flex flex-col gap-2">
           <UButton
@@ -378,30 +564,32 @@ const pendingCancelSummary = computed(() => {
         </div>
         <div class="mt-2 text-4xl font-semibold tabular-nums">
           <UIcon
-            :name="waiverState?.status === 'current' ? 'i-lucide-shield-check' : 'i-lucide-file-warning'"
+            :name="waiverPending ? 'i-lucide-loader-circle' : waiverError ? 'i-lucide-circle-alert' : waiverState?.status === 'current' ? 'i-lucide-shield-check' : 'i-lucide-file-warning'"
             class="size-9"
+            :class="waiverPending ? 'animate-spin' : ''"
           />
         </div>
         <div class="mt-1.5">
           <UBadge
-            :color="waiverStatusColor"
+            :color="waiverError ? 'error' : waiverStatusColor"
             variant="soft"
             size="sm"
           >
-            {{ waiverStatusLabel }}
+            {{ waiverPending ? 'loading' : waiverError ? 'unavailable' : waiverStatusLabel }}
           </UBadge>
         </div>
         <div class="mt-1.5 text-xs text-dimmed">
-          {{ waiverStatusDescription }}
+          {{ waiverError ? 'Waiver status could not be loaded.' : waiverStatusDescription }}
         </div>
         <div class="mt-4">
           <UButton
             size="sm"
             color="neutral"
             variant="soft"
-            to="/dashboard/waiver"
+            :to="waiverError ? undefined : '/dashboard/waiver'"
+            @click="waiverError && refreshWaiver()"
           >
-            {{ waiverState?.status === 'current' ? 'View waiver' : 'Review and sign' }}
+            {{ waiverError ? 'Retry' : waiverState?.status === 'current' ? 'View waiver' : 'Review and sign' }}
           </UButton>
         </div>
       </UCard>
@@ -413,7 +601,7 @@ const pendingCancelSummary = computed(() => {
               Door code
             </div>
             <div class="mt-2 font-mono text-3xl font-semibold tracking-[0.16em]">
-              {{ doorCodeState?.doorCode ?? '------' }}
+              {{ doorCodePending ? '------' : doorCodeError ? 'Unavailable' : doorCodeState?.doorCode ?? 'Not assigned' }}
             </div>
           </div>
           <UIcon
@@ -423,7 +611,7 @@ const pendingCancelSummary = computed(() => {
         </div>
         <div class="mt-1.5">
           <UBadge
-            v-if="doorCodeRequestPending"
+            v-if="!doorCodeError && doorCodeRequestPending"
             color="warning"
             variant="soft"
             size="sm"
@@ -431,7 +619,7 @@ const pendingCancelSummary = computed(() => {
             Change requested
           </UBadge>
           <UBadge
-            v-else
+            v-else-if="!doorCodeError"
             color="neutral"
             variant="soft"
             size="sm"
@@ -440,16 +628,17 @@ const pendingCancelSummary = computed(() => {
           </UBadge>
         </div>
         <div class="mt-1.5 text-xs text-dimmed">
-          Your account code works during eligible booking access windows.
+          {{ doorCodeError ? 'Door code status could not be loaded.' : 'Your account code works during eligible booking access windows.' }}
         </div>
         <div class="mt-4">
           <UButton
             size="sm"
             color="neutral"
             variant="soft"
-            to="/dashboard/door-code"
+            :to="doorCodeError ? undefined : '/dashboard/door-code'"
+            @click="doorCodeError && refreshDoorCode()"
           >
-            Manage door code
+            {{ doorCodeError ? 'Retry' : 'Manage door code' }}
           </UButton>
         </div>
       </UCard>

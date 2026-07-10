@@ -18,7 +18,7 @@ const toast = useToast()
 const dashboardHydrated = ref(false)
 const doorCodeRequestLoading = ref(false)
 
-const { data: doorCodeState, pending, refresh } = await useAsyncData('dash:door-code', async () => {
+const { data: doorCodeState, pending, error: doorCodeError, refresh } = await useAsyncData('dash:door-code', async () => {
   return await $fetch<DoorCodeState>('/api/membership/door-code')
 })
 
@@ -94,7 +94,24 @@ async function requestDoorCodeChange() {
       />
     </template>
 
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
+    <DashboardSectionState
+      v-if="pending"
+      state="loading"
+      title="Loading door code"
+      description="Checking your assigned code and request status."
+    />
+    <DashboardSectionState
+      v-else-if="doorCodeError"
+      state="error"
+      title="Could not load door code"
+      description="No unassigned-code or cooldown state was assumed."
+      show-retry
+      @retry="refresh"
+    />
+    <div
+      v-else
+      class="grid gap-4 xl:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]"
+    >
       <UCard>
         <div class="flex items-start justify-between gap-3">
           <div>
@@ -103,8 +120,7 @@ async function requestDoorCodeChange() {
             </div>
             <div class="mt-3 flex flex-wrap items-center gap-3">
               <span class="font-mono text-4xl font-semibold tracking-[0.18em]">
-                <template v-if="pending && !doorCodeState?.doorCode">------</template>
-                <template v-else>{{ doorCodeState?.doorCode ?? 'Not assigned' }}</template>
+                {{ doorCodeState?.doorCode ?? 'Not assigned' }}
               </span>
               <UBadge
                 v-if="hasPendingRequest"

@@ -69,6 +69,8 @@ function handleClose() {
 <template>
   <UModal
     v-model:open="open"
+    title="Adjust booking time"
+    description="Choose a new available time and review hold implications before saving."
     :dismissible="!props.loading"
     @update:open="(value) => { if (!value) emit('close') }"
   >
@@ -143,6 +145,7 @@ function handleClose() {
             <div class="flex items-center gap-1.5">
               <UButton
                 icon="i-lucide-chevron-left"
+                aria-label="Show previous month"
                 color="neutral"
                 variant="soft"
                 size="xs"
@@ -154,6 +157,7 @@ function handleClose() {
               </span>
               <UButton
                 icon="i-lucide-chevron-right"
+                aria-label="Show next month"
                 color="neutral"
                 variant="soft"
                 size="xs"
@@ -251,7 +255,7 @@ function handleClose() {
           </div>
         </div>
 
-        <UAlert
+        <AppAlert
           v-if="props.form.hadHold"
           class="mt-3"
           color="warning"
@@ -266,7 +270,7 @@ function handleClose() {
           label="Keep overnight hold after reschedule"
           @update:model-value="(value) => emit('keepHoldChange', Boolean(value))"
         />
-        <UAlert
+        <AppAlert
           v-if="props.form.hadHold && props.form.keepHold && !props.holdEligibility.ok"
           class="mt-2"
           color="warning"

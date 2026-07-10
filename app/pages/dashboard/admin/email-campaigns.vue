@@ -403,6 +403,7 @@ const editorImageUploadPending = ref(false)
 const stagedEditorImages = ref<Map<string, StagedEditorImage>>(new Map())
 const data = ref<CampaignsResponse | null>(null)
 const pending = ref(false)
+const campaignsLoadError = ref<string | null>(null)
 const initialDataLoaded = ref(false)
 const activeBuilderTab = ref<'setup' | 'routing' | 'audience' | 'content'>('setup')
 const campaignSearch = ref('')
@@ -415,6 +416,7 @@ const lastSaveError = ref<string | null>(null)
 const suppressAutosave = ref(false)
 const lastSavedDraftSnapshot = ref('')
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null
+let activeAutosavePromise: Promise<boolean> | null = null
 let autosaveRequestId = 0
 let draftSessionId = 0
 const sendgridTemplateCatalog = computed(() => sendgridTemplateCatalogRows.value)
@@ -784,10 +786,26 @@ const editorVariableTokens = computed(() => {
 })
 
 const isArchivedDraft = computed(() => draft.status === 'archived')
-const alternativeRecipientsOnly = computed({
-  get: () => !draft.includeMembershipRecipients,
-  set: (value: boolean) => {
-    draft.includeMembershipRecipients = !value
+const audienceModeItems: Array<{
+  label: string
+  value: 'members' | 'alternates'
+  description: string
+}> = [
+  {
+    label: 'Members + optional alternates',
+    value: 'members',
+    description: 'Send to eligible membership recipients and any additional addresses below.'
+  },
+  {
+    label: 'Alternates only',
+    value: 'alternates',
+    description: 'Send only to the additional recipient addresses below.'
+  }
+]
+const audienceMode = computed<'members' | 'alternates'>({
+  get: () => draft.includeMembershipRecipients ? 'members' : 'alternates',
+  set: (value) => {
+    draft.includeMembershipRecipients = value === 'members'
   }
 })
 const draftRecipientCounts = computed(() => {
@@ -846,17 +864,21 @@ async function refreshSendgridTemplateCatalog() {
   }
 }
 
-async function refresh() {
+async function refresh(): Promise<boolean> {
   pending.value = true
+  campaignsLoadError.value = null
   try {
     data.value = await $fetch<CampaignsResponse>('/api/admin/email/campaigns')
     initialDataLoaded.value = true
+    return true
   } catch (error: unknown) {
+    campaignsLoadError.value = readErrorMessage(error)
     toast.add({
       title: 'Could not load campaigns',
       description: readErrorMessage(error),
       color: 'error'
     })
+    return false
   } finally {
     pending.value = false
   }
@@ -1656,7 +1678,7 @@ function clearAutosaveTimer() {
   }
 }
 
-async function runAutosave() {
+async function performAutosave(): Promise<boolean> {
   clearAutosaveTimer()
   const requestId = autosaveRequestId + 1
   autosaveRequestId = requestId
@@ -1666,19 +1688,19 @@ async function runAutosave() {
   if (isArchivedDraft.value) {
     autosaveStatus.value = 'idle'
     autosaveError.value = null
-    return
+    return true
   }
   if (!isDraftEventTypeRegistered.value) {
     autosaveStatus.value = 'error'
     autosaveError.value = 'Select a registered event type before autosave can run.'
-    return
+    return false
   }
   try {
     parseDynamicDataJson(draft.dynamicDataJsonText)
   } catch (error: unknown) {
     autosaveStatus.value = 'error'
     autosaveError.value = readErrorMessage(error)
-    return
+    return false
   }
 
   autosaveStatus.value = 'saving'
@@ -1690,7 +1712,7 @@ async function runAutosave() {
     markCleanOnSave: false,
     draftSessionId: requestDraftSessionId
   })
-  if (requestId !== autosaveRequestId) return
+  if (requestId !== autosaveRequestId) return false
 
   if (saved) {
     if (serializeCampaignDraft({ includeId: false }) === requestDraftSnapshot) {
@@ -1700,11 +1722,24 @@ async function runAutosave() {
       autosaveError.value = null
       queueAutosave()
     }
-    return
+    return true
   }
 
   autosaveStatus.value = 'error'
   autosaveError.value = lastSaveError.value ?? 'Autosave failed.'
+  return false
+}
+
+async function runAutosave(): Promise<boolean> {
+  if (activeAutosavePromise) return await activeAutosavePromise
+
+  const task = performAutosave()
+  activeAutosavePromise = task
+  try {
+    return await task
+  } finally {
+    if (activeAutosavePromise === task) activeAutosavePromise = null
+  }
 }
 
 function queueAutosave() {
@@ -1718,6 +1753,26 @@ function queueAutosave() {
   autosaveTimer = setTimeout(() => {
     void runAutosave()
   }, AUTOSAVE_DEBOUNCE_MS)
+}
+
+async function flushPendingCampaignSave(): Promise<boolean> {
+  clearAutosaveTimer()
+  if (!initialDataLoaded.value || suppressAutosave.value) return true
+  if (activeAutosavePromise) {
+    const activeSaved = await activeAutosavePromise
+    if (!activeSaved) return false
+  }
+  if (!hasUnsavedDraftChanges()) return true
+
+  const saved = await saveCampaign({
+    silentSuccess: true,
+    refreshAfterSave: false
+  })
+  if (!saved) {
+    autosaveStatus.value = 'error'
+    autosaveError.value = lastSaveError.value ?? 'Save this draft before switching campaigns.'
+  }
+  return saved
 }
 
 function hydrateDraftFromCampaign(campaign: CampaignRecord | null) {
@@ -1828,6 +1883,8 @@ async function syncCampaignQuery(campaignId: string | null) {
 async function selectCampaign(campaignId: string, options: { syncQuery?: boolean } = {}) {
   const selected = campaigns.value.find(item => item.id === campaignId) ?? null
   if (!selected) return
+  if (campaignId === selectedCampaignId.value && !localDraftMode.value) return
+  if (!await flushPendingCampaignSave()) return
   draftSessionId += 1
   localDraftMode.value = false
   clearAutosaveTimer()
@@ -1839,6 +1896,8 @@ async function selectCampaign(campaignId: string, options: { syncQuery?: boolean
 }
 
 async function createCampaignDraft(options: { syncQuery?: boolean } = {}) {
+  if (localDraftMode.value && !hasUnsavedDraftChanges()) return
+  if (!await flushPendingCampaignSave()) return
   draftSessionId += 1
   autosaveRequestId += 1
   localDraftMode.value = true
@@ -1857,7 +1916,8 @@ async function createCampaignDraft(options: { syncQuery?: boolean } = {}) {
 }
 
 async function reloadCampaigns(options: { preserveSelection?: boolean } = {}) {
-  await refresh()
+  if (!await flushPendingCampaignSave()) return
+  if (!await refresh()) return
   if (localDraftMode.value) return
   if (isLocalDraftCampaignQuery()) {
     await createCampaignDraft({ syncQuery: false })
@@ -2551,11 +2611,7 @@ watch(() => route.query.campaign, () => {
 
   const fromQuery = campaigns.value.find(item => item.id === selectedFromQuery)
   if (fromQuery) {
-    draftSessionId += 1
-    localDraftMode.value = false
-    clearAutosaveTimer()
-    selectedCampaignId.value = fromQuery.id
-    hydrateDraftFromCampaign(fromQuery)
+    void selectCampaign(fromQuery.id, { syncQuery: false })
   }
 })
 
@@ -2567,12 +2623,24 @@ watch(() => serializeCampaignDraft(), () => {
   queueAutosave()
 }, { flush: 'post' })
 
+function warnBeforeCampaignUnload(event: BeforeUnloadEvent) {
+  if (!hasUnsavedDraftChanges() && autosaveStatus.value !== 'saving') return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
 onMounted(() => {
+  window.addEventListener('beforeunload', warnBeforeCampaignUnload)
   void refreshSendgridTemplateCatalog()
   void reloadCampaigns({ preserveSelection: true })
 })
 
+onBeforeRouteLeave(async () => {
+  return await flushPendingCampaignSave()
+})
+
 onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', warnBeforeCampaignUnload)
   clearSendgridLookupTimer()
   clearAutosaveTimer()
   resetStagedEditorImages()
@@ -2591,6 +2659,7 @@ onBeforeUnmount(() => {
           icon: 'i-lucide-plus',
           color: 'neutral',
           variant: 'soft',
+          disabled: !initialDataLoaded,
           onSelect: () => { void createCampaignDraft() }
         }"
         :secondary="[
@@ -2610,6 +2679,26 @@ onBeforeUnmount(() => {
     </template>
 
     <div class="space-y-4">
+      <AppAlert
+        v-if="campaignsLoadError"
+        color="error"
+        variant="soft"
+        icon="i-lucide-triangle-alert"
+        title="Campaigns are unavailable"
+        :description="`${campaignsLoadError} Editing and sending remain disabled until the campaign data reloads.`"
+      >
+        <template #actions>
+          <UButton
+            color="error"
+            variant="soft"
+            :loading="pending"
+            @click="() => { void reloadCampaigns({ preserveSelection: true }) }"
+          >
+            Retry
+          </UButton>
+        </template>
+      </AppAlert>
+
       <UCard class="admin-panel-card border-0">
         <template #header>
           <div class="flex flex-wrap items-start justify-between gap-3">
@@ -2652,6 +2741,7 @@ onBeforeUnmount(() => {
               v-model="campaignNavigatorValue"
               :items="campaignSelectItems"
               placeholder="Select campaign"
+              :disabled="!initialDataLoaded"
             />
           </UFormField>
         </div>
@@ -2698,7 +2788,7 @@ onBeforeUnmount(() => {
                   color="neutral"
                   variant="soft"
                   :loading="saving || editorImageUploadPending"
-                  :disabled="isArchivedDraft || !isDraftEventTypeRegistered"
+                  :disabled="!initialDataLoaded || isArchivedDraft || !isDraftEventTypeRegistered"
                   @click="() => { void saveCampaign() }"
                 >
                   Save now
@@ -2706,7 +2796,7 @@ onBeforeUnmount(() => {
                 <UButton
                   icon="i-lucide-send"
                   :loading="reviewingSend || editorImageUploadPending"
-                  :disabled="!draft.name.trim()"
+                  :disabled="!initialDataLoaded || !draft.name.trim()"
                   @click="openSendReview"
                 >
                   Review send
@@ -2998,34 +3088,18 @@ onBeforeUnmount(() => {
                 </UCard>
               </div>
 
-              <div class="grid gap-3 md:grid-cols-2">
-                <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2 bg-default">
-                  <div>
-                    <div class="text-sm font-medium">
-                      Include membership recipients
-                    </div>
-                    <div class="text-xs text-dimmed">
-                      Pull unique member emails from memberships/customers.
-                    </div>
-                  </div>
-                  <USwitch
-                    v-model="draft.includeMembershipRecipients"
-                    :disabled="alternativeRecipientsOnly"
-                  />
-                </div>
-
-                <div class="flex items-center justify-between gap-3 rounded-lg border border-default px-3 py-2 bg-default">
-                  <div>
-                    <div class="text-sm font-medium">
-                      Alternative recipients only
-                    </div>
-                    <div class="text-xs text-dimmed">
-                      Send only to listed alternate recipients.
-                    </div>
-                  </div>
-                  <USwitch v-model="alternativeRecipientsOnly" />
-                </div>
-              </div>
+              <UFormField
+                label="Audience source"
+                description="Choose one delivery mode. Additional addresses are included only as described by the selected mode."
+              >
+                <USelect
+                  v-model="audienceMode"
+                  :items="audienceModeItems"
+                  value-key="value"
+                  label-key="label"
+                  class="w-full"
+                />
+              </UFormField>
 
               <UFormField
                 label="Additional recipients"
@@ -3212,6 +3286,7 @@ onBeforeUnmount(() => {
                     >
                       <UButton
                         icon="i-lucide-grip-vertical"
+                        aria-label="Drag editor block"
                         color="neutral"
                         variant="ghost"
                         size="sm"
@@ -3411,7 +3486,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <UAlert
+            <AppAlert
               v-if="sendReview.errors.length"
               color="error"
               variant="soft"
@@ -3419,7 +3494,7 @@ onBeforeUnmount(() => {
               title="Send is blocked"
               :description="sendReview.errors.join(' ')"
             />
-            <UAlert
+            <AppAlert
               v-else-if="sendReview.warnings.length"
               color="warning"
               variant="soft"
@@ -3427,7 +3502,7 @@ onBeforeUnmount(() => {
               title="Review warnings"
               :description="sendReview.warnings.join(' ')"
             />
-            <UAlert
+            <AppAlert
               v-else
               color="success"
               variant="soft"

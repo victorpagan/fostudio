@@ -13,7 +13,7 @@ import {
 definePageMeta({ middleware: ['admin'] })
 
 const toast = useToast()
-const { data, pending, refresh } = await useAdminAnalyticsData('metrics')
+const { data, pending, refresh, error } = await useAdminAnalyticsData('metrics')
 
 const metrics = computed(() => data.value?.metrics)
 const generatedLabel = computed(() => formatAnalyticsDatetime(data.value?.generatedAt))
@@ -78,148 +78,132 @@ async function copyValue(value: string, label: string) {
 </script>
 
 <template>
-  <UDashboardPanel
-    id="admin-analytics-metrics"
-    class="min-h-0 flex-1 admin-ops-panel"
-    :ui="{ body: '!overflow-hidden !p-0 !gap-0' }"
+  <AdminAnalyticsPage
+    panel-id="admin-analytics-metrics"
+    title="Analytics · Metrics"
+    :busy="pending"
+    :error="error"
+    @retry="refresh"
   >
-    <template #header>
-      <UDashboardNavbar
-        title="Analytics • Metrics"
-        class="admin-ops-navbar"
-        :ui="{ root: 'border-b-0', right: 'gap-2' }"
-      >
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-        <template #right>
-          <AnalyticsRunButton
-            size="sm"
-            @completed="() => refresh()"
-          />
-          <UButton
-            size="sm"
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-refresh-cw"
-            :loading="pending"
-            @click="() => refresh()"
-          />
-        </template>
-      </UDashboardNavbar>
+    <template #actions>
+      <AnalyticsRunButton
+        size="sm"
+        @completed="() => refresh()"
+      />
+      <IconButton
+        label="Refresh analytics metrics"
+        icon="i-lucide-refresh-cw"
+        color="neutral"
+        variant="soft"
+        size="sm"
+        :loading="pending"
+        @click="() => refresh()"
+      />
     </template>
 
-    <template #body>
-      <AdminOpsShell>
-        <div class="space-y-4">
-          <AnalyticsSubnav />
+    <AppAlert
+      color="neutral"
+      variant="soft"
+      icon="i-lucide-database"
+      :description="`Generated: ${generatedLabel}`"
+    />
 
-          <UAlert
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-database"
-            :description="`Generated: ${generatedLabel}`"
-          />
+    <div class="grid gap-4 xl:grid-cols-[1fr_1fr]">
+      <UCard class="admin-panel-card border-0">
+        <template #header>
+          <div class="font-medium">
+            Weekly KPI snapshot
+          </div>
+        </template>
 
-          <div class="grid gap-4 xl:grid-cols-[1fr_1fr]">
-            <UCard class="admin-panel-card border-0">
-              <template #header>
-                <div class="font-medium">
-                  Weekly KPI snapshot
-                </div>
-              </template>
+        <div class="space-y-2 text-sm">
+          <div
+            v-for="row in weekRows"
+            :key="String(row[0])"
+            class="flex cursor-copy items-center justify-between rounded-md border border-default px-3 py-2"
+            role="button"
+            tabindex="0"
+            :title="`Click to copy ${String(row[0])}`"
+            @click="() => copyValue(`${String(row[0])}: ${String(row[1])}`, String(row[0]))"
+            @keydown.enter.prevent="() => copyValue(`${String(row[0])}: ${String(row[1])}`, String(row[0]))"
+            @keydown.space.prevent="() => copyValue(`${String(row[0])}: ${String(row[1])}`, String(row[0]))"
+          >
+            <span class="text-dimmed">{{ row[0] }}</span>
+            <span class="font-medium">{{ row[1] }}</span>
+          </div>
+        </div>
+      </UCard>
 
-              <div class="space-y-2 text-sm">
-                <div
-                  v-for="row in weekRows"
-                  :key="String(row[0])"
-                  class="flex cursor-copy items-center justify-between rounded-md border border-default px-3 py-2"
-                  role="button"
-                  tabindex="0"
-                  :title="`Click to copy ${String(row[0])}`"
-                  @click="() => copyValue(`${String(row[0])}: ${String(row[1])}`, String(row[0]))"
-                  @keydown.enter.prevent="() => copyValue(`${String(row[0])}: ${String(row[1])}`, String(row[0]))"
-                  @keydown.space.prevent="() => copyValue(`${String(row[0])}: ${String(row[1])}`, String(row[0]))"
-                >
-                  <span class="text-dimmed">{{ row[0] }}</span>
-                  <span class="font-medium">{{ row[1] }}</span>
-                </div>
+      <UCard class="admin-panel-card border-0">
+        <template #header>
+          <div class="font-medium">
+            Tier + ads summary
+          </div>
+        </template>
+
+        <div class="space-y-3 text-sm">
+          <div>
+            <div class="text-xs uppercase tracking-wide text-dimmed">
+              Tier counts
+            </div>
+            <div class="mt-2 grid grid-cols-3 gap-2">
+              <div class="rounded-md border border-default px-3 py-2">
+                Creator: {{ formatAnalyticsNumber(metrics?.tiers?.creator) }}
               </div>
-            </UCard>
-
-            <UCard class="admin-panel-card border-0">
-              <template #header>
-                <div class="font-medium">
-                  Tier + ads summary
-                </div>
-              </template>
-
-              <div class="space-y-3 text-sm">
-                <div>
-                  <div class="text-xs uppercase tracking-wide text-dimmed">
-                    Tier counts
-                  </div>
-                  <div class="mt-2 grid grid-cols-3 gap-2">
-                    <div class="rounded-md border border-default px-3 py-2">
-                      Creator: {{ formatAnalyticsNumber(metrics?.tiers?.creator) }}
-                    </div>
-                    <div class="rounded-md border border-default px-3 py-2">
-                      Pro: {{ formatAnalyticsNumber(metrics?.tiers?.pro) }}
-                    </div>
-                    <div class="rounded-md border border-default px-3 py-2">
-                      Studio+: {{ formatAnalyticsNumber(metrics?.tiers?.studio_plus) }}
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <div class="text-xs uppercase tracking-wide text-dimmed">
-                    Ads
-                  </div>
-                  <div class="mt-2 space-y-2">
-                    <div class="rounded-md border border-default px-3 py-2">
-                      {{ googleAdsSummary }}
-                    </div>
-                    <div class="rounded-md border border-default px-3 py-2">
-                      {{ metaAdsSummary }}
-                    </div>
-                  </div>
-                </div>
+              <div class="rounded-md border border-default px-3 py-2">
+                Pro: {{ formatAnalyticsNumber(metrics?.tiers?.pro) }}
               </div>
-            </UCard>
+              <div class="rounded-md border border-default px-3 py-2">
+                Studio+: {{ formatAnalyticsNumber(metrics?.tiers?.studio_plus) }}
+              </div>
+            </div>
           </div>
 
-          <UCard class="admin-panel-card border-0">
-            <template #header>
-              <div class="flex items-center justify-between gap-2">
-                <div class="font-medium">
-                  Raw metrics.json
-                </div>
-                <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="soft"
-                  icon="i-lucide-copy"
-                  @click="() => copyValue(metricsJsonText, 'Metrics JSON')"
-                >
-                  Copy
-                </UButton>
+          <div>
+            <div class="text-xs uppercase tracking-wide text-dimmed">
+              Ads
+            </div>
+            <div class="mt-2 space-y-2">
+              <div class="rounded-md border border-default px-3 py-2">
+                {{ googleAdsSummary }}
               </div>
-            </template>
-            <pre
-              class="analytics-json-block analytics-json-block--click-copy"
-              role="button"
-              tabindex="0"
-              title="Click to copy JSON"
-              @click="() => copyValue(metricsJsonText, 'Metrics JSON')"
-              @keydown.enter.prevent="() => copyValue(metricsJsonText, 'Metrics JSON')"
-              @keydown.space.prevent="() => copyValue(metricsJsonText, 'Metrics JSON')"
-            >{{ metricsJsonText }}</pre>
-          </UCard>
+              <div class="rounded-md border border-default px-3 py-2">
+                {{ metaAdsSummary }}
+              </div>
+            </div>
+          </div>
         </div>
-      </AdminOpsShell>
-    </template>
-  </UDashboardPanel>
+      </UCard>
+    </div>
+
+    <UCard class="admin-panel-card border-0">
+      <template #header>
+        <div class="flex items-center justify-between gap-2">
+          <div class="font-medium">
+            Raw metrics.json
+          </div>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-copy"
+            @click="() => copyValue(metricsJsonText, 'Metrics JSON')"
+          >
+            Copy
+          </UButton>
+        </div>
+      </template>
+      <pre
+        class="analytics-json-block analytics-json-block--click-copy"
+        role="button"
+        tabindex="0"
+        title="Click to copy JSON"
+        @click="() => copyValue(metricsJsonText, 'Metrics JSON')"
+        @keydown.enter.prevent="() => copyValue(metricsJsonText, 'Metrics JSON')"
+        @keydown.space.prevent="() => copyValue(metricsJsonText, 'Metrics JSON')"
+      >{{ metricsJsonText }}</pre>
+    </UCard>
+  </AdminAnalyticsPage>
 </template>
 
 <style scoped>

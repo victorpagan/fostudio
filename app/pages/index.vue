@@ -77,13 +77,13 @@ type SiteLandingContent = {
 
 const fallbackLanding: SiteLandingContent = {
   hero: {
-    kicker: 'Membership studio access',
-    headline: 'Pick the studio membership that fits the way you actually work.',
-    subheadline: 'This is a 24/7 turnkey studio built for photographers and small-to-mid crews. Book the plan that matches your volume, then use the space like it was made for production days, not paperwork.',
-    primaryCta: { label: 'See Availability', to: '/calendar' },
-    secondaryCta: { label: 'Explore Memberships', to: '/memberships' },
+    kicker: 'Los Angeles photo studio memberships',
+    headline: 'A fully kitted photo studio you can book like part of your own operation.',
+    subheadline: 'Compare live membership pricing, choose a billing cadence, and check out online. Need one shoot first? Create an account and book under the current guest policy.',
+    primaryCta: { label: 'Compare memberships', to: '/memberships' },
+    secondaryCta: { label: 'View availability', to: '/calendar' },
     waitlistCtaLabel: 'Join the waitlist',
-    chips: ['24/7 member access', 'Gear + consumables included', 'No startup fees'],
+    chips: ['24/7 member access', 'In-house gear + consumables', 'Self-serve membership checkout'],
     campaignHint: ''
   },
   infoCard: {
@@ -158,6 +158,14 @@ const { data: siteLanding } = await useAsyncData('site:landing', async () => {
     return null
   }
 })
+
+usePublicSeo(() => resolvePublicSeo(siteLanding.value, {
+  title: 'FO Studio | 24/7 Photo Studio Membership in Los Angeles',
+  description: 'Compare live FO Studio membership pricing, credits, booking windows, and guest options for a fully kitted Los Angeles photo studio.',
+  canonicalPath: '/',
+  schemaType: 'WebSite',
+  keywords: ['Los Angeles photo studio', 'photo studio membership', 'cyclorama studio']
+}))
 
 function normalizeCta(input: unknown, fallback: LandingCta): LandingCta {
   if (!input || typeof input !== 'object') return fallback
@@ -367,15 +375,41 @@ function tierAccentClass(tierId: string, index: number) {
         </UBadge>
       </div>
 
+      <div class="absolute left-3 top-16 z-[3] w-[calc(100%-1.5rem)] max-w-2xl rounded-2xl border border-white/20 bg-black/50 p-4 text-white shadow-2xl backdrop-blur-md sm:left-[clamp(1rem,5vw,4rem)] sm:top-[clamp(1rem,4vw,3rem)] sm:w-[calc(100%-2rem)] sm:p-6">
+        <p class="m-0 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-white/75">
+          {{ landingContent.hero.kicker }}
+        </p>
+        <h1 class="studio-display mt-2 max-w-[18ch] text-3xl leading-[0.98] text-white sm:text-5xl lg:text-6xl">
+          {{ landingContent.hero.headline }}
+        </h1>
+        <p class="mt-3 max-w-[62ch] text-sm leading-6 text-white/85 sm:text-base sm:leading-7">
+          {{ landingContent.hero.subheadline }}
+        </p>
+      </div>
+
       <div class="landing-hero-content">
-        <div class="landing-hero-cta-wrap">
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="landing-hero-cta-wrap">
+            <NuxtLink
+              :to="landingContent.hero.primaryCta.to"
+              class="landing-hero-cta"
+            >
+              {{ landingContent.hero.primaryCta.label }}
+            </NuxtLink>
+            <span class="landing-hero-cta-arrow">↗</span>
+          </div>
           <NuxtLink
             :to="landingContent.hero.secondaryCta.to"
-            class="landing-hero-cta"
+            class="landing-hero-guest-cta"
           >
             {{ landingContent.hero.secondaryCta.label }}
           </NuxtLink>
-          <span class="landing-hero-cta-arrow">↗</span>
+          <NuxtLink
+            to="/signup?returnTo=/dashboard/book"
+            class="landing-hero-guest-cta"
+          >
+            Book once as a guest
+          </NuxtLink>
         </div>
         <p
           v-if="landingContent.hero.campaignHint"
@@ -383,16 +417,6 @@ function tierAccentClass(tierId: string, index: number) {
         >
           {{ landingContent.hero.campaignHint }}
         </p>
-        <NuxtLink
-          to="/signup?returnTo=/dashboard/book"
-          class="landing-hero-guest-cta"
-        >
-          Book as a guest
-        </NuxtLink>
-      </div>
-
-      <div class="landing-hero-note">
-        (Image taken in our studio!)
       </div>
     </section>
 
@@ -445,13 +469,21 @@ function tierAccentClass(tierId: string, index: number) {
                 v-if="galleryLeadVideo"
                 :src="galleryLeadVideo.src"
                 :poster="galleryLeadVideo.poster"
-                class="landing-differentiator-media-video"
+                class="landing-differentiator-media-video motion-safe-video"
+                data-motion-video="decorative"
                 autoplay
                 muted
                 loop
                 playsinline
                 preload="metadata"
               />
+              <img
+                v-if="galleryLeadVideo && (galleryLeadVideo.poster || galleryLeadImage)"
+                :src="galleryLeadVideo.poster || galleryLeadImage?.src"
+                :alt="galleryLeadImage?.alt || 'FO Studio interior'"
+                class="landing-differentiator-media-image motion-video-fallback"
+                data-motion-fallback
+              >
               <img
                 v-else-if="galleryLeadImage"
                 :src="galleryLeadImage.src"

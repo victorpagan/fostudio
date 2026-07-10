@@ -4,9 +4,10 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 
 definePageMeta({ layout: 'auth' })
 
-useSeoMeta({
-  title: 'Login',
-  description: 'Login to your account to continue'
+useNoindexSeo({
+  title: 'Log in to FO Studio',
+  description: 'Log in to manage studio bookings, credits, and membership access.',
+  canonicalPath: '/login'
 })
 
 const supabase = useSupabaseClient()
@@ -43,7 +44,7 @@ const hasCheckoutSuccessReturn = computed(() => {
 // checkbox is the last field before the button.
 const fields = [{
   name: 'email',
-  type: 'text' as const,
+  type: 'email' as const,
   label: 'Email',
   placeholder: 'Enter your email',
   required: true
@@ -168,11 +169,16 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
       </template>
 
       <template #footer>
-        By signing in, you agree to our
+        By signing in, you agree to the
         <ULink
-          to="/policies"
+          to="/policies#terms"
           class="text-primary font-medium"
-        >Terms of Service</ULink>.
+        >terms</ULink>
+        and acknowledge the
+        <ULink
+          to="/policies#privacy"
+          class="text-primary font-medium"
+        >privacy notice</ULink>.
       </template>
     </UAuthForm>
   </div>

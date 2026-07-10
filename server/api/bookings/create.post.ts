@@ -155,6 +155,10 @@ export default defineEventHandler(async (event) => {
   const hasActiveMembership = isMembershipCurrentlyActive(membership)
   const accountKind = hasActiveMembership ? 'member' : 'guest'
 
+  if (bookingKind === 'workshop' && !hasActiveMembership) {
+    throw createError({ statusCode: 403, statusMessage: 'Workshop bookings require an active membership.' })
+  }
+
   // Tier rules (DB catalog)
   const selectWithCap = 'booking_window_days, peak_multiplier, holds_included, active_hold_cap'
   const selectLegacy = 'booking_window_days, peak_multiplier, holds_included'

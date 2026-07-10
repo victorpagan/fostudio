@@ -60,7 +60,7 @@ const stats = reactive<GoogleCalendarStats>({
   nextWeekEvents: 0
 })
 
-const { pending, refresh } = await useAsyncData('admin:gcal:settings', async () => {
+const { pending, refresh, error: loadError, status } = useAsyncData('admin:gcal:settings', async () => {
   const res = await $fetch<{
     settings: GoogleCalendarSettings
     stats: GoogleCalendarStats
@@ -87,7 +87,11 @@ const { pending, refresh } = await useAsyncData('admin:gcal:settings', async () 
   stats.activeSyncedEvents = Number(res.stats.activeSyncedEvents ?? 0)
   stats.nextWeekEvents = Number(res.stats.nextWeekEvents ?? 0)
   return res
+}, {
+  immediate: false,
+  server: false
 })
+const settingsReady = computed(() => status.value === 'success' && !loadError.value)
 
 function readErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') return 'Unknown error'
@@ -129,6 +133,7 @@ const oauthConnectedLabel = computed(() => {
 })
 
 onMounted(() => {
+  void refresh()
   const oauth = typeof route.query.oauth === 'string' ? route.query.oauth : ''
   const message = typeof route.query.message === 'string' ? route.query.message : ''
   const email = typeof route.query.email === 'string' ? route.query.email : ''
@@ -148,7 +153,8 @@ onMounted(() => {
   }
 })
 
-async function saveSettings() {
+async function saveSettings(options: { notify?: boolean } = {}) {
+  if (!settingsReady.value) return false
   saving.value = true
   try {
     await $fetch('/api/admin/google-calendar/settings.upsert', {
@@ -165,22 +171,27 @@ async function saveSettings() {
         syncIntervalMinutes: form.syncIntervalMinutes
       }
     })
-    toast.add({ title: 'Google Calendar settings saved' })
+    if (options.notify !== false) toast.add({ title: 'Google Calendar settings saved' })
     await refresh()
+    return true
   } catch (error: unknown) {
     toast.add({
       title: 'Could not save settings',
       description: readErrorMessage(error),
       color: 'error'
     })
+    return false
   } finally {
     saving.value = false
   }
 }
 
 async function testConnection() {
+  if (!settingsReady.value) return
   testing.value = true
   try {
+    const saved = await saveSettings({ notify: false })
+    if (!saved) return
     const res = await $fetch<{ result: { fetchedEvents: number } }>('/api/admin/google-calendar/test', {
       method: 'POST',
       body: {}
@@ -202,8 +213,11 @@ async function testConnection() {
 }
 
 async function syncNow() {
+  if (!settingsReady.value) return
   syncing.value = true
   try {
+    const saved = await saveSettings({ notify: false })
+    if (!saved) return
     const res = await $fetch<{ result: { fetchedEvents: number, upsertedRows: number, deactivatedRows: number } }>('/api/admin/google-calendar/sync', {
       method: 'POST',
       body: { force: true }
@@ -241,6 +255,7 @@ const calendarSelectItems = computed(() => {
 })
 
 async function refreshGoogleCalendars() {
+  if (!settingsReady.value) return
   if (!form.oauthConnected) {
     calendarOptions.value = []
     calendarsError.value = null
@@ -260,6 +275,8 @@ async function refreshGoogleCalendars() {
 }
 
 async function startOauthConnect() {
+  const saved = await saveSettings({ notify: false })
+  if (!saved) return
   await navigateTo('/api/admin/google-calendar/oauth/start', { external: true })
 }
 </script>
@@ -268,6 +285,7 @@ async function startOauthConnect() {
   <DashboardPageScaffold
     panel-id="admin-google-calendar"
     title="Google Calendar Sync"
+    :busy="pending || saving || syncing || testing"
   >
     <template #right>
       <DashboardActionGroup
@@ -278,200 +296,226 @@ async function startOauthConnect() {
             color: 'neutral',
             variant: 'soft',
             loading: pending,
+            disabled: pending,
             onSelect: () => refresh()
           }
         ]"
       />
     </template>
-    <UAlert
-      color="warning"
-      variant="soft"
-      icon="i-lucide-calendar-sync"
-      title="Peerspace mirror from Google Calendar"
-      description="Sync a designated Google Calendar into the booking calendar as non-bookable external blocks."
+    <DashboardSectionState
+      v-if="loadError"
+      state="error"
+      title="Google Calendar settings unavailable"
+      :description="`${readErrorMessage(loadError)} Sync controls are disabled so local defaults cannot overwrite live settings.`"
+      show-retry
+      @retry="refresh"
     />
-
-    <div class="grid gap-4 md:grid-cols-2">
-      <UCard>
-        <div class="text-xs uppercase tracking-wide text-dimmed">
-          Active synced events
-        </div>
-        <div class="mt-2 text-3xl font-semibold">
-          {{ stats.activeSyncedEvents }}
-        </div>
-      </UCard>
-      <UCard>
-        <div class="text-xs uppercase tracking-wide text-dimmed">
-          Next 7 days
-        </div>
-        <div class="mt-2 text-3xl font-semibold">
-          {{ stats.nextWeekEvents }}
-        </div>
-      </UCard>
-    </div>
-
-    <UAlert
-      v-if="statsError"
-      color="warning"
-      variant="soft"
-      icon="i-lucide-circle-alert"
-      title="Google sync stats unavailable"
-      :description="statsError"
+    <DashboardSectionState
+      v-else-if="!settingsReady"
+      state="loading"
+      title="Loading Google Calendar settings"
+      description="Loading the current connection, calendar, and sync policy."
     />
+    <template v-else>
+      <AppAlert
+        color="warning"
+        variant="soft"
+        icon="i-lucide-calendar-sync"
+        title="Peerspace mirror from Google Calendar"
+        description="Sync a designated Google Calendar into the booking calendar as non-bookable external blocks."
+      />
 
-    <UCard>
-      <div class="grid gap-3 md:grid-cols-2">
-        <UFormField label="Enable sync">
-          <USwitch v-model="form.enabled" />
-        </UFormField>
+      <div class="grid gap-4 md:grid-cols-2">
+        <UCard>
+          <div class="text-xs uppercase tracking-wide text-dimmed">
+            Active synced events
+          </div>
+          <div class="mt-2 text-3xl font-semibold">
+            {{ stats.activeSyncedEvents }}
+          </div>
+        </UCard>
+        <UCard>
+          <div class="text-xs uppercase tracking-wide text-dimmed">
+            Next 7 days
+          </div>
+          <div class="mt-2 text-3xl font-semibold">
+            {{ stats.nextWeekEvents }}
+          </div>
+        </UCard>
+      </div>
 
-        <UFormField label="Push FO Studio busy blocks to Google">
-          <USwitch v-model="form.pushEnabled" />
-        </UFormField>
+      <AppAlert
+        v-if="statsError"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-circle-alert"
+        title="Google sync stats unavailable"
+        :description="statsError"
+      />
 
-        <UFormField label="Google Calendar ID">
-          <UInput
-            v-model="form.calendarId"
-            placeholder="your-calendar-id@group.calendar.google.com"
-          />
-        </UFormField>
-
-        <UFormField
-          v-if="form.oauthConnected"
-          label="Select Google calendar"
-        >
-          <div class="space-y-2">
-            <USelect
-              v-model="form.calendarId"
-              :items="calendarSelectItems"
-              option-attribute="label"
-              value-attribute="value"
-              :disabled="loadingCalendars || calendarSelectItems.length === 0"
+      <UCard>
+        <div class="grid gap-3 md:grid-cols-2">
+          <UFormField label="Enable sync">
+            <USwitch
+              v-model="form.enabled"
+              aria-label="Google Calendar sync enabled"
             />
-            <div class="flex flex-wrap items-center gap-2">
+          </UFormField>
+
+          <UFormField label="Push FO Studio busy blocks to Google">
+            <USwitch
+              v-model="form.pushEnabled"
+              aria-label="Push FO Studio busy blocks to Google enabled"
+            />
+          </UFormField>
+
+          <UFormField label="Google Calendar ID">
+            <UInput
+              v-model="form.calendarId"
+              placeholder="your-calendar-id@group.calendar.google.com"
+            />
+          </UFormField>
+
+          <UFormField
+            v-if="form.oauthConnected"
+            label="Select Google calendar"
+          >
+            <div class="space-y-2">
+              <USelect
+                v-model="form.calendarId"
+                :items="calendarSelectItems"
+                option-attribute="label"
+                value-attribute="value"
+                :disabled="loadingCalendars || calendarSelectItems.length === 0"
+              />
+              <div class="flex flex-wrap items-center gap-2">
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  :loading="loadingCalendars"
+                  @click="refreshGoogleCalendars"
+                >
+                  Refresh calendars
+                </UButton>
+                <span
+                  v-if="!loadingCalendars && calendarSelectItems.length === 0"
+                  class="text-xs text-dimmed"
+                >
+                  No calendars returned for this account.
+                </span>
+              </div>
+              <p
+                v-if="calendarsError"
+                class="text-xs text-error"
+              >
+                {{ calendarsError }}
+              </p>
+            </div>
+          </UFormField>
+
+          <UFormField label="Google OAuth Client ID">
+            <UInput
+              v-model="form.oauthClientId"
+              placeholder="1234567890-xxxx.apps.googleusercontent.com"
+            />
+          </UFormField>
+
+          <UFormField label="OAuth client secret key name">
+            <UInput
+              v-model="form.oauthClientSecretName"
+              placeholder="GOOGLE_OAUTH_CLIENT_SECRET"
+            />
+          </UFormField>
+
+          <UFormField label="OAuth connection">
+            <div class="flex items-center gap-2">
+              <UBadge
+                :color="form.oauthConnected ? 'success' : 'neutral'"
+                variant="soft"
+                :label="oauthConnectedLabel"
+              />
               <UButton
-                size="xs"
                 color="neutral"
                 variant="soft"
-                :loading="loadingCalendars"
-                @click="refreshGoogleCalendars"
+                icon="i-lucide-link"
+                @click="startOauthConnect"
               >
-                Refresh calendars
+                Connect to Google Calendar
               </UButton>
-              <span
-                v-if="!loadingCalendars && calendarSelectItems.length === 0"
-                class="text-xs text-dimmed"
-              >
-                No calendars returned for this account.
-              </span>
             </div>
-            <p
-              v-if="calendarsError"
-              class="text-xs text-error"
-            >
-              {{ calendarsError }}
-            </p>
-          </div>
-        </UFormField>
+          </UFormField>
 
-        <UFormField label="Google OAuth Client ID">
-          <UInput
-            v-model="form.oauthClientId"
-            placeholder="1234567890-xxxx.apps.googleusercontent.com"
-          />
-        </UFormField>
-
-        <UFormField label="OAuth client secret key name">
-          <UInput
-            v-model="form.oauthClientSecretName"
-            placeholder="GOOGLE_OAUTH_CLIENT_SECRET"
-          />
-        </UFormField>
-
-        <UFormField label="OAuth connection">
-          <div class="flex items-center gap-2">
-            <UBadge
-              :color="form.oauthConnected ? 'success' : 'neutral'"
-              variant="soft"
-              :label="oauthConnectedLabel"
+          <UFormField label="Service account secret key name (fallback)">
+            <UInput
+              v-model="form.serviceAccountSecretName"
+              placeholder="GOOGLE_SERVICE_ACCOUNT_JSON"
             />
-            <UButton
-              color="neutral"
-              variant="soft"
-              icon="i-lucide-link"
-              @click="startOauthConnect"
-            >
-              Connect to Google Calendar
-            </UButton>
-          </div>
-        </UFormField>
+          </UFormField>
 
-        <UFormField label="Service account secret key name (fallback)">
-          <UInput
-            v-model="form.serviceAccountSecretName"
-            placeholder="GOOGLE_SERVICE_ACCOUNT_JSON"
-          />
-        </UFormField>
+          <UFormField label="Sync interval (minutes)">
+            <UInput
+              v-model.number="form.syncIntervalMinutes"
+              type="number"
+              min="1"
+              max="1440"
+            />
+          </UFormField>
 
-        <UFormField label="Sync interval (minutes)">
-          <UInput
-            v-model.number="form.syncIntervalMinutes"
-            type="number"
-            min="1"
-            max="1440"
-          />
-        </UFormField>
+          <UFormField label="Lookback window (days)">
+            <UInput
+              v-model.number="form.lookbackDays"
+              type="number"
+              min="0"
+              max="365"
+            />
+          </UFormField>
 
-        <UFormField label="Lookback window (days)">
-          <UInput
-            v-model.number="form.lookbackDays"
-            type="number"
-            min="0"
-            max="365"
-          />
-        </UFormField>
-
-        <UFormField label="Lookahead window (days)">
-          <UInput
-            v-model.number="form.lookaheadDays"
-            type="number"
-            min="1"
-            max="730"
-          />
-        </UFormField>
-      </div>
-
-      <div class="mt-4 space-y-1 text-xs text-dimmed">
-        <div>Last sync: {{ formatLastSync(form.lastSyncAt) }}</div>
-        <div v-if="lastSyncSummary">
-          {{ lastSyncSummary }}
+          <UFormField label="Lookahead window (days)">
+            <UInput
+              v-model.number="form.lookaheadDays"
+              type="number"
+              min="1"
+              max="730"
+            />
+          </UFormField>
         </div>
-      </div>
 
-      <div class="mt-4 flex flex-wrap gap-2">
-        <UButton
-          :loading="saving"
-          @click="saveSettings"
-        >
-          Save settings
-        </UButton>
-        <UButton
-          color="neutral"
-          variant="soft"
-          :loading="testing"
-          @click="testConnection"
-        >
-          Test connection
-        </UButton>
-        <UButton
-          color="neutral"
-          variant="soft"
-          :loading="syncing"
-          @click="syncNow"
-        >
-          Sync now
-        </UButton>
-      </div>
-    </UCard>
+        <div class="mt-4 space-y-1 text-xs text-dimmed">
+          <div>Last sync: {{ formatLastSync(form.lastSyncAt) }}</div>
+          <div v-if="lastSyncSummary">
+            {{ lastSyncSummary }}
+          </div>
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-2">
+          <UButton
+            :loading="saving"
+            :disabled="syncing || testing"
+            @click="saveSettings()"
+          >
+            Save settings
+          </UButton>
+          <UButton
+            color="neutral"
+            variant="soft"
+            :loading="testing"
+            :disabled="saving || syncing"
+            @click="testConnection"
+          >
+            Test connection
+          </UButton>
+          <UButton
+            color="neutral"
+            variant="soft"
+            :loading="syncing"
+            :disabled="saving || testing"
+            @click="syncNow"
+          >
+            Sync now
+          </UButton>
+        </div>
+      </UCard>
+    </template>
   </DashboardPageScaffold>
 </template>

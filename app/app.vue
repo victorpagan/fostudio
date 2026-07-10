@@ -9,6 +9,8 @@ const color = computed(() => colorMode.value === 'dark' ? '#131413' : '#FCFAED')
 const sitePageTransition = { name: 'site-page', mode: 'out-in' as const }
 const globalDashboardNavProgress = useState<number>('global-dashboard-nav-progress', () => 0)
 const globalDashboardHooksBound = useState<boolean>('global-dashboard-nav-hooks-bound', () => false)
+const globalDashboardAnnouncement = ref('')
+const pageContentRef = ref<HTMLElement | null>(null)
 const GLOBAL_DASHBOARD_PROGRESS_MIN_VISIBLE_MS = 380
 const GLOBAL_DASHBOARD_PROGRESS_RESET_MS = 220
 const GOOGLE_ADS_TAG_ID = 'AW-18068877892'
@@ -27,6 +29,20 @@ const pageTransition = computed(() => {
 
   return sitePageTransition
 })
+
+const pageContentRole = computed(() => {
+  if (route.path.startsWith('/dashboard') || route.meta.layout === 'auth' || route.meta.layout === false) {
+    return 'main'
+  }
+
+  // The default layout already renders UMain, so adding another landmark would
+  // create an invalid nested main region.
+  return undefined
+})
+
+const pageContentClass = computed(() => ({
+  'app-page-content--dashboard': route.path.startsWith('/dashboard')
+}))
 
 function clearGlobalDashboardProgressTimers() {
   if (globalDashboardProgressTimer) {
@@ -57,6 +73,7 @@ function startGlobalDashboardProgress() {
   if (globalDashboardNavProgress.value <= 0 || globalDashboardNavProgress.value >= 100) {
     globalDashboardNavProgress.value = 8
     globalDashboardProgressStartedAt = Date.now()
+    globalDashboardAnnouncement.value = 'Loading dashboard'
   } else if (!globalDashboardProgressStartedAt) {
     globalDashboardProgressStartedAt = Date.now()
   }
@@ -84,6 +101,7 @@ function finishGlobalDashboardProgress() {
 
     globalDashboardNavProgress.value = 100
     globalDashboardProgressStartedAt = 0
+    globalDashboardAnnouncement.value = 'Dashboard loaded'
 
     if (globalDashboardProgressResetTimer) {
       clearTimeout(globalDashboardProgressResetTimer)
@@ -112,6 +130,12 @@ function finishGlobalDashboardProgress() {
   }
 
   completeProgress()
+}
+
+function focusMainContent() {
+  requestAnimationFrame(() => {
+    pageContentRef.value?.focus({ preventScroll: true })
+  })
 }
 
 onMounted(() => {
@@ -200,18 +224,48 @@ useSeoMeta({
 
 <template>
   <UApp>
-    <div class="pointer-events-none fixed inset-x-0 top-0 z-[100] h-1">
+    <a
+      class="app-skip-link"
+      href="#main-content"
+      @click="focusMainContent"
+    >
+      Skip to main content
+    </a>
+
+    <div
+      class="pointer-events-none fixed inset-x-0 top-0 z-[100] h-1"
+      aria-hidden="true"
+    >
       <div
-        class="h-full bg-primary transition-[width,opacity] duration-200 ease-out"
+        class="app-navigation-progress h-full bg-primary transition-[width,opacity] duration-200 ease-out"
         :class="globalDashboardNavProgress > 0 ? 'opacity-100' : 'opacity-0'"
         :style="{ width: `${globalDashboardNavProgress}%` }"
       />
     </div>
+
+    <p
+      class="visually-hidden"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      {{ globalDashboardAnnouncement }}
+    </p>
+
     <NuxtLayout>
-      <NuxtPage
-        :transition="pageTransition"
-        :page-key="to => to.fullPath"
-      />
+      <div
+        id="main-content"
+        ref="pageContentRef"
+        class="app-page-content"
+        :class="pageContentClass"
+        :role="pageContentRole"
+        tabindex="-1"
+      >
+        <NuxtPage
+          :transition="pageTransition"
+          :page-key="to => to.path"
+        />
+      </div>
     </NuxtLayout>
   </UApp>
 </template>
