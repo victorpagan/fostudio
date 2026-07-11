@@ -4,41 +4,35 @@ hero:
   description: Common FO Studio questions about memberships, guest booking, credits, booking windows, overnight holds, and studio access.
 items:
   - q: Do I need a membership to book the studio or can I request a tour?
-    a: You do not need a membership for a guest session. Create an account, then use the dashboard booking calendar under the current guest rules. For a tour, use the contact form so the studio can confirm a time.
-  - q: What is different about guest and member booking?
-    a: Guests currently book up to {{guestBookingWindowDays}} days ahead, during {{guestBookingHours}}, with a {{guestMinimum}} minimum and {{guestIncrement}} increments. Members have 24/7 access, 30-minute increments, tier-based booking windows, and member credits and benefits.
+    a: You do not need a membership to try the studio. Create a free account from the signup page, then book as a guest from the dashboard. If you would like a tour first, use the contact form and we will get back to you with availability.
   - q: What is included with memberships?
-    a: "Memberships include the listed in-house studio equipment, backdrop paper, props, and standard consumables. Check the equipment page and confirm any production-critical item before booking."
+    a: "Memberships include studio equipment, backdrop paper, props, and standard consumables. The goal is to keep your production day simple: book, pay, and show up prepared to shoot."
   - q: How do membership credits work on quarterly and annual plans?
     a: Credits still release month by month. Even if you are billed quarterly or annually, the usable credit balance is added on a monthly schedule so it stays predictable.
   - q: When does a membership upgrade or downgrade take effect?
     a: Plan changes are scheduled to your next billing cycle. We do not apply prorated mid-cycle membership changes. Your current plan stays active until the cycle rolls over.
   - q: What makes the studio production ready?
-    a: The 800 sq ft shooting space is built around a 25x30 ft cyclorama with 20+ ft ceilings, a makeup area, client seating and staging space, and layout flexibility for small-to-mid-size teams.
+    a: The space is built around a 25x30 ft cyclorama with 20+ ft ceilings, a makeup area, client seating/staging space, 800sqft and layout flexibility for small-to-mid-size teams.
   - q: What is the difference between peak and off-peak time?
-    a: Off-peak member time uses the base rate of 1 credit per hour. Peak windows use the live multiplier for the selected tier, currently {{peakRateRange}}. The calendar and booking preview identify peak time before confirmation.
+    a: Off-peak time uses the base rate of 1 credit per hour. Peak windows use the tier's peak-hour credit rate (for example 2, 1.5, or 1.25 credits per hour) so the calendar stays fair during the busiest production hours.
   - q: What happens if I need to cancel a booking?
-    a: Standard member reschedules are available until {{memberRescheduleNoticeHours}} hours before the booking start. The dashboard asks the server to confirm whether cancellation is still allowed and whether credits return. Standby bookings cannot be canceled, rescheduled, or extended after purchase. See the cancellations policy for the full operational summary.
+    a: Member reschedules are available until {{memberRescheduleNoticeHours}} hours before the booking start. Cancellation and refund treatment depends on timing, so if a session needs to move, do it as early as possible.
   - q: How far ahead can I book?
-    a: Guests currently book up to {{guestBookingWindowDays}} days ahead. Public membership tiers currently provide {{memberBookingWindowRange}} of booking reach, depending on the tier; the live plan cards show the exact value.
+    a: That depends on the membership tier. Higher tiers can see and reserve farther into the calendar. Guest bookings are intentionally limited to a shorter window.
   - q: Can I try the studio before joining a membership?
     a: Yes. Sign up for a free account and book as a guest from the dashboard. This is intended for people who want to test the space before choosing a recurring membership.
   - q: Can I hold equipment or keep a setup overnight?
     a: Membership tiers include a monthly overnight-hold cap. Holds require a minimum booking length and a late-enough booking end time based on studio policy. Hold time does not count toward booking hours, and door locks do not work during hold hours unless staff is contacted first.
-  - q: How does same-day standby work?
-    a: Standby is shown only when the live calendar identifies an eligible same-day open window. The booking preview confirms the rate and eligibility, and only one standby booking is allowed per account per day. It is not advance availability, and a purchased standby booking cannot be canceled, rescheduled, extended, or chained into another standby booking.
-  - q: Who can use a referral code?
-    a: A referral code applies only to a new member's first successful membership activation. It must belong to another member whose membership is currently entitled. Reward credits are determined by the live tier and cadence rule after activation; self-referrals and repeat activation rewards are not eligible.
-  - q: Who can create a workshop booking?
-    a: Workshop-hosting mode requires an authenticated account with an active membership and workshop booking enabled for that account. Workshop time currently uses {{workshopMultiplier}}x credits. A public calendar listing may include an organizer-provided registration link; attendance terms come from that listing.
   - q: Do you support film shooters?
     a: Yes. Film photographers are welcome, and rush-fee waivers are available when the lab is open and there is processing capacity.
   - q: What if I am not sure which plan fits?
     a: Feel free to contact us directly. Share how often you shoot, how far ahead your client work needs planning, and whether you mostly work solo or with a team. The right plan is the one that matches your real workflow, not the biggest one.
   - q: What equipment is included?
-    a: The existing in-house list includes large boom stands, Profoto D2 strobes and modifiers, backdrop colors, gels, grip, and basic consumables. Inventory can change during service or replacement, so confirm any critical item before the shoot.
+    a: You can check out our equipment page, but we are a fully kitted studio. We have large boom stands, Profoto D2 strobes and modifiers, plenty of backdrop colors, gels, and basic consumables.
+  - q: What's the membership community like?
+    a: We pride ourselves in having a close network of members who treat the space well. For many of us this is a second home. You are welcome to share your own equipment with the studio for anyone to use just be respectful.
   - q: How often is the cyclorama painted/repaired?
-    a: The infinity wall is painted and repaired as needed using Pro Cyc studio paint. Keep people and equipment off the curves and walls, and contact the studio before booking if a freshly painted floor is essential to the shoot.
+    a: Our infinity wall is painted as needed. We use Pro Cyc studio paint and provided people keep off of the curves and walls, we only need to mop the floor occasionally. If it's gotten really bad, we take care of it once or twice a month. Special members are allowed to paint the floor on their own with given notice.
 sidePanel:
   title: Still deciding?
   body: Start with memberships if you are planning recurring work. Start with guest booking if you need one date first. If neither answer feels obvious yet, use the contact page and we can point you in the right direction.

@@ -1,49 +1,32 @@
 creditsExplainer:
   title: How credits work
-  description: Credits are the booking unit for member studio time. The live plan cards show how many credits each billing option releases and how peak rates affect usage.
+  description: ""
   bullets:
-    - Off-peak time uses the base credit rate; peak windows use the multiplier shown on each tier.
-    - Quarterly and annual plans are paid by cycle, while their included credits release month by month.
-    - Unused credits remain available up to the plan's live credit cap; top-off packs are available from the member dashboard.
+    - Peak-time sessions consume credits at a higher tier multiplier while off-peak hours stay at the base rate.
+    - When you run out of credits for the month, you can buy a top off pack.
+    - If your work load was light this month, credits will roll over up to your monthly cap.
 hero:
-  kicker: Self-serve memberships
-  title: Choose a plan, choose a cadence, and activate online.
-  description: Every public price and plan rule below comes from the live membership catalog. Select a tier and billing cadence, review the exact charge, and continue through Square checkout.
+  kicker: Credits / Memberships
+  title: ""
+  description: You use credits to reserve studio time, with peak windows consuming credits at the plan's peak rate.
   badges:
     - 24/7 member access
     - Gear + consumables included
-    - Live pricing and capacity
+    - No startup fees
 infoPanel:
-  title: What membership changes
+  title: What changes with membership
   paragraphs:
-    - Membership is designed for recurring use. Guest booking remains available for a single date, but follows a shorter booking window, limited hours, a longer minimum session, and guest checkout pricing.
-    - Every membership includes in-house studio equipment, backdrop paper, and day-to-day consumables.
+    - Every membership includes studio equipment, backdrop paper, and day-to-day consumables. Book, pay, and show up ready to shoot.
     - The space is 24/7 access with a 25x30 ft cyc, 20+ ft ceilings, makeup area, client seating, and props for product or fashion sessions.
-    - Booking reach, peak credit rate, credit cap, and included overnight holds are shown from the live tier policy below.
-    - Plan changes are scheduled for the next billing cycle rather than prorated mid-cycle.
+    - You can upgrade or downgrade as your workload changes. Priority booking and equipment holds scale with the plan level.
     - Memberships are intentionally limited so the calendar stays usable for everyone.
 plans:
   - id: creator
     lead: Built for lighter recurring volume and simpler month-to-month production flow. Strong fit for off-peak sessions and portfolio work.
-    highlights:
-      - Lowest live monthly credit allowance
-      - Shortest member booking window
-      - In-house gear and consumables included
-    detail: Choose Creator when you need recurring access but can plan around a shorter booking window and a higher peak credit rate.
   - id: pro
     lead: Balanced for active client calendars that need more planning range and reliable weekly access.
-    highlights:
-      - More monthly credits than Creator
-      - Longer booking window
-      - More included overnight holds
-    detail: Choose Pro when repeat client work needs more planning reach and more room to bank credits.
   - id: studio_plus
-    lead: Built for heavier production schedules that need the farthest planning reach and the largest credit allowance.
-    highlights:
-      - Longest live booking window
-      - Lowest peak multiplier among public tiers
-      - Largest live credit cap and hold allowance
-    detail: Choose Studio+ when booking reach and sustained production volume matter more than the lowest monthly entry price.
+    lead: Priority focused plan for heavier production schedules. Supports crews that need the farthest planning reach and the most hours on deck.
 seo:
   title: Photo Studio Membership Plans in Los Angeles | FO Studio
   description: Compare FO Studio membership tiers, monthly credits, booking windows, and included holds to pick the plan that matches your production volume.

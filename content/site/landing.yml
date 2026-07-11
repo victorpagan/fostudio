@@ -4,9 +4,11 @@ gallery:
     src: /videos/studio-example.mp4
     poster: /images/studio-hero-3.png
   leadOverlay:
+    chapter: ""
+    section: ""
     brand: FO STUDIO
-    title: Built for working sets
-    subtitle: A production-ready cyclorama, lighting, grip, and booking workflow in one place.
+    title: From Test To Campaign
+    subtitle: This studio can handle everything you need
   images:
     - src: /images/studio-hero-1.jpg
       alt: Studio wide shot with cyc wall
@@ -18,57 +20,59 @@ gallery:
       alt: Lighting setup in the studio
       loading: lazy
 hero:
-  kicker: Los Angeles photo studio memberships
-  headline: A fully kitted photo studio you can book like part of your own operation.
-  subheadline: Compare live membership pricing, choose a billing cadence, and check out online. Need one shoot first? Create an account and book under the current guest policy.
+  kicker: Membership studio access
+  headline: Pick the studio membership that fits the way you actually work.
+  subheadline: This is a 24/7 turnkey studio built for photographers and small-to-mid crews. Book the plan that matches your volume, then use the space like it was made for production days, not paperwork.
   primaryCta:
-    label: Compare memberships
-    to: /memberships
-  secondaryCta:
-    label: View availability
+    label: See Availability
     to: /calendar
+  secondaryCta:
+    label: Explore Memberships
+    to: /memberships
   waitlistCtaLabel: Join the waitlist
+  campaignHint: ""
   chips:
-    - 24/7 member access
-    - In-house gear + consumables
-    - Self-serve membership checkout
+    - 24/7 photo studio access
+    - Gear + consumables included
+    - No startup fees
 infoCard:
-  title: A production-ready studio without the usual line-item friction.
-  body: FO Studio serves individual photographers through small-to-mid crews with a large shooting space, client seating, a makeup area, and an online booking workflow inside LA Film Lab.
-  affordabilityNote: Ground-floor loading and parking outside the dense downtown grid make arrivals and resets more practical.
+  title: A photo studio built for you.
+  body: Our focus is to provide the best, fully kitted studio for the amateur photographer all the way up to the high volume commercial teams. Large shooting space, client seating, makeup area, all inside our very own LA Film Lab.
+  affordabilityNote: Built to stay affordable for recurring production, with ground floor loading and easier free parking than the typical downtown studio session.
   features:
-    - 25x30 ft cyclorama, 20+ ft ceilings, and an 800 sq ft shooting space
-    - Account-based guest booking when you need one date before choosing a membership
-    - Member sessions as short as 30 minutes for tests, pickups, and pre-lighting
-    - Live calendar, booking management, extensions, and eligible overnight setup holds
+    - 25x30 ft cyclorama with 20+ ft ceilings at 800 sqft for commercial and editorial setups
+    - Guest bookings are available if you want to create an account and try the studio before choosing a membership
+    - As short as 30 minute bookings for tests, pickups, and pre setups
+    - High quality booking dashboard with live calendar, booking extensions, and overnight setup holds
+    - Built and used by working professional photographers so you always know the space is ready for what you can throw at it
 spotlight:
   label: PRODUCTION FIRST VALUE
-  title: Plan, book, and manage studio time without waiting for a rental quote.
-  body: Members use a live booking dashboard and credits tied to their plan. Reserve from 30 minutes to a full production day, subject to calendar availability and the selected tier's booking window.
-  statValue: 30 min
-  statLabel: Minimum member booking increment
+  title: The turnkey studio that keeps you on track.
+  body: Our members dashboard with live calendar and booking suite makes things simple. Reserve as short as a 30 minute session or as long as an entire day.
+  statValue: Booking
+  statLabel: Made Easy
   cta:
-    label: Compare memberships
-    to: /memberships
+    label: See Availability
+    to: /calendar
 tiersPreview:
   title: Membership tier preview
   subtitle: Start with the plan that matches your current volume. You can always move up as your schedule grows.
   items:
     - id: creator
       title: Creator
-      body: A practical fit for lighter recurring volume, portfolio work, and smaller shoots.
-      buttonLabel: See Creator pricing
+      body: A practical fit for lighter monthly volume, test sessions, and smaller recurring shoots. Made for the amateur or even the pro who wants a space to be creative.
+      buttonLabel: Explore Creator plan
     - id: pro
       title: Pro
-      body: For repeat client production that needs a longer booking window and steadier monthly capacity.
-      buttonLabel: See Pro pricing
+      body: For repeat client production that needs stronger booking windows and has a steadier weekly volume.
+      buttonLabel: Explore Pro plan
     - id: studio_plus
       title: Studio+
-      body: For heavier production schedules that need the longest planning reach and the largest credit allowance.
-      buttonLabel: See Studio+ pricing
+      body: Priority focused access for heavier production months and multi-day coordination. For those who need the most time and flexibility throughout the week.
+      buttonLabel: Explore Studio+ plan
 seo:
   title: FO Studio | 24/7 Photo Studio Membership in Los Angeles
-  description: Compare live FO Studio membership pricing, credits, booking windows, and guest options for a fully kitted Los Angeles photo studio.
+  description: 24/7 turnkey photo studio in Los Angeles for photographers and small-to-mid crews. Included gear, consumables, and membership-first booking.
   keywords:
     - los angeles photo studio
     - 24/7 studio rental
@@ -79,13 +83,13 @@ seo:
   robots: index,follow,max-image-preview:large
   og:
     title: FO Studio | 24/7 Photo Studio Membership in Los Angeles
-    description: Compare live membership pricing or check availability before your next Los Angeles studio shoot.
+    description: Turnkey studio access with included gear and member-first booking.
     image: /images/main-banner.webp
     type: website
   twitter:
     card: summary_large_image
     title: FO Studio | 24/7 Photo Studio Membership in Los Angeles
-    description: Compare live membership pricing or check availability before your next Los Angeles studio shoot.
+    description: Turnkey studio access with included gear and member-first booking.
     image: /images/main-banner.webp
   schema:
     pageType: WebSite

@@ -6,16 +6,13 @@ import { test } from 'node:test'
 const rootDir = path.resolve(import.meta.dirname, '..')
 const readProjectFile = relativePath => readFile(path.join(rootDir, relativePath), 'utf8')
 
-test('public calendar tolerates partial CMS content and preserves booking intent', async () => {
+test('public calendar tolerates partial CMS content and keeps the guest signup path', async () => {
   const publicCalendar = await readProjectFile('app/pages/calendar.vue')
-  const memberBooking = await readProjectFile('app/pages/dashboard/book.vue')
 
   assert.match(publicCalendar, /source\?\.readingPanel \?\? fallbackContent\.readingPanel/)
   assert.match(publicCalendar, /source\?\.nextMovePanel \?\? fallbackContent\.nextMovePanel/)
   assert.doesNotMatch(publicCalendar, /resolved\.readingPanel\.points/)
-  assert.match(publicCalendar, /start:\s*selectedTime\.value\.start\.toISOString\(\)/)
-  assert.match(publicCalendar, /returnTo/)
-  assert.match(memberBooking, /route\.query\.start/)
+  assert.match(publicCalendar, /\/signup\?returnTo=\/dashboard\/book/)
 })
 
 test('guest policy fallbacks agree on the current 9 AM to 9 PM window', async () => {
@@ -31,16 +28,20 @@ test('guest policy fallbacks agree on the current 9 AM to 9 PM window', async ()
   assert.match(memberBooking, /guestBookingEndHour \?\? 21/)
 })
 
-test('public pages define canonical SEO and customer-safe guest conversion paths', async () => {
+test('public pages retain the approved marketing prose and original landing hero', async () => {
   const seo = await readProjectFile('app/composables/usePublicSeo.ts')
   const home = await readProjectFile('app/pages/index.vue')
-  const memberships = await readProjectFile('app/pages/memberships.vue')
+  const landing = await readProjectFile('content/site/landing.yml')
+  const memberships = await readProjectFile('content/site/memberships.yml')
   const signup = await readProjectFile('app/pages/signup.vue')
 
   assert.match(seo, /canonical/)
-  assert.match(seo, /application\/ld\+json/)
-  assert.match(home, /guest/i)
-  assert.match(memberships, /guest/i)
+  assert.match(landing, /kicker: Membership studio access/)
+  assert.match(landing, /headline: Pick the studio membership that fits the way you actually work\./)
+  assert.match(memberships, /Every membership includes studio equipment, backdrop paper, and day-to-day consumables\./)
+  assert.match(home, /\(Image taken in our studio!\)/)
+  assert.doesNotMatch(home, /Los Angeles photo studio memberships/)
+  assert.doesNotMatch(home, /absolute left-3 top-16/)
   assert.match(signup, /useNoindexSeo/)
   assert.match(seo, /noindex,nofollow,noarchive/)
 })

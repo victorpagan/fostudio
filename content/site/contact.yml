@@ -1,10 +1,5 @@
-hero:
-  kicker: Contact FO Studio
-  title: Ask the studio team before you commit a client date.
-  description: Use the form for membership fit, guest booking, equipment confirmation, tours, accessibility, or production-specific questions.
 detailsPanel:
   title: Studio details
-  intro: Public contact details and the studio address are listed here for planning and directions.
   items:
     - label: Email
       value: studio@lafilmlab.com
@@ -14,7 +9,7 @@ detailsPanel:
       detail: Useful for shoot-day coordination and quick schedule questions.
     - label: Location
       value: FO Studio, 3131 N. San Fernando Rd., Los Angeles, CA 90065
-      detail: Use the map below for directions and arrival planning.
+      detail: Share a clear public summary now, or keep the exact address private until booking.
 formPanel:
   title: Send a message
   description: Share what you are planning, what you need help with, and how best to reach you back.
@@ -24,9 +19,6 @@ formPanel:
 mapPanel:
   title: Find the studio
   description: Use the map for routing, parking planning, and shoot-day coordination.
-followupPanel:
-  title: What happens after you send
-  body: The server sends your message to the studio inbox. Replies go to the email address entered in the form; no response-time guarantee is implied.
 reasonsPanel:
   title: Best reasons to reach out
   items:

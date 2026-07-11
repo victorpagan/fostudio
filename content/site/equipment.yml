@@ -1,6 +1,6 @@
 cta:
-  title: Match the room to your shoot
-  body: Compare memberships for recurring access, or check the calendar before creating a guest account. Contact the studio before booking if a specific item is essential to the production.
+  title: Ready to book?
+  body: null
   primaryCta:
     label: Compare memberships
     to: /memberships
@@ -8,16 +8,16 @@ cta:
     label: View calendar
     to: /calendar
 equipmentList:
-  - Profoto D2 strobes, wireless triggers, and studio modifiers.
-  - Softboxes, umbrellas, strip modifiers, gels, and beauty-dish style light shaping options.
-  - Large boom stands, C-stands, combo stands, sandbags, and core grip hardware.
+  - Profoto monolights and wireless triggers (strobe setup ready).
+  - Softboxes, umbrellas, strip modifiers, and beauty-dish style light shaping options.
+  - C-stands, combo stands, boom arm support, sandbags, and core grip hardware.
   - V-flats, apple boxes, clamps, extension runs, and common on-set support tools.
   - Seamless backdrop paper system with studio-ready color rolls.
   - Styling tables, stools, and practical props for product and portrait setups.
 equipmentListHeader: Equipment list
 guidelinesHeader: Before you book
-heroBody: The 800 sq ft shooting space is built around a 25x30 ft cyclorama with 20+ ft ceilings, plus client seating and a makeup area. Memberships include the listed in-house gear and standard consumables.
-heroTitle: A fully kitted room with the core tools already on site.
+heroBody: FO Studio is built for fast, reliable sessions. Memberships include the in-house gear and consumables, so your main focus is choosing the right plan and getting on set quickly.
+heroTitle: Studio Setup
 includedGear:
   - All in-house lighting, grip, and core studio equipment are included for member sessions.
   - Backdrop paper and day-to-day consumables are included, so you can arrive ready to shoot.
@@ -26,10 +26,10 @@ includedHeader: What members can expect
 sessionGuidelines:
   - Bring any specialty gear, props, or production-specific tools your session depends on.
   - Plan extra setup time for larger sets, multi-subject sessions, or custom lighting diagrams.
-  - Inventory can change while gear is serviced or replaced; contact the studio before booking when a specific item is production-critical.
+  - Compare membership tiers before booking so your lead time and hold access match the way you work.
 seo:
   title: Included Studio Equipment & Lighting | FO Studio Los Angeles
-  description: "See FO Studio's existing Profoto D2 strobes, modifiers, grip, backdrop system, 25x30 ft cyclorama, and core production tools."
+  description: "See what's included at FO Studio: Profoto strobes, grip, modifiers, backdrop system, and core production tools for fast studio days."
   keywords:
     - studio equipment included
     - profoto studio los angeles

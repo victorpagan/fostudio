@@ -86,7 +86,7 @@ const fallbackContent: SiteContactContent = {
       {
         label: 'Location',
         value: 'FO Studio, 3131 N. San Fernando Rd., Los Angeles, CA 90065',
-        detail: 'Use the map below for directions and arrival planning.'
+        detail: 'Share a clear public summary now, or keep the exact address private until booking.'
       }
     ]
   },
@@ -112,14 +112,6 @@ const toast = useToast()
 const { data: siteContact } = await useAsyncData('site:contact', async () => {
   return await queryCollection('siteContact').first()
 })
-
-usePublicSeo(() => resolvePublicSeo(siteContact.value, {
-  title: 'Contact FO Studio | Los Angeles Photo Studio',
-  description: 'Contact FO Studio about membership fit, guest booking, equipment confirmation, tours, accessibility, and production planning.',
-  canonicalPath: '/contact',
-  schemaType: 'ContactPage',
-  keywords: ['contact photo studio Los Angeles', 'FO Studio contact', 'studio booking help']
-}))
 const pageContent = computed<SiteContactContent>(() => {
   return (siteContact.value as SiteContactContent | null) ?? fallbackContent
 })
@@ -185,7 +177,7 @@ const contactDetails = computed(() => {
     {
       label: 'Location',
       value: String(config.public.contactLocation ?? '').trim() || 'Not provided',
-      detail: 'Use the map below for directions and arrival planning.'
+      detail: 'Share a clear public summary now, or keep the exact address private until booking.'
     }
   ]
 })
@@ -197,14 +189,6 @@ function clearFieldErrors() {
   fieldErrors.subject = ''
   fieldErrors.message = ''
   fieldErrors.company = ''
-}
-
-function contactDetailHref(item: ContactDetailItem) {
-  const label = item.label.trim().toLowerCase()
-  if (label === 'email') return `mailto:${item.value.trim()}`
-  if (label === 'phone') return `tel:${item.value.replace(/[^+\d]/g, '')}`
-  if (label === 'location') return mapDirectionsUrl.value
-  return null
 }
 
 function resetForm() {
@@ -273,13 +257,7 @@ async function submitForm() {
         <div class="contact-hero-grid">
           <div class="contact-hero-main">
             <p class="editorial-label">
-              {{ pageContent.hero.kicker }}
-            </p>
-            <h1 class="editorial-title mt-2">
-              {{ pageContent.hero.title }}
-            </h1>
-            <p class="editorial-body">
-              {{ pageContent.hero.description }}
+              Contact
             </p>
           </div>
 
@@ -309,12 +287,6 @@ async function submitForm() {
             <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
               {{ pageContent.detailsPanel.title }}
             </div>
-            <p
-              v-if="pageContent.detailsPanel.intro"
-              class="mt-2 text-sm leading-7 text-[color:var(--gruv-ink-2)]"
-            >
-              {{ pageContent.detailsPanel.intro }}
-            </p>
             <div class="mt-3 space-y-4">
               <div
                 v-for="item in contactDetails"
@@ -324,19 +296,7 @@ async function submitForm() {
                 <div class="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
                   {{ item.label }}
                 </div>
-                <a
-                  v-if="contactDetailHref(item)"
-                  :href="contactDetailHref(item) ?? undefined"
-                  class="mt-2 inline-block text-sm font-semibold text-[color:var(--gruv-ink-0)] underline-offset-4 hover:underline sm:text-base"
-                  :target="item.label.toLowerCase() === 'location' ? '_blank' : undefined"
-                  :rel="item.label.toLowerCase() === 'location' ? 'noopener noreferrer' : undefined"
-                >
-                  {{ item.value }}
-                </a>
-                <div
-                  v-else
-                  class="mt-2 text-sm font-semibold text-[color:var(--gruv-ink-0)] sm:text-base"
-                >
+                <div class="mt-2 text-sm font-semibold text-[color:var(--gruv-ink-0)] sm:text-base">
                   {{ item.value }}
                 </div>
                 <p class="mt-2 text-sm leading-7 text-[color:var(--gruv-ink-2)]">
@@ -382,7 +342,7 @@ async function submitForm() {
             class="space-y-4 py-8 text-center"
           >
             <UIcon
-              name="i-lucide-circle-check"
+              name="i-heroicons-check-circle"
               class="mx-auto h-12 w-12 text-success"
             />
             <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
@@ -422,9 +382,6 @@ async function submitForm() {
                 <UInput
                   v-model="state.name"
                   placeholder="Your name"
-                  name="name"
-                  autocomplete="name"
-                  required
                   class="w-full"
                 />
               </UFormField>
@@ -437,9 +394,6 @@ async function submitForm() {
                   v-model="state.email"
                   type="email"
                   placeholder="you@example.com"
-                  name="email"
-                  autocomplete="email"
-                  required
                   class="w-full"
                 />
               </UFormField>
@@ -454,8 +408,6 @@ async function submitForm() {
                   v-model="state.phone"
                   type="tel"
                   placeholder="(555) 000-0000"
-                  name="phone"
-                  autocomplete="tel"
                   class="w-full"
                 />
               </UFormField>
@@ -467,8 +419,6 @@ async function submitForm() {
                 <UInput
                   v-model="state.subject"
                   placeholder="What do you need help with?"
-                  name="subject"
-                  required
                   class="w-full"
                 />
               </UFormField>
@@ -481,8 +431,6 @@ async function submitForm() {
               <UTextarea
                 v-model="state.message"
                 placeholder="Tell us about the shoot, the timeline, or the question you are working through."
-                name="message"
-                required
                 :rows="6"
                 class="w-full"
               />
@@ -495,7 +443,6 @@ async function submitForm() {
               >
                 <UInput
                   v-model="state.company"
-                  name="company"
                   autocomplete="off"
                   tabindex="-1"
                 />
@@ -509,15 +456,6 @@ async function submitForm() {
             >
               {{ pageContent.formPanel.submitLabel }}
             </UButton>
-
-            <aside class="rounded-xl border border-[color:var(--gruv-line)] bg-[color:var(--gruv-bg-0)]/60 p-4">
-              <h2 class="text-sm font-semibold text-[color:var(--gruv-ink-0)]">
-                {{ pageContent.followupPanel.title }}
-              </h2>
-              <p class="mt-2 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
-                {{ pageContent.followupPanel.body }}
-              </p>
-            </aside>
           </form>
         </div>
       </div>
