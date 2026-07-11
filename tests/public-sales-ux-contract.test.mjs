@@ -9,9 +9,10 @@ const readProjectFile = relativePath => readFile(path.join(rootDir, relativePath
 test('public calendar tolerates partial CMS content and keeps the guest signup path', async () => {
   const publicCalendar = await readProjectFile('app/pages/calendar.vue')
 
-  assert.match(publicCalendar, /source\?\.readingPanel \?\? fallbackContent\.readingPanel/)
   assert.match(publicCalendar, /source\?\.nextMovePanel \?\? fallbackContent\.nextMovePanel/)
-  assert.doesNotMatch(publicCalendar, /resolved\.readingPanel\.points/)
+  assert.doesNotMatch(publicCalendar, /content\.readingPanel/)
+  assert.doesNotMatch(publicCalendar, /Reading the calendar/)
+  assert.match(publicCalendar, /calendar-guide-grid--single/)
   assert.match(publicCalendar, /\/signup\?returnTo=\/dashboard\/book/)
 })
 

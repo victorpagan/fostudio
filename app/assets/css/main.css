@@ -1791,6 +1791,10 @@ body.dashboard-ui :where(.campaign-editor-shell, .waiver-editor-shell) :is(.tipt
   grid-template-columns: minmax(0, 1.25fr) minmax(18rem, 0.75fr);
 }
 
+.calendar-guide-grid--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .calendar-guide-card {
   padding: clamp(1rem, 2.8vw, 1.8rem);
 }
