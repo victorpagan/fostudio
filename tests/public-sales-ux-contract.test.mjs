@@ -32,6 +32,7 @@ test('public pages retain the approved marketing prose and original landing hero
   const seo = await readProjectFile('app/composables/usePublicSeo.ts')
   const home = await readProjectFile('app/pages/index.vue')
   const landing = await readProjectFile('content/site/landing.yml')
+  const membershipsPage = await readProjectFile('app/pages/memberships.vue')
   const memberships = await readProjectFile('content/site/memberships.yml')
   const signup = await readProjectFile('app/pages/signup.vue')
 
@@ -39,6 +40,8 @@ test('public pages retain the approved marketing prose and original landing hero
   assert.match(landing, /kicker: Membership studio access/)
   assert.match(landing, /headline: Pick the studio membership that fits the way you actually work\./)
   assert.match(memberships, /Every membership includes studio equipment, backdrop paper, and day-to-day consumables\./)
+  assert.doesNotMatch(membershipsPage, /Credit-based studio booking for real production workflows\./)
+  assert.doesNotMatch(membershipsPage, /Each plan mints monthly credits\./)
   assert.match(home, /\(Image taken in our studio!\)/)
   assert.doesNotMatch(home, /Los Angeles photo studio memberships/)
   assert.doesNotMatch(home, /absolute left-3 top-16/)

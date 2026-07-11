@@ -78,9 +78,9 @@ const { data: siteMemberships } = await useAsyncData('site:memberships', async (
 const membershipsContent = computed<SiteMembershipsContent>(() => {
   const fallback: SiteMembershipsContent = {
     hero: {
-      kicker: 'Memberships',
-      title: 'Credit-based studio booking for real production workflows.',
-      description: 'Each plan mints monthly credits. You use credits to reserve studio time, with peak windows consuming credits at the plan’s peak rate.',
+      kicker: 'Credits / Memberships',
+      title: '',
+      description: 'You use credits to reserve studio time, with peak windows consuming credits at the plan\'s peak rate.',
       badges: ['24/7 member access', 'Gear + consumables included', 'No startup fees']
     },
     infoPanel: {
@@ -94,11 +94,11 @@ const membershipsContent = computed<SiteMembershipsContent>(() => {
     },
     creditsExplainer: {
       title: 'How credits work',
-      description: 'Credits keep booking simple. Your plan adds credits each month, and you spend them only when you reserve time, so your cost tracks your real production volume.',
+      description: '',
       bullets: [
-        'You can bank unused credits up to your plan cap.',
-        'Off-peak sessions stretch your credits further while peak windows are priced higher.',
-        'Quarterly and annual options are built for heavier usage and stronger month-to-month output.'
+        'Peak-time sessions consume credits at a higher tier multiplier while off-peak hours stay at the base rate.',
+        'When you run out of credits for the month, you can buy a top off pack.',
+        'If your work load was light this month, credits will roll over up to your monthly cap.'
       ]
     },
     plans: []
@@ -329,7 +329,10 @@ async function submitWaitlist() {
             >
               Change mode: next billing cycle
             </UBadge>
-            <h1 class="editorial-title mt-2">
+            <h1
+              v-if="membershipsContent.hero.title"
+              class="editorial-title mt-2"
+            >
               {{ membershipsContent.hero.title }}
             </h1>
             <p class="editorial-body">
