@@ -37,6 +37,9 @@ service:
       tables_read:
         - orders2
         - system_config
+        - membership_plan_variations
+        - membership_tiers
+        - promo_codes
         - mail_template_registry
         - mail_user_preferences
         - mail_admin_copy_preferences
@@ -112,6 +115,7 @@ service:
       browser_security: "Production responses set CSP/HSTS/frame/MIME/referrer/permissions headers; Google Ads browser measurement requires explicit consent."
       public_rate_limits: "Signup, checkout-signup, password recovery, and contact use process-local hashed IP/identifier limits; edge controls remain recommended for multi-dyno abuse protection."
       guest_booking_policy: "Guest booking rules are system_config-owned; the current access-window value and application fallback are 09:00-21:00 America/Los_Angeles."
+      homepage_marketing_policy: "GET /api/site/important-bits exposes safe live non-member, standby, entry-membership, and one admin-featured promo summary; promo display remains date, scope, redemption, and Square-link gated."
   background_jobs:
     calendar_maintenance:
       endpoint: "/api/internal/calendar/maintenance"

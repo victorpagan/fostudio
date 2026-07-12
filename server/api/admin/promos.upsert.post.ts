@@ -13,6 +13,7 @@ const bodySchema = z.object({
   appliesTierIds: z.array(z.string().min(1)).optional().default([]),
   appliesCreditOptionKeys: z.array(z.string().min(1)).optional().default([]),
   active: z.boolean().default(true),
+  featureOnHomepage: z.boolean().default(false),
   startsAt: z.string().datetime({ offset: true }).optional().nullable(),
   endsAt: z.string().datetime({ offset: true }).optional().nullable(),
   maxRedemptions: z.number().int().min(0).optional().nullable()
@@ -22,6 +23,11 @@ type PromoExistingRow = {
   id: string
   metadata: Record<string, unknown> | null
   square_discount_id: string | null
+}
+
+type FeaturedPromoRow = {
+  id: string
+  metadata: Record<string, unknown> | null
 }
 
 type SquareCatalogUpsertResult = {
@@ -107,6 +113,14 @@ export default defineEventHandler(async (event) => {
 
   if (body.discountType === 'percent' && body.discountValue > 100) {
     throw createError({ statusCode: 400, statusMessage: 'Percent discount cannot exceed 100.' })
+  }
+
+  if (body.featureOnHomepage && !body.active) {
+    throw createError({ statusCode: 400, statusMessage: 'A homepage promotion must be active.' })
+  }
+
+  if (body.featureOnHomepage && body.appliesTo !== 'all' && body.appliesTo !== 'membership') {
+    throw createError({ statusCode: 400, statusMessage: 'Only membership promotions can be featured on the homepage.' })
   }
 
   // UI enters fixed discounts as dollars; persist in cents for existing schema compatibility.
@@ -219,6 +233,7 @@ export default defineEventHandler(async (event) => {
     ...(existing?.metadata ?? {}),
     applies_tier_ids: body.appliesTierIds,
     applies_credit_option_keys: body.appliesCreditOptionKeys,
+    feature_on_homepage: body.featureOnHomepage,
     square_discount_synced_at: new Date().toISOString(),
     square_discount_name: discountName
   }
@@ -237,6 +252,7 @@ export default defineEventHandler(async (event) => {
     max_redemptions: body.maxRedemptions ?? null
   }
 
+  let savedPromo: Record<string, unknown>
   if (body.id) {
     const { data, error } = await db
       .from('promo_codes')
@@ -246,15 +262,42 @@ export default defineEventHandler(async (event) => {
       .single()
 
     if (error) throw createError({ statusCode: 500, statusMessage: error.message })
-    return { promo: data }
+    savedPromo = data as Record<string, unknown>
+  } else {
+    const { data, error } = await db
+      .from('promo_codes')
+      .insert(payload)
+      .select('*')
+      .single()
+
+    if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+    savedPromo = data as Record<string, unknown>
   }
 
-  const { data, error } = await db
-    .from('promo_codes')
-    .insert(payload)
-    .select('*')
-    .single()
+  if (body.featureOnHomepage) {
+    const savedPromoId = String(savedPromo.id ?? '')
+    const { data: otherFeaturedRows, error: featuredErr } = await db
+      .from('promo_codes')
+      .select('id,metadata')
+      .contains('metadata', { feature_on_homepage: true })
+      .neq('id', savedPromoId)
 
-  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
-  return { promo: data }
+    if (featuredErr) throw createError({ statusCode: 500, statusMessage: featuredErr.message })
+
+    for (const row of (otherFeaturedRows ?? []) as FeaturedPromoRow[]) {
+      const { error: clearErr } = await db
+        .from('promo_codes')
+        .update({
+          metadata: {
+            ...(row.metadata ?? {}),
+            feature_on_homepage: false
+          }
+        })
+        .eq('id', row.id)
+
+      if (clearErr) throw createError({ statusCode: 500, statusMessage: clearErr.message })
+    }
+  }
+
+  return { promo: savedPromo }
 })

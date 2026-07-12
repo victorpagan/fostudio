@@ -1,10 +1,14 @@
 hero:
   kicker: FAQ
   title: Clear answers before you commit to the next shoot.
-  description: Common FO Studio questions about memberships, guest booking, credits, booking windows, overnight holds, and studio access.
+  description: Common FO Studio questions about memberships, non-member booking, credits, booking windows, overnight holds, and studio access.
 items:
   - q: Do I need a membership to book the studio or can I request a tour?
-    a: You do not need a membership to try the studio. Create a free account from the signup page, then book as a guest from the dashboard. If you would like a tour first, use the contact form and we will get back to you with availability.
+    a: You do not need a membership to try the studio. Create a free account from the signup page, then book as a non-member from the dashboard. If you would like a tour first, use the contact form and we will get back to you with availability.
+  - q: How does non-member booking work?
+    a: Non-members can book between {{nonMemberHours}}, up to {{nonMemberWindowDays}} days ahead. Sessions require at least {{nonMemberMinHours}} hours and use whole-hour increments. Off-peak time uses 1 credit per hour, while peak time uses the non-member peak rate. Pay-at-booking credit shortfalls are {{nonMemberCreditRate}} per credit, discounted packs are available separately, and purchased credits expire after 30 days. Overnight holds are not included.
+  - q: How does standby booking work?
+    a: Standby is a same-day option when at least {{standbyMinHours}} continuous hours are open. It uses {{standbyDiscountPercent}}% fewer credits after normal peak pricing is calculated. Standby is limited to one booking per day and cannot be held, canceled, moved, or extended.
   - q: What is included with memberships?
     a: "Memberships include studio equipment, backdrop paper, props, and standard consumables. The goal is to keep your production day simple: book, pay, and show up prepared to shoot."
   - q: How do membership credits work on quarterly and annual plans?
@@ -18,11 +22,13 @@ items:
   - q: What happens if I need to cancel a booking?
     a: Member reschedules are available until {{memberRescheduleNoticeHours}} hours before the booking start. Cancellation and refund treatment depends on timing, so if a session needs to move, do it as early as possible.
   - q: How far ahead can I book?
-    a: That depends on the membership tier. Higher tiers can see and reserve farther into the calendar. Guest bookings are intentionally limited to a shorter window.
+    a: That depends on the membership tier. Higher tiers can see and reserve farther into the calendar. Non-member bookings are currently limited to {{nonMemberWindowDays}} days ahead.
   - q: Can I try the studio before joining a membership?
-    a: Yes. Sign up for a free account and book as a guest from the dashboard. This is intended for people who want to test the space before choosing a recurring membership.
+    a: Yes. Sign up for a free account and book as a non-member from the dashboard. This is intended for people who want to test the space before choosing a recurring membership.
   - q: Can I hold equipment or keep a setup overnight?
     a: Membership tiers include a monthly overnight-hold cap. Holds require a minimum booking length and a late-enough booking end time based on studio policy. Hold time does not count toward booking hours, and door locks do not work during hold hours unless staff is contacted first.
+  - q: Can I host a workshop or event?
+    a: Workshop booking is available to approved member accounts. It can include a public title, description, and link on the booking calendar. Workshop time uses a higher credit multiplier and requires the host to acknowledge responsibility for attendees.
   - q: Do you support film shooters?
     a: Yes. Film photographers are welcome, and rush-fee waivers are available when the lab is open and there is processing capacity.
   - q: What if I am not sure which plan fits?
@@ -35,7 +41,7 @@ items:
     a: Our infinity wall is painted as needed. We use Pro Cyc studio paint and provided people keep off of the curves and walls, we only need to mop the floor occasionally. If it's gotten really bad, we take care of it once or twice a month. Special members are allowed to paint the floor on their own with given notice.
 sidePanel:
   title: Still deciding?
-  body: Start with memberships if you are planning recurring work. Start with guest booking if you need one date first. If neither answer feels obvious yet, use the contact page and we can point you in the right direction.
+  body: Start with a membership if you are planning recurring work. Start with non-member booking if you need one date first. If neither answer feels obvious yet, use the contact page and we can point you in the right direction.
   primaryCta:
     label: Compare memberships
     to: /memberships
@@ -44,7 +50,7 @@ sidePanel:
     to: /contact
 seo:
   title: FO Studio FAQ | Memberships, Credits, Booking & Holds
-  description: Answers to common FO Studio questions on memberships, credits, booking windows, overnight holds, and guest sessions.
+  description: Answers to common FO Studio questions on memberships, credits, booking windows, overnight holds, and non-member sessions.
   keywords:
     - photo studio faq
     - membership credits faq

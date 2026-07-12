@@ -21,9 +21,9 @@ const fallbackContent: SiteCalendarContent = {
   nextMovePanel: {
     title: 'Best next move',
     points: [
-      'Want to try the studio before choosing a membership? Create a free account from the signup page, then book as a guest.'
+      'Want to try the studio before choosing a membership? Create a free account from the signup page, then book as a non-member.'
     ],
-    primaryCta: { label: 'Sign up to book as a guest', to: '/signup?returnTo=/dashboard/book' },
+    primaryCta: { label: 'Sign up to book as a non-member', to: '/signup?returnTo=/dashboard/book' },
     secondaryCta: { label: 'Compare memberships', to: '/memberships' }
   }
 }

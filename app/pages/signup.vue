@@ -4,7 +4,7 @@ definePageMeta({ auth: false })
 
 useNoindexSeo({
   title: 'Create an FO Studio account',
-  description: 'Create an account to continue a guest booking or membership activation.',
+  description: 'Create an account to continue a non-member booking or membership activation.',
   canonicalPath: '/signup'
 })
 
@@ -347,7 +347,7 @@ async function handleSignup() {
             Create your login, finish onboarding, and we’ll route you back to complete membership activation.
           </template>
           <template v-else>
-            Create an account to book as a guest, manage credits, or choose a membership when you are ready.
+            Create an account to book as a non-member, manage credits, or choose a membership when you are ready.
           </template>
         </p>
       </div>
@@ -441,7 +441,7 @@ async function handleSignup() {
             class="rounded-2xl border border-default bg-elevated/60 p-4"
           >
             <div class="text-xs font-semibold uppercase tracking-[0.18em] text-dimmed">
-              Selected {{ selectedBookingIntent.rateKind === 'standby' ? 'standby request' : 'guest time' }}
+              Selected {{ selectedBookingIntent.rateKind === 'standby' ? 'standby request' : 'non-member time' }}
             </div>
             <p class="mt-2 font-semibold text-highlighted">
               {{ formatBookingIntent(selectedBookingIntent.start) }} to {{ formatBookingIntent(selectedBookingIntent.end) }}
@@ -567,7 +567,7 @@ async function handleSignup() {
             <div class="mt-2 grid gap-2 sm:grid-cols-3">
               <div>Create your login</div>
               <div>Complete waiver and rules</div>
-              <div>{{ hasPlanContext ? 'Finish membership checkout' : 'Book as guest or join' }}</div>
+              <div>{{ hasPlanContext ? 'Finish membership checkout' : 'Book as a non-member or join' }}</div>
             </div>
           </div>
         </form>

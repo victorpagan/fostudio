@@ -17,7 +17,7 @@ definePageMeta({
 
 useNoindexSeo({
   title: 'FO Studio booking confirmation',
-  description: 'Confirm the status of a completed guest studio booking payment.',
+  description: 'Confirm the status of a completed non-member studio booking payment.',
   canonicalPath: '/checkout/booking-success'
 })
 

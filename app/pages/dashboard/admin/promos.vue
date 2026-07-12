@@ -21,6 +21,7 @@ type PromoCode = {
   metadata?: {
     applies_tier_ids?: string[]
     applies_credit_option_keys?: string[]
+    feature_on_homepage?: boolean
   } | null
 }
 
@@ -52,6 +53,7 @@ const form = reactive({
   appliesTierIds: [] as string[],
   appliesCreditOptionKeys: [] as string[],
   active: true,
+  featureOnHomepage: false,
   startsAt: null as string | null,
   endsAt: null as string | null,
   maxRedemptions: null as number | null
@@ -116,6 +118,7 @@ function resetForm() {
   form.appliesTierIds = []
   form.appliesCreditOptionKeys = []
   form.active = true
+  form.featureOnHomepage = false
   form.startsAt = null
   form.endsAt = null
   form.maxRedemptions = null
@@ -140,6 +143,7 @@ function loadPromo(promoId: string) {
     ? promo.metadata!.applies_credit_option_keys!.map(id => String(id))
     : []
   form.active = promo.active
+  form.featureOnHomepage = promo.metadata?.feature_on_homepage === true
   form.startsAt = normalizeIsoDate(promo.starts_at)
   form.endsAt = normalizeIsoDate(promo.ends_at)
   form.maxRedemptions = promo.max_redemptions
@@ -154,6 +158,12 @@ watch(promos, (next) => {
   const stillExists = next.find(row => row.id === selectedId.value)
   if (!stillExists) loadPromo(next[0]!.id)
 }, { immediate: true })
+
+watch([() => form.appliesTo, () => form.active], ([appliesTo, active]) => {
+  if (!active || (appliesTo !== 'all' && appliesTo !== 'membership')) {
+    form.featureOnHomepage = false
+  }
+})
 
 const validationErrors = computed(() => {
   const errors: string[] = []
@@ -211,6 +221,7 @@ async function savePromo() {
         appliesTierIds: form.appliesTierIds,
         appliesCreditOptionKeys: form.appliesCreditOptionKeys,
         active: form.active,
+        featureOnHomepage: form.featureOnHomepage,
         startsAt: form.startsAt,
         endsAt: form.endsAt,
         maxRedemptions: form.maxRedemptions
@@ -399,6 +410,14 @@ function formatSquareSyncReason(reason: string | null | undefined) {
                 >
                   {{ formatSquareSyncReason(promo.square_sync?.reason) }}
                 </UBadge>
+                <UBadge
+                  v-if="promo.metadata?.feature_on_homepage"
+                  size="xs"
+                  color="primary"
+                  variant="soft"
+                >
+                  publicly featured
+                </UBadge>
               </div>
             </button>
             <UButton
@@ -584,7 +603,10 @@ function formatSquareSyncReason(reason: string | null | undefined) {
               @update:model-value="(value) => { form.endsAt = fromLocalInputValue(String(value ?? '')) }"
             />
           </UFormField>
-          <UFormField label="Max redemptions">
+          <UFormField
+            label="Max redemptions"
+            description="Leave empty for unlimited use."
+          >
             <UInput
               v-model.number="form.maxRedemptions"
               type="number"
@@ -598,7 +620,16 @@ function formatSquareSyncReason(reason: string | null | undefined) {
             v-model="form.active"
             label="Active"
           />
+          <UCheckbox
+            v-model="form.featureOnHomepage"
+            label="Feature on homepage + memberships"
+            :disabled="!form.active || (form.appliesTo !== 'all' && form.appliesTo !== 'membership')"
+          />
         </div>
+
+        <p class="mt-2 text-xs text-dimmed">
+          Featuring this promotion replaces any previously featured public code. It appears on the homepage and memberships comparison only while active, in date, redeemable, and synced with Square.
+        </p>
 
         <AppAlert
           v-if="validationErrors.length"

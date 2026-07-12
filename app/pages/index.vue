@@ -37,6 +37,40 @@ type LandingDifferentiatorCard = {
   ctaTo: string
 }
 
+type ImportantBitsPayload = {
+  guest: {
+    startHour: number
+    endHour: number
+    hoursLabel: string
+    bookingWindowDays: number
+    minBookingHours: number
+    ratePerCreditCents: number
+  }
+  standby: {
+    enabled: boolean
+    minOpenSlotHours: number
+    discountPercent: number
+    memberStartHour: number
+    memberStartHourLabel: string
+    memberWindowHours: number
+    nonMemberWindowHours: number
+  }
+  membership: {
+    tierId: string
+    tierName: string
+    startingPriceCents: number
+    startingCreditsPerMonth: number
+  } | null
+  featuredPromo: {
+    code: string
+    description: string | null
+    discountType: 'percent' | 'fixed_cents'
+    discountValue: number
+    endsAt: string | null
+    tierNames: string[]
+  } | null
+}
+
 type SiteLandingContent = {
   hero: {
     kicker: string
@@ -157,6 +191,137 @@ const { data: siteLanding } = await useAsyncData('site:landing', async () => {
     console.warn('[site:landing] falling back to defaults because content query failed', error)
     return null
   }
+})
+
+const importantBitsFallback: ImportantBitsPayload = {
+  guest: {
+    startHour: 9,
+    endHour: 21,
+    hoursLabel: '9 AM–9 PM',
+    bookingWindowDays: 20,
+    minBookingHours: 2,
+    ratePerCreditCents: 5000
+  },
+  standby: {
+    enabled: true,
+    minOpenSlotHours: 3,
+    discountPercent: 50,
+    memberStartHour: 8,
+    memberStartHourLabel: '8 AM',
+    memberWindowHours: 10,
+    nonMemberWindowHours: 6
+  },
+  membership: {
+    tierId: 'creator',
+    tierName: 'Creator',
+    startingPriceCents: 35000,
+    startingCreditsPerMonth: 10
+  },
+  featuredPromo: null
+}
+
+const { data: importantBitsData } = await useAsyncData('site:important-bits', async () => {
+  try {
+    return await $fetch<ImportantBitsPayload>('/api/site/important-bits')
+  } catch (error) {
+    console.warn('[site:important-bits] falling back to defaults because policy lookup failed', error)
+    return importantBitsFallback
+  }
+})
+
+const importantBits = computed(() => importantBitsData.value ?? importantBitsFallback)
+
+const creditHelpRoot = ref<HTMLElement | null>(null)
+const creditHelpOpen = ref(false)
+const creditHelpPinned = ref(false)
+
+function showCreditHelp() {
+  creditHelpOpen.value = true
+}
+
+function hideCreditHelp() {
+  if (!creditHelpPinned.value) creditHelpOpen.value = false
+}
+
+function toggleCreditHelp() {
+  creditHelpPinned.value = !creditHelpPinned.value
+  creditHelpOpen.value = creditHelpPinned.value
+}
+
+function closeCreditHelp() {
+  creditHelpPinned.value = false
+  creditHelpOpen.value = false
+  const activeElement = document.activeElement
+  if (activeElement instanceof HTMLElement && creditHelpRoot.value?.contains(activeElement)) {
+    activeElement.blur()
+  }
+}
+
+function handleCreditHelpFocusOut() {
+  requestAnimationFrame(() => {
+    if (!creditHelpRoot.value?.contains(document.activeElement)) hideCreditHelp()
+  })
+}
+
+function handleCreditHelpOutsidePointer(event: PointerEvent) {
+  const target = event.target
+  if (target instanceof Node && creditHelpRoot.value?.contains(target)) return
+  closeCreditHelp()
+}
+
+onMounted(() => {
+  document.addEventListener('pointerdown', handleCreditHelpOutsidePointer)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleCreditHelpOutsidePointer)
+})
+
+function formatCurrency(cents: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: cents % 100 === 0 ? 0 : 2
+  }).format(cents / 100)
+}
+
+function formatPublicDate(value: string | null) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'America/Los_Angeles'
+  }).format(date)
+}
+
+function formatList(values: string[]) {
+  if (!values.length) return 'eligible'
+  if (values.length === 1) return values[0]!
+  if (values.length === 2) return `${values[0]} and ${values[1]}`
+  return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`
+}
+
+const featuredPromoEyebrow = computed(() => {
+  const promo = importantBits.value.featuredPromo
+  if (!promo) return null
+  if (promo.code.toUpperCase().includes('SUMMER')) return 'SUMMER MEMBERSHIP SALE'
+  return promo.description?.trim() || 'FEATURED MEMBERSHIP OFFER'
+})
+
+const featuredPromoDiscount = computed(() => {
+  const promo = importantBits.value.featuredPromo
+  if (!promo) return null
+  if (promo.discountType === 'percent') return `${promo.discountValue}% off memberships`
+  return `${formatCurrency(promo.discountValue)} off memberships`
+})
+
+const featuredPromoDetails = computed(() => {
+  const promo = importantBits.value.featuredPromo
+  if (!promo) return null
+  const ending = formatPublicDate(promo.endsAt)
+  return `Use code ${promo.code} on ${formatList(promo.tierNames)} memberships${ending ? ` through ${ending}` : ''}.`
 })
 
 function normalizeCta(input: unknown, fallback: LandingCta): LandingCta {
@@ -387,7 +552,7 @@ function tierAccentClass(tierId: string, index: number) {
           to="/signup?returnTo=/dashboard/book"
           class="landing-hero-guest-cta"
         >
-          Book as a guest
+          Book as a non-member
         </NuxtLink>
       </div>
 
@@ -474,6 +639,172 @@ function tierAccentClass(tierId: string, index: number) {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="important-bits"
+        class="editorial-section landing-important-section"
+        data-reveal
+        data-reveal-delay="70ms"
+      >
+        <div class="editorial-frame landing-important-frame">
+          <div class="landing-important-header">
+            <div class="landing-important-meta">
+              <p class="editorial-label">
+                THE IMPORTANT BITS
+              </p>
+              <span class="landing-important-meta-note">BOOKING / ACCESS</span>
+            </div>
+            <div class="landing-important-intro">
+              <h2 class="editorial-title">
+                Try it once. Make it yours when you're ready.
+              </h2>
+              <p class="editorial-body">
+                Use the studio as a non-member, save on an open day with standby, or join when you need repeat access and more flexibility.
+              </p>
+            </div>
+          </div>
+
+          <div class="landing-important-grid">
+            <article class="landing-important-card">
+              <p class="landing-important-card-label">
+                NON-MEMBER
+              </p>
+              <p class="landing-important-card-stat">
+                {{ importantBits.guest.hoursLabel }}
+              </p>
+              <p class="landing-important-card-body">
+                No plan required. Book up to {{ importantBits.guest.bookingWindowDays }} days ahead at premium credit rates. Pay-at-booking shortfalls are {{ formatCurrency(importantBits.guest.ratePerCreditCents) }} per credit; discounted packs are also available.
+              </p>
+              <NuxtLink
+                to="/signup?returnTo=/dashboard/book"
+                class="landing-important-card-link"
+              >
+                Book as a non-member
+              </NuxtLink>
+            </article>
+
+            <article class="landing-important-card landing-important-card--standby">
+              <p class="landing-important-card-label">
+                LAST-MINUTE / SAME-DAY
+              </p>
+              <p class="landing-important-card-stat">
+                {{ importantBits.standby.discountPercent }}% fewer
+                <span
+                  ref="creditHelpRoot"
+                  class="landing-credit-help"
+                  :class="{ 'is-open': creditHelpOpen }"
+                  @mouseenter="showCreditHelp"
+                  @mouseleave="hideCreditHelp"
+                  @focusin="showCreditHelp"
+                  @focusout="handleCreditHelpFocusOut"
+                  @keydown.esc.stop="closeCreditHelp"
+                >
+                  <button
+                    type="button"
+                    class="landing-credit-term"
+                    aria-label="What is a studio credit?"
+                    aria-haspopup="true"
+                    :aria-expanded="creditHelpOpen"
+                    :aria-describedby="creditHelpOpen ? 'landing-credit-tooltip' : undefined"
+                    @click.stop="toggleCreditHelp"
+                  >
+                    credits
+                  </button>
+                  <span
+                    id="landing-credit-tooltip"
+                    role="tooltip"
+                    class="landing-credit-tooltip"
+                    :aria-hidden="!creditHelpOpen"
+                  >
+                    1 credit covers 1 off-peak studio hour. Peak hours use more credits per hour based on your membership or non-member rate.
+                  </span>
+                </span>
+              </p>
+              <p class="landing-important-card-comparison">
+                Members can enter standby as early as {{ importantBits.standby.memberStartHourLabel }} with up to a {{ importantBits.standby.memberWindowHours }}-hour reach. Non-members stay within {{ importantBits.guest.hoursLabel }} with up to a {{ importantBits.standby.nonMemberWindowHours }}-hour reach.
+              </p>
+              <p class="landing-important-card-body">
+                Standby is specifically for last-minute bookings made and used the same day. When at least {{ importantBits.standby.minOpenSlotHours }} continuous hours remain open today, that window uses {{ importantBits.standby.discountPercent }}% fewer credits after peak pricing.
+              </p>
+              <NuxtLink
+                to="/calendar"
+                class="landing-important-card-link"
+              >
+                Check availability
+              </NuxtLink>
+            </article>
+
+            <article class="landing-important-card landing-important-card--membership">
+              <p class="landing-important-card-label">
+                MEMBERSHIP
+              </p>
+              <p class="landing-important-card-stat">
+                From {{ formatCurrency(importantBits.membership?.startingPriceCents ?? 35000) }}/month
+              </p>
+              <p class="landing-important-card-body">
+                Start with {{ importantBits.membership?.startingCreditsPerMonth ?? 10 }} monthly credits, 24/7 access, lower peak rates, longer booking windows, 30-minute increments, holds, and rollover. Approved members can also request workshop hosting access.
+              </p>
+              <NuxtLink
+                to="/memberships"
+                class="landing-important-card-link"
+              >
+                Compare memberships
+              </NuxtLink>
+            </article>
+          </div>
+
+          <div
+            v-if="importantBits.featuredPromo"
+            class="landing-important-offer landing-important-offer--promo"
+          >
+            <div class="landing-important-offer-copy">
+              <p class="landing-important-offer-label">
+                {{ featuredPromoEyebrow }}
+              </p>
+              <h3 class="landing-important-offer-title">
+                {{ featuredPromoDiscount }}
+              </h3>
+              <p class="landing-important-offer-body">
+                {{ featuredPromoDetails }}
+              </p>
+            </div>
+            <div class="landing-important-offer-actions">
+              <div class="landing-important-code-wrap">
+                <span>PROMO CODE</span>
+                <code>{{ importantBits.featuredPromo.code }}</code>
+              </div>
+              <UButton
+                to="/memberships"
+                color="neutral"
+                variant="solid"
+              >
+                See the plans
+              </UButton>
+            </div>
+          </div>
+
+          <div
+            v-else
+            class="landing-important-offer"
+          >
+            <div class="landing-important-offer-copy">
+              <p class="landing-important-offer-label">
+                MEMBERSHIPS FROM {{ formatCurrency(importantBits.membership?.startingPriceCents ?? 35000) }}/MONTH
+              </p>
+              <p class="landing-important-offer-body">
+                Start with {{ importantBits.membership?.startingCreditsPerMonth ?? 10 }} monthly credits, 24/7 access, and booking benefits made for repeat studio use.
+              </p>
+            </div>
+            <UButton
+              to="/memberships"
+              color="neutral"
+              variant="soft"
+            >
+              Compare memberships
+            </UButton>
           </div>
         </div>
       </section>

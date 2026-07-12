@@ -1,14 +1,14 @@
 hero:
   kicker: Availability
   title: Studio availability and booking options
-  description: Check the public calendar, compare memberships, or create an account to book a guest session before committing.
+  description: Check the public calendar, compare memberships, or create an account to book a non-member session before committing.
 nextMovePanel:
   title: Try the studio before joining
   points:
-    - We allow guest bookings for people who want to try FO Studio before choosing a membership.
-    - Create a free account from the signup page, then use the dashboard booking calendar to book as a guest.
+    - We allow non-member bookings for people who want to try FO Studio before choosing a membership.
+    - Create a free account from the signup page, then use the dashboard booking calendar to book as a non-member.
   primaryCta:
-    label: Sign up to book as a guest
+    label: Sign up to book as a non-member
     to: /signup?returnTo=/dashboard/book
   secondaryCta:
     label: Compare memberships
@@ -18,15 +18,15 @@ readingPanel:
   points:
     - Warm blocks mark hold windows where a set stays built overnight.
     - Neutral blocks show confirmed bookings that are no longer available.
-    - Use week view for planning. Guests can create an account and book from the dashboard if they want to try the studio before committing to a membership.
+    - Use week view for planning. Non-members can create an account and book from the dashboard if they want to try the studio before committing to a membership.
 seo:
   title: Studio Availability Calendar | FO Studio Los Angeles
-  description: Check FO Studio availability, active booking blocks, and next steps to reserve the studio as a member or guest.
+  description: Check FO Studio availability, active booking blocks, and next steps to reserve the studio as a member or non-member.
   keywords:
     - studio availability calendar
     - book photo studio los angeles
     - studio booking schedule
-    - guest studio booking
+    - non-member studio booking
     - membership calendar access
   canonicalPath: /calendar
   robots: index,follow,max-image-preview:large

@@ -50,7 +50,7 @@ const policyContent: Record<PolicyTab, PolicySection> = {
     blocks: [
       {
         heading: 'Booking use',
-        body: 'Bookings should reflect real planned sessions. Members and guests are responsible for the accuracy of the time they reserve and the account details they provide.'
+        body: 'Bookings should reflect real planned sessions. Members and non-members are responsible for the accuracy of the time they reserve and the account details they provide.'
       },
       {
         heading: 'Account responsibility',
@@ -75,8 +75,8 @@ const policyContent: Record<PolicyTab, PolicySection> = {
         body: 'Member sessions canceled with enough notice should return the applicable credits. Last-minute cancellations may reduce or forfeit that return depending on the final studio policy.'
       },
       {
-        heading: 'Guest bookings',
-        body: 'Guest bookings canceled with enough notice should return the payment to the original payment method. Last-minute cancellations are typically more restricted.'
+        heading: 'Non-member bookings',
+        body: 'Non-member bookings canceled with enough notice should return the payment to the original payment method. Last-minute cancellations are typically more restricted.'
       },
       {
         heading: 'Membership changes',

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PricingTableSection, PricingTableTier } from '@nuxt/ui'
 import { resolveMembershipUiState } from '~~/app/utils/membershipStatus'
 
 type Cadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
@@ -29,6 +30,77 @@ type Tier = {
   membership_plan_variations: PlanOption[]
 }
 
+type ImportantBitsPayload = {
+  guest: {
+    hoursLabel: string
+    bookingWindowDays: number
+    minBookingHours: number
+    ratePerCreditCents: number
+    peakMultiplier: number
+    bookingIncrementMinutes: number
+    creditExpiryDays: number
+  }
+  standby: {
+    enabled: boolean
+    minOpenSlotHours: number
+    discountPercent: number
+    memberStartHourLabel: string
+    memberWindowHours: number
+    nonMemberWindowHours: number
+  }
+  featuredPromo: {
+    code: string
+    discountType: 'percent' | 'fixed_cents'
+    discountValue: number
+    endsAt: string | null
+    tierNames: string[]
+  } | null
+}
+
+type ComparisonFeatureKey
+  = 'monthlyCredits'
+    | 'access'
+    | 'bookingWindow'
+    | 'bookingLength'
+    | 'offPeakRate'
+    | 'peakRate'
+    | 'standby'
+    | 'holds'
+    | 'creditPolicy'
+    | 'workshops'
+
+type ComparisonColumn = Record<ComparisonFeatureKey, string> & {
+  id: string
+  name: string
+  category: string
+  price: string
+  priceNote: string
+  tier: Tier | null
+}
+
+type MembershipPricingTier = PricingTableTier & {
+  category: string
+  source: ComparisonColumn
+  availabilityLabel: string
+  availabilityColor: 'success' | 'warning' | 'error' | 'neutral'
+  availabilityClass: string
+  priceSuffix: string
+  priceFootnote: string
+}
+
+const comparisonRows: Array<{ key: ComparisonFeatureKey, label: string, note: string }> = [
+  { key: 'monthlyCredits', label: 'Credits included', note: 'Recurring allocation' },
+  { key: 'access', label: 'Studio access', note: 'When your account code works' },
+  { key: 'bookingWindow', label: 'Booking window', note: 'How far ahead you can reserve' },
+  { key: 'bookingLength', label: 'Booking length', note: 'Minimum and increments' },
+  { key: 'offPeakRate', label: 'Off-peak rate', note: 'Base studio time' },
+  { key: 'peakRate', label: 'Peak rate', note: 'Current high-demand hours' },
+  { key: 'standby', label: 'Standby', note: 'Last-minute, same-day only' },
+  { key: 'holds', label: 'Overnight holds', note: 'Keep an eligible setup in place' },
+  { key: 'creditPolicy', label: 'Unused credits', note: 'Expiration or rollover' },
+  { key: 'workshops', label: 'Workshop hosting', note: 'Account approval required' }
+]
+
 type SiteMembershipPlan = {
   id: string
   lead: string
@@ -46,11 +118,6 @@ type SiteMembershipsContent = {
   infoPanel: {
     title: string
     paragraphs: string[]
-  }
-  creditsExplainer: {
-    title: string
-    description: string
-    bullets: string[]
   }
   plans: SiteMembershipPlan[]
 }
@@ -80,7 +147,7 @@ const membershipsContent = computed<SiteMembershipsContent>(() => {
     hero: {
       kicker: 'Credits / Memberships',
       title: '',
-      description: 'You use credits to reserve studio time, with peak windows consuming credits at the plan\'s peak rate.',
+      description: 'Start with flexible non-member booking or choose a membership for included credits, longer planning range, and better peak-hour value.',
       badges: ['24/7 member access', 'Gear + consumables included', 'No startup fees']
     },
     infoPanel: {
@@ -90,15 +157,6 @@ const membershipsContent = computed<SiteMembershipsContent>(() => {
         'The space is 24/7 access with a 25x30 ft cyc, 20+ ft ceilings, makeup area, client seating, and props for product or fashion sessions.',
         'You can upgrade or downgrade as your workload changes. Priority booking and equipment holds scale with the plan level.',
         'Memberships are intentionally limited so the calendar stays usable for everyone.'
-      ]
-    },
-    creditsExplainer: {
-      title: 'How credits work',
-      description: '',
-      bullets: [
-        'Peak-time sessions consume credits at a higher tier multiplier while off-peak hours stay at the base rate.',
-        'When you run out of credits for the month, you can buy a top off pack.',
-        'If your work load was light this month, credits will roll over up to your monthly cap.'
       ]
     },
     plans: []
@@ -114,6 +172,32 @@ const planContentById = computed(() => {
 const { data, refresh } = await useFetch<{ tiers: Tier[] }>('/api/membership/catalog', {
   default: () => ({ tiers: [] })
 })
+
+const comparisonPolicyFallback: ImportantBitsPayload = {
+  guest: {
+    hoursLabel: '9 AM–9 PM',
+    bookingWindowDays: 20,
+    minBookingHours: 2,
+    ratePerCreditCents: 5000,
+    peakMultiplier: 2.5,
+    bookingIncrementMinutes: 60,
+    creditExpiryDays: 30
+  },
+  standby: {
+    enabled: true,
+    minOpenSlotHours: 3,
+    discountPercent: 50,
+    memberStartHourLabel: '8 AM',
+    memberWindowHours: 10,
+    nonMemberWindowHours: 6
+  },
+  featuredPromo: null
+}
+
+const { data: comparisonPolicyData } = await useFetch<ImportantBitsPayload>('/api/site/important-bits', {
+  default: () => comparisonPolicyFallback
+})
+const comparisonPolicy = computed(() => comparisonPolicyData.value ?? comparisonPolicyFallback)
 
 const tiers = computed(() => data.value?.tiers ?? [])
 const visibleTiers = computed(() => {
@@ -177,12 +261,6 @@ function monthlyOption(tier: Tier) {
   return options.find(option => option.cadence === 'monthly') ?? options[0] ?? null
 }
 
-function monthlyStartingLabel(tier: Tier) {
-  const option = monthlyOption(tier)
-  if (!option) return 'TBD'
-  return formatMoney(option.price_cents, option.currency)
-}
-
 function formatPeakCredits(value: number) {
   if (Number.isInteger(value)) return value.toString()
   return value.toFixed(2).replace(/\.?0+$/, '')
@@ -198,28 +276,150 @@ function tierLead(tier: Tier) {
   return tier.description ?? 'Flexible access built for real production schedules.'
 }
 
-const creditsBullets = computed(() => {
-  const source = membershipsContent.value.creditsExplainer.bullets ?? []
-  const normalized = source
-    .map(value => String(value).trim())
-    .filter(Boolean)
-  if (normalized.length) return normalized
-  return ['Peak-time sessions consume credits at a higher tier multiplier while off-peak hours stay at the base rate.']
+function membershipCreditsLabel(tier: Tier) {
+  const monthly = monthlyOption(tier)
+  if (!monthly) return 'Not published'
+
+  const highest = sortedOptions(tier)
+    .filter(option => ['monthly', 'quarterly', 'annual'].includes(option.cadence))
+    .reduce((best, option) => option.credits_per_month > best.credits_per_month ? option : best, monthly)
+
+  if (highest.credits_per_month <= monthly.credits_per_month) {
+    return `Starts at ${monthly.credits_per_month} / month`
+  }
+
+  return `Starts at ${monthly.credits_per_month} / month · up to ${highest.credits_per_month} with ${highest.cadence} billing`
+}
+
+function formatHourCount(value: number) {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1).replace(/\.0$/, '')
+}
+
+const comparisonColumns = computed<ComparisonColumn[]>(() => {
+  const policy = comparisonPolicy.value
+  const nonMember: ComparisonColumn = {
+    id: 'non-member',
+    name: 'Non-member',
+    category: 'No subscription',
+    price: formatMoney(policy.guest.ratePerCreditCents, 'USD'),
+    priceNote: 'Pay per credit; discounted packs are available.',
+    monthlyCredits: 'Purchase as needed',
+    access: `${policy.guest.hoursLabel} during confirmed bookings`,
+    bookingWindow: `${policy.guest.bookingWindowDays} days ahead`,
+    bookingLength: `${formatHourCount(policy.guest.minBookingHours)}-hour minimum · ${policy.guest.bookingIncrementMinutes}-minute increments`,
+    offPeakRate: '1 credit / hour',
+    peakRate: `${formatPeakCredits(policy.guest.peakMultiplier)} credits / hour`,
+    standby: `Last-minute same-day · ${policy.standby.discountPercent}% fewer credits · up to ${formatHourCount(policy.standby.nonMemberWindowHours)}h reach`,
+    holds: 'Not included',
+    creditPolicy: `Purchased credits expire after ${policy.guest.creditExpiryDays} days`,
+    workshops: 'Not included',
+    tier: null
+  }
+
+  const memberColumns = visibleTiers.value.map((tier): ComparisonColumn => {
+    const option = monthlyOption(tier)
+    const holds = tier.holds_included > 0
+      ? `${tier.holds_included} included / month`
+      : 'Not included'
+    return {
+      id: tier.id,
+      name: tier.display_name,
+      category: 'Membership',
+      price: option ? formatMoney(option.price_cents, option.currency) : 'Contact us',
+      priceNote: option ? 'Starting monthly price; quarterly and annual options are available at checkout.' : 'Pricing is not currently published.',
+      monthlyCredits: membershipCreditsLabel(tier),
+      access: '24/7 member access',
+      bookingWindow: `${tier.booking_window_days} days ahead`,
+      bookingLength: '30-minute increments',
+      offPeakRate: '1 credit / hour',
+      peakRate: `${formatPeakCredits(tier.peak_multiplier)} credits / hour`,
+      standby: `Last-minute same-day · ${policy.standby.discountPercent}% fewer credits · up to ${formatHourCount(policy.standby.memberWindowHours)}h reach`,
+      holds,
+      creditPolicy: `Rollover up to ${tier.max_bank} credits`,
+      workshops: 'Available by approval',
+      tier
+    }
+  })
+
+  return [nonMember, ...memberColumns]
 })
 
-function tierPeakRateLine(tier: Tier) {
-  return `Peak-time bookings use credits at ${formatPeakCredits(tier.peak_multiplier)}x the base rate.`
+const pricingTableTiers = computed<MembershipPricingTier[]>(() => {
+  return comparisonColumns.value.map((column) => {
+    const sourceTier = column.tier
+    return {
+      id: column.id,
+      title: column.name,
+      description: sourceTier
+        ? tierLead(sourceTier)
+        : 'Flexible studio access for occasional shoots without a recurring plan.',
+      category: column.category,
+      price: column.price,
+      highlight: column.id === 'pro',
+      source: column,
+      availabilityLabel: sourceTier ? tierSpotsLeftLabel(sourceTier) : 'No membership required',
+      availabilityColor: sourceTier ? tierSpotsLeftColor(sourceTier) : 'neutral',
+      availabilityClass: sourceTier ? tierSpotsLeftClass(sourceTier) : 'membership-slots-badge--neutral',
+      priceSuffix: sourceTier ? 'per month' : 'per credit',
+      priceFootnote: column.priceNote
+    }
+  })
+})
+
+const pricingTableSections = computed<PricingTableSection<MembershipPricingTier>[]>(() => {
+  const feature = (row: typeof comparisonRows[number]) => ({
+    id: row.key,
+    title: row.label,
+    tiers: Object.fromEntries(comparisonColumns.value.map(column => [column.id, column[row.key]]))
+  })
+
+  return [
+    {
+      id: 'access',
+      title: 'Plan value + access',
+      features: comparisonRows.slice(0, 4).map(feature)
+    },
+    {
+      id: 'booking',
+      title: 'Rates + booking flexibility',
+      features: comparisonRows.slice(4).map(feature)
+    }
+  ]
+})
+
+function comparisonFeatureNote(featureId: string | undefined) {
+  return comparisonRows.find(row => row.key === featureId)?.note ?? ''
 }
 
-function tierDetail(tier: Tier) {
-  if (tier.holds_included <= 0) {
-    return 'No overnight equipment holds are included with this tier.'
+const comparisonPromoSummary = computed(() => {
+  const promo = comparisonPolicy.value.featuredPromo
+  if (!promo) return null
+  const discount = promo.discountType === 'percent'
+    ? `${formatPeakCredits(promo.discountValue)}% off`
+    : `${formatMoney(promo.discountValue, 'USD')} off`
+  const endDate = promo.endsAt
+    ? new Intl.DateTimeFormat('en-US', {
+        month: 'long',
+        day: 'numeric',
+        timeZone: 'America/Los_Angeles'
+      }).format(new Date(promo.endsAt))
+    : null
+  return `${discount} eligible memberships with code ${promo.code}${endDate ? ` through ${endDate}` : ''}.`
+})
+
+function comparisonActionLabel(column: ComparisonColumn) {
+  if (!column.tier) return 'Create account'
+  if (isTierBlockedForCheckout(column.tier)) return 'Join waitlist'
+  return isPlanSwitchMode.value ? `Change to ${column.name}` : `Choose ${column.name}`
+}
+
+function selectComparisonColumn(column: ComparisonColumn) {
+  if (!column.tier) return
+  if (isTierBlockedForCheckout(column.tier)) {
+    openWaitlist(column.tier)
+    return
   }
-  return `Includes up to ${tier.holds_included} overnight equipment hold${tier.holds_included === 1 ? '' : 's'} per month. Holds are for gear/set continuity and do not reserve studio time.`
-}
-
-function monthlyCreditsPerMonth(tier: Tier) {
-  return monthlyOption(tier)?.credits_per_month ?? 0
+  onSelectTier(column.tier.id)
 }
 
 function tierSpotsLeftValue(tier: Tier) {
@@ -229,7 +429,7 @@ function tierSpotsLeftValue(tier: Tier) {
 function tierSpotsLeftLabel(tier: Tier) {
   const spotsLeft = tierSpotsLeftValue(tier)
   if (spotsLeft === null) return 'Unlimited'
-  return `${spotsLeft} slots left`
+  return `${spotsLeft} ${spotsLeft === 1 ? 'slot' : 'slots'} left`
 }
 
 function tierSpotsLeftColor(tier: Tier): 'success' | 'warning' | 'error' | 'neutral' {
@@ -242,14 +442,6 @@ function tierSpotsLeftColor(tier: Tier): 'success' | 'warning' | 'error' | 'neut
 
 function tierSpotsLeftClass(tier: Tier) {
   return `membership-slots-badge--${tierSpotsLeftColor(tier)}`
-}
-
-function tierCardAccentClass(tier: Tier) {
-  const normalized = tier.id.toLowerCase()
-  if (normalized.includes('creator')) return 'membership-plan-card--accent-a'
-  if (normalized.includes('pro')) return 'membership-plan-card--accent-b'
-  if (normalized.includes('studio')) return 'membership-plan-card--accent-c'
-  return 'membership-plan-card--accent-a'
 }
 
 function checkoutUrl(tierId: string) {
@@ -309,229 +501,119 @@ async function submitWaitlist() {
 <template>
   <UContainer class="memberships-page py-10 sm:py-14">
     <section
-      class="editorial-section"
+      id="plans"
+      class="editorial-section memberships-comparison-section"
       data-reveal
+      data-reveal-delay="70ms"
     >
-      <div class="editorial-frame">
-        <div class="editorial-grid memberships-hero-grid">
-          <div class="editorial-cell editorial-meta">
+      <div class="editorial-frame memberships-comparison-frame">
+        <div class="memberships-comparison-heading">
+          <div>
             <p class="editorial-label">
-              {{ membershipsContent.hero.kicker }}
+              PRICING / BENEFITS
             </p>
-          </div>
-
-          <div class="editorial-cell editorial-copy editorial-copy-texture">
             <UBadge
               v-if="isPlanSwitchMode"
               color="warning"
               variant="soft"
-              class="w-fit"
+              class="mt-3 w-fit"
             >
-              Change mode: next billing cycle
+              Changes begin next billing cycle
             </UBadge>
-            <h1
-              v-if="membershipsContent.hero.title"
-              class="editorial-title mt-2"
-            >
-              {{ membershipsContent.hero.title }}
-            </h1>
-            <p class="editorial-body">
-              {{ membershipsContent.hero.description }}
-            </p>
-            <div class="memberships-hero-badges">
-              <UBadge
-                v-for="badge in membershipsContent.hero.badges"
-                :key="badge"
-                color="neutral"
-                variant="soft"
-              >
-                {{ badge }}
-              </UBadge>
-            </div>
-            <div class="mt-5 flex flex-wrap gap-2">
-              <UButton
-                to="/signup?returnTo=/dashboard/book"
-                color="neutral"
-                variant="soft"
-                icon="i-lucide-calendar-plus"
-              >
-                Book as a guest
-              </UButton>
-              <UButton
-                to="/calendar"
-                color="neutral"
-                variant="ghost"
-                trailing-icon="i-lucide-arrow-up-right"
-              >
-                View availability
-              </UButton>
-            </div>
-
-            <p
-              v-if="isPlanSwitchMode"
-              class="mt-4 text-sm leading-7 text-[color:var(--gruv-ink-2)]"
-            >
-              When changing an active membership, the new plan takes effect on your next billing cycle. Mid-cycle prorated membership changes are not applied.
+            <h2 class="memberships-comparison-title">
+              Compare every way to book.
+            </h2>
+            <p class="memberships-comparison-lead">
+              Start without a subscription or choose the membership that matches how often, how far ahead, and when you need to shoot.
             </p>
           </div>
-
-          <div class="editorial-cell memberships-info-cell">
-            <h2 class="memberships-info-title">
-              {{ membershipsContent.creditsExplainer.title }}
-            </h2>
-            <div class="memberships-info-list">
-              <div
-                v-for="bullet in creditsBullets"
-                :key="bullet"
-                class="memberships-credits-item"
-              >
-                <span class="memberships-credits-dot" />
-                <span>{{ bullet }}</span>
-              </div>
-            </div>
+          <div
+            v-if="comparisonPromoSummary"
+            class="memberships-comparison-promo"
+          >
+            <span>Current offer</span>
+            <strong>{{ comparisonPromoSummary }}</strong>
           </div>
         </div>
-      </div>
-    </section>
 
-    <section
-      class="editorial-section memberships-plans-section"
-      data-reveal
-      data-reveal-delay="110ms"
-    >
-      <div class="editorial-frame">
-        <div class="editorial-grid memberships-plans-grid">
-          <div class="editorial-cell editorial-meta">
-            <p class="editorial-label">
-              PLANS / MEMBERSHIPS
-            </p>
-          </div>
-          <div class="editorial-cell editorial-copy editorial-copy-texture">
-            <h2 class="editorial-title">
-              Choose your membership tier.
-            </h2>
-            <p class="editorial-body">
-              Pick the plan that matches your current volume. You can move tiers as your production cadence changes.
-            </p>
-          </div>
-          <div class="editorial-cell memberships-plan-list">
-            <article
-              v-for="tier in visibleTiers"
-              :id="`plan-${tier.id}`"
-              :key="tier.id"
-              class="plan-card membership-plan-card scroll-mt-24"
-              :class="tierCardAccentClass(tier)"
+        <UPricingTable
+          :tiers="pricingTableTiers"
+          :sections="pricingTableSections"
+          caption="Compare non-member booking with FO Studio membership tiers"
+          class="memberships-pricing-table"
+        >
+          <template #tier-title="{ tier }">
+            <span class="memberships-pricing-tier-category">{{ tier.category }}</span>
+            <span class="memberships-pricing-tier-name">{{ tier.title }}</span>
+          </template>
+
+          <template #tier-badge="{ tier }">
+            <UBadge
+              size="xs"
+              variant="solid"
+              class="membership-slots-badge"
+              :class="tier.availabilityClass"
+              :color="tier.availabilityColor"
             >
-              <div class="membership-plan-upper">
-                <div class="flex items-start justify-between gap-4 membership-plan-heading">
-                  <div class="membership-plan-title-wrap">
-                    <div class="studio-display text-4xl text-[color:var(--gruv-ink-0)]">
-                      {{ tier.display_name }}
-                    </div>
-                    <UBadge
-                      v-if="tier.is_full"
-                      color="error"
-                      variant="soft"
-                      size="xs"
-                      class="mt-2"
-                    >
-                      Waitlist open
-                    </UBadge>
-                  </div>
-                  <UBadge
-                    size="xs"
-                    variant="solid"
-                    class="membership-slots-badge"
-                    :class="tierSpotsLeftClass(tier)"
-                  >
-                    {{ tierSpotsLeftLabel(tier) }}
-                  </UBadge>
-                </div>
+              {{ tier.availabilityLabel }}
+            </UBadge>
+          </template>
 
-                <p class="plan-lead membership-plan-lead">
-                  {{ tierLead(tier) }}
-                </p>
+          <template #tier-billing="{ tier }">
+            <span class="memberships-pricing-price-suffix">{{ tier.priceSuffix }}</span>
+            <span class="memberships-pricing-price-note">{{ tier.priceFootnote }}</span>
+          </template>
 
-                <div class="space-y-2 text-sm leading-7 text-[color:var(--gruv-ink-1)] membership-plan-peak">
-                  <div class="flex gap-3">
-                    <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--gruv-olive)]" />
-                    <span>{{ tierPeakRateLine(tier) }}</span>
-                  </div>
-                </div>
-              </div>
+          <template #tier-button="{ tier }">
+            <UButton
+              v-if="!tier.source.tier"
+              to="/signup?returnTo=/dashboard/book"
+              color="neutral"
+              variant="soft"
+              size="lg"
+              block
+            >
+              {{ comparisonActionLabel(tier.source) }}
+            </UButton>
+            <div
+              v-else
+              class="grid gap-2"
+            >
+              <UButton
+                size="lg"
+                block
+                :color="isTierBlockedForCheckout(tier.source.tier) ? 'neutral' : 'primary'"
+                :variant="isTierBlockedForCheckout(tier.source.tier) ? 'soft' : 'solid'"
+                @click="selectComparisonColumn(tier.source)"
+              >
+                {{ comparisonActionLabel(tier.source) }}
+              </UButton>
+              <p
+                v-if="tier.source.tier.is_full && isPriorityMember"
+                class="memberships-pricing-priority-note"
+              >
+                Active members retain priority for plan changes.
+              </p>
+            </div>
+          </template>
 
-              <div class="mt-auto space-y-4 membership-plan-lower">
-                <div class="grid grid-cols-3 gap-2">
-                  <div class="plan-stat text-center">
-                    <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
-                      {{ tier.booking_window_days }}d
-                    </div>
-                    <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
-                      Booking Window
-                    </div>
-                  </div>
-                  <div class="plan-stat text-center">
-                    <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
-                      {{ monthlyCreditsPerMonth(tier) }}
-                    </div>
-                    <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
-                      Cr / Month
-                    </div>
-                  </div>
-                  <div class="plan-stat text-center">
-                    <div class="text-lg font-semibold text-[color:var(--gruv-ink-0)]">
-                      {{ tier.max_bank }}
-                    </div>
-                    <div class="text-xs uppercase tracking-[0.14em] text-[color:var(--gruv-ink-2)]">
-                      Cr Cap
-                    </div>
-                  </div>
-                </div>
-
-                <div class="rounded-2xl bg-[color:var(--gruv-accent-soft)] p-4">
-                  <div class="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--gruv-ink-2)]">
-                    Starting at
-                  </div>
-                  <div class="mt-2 text-3xl font-semibold text-[color:var(--gruv-ink-0)]">
-                    {{ monthlyStartingLabel(tier) }}/mo
-                  </div>
-                  <p class="mt-2 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
-                    Quarterly and annual savings are shown on the next step before checkout.
-                  </p>
-                </div>
-
-                <div class="grid gap-2">
-                  <UButton
-                    v-if="!isTierBlockedForCheckout(tier)"
-                    block
-                    @click="onSelectTier(tier.id)"
-                  >
-                    {{ isPlanSwitchMode ? `Change to ${tier.display_name}` : `Choose ${tier.display_name}` }}
-                  </UButton>
-                  <UButton
-                    v-else
-                    block
-                    color="neutral"
-                    variant="soft"
-                    @click="openWaitlist(tier)"
-                  >
-                    Join waitlist
-                  </UButton>
-                  <p
-                    v-if="tier.is_full && isPriorityMember"
-                    class="text-xs text-dimmed"
-                  >
-                    Tier is full for new members. Active members still have priority for plan changes.
-                  </p>
-                </div>
-
-                <div class="rounded-2xl bg-[color:var(--gruv-accent-soft)] px-4 py-3 text-xs leading-6 text-[color:var(--gruv-ink-2)]">
-                  {{ tierDetail(tier) }}
-                </div>
-              </div>
-            </article>
-          </div>
-        </div>
+          <template #feature-title="{ feature }">
+            <span class="memberships-pricing-feature-label">
+              <span
+                v-if="feature.id === 'monthlyCredits'"
+                class="memberships-pricing-feature-title-line"
+              >
+                <StudioCreditTooltip
+                  label="Credits"
+                  class="memberships-credit-help"
+                />
+                <span>included</span>
+              </span>
+              <span v-else>{{ feature.title }}</span>
+              <small>{{ comparisonFeatureNote(feature.id) }}</small>
+            </span>
+          </template>
+        </UPricingTable>
       </div>
     </section>
 

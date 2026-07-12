@@ -1,14 +1,7 @@
-creditsExplainer:
-  title: How credits work
-  description: ""
-  bullets:
-    - Peak-time sessions consume credits at a higher tier multiplier while off-peak hours stay at the base rate.
-    - When you run out of credits for the month, you can buy a top off pack.
-    - If your work load was light this month, credits will roll over up to your monthly cap.
 hero:
   kicker: Credits / Memberships
   title: ""
-  description: You use credits to reserve studio time, with peak windows consuming credits at the plan's peak rate.
+  description: Start with flexible non-member booking or choose a membership for included credits, longer planning range, and better peak-hour value.
   badges:
     - 24/7 member access
     - Gear + consumables included

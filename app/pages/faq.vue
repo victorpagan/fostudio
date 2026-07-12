@@ -18,6 +18,23 @@ type SiteFaqContent = {
   items: Array<{ q: string, a: string }>
 }
 
+type ImportantBitsPayload = {
+  guest: {
+    hoursLabel: string
+    bookingWindowDays: number
+    minBookingHours: number
+    ratePerCreditCents: number
+  }
+  standby: {
+    minOpenSlotHours: number
+    discountPercent: number
+  }
+  membership: {
+    startingPriceCents: number
+    startingCreditsPerMonth: number
+  } | null
+}
+
 const fallbackContent: SiteFaqContent = {
   hero: {
     kicker: 'FAQ',
@@ -26,14 +43,22 @@ const fallbackContent: SiteFaqContent = {
   },
   sidePanel: {
     title: 'Still deciding?',
-    body: 'Start with memberships if you are planning recurring work. Start with guest booking if you need one date first. If neither answer feels obvious yet, use the contact page and we can point you in the right direction.',
+    body: 'Start with a membership if you are planning recurring work. Start with non-member booking if you need one date first. If neither answer feels obvious yet, use the contact page and we can point you in the right direction.',
     primaryCta: { label: 'Compare memberships', to: '/memberships' },
     secondaryCta: { label: 'Ask a direct question', to: '/contact' }
   },
   items: [
     {
       q: 'Do I need a membership to book the studio?',
-      a: 'No. Create a free account from the signup page, then book as a guest from the dashboard. Membership becomes the better fit when you need repeat access, a longer booking window, lower effective rates, and member benefits.'
+      a: 'No. Create a free account from the signup page, then book as a non-member from the dashboard. Membership becomes the better fit when you need repeat access, a longer booking window, lower effective rates, and member benefits.'
+    },
+    {
+      q: 'How does non-member booking work?',
+      a: 'Non-members can book between {{nonMemberHours}}, up to {{nonMemberWindowDays}} days ahead. Sessions require at least {{nonMemberMinHours}} hours and use whole-hour increments. Off-peak time uses 1 credit per hour, while peak time uses the non-member peak rate. Pay-at-booking credit shortfalls are {{nonMemberCreditRate}} per credit, discounted packs are available separately, and purchased credits expire after 30 days. Overnight holds are not included.'
+    },
+    {
+      q: 'How does standby booking work?',
+      a: 'Standby is a same-day option when at least {{standbyMinHours}} continuous hours are open. It uses {{standbyDiscountPercent}}% fewer credits after normal peak pricing is calculated. Standby is limited to one booking per day and cannot be held, canceled, moved, or extended.'
     },
     {
       q: 'What is included with memberships?',
@@ -57,7 +82,7 @@ const fallbackContent: SiteFaqContent = {
     },
     {
       q: 'Can I try the studio before joining a membership?',
-      a: 'Yes. The guest booking flow exists for exactly that. Sign up for a free account, then book a guest session if you want to test the room, run a single client day, or confirm the studio fits your workflow before committing.'
+      a: 'Yes. Non-member booking exists for exactly that. Sign up for a free account, then book a session if you want to test the room, run a single client day, or confirm the studio fits your workflow before committing.'
     },
     {
       q: 'What happens if I need to cancel a booking?',
@@ -65,11 +90,15 @@ const fallbackContent: SiteFaqContent = {
     },
     {
       q: 'How far ahead can I book?',
-      a: 'That depends on the membership tier. Higher tiers can see and reserve farther into the calendar. Guest bookings are intentionally limited to a shorter window.'
+      a: 'That depends on the membership tier. Higher tiers can see and reserve farther into the calendar. Non-member bookings are currently limited to {{nonMemberWindowDays}} days ahead.'
     },
     {
       q: 'Can I hold equipment or keep a setup overnight?',
       a: 'Membership tiers include a monthly overnight-hold cap. Holds require a minimum booking length and a late-enough booking end time based on studio policy. Hold time does not count toward booking hours, and door locks do not work during hold hours unless staff is contacted first.'
+    },
+    {
+      q: 'Can I host a workshop or event?',
+      a: 'Workshop booking is available to approved member accounts. It can include a public title, description, and link on the booking calendar. Workshop time uses a higher credit multiplier and requires the host to acknowledge responsibility for attendees.'
     },
     {
       q: 'Do you support film shooters?',
@@ -86,6 +115,13 @@ const { data: bookingPolicy } = await useAsyncData('faq:bookings:policy', async 
   return await $fetch<{ memberRescheduleNoticeHours: number }>('/api/bookings/policy')
 })
 const memberRescheduleNoticeHours = computed(() => Number(bookingPolicy.value?.memberRescheduleNoticeHours ?? 24))
+const { data: importantBitsData } = await useAsyncData('faq:important-bits', async () => {
+  try {
+    return await $fetch<ImportantBitsPayload>('/api/site/important-bits')
+  } catch {
+    return null
+  }
+})
 const { data: siteFaq } = await useAsyncData('site:faq', async () => {
   try {
     return await queryCollection('siteFaq').first()
@@ -100,9 +136,24 @@ const pageContent = computed<SiteFaqContent>(() => {
 const faqs = computed(() => [
   ...(pageContent.value.items ?? []).map(item => ({
     question: item.q,
-    answer: item.a.replaceAll('{{memberRescheduleNoticeHours}}', `${memberRescheduleNoticeHours.value}`)
+    answer: item.a
+      .replaceAll('{{memberRescheduleNoticeHours}}', `${memberRescheduleNoticeHours.value}`)
+      .replaceAll('{{nonMemberHours}}', importantBitsData.value?.guest.hoursLabel ?? '9 AM–9 PM')
+      .replaceAll('{{nonMemberWindowDays}}', `${importantBitsData.value?.guest.bookingWindowDays ?? 20}`)
+      .replaceAll('{{nonMemberMinHours}}', `${importantBitsData.value?.guest.minBookingHours ?? 2}`)
+      .replaceAll('{{nonMemberCreditRate}}', formatCurrency(importantBitsData.value?.guest.ratePerCreditCents ?? 5000))
+      .replaceAll('{{standbyMinHours}}', `${importantBitsData.value?.standby.minOpenSlotHours ?? 3}`)
+      .replaceAll('{{standbyDiscountPercent}}', `${importantBitsData.value?.standby.discountPercent ?? 50}`)
   }))
 ])
+
+function formatCurrency(cents: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: cents % 100 === 0 ? 0 : 2
+  }).format(cents / 100)
+}
 
 const openItem = ref<number | null>(0)
 </script>

@@ -56,6 +56,7 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 
 - Admin authorization trusts protected Supabase `app_metadata` only. User-editable `user_metadata` is never an authorization source.
 - Anonymous and member calendars are sanitized application API responses. The application reads occupancy with the server-side service role and does not expose booking rows through a public Data API policy.
+- Public marketing policy is normalized by `GET /api/site/important-bits`: it exposes only safe guest/non-member booking limits, standby savings, the current public entry membership, and one admin-selected homepage promotion. Promo visibility is still gated by active dates, remaining redemptions, membership scope, and a linked Square discount.
 - Authenticated Data API access to `bookings` and `booking_holds` is read-only: members can read their own rows and dashboard admins can read operational rows. Booking and hold writes must pass through server routes and restricted RPCs so credit, waiver, overlap, guest, standby, and workshop rules cannot be bypassed.
 - Admin-authored waiver HTML is allowlist-sanitized before persistence and again before rendering. Executable elements, event handlers, inline styles, and unsafe link protocols are removed.
 - Production responses set CSP, HSTS, frame, MIME-sniffing, referrer, permissions, and cross-domain policy headers. The CSP explicitly permits the configured Square, Supabase, Google measurement, fonts, maps, and media dependencies.
