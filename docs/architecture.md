@@ -45,7 +45,7 @@
 
 Schema ownership lives in `fosupabase`; this repo owns Studio operational behavior over those tables.
 
-- The compatibility migration set mirrors the shared `links.created_at` and `links_archive.created_at` lifecycle timestamps, the service-only latest `service_instance_heartbeats_current` view, and the one-active-request-per-order `link_worker_requests`/`replace_link_for_worker` contract. `fosupabase` remains authoritative; FO Studio consumes neither the PhaseTwo heartbeat view nor the link queue.
+- The compatibility migration set mirrors the shared `links.created_at` and `links_archive.created_at` lifecycle timestamps, the service-only latest `service_instance_heartbeats_current` view, the one-active-request-per-order `link_worker_requests`/`replace_link_for_worker` contract, and the service-only `count_order_note_events(bigint[])` dashboard aggregate with its partial activity index. `fosupabase` remains authoritative; FO Studio consumes none of these dashboard/PhaseTwo contracts.
 
 - Studio core writes: `bookings`, `booking_holds`, `calendar_blocks`, `customers`, `memberships`, `membership_tiers`, `membership_credit_grants`, `membership_checkout_sessions`, `credit_balance`, `credit_topup_sessions`, `hold_balance`, `hold_topup_sessions`, `credits_ledger`, `hold_ledger`.
 - Access-control writes: `lock_access_jobs`, `lock_access_incidents`, `lock_permanent_codes`, `lock_slot_assignments`, `booking_access_codes`, `door_code_change_requests`.

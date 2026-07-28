@@ -119,6 +119,7 @@ service:
       link_creation_timestamps: "The compatibility migration copy mirrors links.created_at and links_archive.created_at; fosupabase owns the authoritative schema contract."
       download_link_worker_compatibility: "The compatibility migration copy includes service-only, one-active-request-per-order link_worker_requests and replace_link_for_worker for schema parity. Fostudio does not read, write, or execute this dashboard-to-NAS contract."
       service_instance_heartbeat_compatibility: "The compatibility migration copy includes the SECURITY INVOKER, service-role-only service_instance_heartbeats_current view for schema parity. Fostudio does not consume PhaseTwo topology heartbeat data."
+      dashboard_order_note_counts_compatibility: "The compatibility migration copy includes the SECURITY INVOKER, service-role-only count_order_note_events(bigint[]) aggregate and partial order.note.added index for schema parity. Fostudio does not consume this dashboard contract."
   background_jobs:
     calendar_maintenance:
       endpoint: "/api/internal/calendar/maintenance"
