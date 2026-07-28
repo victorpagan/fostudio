@@ -116,6 +116,9 @@ service:
       public_rate_limits: "Signup, checkout-signup, password recovery, and contact use process-local hashed IP/identifier limits; edge controls remain recommended for multi-dyno abuse protection."
       guest_booking_policy: "Guest booking rules are system_config-owned; the current access-window value and application fallback are 09:00-21:00 America/Los_Angeles."
       homepage_marketing_policy: "GET /api/site/important-bits exposes safe live non-member, standby, entry-membership, and one admin-featured promo summary; promo display remains date, scope, redemption, and Square-link gated."
+      link_creation_timestamps: "The compatibility migration copy mirrors links.created_at and links_archive.created_at; fosupabase owns the authoritative schema contract."
+      download_link_worker_compatibility: "The compatibility migration copy includes service-only, one-active-request-per-order link_worker_requests and replace_link_for_worker for schema parity. Fostudio does not read, write, or execute this dashboard-to-NAS contract."
+      service_instance_heartbeat_compatibility: "The compatibility migration copy includes the SECURITY INVOKER, service-role-only service_instance_heartbeats_current view for schema parity. Fostudio does not consume PhaseTwo topology heartbeat data."
   background_jobs:
     calendar_maintenance:
       endpoint: "/api/internal/calendar/maintenance"
