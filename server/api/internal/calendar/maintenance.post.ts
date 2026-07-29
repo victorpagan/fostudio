@@ -30,12 +30,13 @@ export default defineEventHandler(async (event) => {
   const authMode = await requireMaintenanceAuth(event)
   const serviceRole = serverSupabaseServiceRole(event)
 
-  await expireStalePendingGuestBookings(serviceRole)
+  const expiredPendingPayments = await expireStalePendingGuestBookings(event, serviceRole)
   const googleCalendar = await maybeAutoSyncGoogleCalendar(event, 'calendar_maintenance')
 
   return {
     ok: true,
     authMode,
+    expiredPendingPayments,
     googleCalendar
   }
 })

@@ -44,9 +44,20 @@ type BookingRow = {
 }
 
 const booking = ref<BookingRow | null>(null)
-const status = ref<'loading' | 'pending' | 'confirmed' | 'error'>('loading')
+const status = ref<'loading' | 'pending' | 'confirmed' | 'expired' | 'error'>('loading')
 const tries = ref(0)
 const MAX_TRIES = 15 // 30 seconds total
+const pollingComplete = ref(false)
+const checkingAgain = ref(false)
+const claimMessage = ref<string | null>(null)
+const claimError = ref<string | null>(null)
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function apiErrorMessage(error: unknown) {
+  if (!error || typeof error !== 'object') return null
+  const source = error as { data?: { statusMessage?: string, message?: string }, message?: string }
+  return source.data?.statusMessage ?? source.data?.message ?? source.message ?? null
+}
 
 async function fetchBooking() {
   if (!bookingId.value) {
@@ -71,6 +82,8 @@ async function fetchBooking() {
     status.value = 'confirmed'
   } else if (data.status === 'pending_payment') {
     status.value = 'pending'
+  } else if (['canceled', 'cancelled'].includes(String(data.status ?? '').toLowerCase())) {
+    status.value = 'expired'
   } else {
     status.value = 'error'
   }
@@ -79,15 +92,30 @@ async function fetchBooking() {
 async function claimGuestPaymentIfPossible() {
   if (!user.value || !guestPaymentToken.value) return
   try {
-    await $fetch('/api/bookings/guest/claim', {
+    claimError.value = null
+    const response = await $fetch<{ ok?: boolean, status?: string, message?: string }>('/api/bookings/guest/claim', {
       method: 'POST',
       body: {
         token: guestPaymentToken.value,
         orderId: orderId.value
       }
     })
+    claimMessage.value = response.message ?? null
   } catch (error) {
+    claimError.value = apiErrorMessage(error) ?? 'We could not verify the payment yet.'
     console.warn('[booking-success] guest payment claim failed or is still pending', error)
+  }
+}
+
+async function checkAgain() {
+  checkingAgain.value = true
+  pollingComplete.value = false
+  claimError.value = null
+  try {
+    await claimGuestPaymentIfPossible()
+    await fetchBooking()
+  } finally {
+    checkingAgain.value = false
   }
 }
 
@@ -103,15 +131,21 @@ onMounted(async () => {
   if (status.value === 'confirmed') return
 
   // Poll every 2 seconds until confirmed or max tries
-  const timer = setInterval(async () => {
+  pollTimer = setInterval(async () => {
     tries.value++
     await claimGuestPaymentIfPossible()
     await fetchBooking()
 
     if (status.value === 'confirmed' || tries.value >= MAX_TRIES) {
-      clearInterval(timer)
+      if (pollTimer) clearInterval(pollTimer)
+      pollTimer = null
+      pollingComplete.value = status.value !== 'confirmed'
     }
   }, 2000)
+})
+
+onBeforeUnmount(() => {
+  if (pollTimer) clearInterval(pollTimer)
 })
 
 // Formatting helpers
@@ -245,43 +279,67 @@ function formatTime(iso: string) {
             />
           </div>
           <h1 class="text-3xl font-semibold tracking-tight">
-            Payment Processing
+            Checking Payment
           </h1>
           <p class="text-muted">
-            Your payment was received — your booking is being confirmed.
+            Your booking is not confirmed until payment verification finishes.
           </p>
         </div>
 
         <UCard>
           <div class="flex items-center gap-3">
             <UIcon
-              name="i-lucide-loader-circle"
-              class="animate-spin size-5 text-primary shrink-0"
+              :name="pollingComplete ? 'i-lucide-circle-help' : 'i-lucide-loader-circle'"
+              :class="['size-5 text-primary shrink-0', { 'animate-spin': !pollingComplete }]"
             />
             <div>
               <div class="text-sm font-medium">
-                Waiting for confirmation…
+                {{ pollingComplete ? 'Still awaiting confirmation' : 'Checking Square and your booking…' }}
               </div>
               <div class="mt-0.5 text-xs text-dimmed">
-                This usually takes a few seconds. Checked {{ tries }} of {{ MAX_TRIES }} times.
+                {{ pollingComplete ? 'Use Check again before starting another checkout.' : `Checked ${tries} of ${MAX_TRIES} times.` }}
               </div>
             </div>
           </div>
 
+          <AppAlert
+            v-if="claimError"
+            class="mt-4"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-triangle-alert"
+            title="Payment verification needs attention"
+            :description="claimError"
+          />
+          <AppAlert
+            v-else-if="claimMessage"
+            class="mt-4"
+            color="info"
+            variant="soft"
+            icon="i-lucide-info"
+            :description="claimMessage"
+          />
+
           <p class="mt-4 text-xs text-dimmed">
-            If this page doesn't update within a minute, your booking is still being processed.
-            You'll receive a confirmation email once it's complete. Booking ID:
+            Do not assume the studio time is booked until this page says Confirmed or you receive the confirmation email. Booking ID:
             <code class="font-mono">{{ bookingId }}</code>
           </p>
         </UCard>
 
         <div class="flex gap-3 justify-center">
           <UButton
-            to="/calendar"
+            v-if="pollingComplete"
+            :loading="checkingAgain"
+            @click="checkAgain"
+          >
+            Check again
+          </UButton>
+          <UButton
+            to="/dashboard/book"
             color="neutral"
             variant="soft"
           >
-            View Calendar
+            Return to booking
           </UButton>
           <UButton
             to="/"
@@ -289,6 +347,44 @@ function formatTime(iso: string) {
             variant="ghost"
           >
             Back to Home
+          </UButton>
+        </div>
+      </template>
+
+      <template v-else-if="status === 'expired'">
+        <div class="text-center space-y-2">
+          <div class="mx-auto size-14 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+            <UIcon
+              name="i-lucide-timer-off"
+              class="size-8 text-amber-600 dark:text-amber-400"
+            />
+          </div>
+          <h1 class="text-3xl font-semibold tracking-tight">
+            Reservation Expired
+          </h1>
+          <p class="text-muted">
+            Payment was not confirmed within the reservation window, so the studio time was released.
+          </p>
+        </div>
+
+        <AppAlert
+          color="warning"
+          variant="soft"
+          icon="i-lucide-credit-card"
+          title="Start a fresh checkout"
+          description="Return to booking and choose the time again. If your card was declined, verify the CVV and billing ZIP or use another card."
+        />
+
+        <div class="flex gap-3 justify-center">
+          <UButton to="/dashboard/book">
+            Book again
+          </UButton>
+          <UButton
+            to="/dashboard/bookings"
+            color="neutral"
+            variant="soft"
+          >
+            My bookings
           </UButton>
         </div>
       </template>
@@ -303,7 +399,7 @@ function formatTime(iso: string) {
             />
           </div>
           <h1 class="text-3xl font-semibold tracking-tight">
-            Booking Not Found
+            Booking Could Not Be Verified
           </h1>
           <p class="text-muted">
             We couldn't locate your booking. If you completed payment, please contact us.
@@ -322,7 +418,7 @@ function formatTime(iso: string) {
 
         <div class="flex gap-3 justify-center">
           <UButton
-            to="/signup?returnTo=/dashboard/book"
+            to="/dashboard/book"
             color="neutral"
             variant="soft"
           >

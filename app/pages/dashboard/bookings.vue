@@ -49,6 +49,7 @@ type Booking = {
   notes: string | null
   credits_burned: number | null
   booking_rate_kind?: string | null
+  payment_expires_at?: string | null
   created_at: string
   booking_holds?: {
     id: string
@@ -133,7 +134,7 @@ const {
   if (!user.value || !hasBookingAccess.value) return []
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, start_time, end_time, status, notes, credits_burned, booking_rate_kind, created_at, booking_holds(id,hold_start,hold_end,hold_type)')
+    .select('id, start_time, end_time, status, notes, credits_burned, booking_rate_kind, payment_expires_at, created_at, booking_holds(id,hold_start,hold_end,hold_type)')
     .eq('user_id', user.value.sub)
     .gt('end_time', nowIso.value)
     .in('status', ['confirmed', 'requested', 'pending_payment'])
@@ -165,6 +166,7 @@ const { data: bookingPolicy } = await useAsyncData('bookings:policy', async () =
   return await $fetch<BookingPolicy>('/api/bookings/policy')
 })
 const memberRescheduleNoticeHours = computed(() => Number(bookingPolicy.value?.memberRescheduleNoticeHours ?? 24))
+const pendingPaymentLoadingId = ref<string | null>(null)
 const holdCreditCost = computed(() => Number(bookingPolicy.value?.holdCreditCost ?? 2))
 const minHoldBookingHours = computed(() => Math.max(1, Number(bookingPolicy.value?.minHoldBookingHours ?? 4)))
 const holdMinEndHour = computed(() => {
@@ -459,6 +461,54 @@ function isPendingPayment(booking: Booking) {
   return String(booking.status ?? '').toLowerCase() === 'pending_payment'
 }
 
+function pendingPaymentExpiryLabel(booking: Booking) {
+  if (!booking.payment_expires_at) return null
+  const value = DateTime.fromISO(booking.payment_expires_at, { setZone: true }).setZone(STUDIO_TZ)
+  return value.isValid ? value.toFormat('h:mm a') : null
+}
+
+async function resumePendingPayment(booking: Booking) {
+  pendingPaymentLoadingId.value = booking.id
+  try {
+    const response = await $fetch<{
+      pending: null | {
+        checkoutUrl: string | null
+        checkoutAvailable: boolean
+        paymentCompleted: boolean
+        message: string
+      }
+    }>('/api/bookings/guest/payment-status', { query: { bookingId: booking.id } })
+    const pending = response.pending
+    if (!pending) {
+      toast.add({
+        title: 'Reservation is no longer pending',
+        description: 'Choose the time again if you still want to book it.',
+        color: 'warning'
+      })
+      await refreshUpcoming()
+      return
+    }
+    if (pending.paymentCompleted) {
+      toast.add({ title: 'Payment is processing', description: pending.message, color: 'info' })
+      return
+    }
+    if (!pending.checkoutAvailable || !pending.checkoutUrl) {
+      toast.add({ title: 'Checkout expired', description: pending.message, color: 'warning' })
+      await refreshUpcoming()
+      return
+    }
+    window.location.assign(pending.checkoutUrl)
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Could not resume payment',
+      description: getApiErrorMessage(error, 'Release the reservation and choose the time again.'),
+      color: 'error'
+    })
+  } finally {
+    pendingPaymentLoadingId.value = null
+  }
+}
+
 function isCanceledBooking(booking: Booking) {
   return ['canceled', 'cancelled'].includes(String(booking.status ?? '').toLowerCase())
 }
@@ -578,12 +628,14 @@ function holdRangeLabel(booking: Booking) {
 
 function canReschedule(booking: Booking) {
   if (booking.booking_rate_kind === 'standby') return false
+  if (isPendingPayment(booking)) return false
   if (!['confirmed', 'requested', 'pending_payment'].includes(String(booking.status ?? '').toLowerCase())) return false
   return hoursUntilStart(booking) >= memberRescheduleNoticeHours.value
 }
 
 function canExtend(booking: Booking) {
   if (booking.booking_rate_kind === 'standby') return false
+  if (isPendingPayment(booking)) return false
   if (!['confirmed', 'requested', 'pending_payment'].includes(String(booking.status ?? '').toLowerCase())) return false
   return hasPassed(booking) && !hasEnded(booking)
 }
@@ -611,6 +663,17 @@ function extendLockReason(booking: Booking) {
 function bookingManageItems(booking: Booking): DropdownMenuItem[][] {
   const items: DropdownMenuItem[] = []
 
+  if (isPendingPayment(booking)) {
+    items.push({
+      label: 'Resume payment',
+      icon: 'i-lucide-credit-card',
+      onSelect: (event: Event) => {
+        event.preventDefault()
+        void resumePendingPayment(booking)
+      }
+    })
+  }
+
   if (canExtend(booking)) {
     items.push({
       label: 'Extend',
@@ -622,16 +685,18 @@ function bookingManageItems(booking: Booking): DropdownMenuItem[][] {
     })
   }
 
-  items.push({
-    label: 'Reschedule',
-    icon: 'i-lucide-clock3',
-    disabled: !canReschedule(booking),
-    onSelect: (event: Event) => {
-      event.preventDefault()
-      if (!canReschedule(booking)) return
-      openReschedule(booking)
-    }
-  })
+  if (!isPendingPayment(booking)) {
+    items.push({
+      label: 'Reschedule',
+      icon: 'i-lucide-clock3',
+      disabled: !canReschedule(booking),
+      onSelect: (event: Event) => {
+        event.preventDefault()
+        if (!canReschedule(booking)) return
+        openReschedule(booking)
+      }
+    })
+  }
 
   if (canCancelHoldOnly(booking)) {
     items.push({
@@ -1700,7 +1765,8 @@ watch(
                         v-if="isPendingPayment(booking)"
                         class="mt-1 text-xs font-medium text-amber-700 dark:text-amber-300"
                       >
-                        Payment is pending. This time is temporarily reserved until checkout completes.
+                        Payment has not completed. Resume checkout to correct card details or use another card
+                        <span v-if="pendingPaymentExpiryLabel(booking)"> before {{ pendingPaymentExpiryLabel(booking) }}</span>.
                       </p>
                       <p
                         v-if="hasHold(booking)"
@@ -1719,7 +1785,17 @@ watch(
                       </p>
                     </div>
                     <div class="shrink-0 flex items-center gap-2">
+                      <UButton
+                        v-if="isPendingPayment(booking)"
+                        size="sm"
+                        icon="i-lucide-credit-card"
+                        :loading="pendingPaymentLoadingId === booking.id"
+                        @click="resumePendingPayment(booking)"
+                      >
+                        Resume payment
+                      </UButton>
                       <UDropdownMenu
+                        v-if="!isPendingPayment(booking)"
                         :items="bookingExportItems(booking)"
                         :content="{ align: 'end' }"
                       >

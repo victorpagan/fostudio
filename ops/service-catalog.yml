@@ -126,7 +126,8 @@ service:
       schedule: "Every 5 minutes via Supabase pg_cron + pg_net"
       auth: "x-access-key using ACCESS_AUTOMATION_SHARED_KEY from Vault"
       responsibilities:
-        - expire stale guest pending-payment bookings
+        - reconcile bounded batches of stale guest payments with Square before releasing reservations
+        - delete unpaid expired Square checkout links and expire their top-up sessions
         - run throttled Google Calendar synchronization
       config:
         - CALENDAR_MAINTENANCE_URL

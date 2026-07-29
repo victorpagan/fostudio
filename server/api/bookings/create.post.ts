@@ -326,7 +326,7 @@ export default defineEventHandler(async (event) => {
   const endIso = end.toUTC().toISO()
   if (!startIso || !endIso) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
 
-  await expireStalePendingGuestBookings(supabase)
+  await expireStalePendingGuestBookings(event, supabase, undefined, { startTime: startIso, endTime: endIso })
   await ensureNoExternalCalendarConflict(supabase, startIso, endIso)
 
   const { data: bookingConflicts, error: bookingConflictErr } = await supabase

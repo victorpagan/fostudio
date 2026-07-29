@@ -7,6 +7,8 @@ import { loadGuestBookingPolicy } from '~~/server/utils/booking/guestPolicy'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 import { sendMemberBookingLifecycleMail } from '~~/server/utils/mail/memberBookingLifecycle'
+import { guestPaymentIssueMessage } from '~~/server/utils/booking/guestPaymentCheckout'
+import { expireStalePendingGuestBookings } from '~~/server/utils/booking/pendingPayments'
 
 const bodySchema = z.object({
   token: z.string().uuid(),
@@ -70,6 +72,7 @@ export default defineEventHandler(async (event) => {
 
   const bookingId = readString(session.metadata, 'booking_id')
   if (!bookingId) throw createError({ statusCode: 400, statusMessage: 'Guest payment session is missing booking metadata.' })
+  await expireStalePendingGuestBookings(event, supabase, undefined, { bookingId, userId: user.sub, limit: 1 })
 
   const { data: booking, error: bookingErr } = await supabase
     .from('bookings')
@@ -78,6 +81,13 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
   if (bookingErr) throw createError({ statusCode: 500, statusMessage: bookingErr.message })
   if (!booking || booking.user_id !== user.sub) throw createError({ statusCode: 404, statusMessage: 'Guest booking not found' })
+
+  if (['canceled', 'cancelled'].includes(String(booking.status ?? '').toLowerCase())) {
+    throw createError({
+      statusCode: 410,
+      statusMessage: 'The payment reservation expired. Return to booking and start a fresh checkout.'
+    })
+  }
 
   if (String(booking.status ?? '').toLowerCase() === 'confirmed' && String(session.status ?? '').toLowerCase() === 'processed') {
     return {
@@ -112,13 +122,15 @@ export default defineEventHandler(async (event) => {
   })
 
   if (!paymentState.completed) {
+    const issueMessage = guestPaymentIssueMessage(paymentState.failureCode)
     return {
       ok: false,
       status: 'pending',
       bookingId,
       orderState: paymentState.orderState,
       paymentStatus: paymentState.paymentStatus,
-      message: 'Guest booking payment is not completed yet.'
+      failureCode: paymentState.failureCode,
+      message: issueMessage ?? 'Guest booking payment is not completed yet.'
     }
   }
 

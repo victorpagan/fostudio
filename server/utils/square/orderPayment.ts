@@ -20,6 +20,42 @@ export type OrderPaymentState = {
   paymentCustomerId: string | null
   paymentCardId: string | null
   paymentCreatedAt: string | null
+  failureCode: string | null
+  failureDetail: string | null
+}
+
+function readPaymentFailure(source: Record<string, unknown> | null | undefined) {
+  if (!source) return { code: null, detail: null }
+  const cardDetails = (source.cardDetails ?? source.card_details) as Record<string, unknown> | null | undefined
+  const errors = [
+    ...(Array.isArray(source.errors) ? source.errors : []),
+    ...(Array.isArray(cardDetails?.errors) ? cardDetails.errors : [])
+  ]
+  let fallback: { code: string | null, detail: string | null } | null = null
+
+  for (const error of errors) {
+    if (!error || typeof error !== 'object') continue
+    const errorSource = error as Record<string, unknown>
+    const code = readString(errorSource, 'code')
+    const detail = readString(errorSource, 'detail')
+    if (!code && !detail) continue
+    const failure = { code, detail }
+    if (!['GENERIC_DECLINE', 'CARD_DECLINED'].includes(String(code ?? '').toUpperCase())) return failure
+    fallback = fallback ?? failure
+  }
+
+  return fallback ?? { code: null, detail: null }
+}
+
+function readLatestTenderFailure(order: Record<string, unknown> | null | undefined) {
+  const tenders = Array.isArray(order?.tenders) ? order.tenders : []
+  for (let index = tenders.length - 1; index >= 0; index -= 1) {
+    const tender = tenders[index]
+    if (!tender || typeof tender !== 'object') continue
+    const failure = readPaymentFailure(tender as Record<string, unknown>)
+    if (failure.code || failure.detail) return failure
+  }
+  return { code: null, detail: null }
 }
 
 function readCardId(source: Record<string, unknown> | null | undefined) {
@@ -48,6 +84,7 @@ export async function resolveOrderPaymentState(params: {
   const orderState = readString(order, 'state')?.toUpperCase() ?? null
   const orderCustomerId = readString(order, 'customerId', 'customer_id')
   const orderLocationId = readString(order, 'locationId', 'location_id')
+  const tenderFailure = readLatestTenderFailure(order)
 
   const beginTime = params.beginTime
     ? DateTime.fromISO(params.beginTime).minus({ days: 1 }).toUTC().toISO()
@@ -68,6 +105,8 @@ export async function resolveOrderPaymentState(params: {
     let paymentCustomerId: string | null = null
     let paymentCardId: string | null = null
     let paymentCreatedAt: string | null = null
+    let failureCode: string | null = null
+    let failureDetail: string | null = null
 
     for await (const item of pageable as AsyncIterable<Record<string, unknown>>) {
       scanned += 1
@@ -82,6 +121,9 @@ export async function resolveOrderPaymentState(params: {
       paymentCustomerId = paymentCustomerId ?? readString(item, 'customerId', 'customer_id')
       paymentCardId = paymentCardId ?? readCardId(item)
       paymentCreatedAt = paymentCreatedAt ?? readString(item, 'createdAt', 'created_at')
+      const paymentFailure = readPaymentFailure(item)
+      failureCode = failureCode ?? paymentFailure.code
+      failureDetail = failureDetail ?? paymentFailure.detail
 
       if (status === 'COMPLETED') {
         return {
@@ -93,7 +135,9 @@ export async function resolveOrderPaymentState(params: {
           paymentStatus: status,
           paymentCustomerId: readString(item, 'customerId', 'customer_id') ?? paymentCustomerId,
           paymentCardId: readCardId(item) ?? paymentCardId,
-          paymentCreatedAt: readString(item, 'createdAt', 'created_at') ?? paymentCreatedAt
+          paymentCreatedAt: readString(item, 'createdAt', 'created_at') ?? paymentCreatedAt,
+          failureCode: null,
+          failureDetail: null
         } as OrderPaymentState
       }
     }
@@ -107,7 +151,9 @@ export async function resolveOrderPaymentState(params: {
       paymentStatus,
       paymentCustomerId,
       paymentCardId,
-      paymentCreatedAt
+      paymentCreatedAt,
+      failureCode: failureCode ?? tenderFailure.code,
+      failureDetail: failureDetail ?? tenderFailure.detail
     } as OrderPaymentState
   }
 

@@ -75,7 +75,7 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 - Nitro app-error reporting writes to `app_error_groups` and `app_error_events`, but intentionally filters expected non-internal `401`/`403` auth denials and common static/bot `404` probes so Service Fabric alerts represent actionable application failures.
 - Internal workers include `POST /api/internal/access/process`, `POST /api/internal/access/booking-sync`, `POST /api/internal/calendar/maintenance`, `POST /api/internal/mail/reminders/process`, `GET /api/internal/analytics/outputs`, and `POST /api/internal/analytics/run`.
 - Recommended Home Assistant scheduler calls `POST /api/internal/access/process` every minute with `x-access-key`.
-- Supabase `pg_cron`/`pg_net` calls `POST /api/internal/calendar/maintenance` every five minutes with `x-access-key`. The worker expires stale guest-payment reservations and runs throttled Google Calendar maintenance; calendar GET requests are read-only.
+- Supabase `pg_cron`/`pg_net` calls `POST /api/internal/calendar/maintenance` every five minutes with `x-access-key`. In bounded batches, the worker checks Square before releasing a stale guest-payment reservation, preserves completed or in-flight payments for confirmation, deletes unpaid checkout links, expires the linked top-up session, and then cancels the local reservation. It also runs throttled Google Calendar maintenance; calendar GET requests are read-only.
 - Status mapping:
   - `Up`: host responds.
   - `Ready`: app host and Supabase-backed server readiness are usable.
@@ -92,6 +92,7 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 - Permanent lock codes are stored in `lock_permanent_codes`; active permanent slots are reserved from booking/member allocation.
 - Access incident records are written before notification attempts. Notification email is best-effort and routes through the registry-backed `mailing.memberBroadcast` Fomailer handler to configured admin recipients so notification failure does not block incident creation.
 - Admin member charges write a pending audit row before Square is called, update to `paid` or `failed` after Square response, and send the customer only the `billing.memberChargeReceipt` email receipt on successful payment.
+- Authenticated guests can inspect and resume their own active Square checkout through `GET /api/bookings/guest/payment-status`. Releasing a pending reservation closes its Square payment link before the local slot is canceled; a completed or in-flight payment fails closed for confirmation instead of being discarded.
 - Secrets are loaded through Supabase Vault via `get_secret`; non-secret settings use `system_config` and runtime env.
 - Guest booking policy is runtime-configurable through `system_config`; the current operational access window and application fallback are 9:00 AM–9:00 PM Los Angeles time.
 - `ACCESS_AUTOMATION_SHARED_KEY` authenticates both access and calendar-maintenance workers. `CALENDAR_MAINTENANCE_URL` in `system_config` owns the maintenance callback URL.

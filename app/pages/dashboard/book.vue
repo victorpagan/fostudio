@@ -128,6 +128,23 @@ type BookingCreateResponse = {
   newBalance: number | null
 }
 
+type PendingGuestPayment = {
+  bookingId: string
+  startTime: string
+  endTime: string
+  paymentExpiresAt: string | null
+  secondsRemaining: number
+  amountDueCents: number
+  credits: number
+  checkoutUrl: string | null
+  checkoutAvailable: boolean
+  paymentCompleted: boolean
+  paymentStatus: string | null
+  failureCode: string | null
+  issueMessage: string | null
+  message: string
+}
+
 type ApiErrorLike = {
   data?: {
     statusMessage?: string
@@ -162,6 +179,9 @@ const ownBookingActionOpen = ref(false)
 const ownBookingActionLoading = ref(false)
 const ownBookingDestructiveConfirmOpen = ref(false)
 const ownBookingDestructiveAction = ref<'cancel' | 'restart' | null>(null)
+const pendingGuestPayment = ref<PendingGuestPayment | null>(null)
+const pendingGuestPaymentLoading = ref(false)
+const pendingGuestPaymentError = ref<string | null>(null)
 
 // Selected time slot
 const selected = ref<{ start: Date, end: Date } | null>(null)
@@ -250,6 +270,11 @@ const manualBookingStartHour = computed(() =>
 const manualBookingEndHour = computed(() =>
   hasActiveMembership.value ? 24 : Math.max(manualBookingStartHour.value + 1, Math.min(24, Number(bookingPolicy.value?.guestBookingEndHour ?? 21)))
 )
+const guestBookingHoursLabel = computed(() => {
+  const start = DateTime.fromObject({ hour: manualBookingStartHour.value }, { zone: 'America/Los_Angeles' }).toFormat('h a')
+  const end = DateTime.fromObject({ hour: manualBookingEndHour.value }, { zone: 'America/Los_Angeles' }).toFormat('h a')
+  return `${start} to ${end}`
+})
 
 // Credit preview must be initialized before canShowHoldOption is watched.
 // Active members evaluate the hold option during setup, while guests short-circuit before preview is read.
@@ -409,6 +434,58 @@ function handleCloseModal() {
   closeModal()
 }
 
+async function loadPendingGuestPayment(bookingId?: string) {
+  if (!isGuestBooking.value || !currentUserId.value) {
+    pendingGuestPayment.value = null
+    return null
+  }
+
+  pendingGuestPaymentLoading.value = true
+  pendingGuestPaymentError.value = null
+  try {
+    const response = await $fetch<{ pending: PendingGuestPayment | null }>('/api/bookings/guest/payment-status', {
+      query: bookingId ? { bookingId } : undefined
+    })
+    pendingGuestPayment.value = response.pending ?? null
+    return pendingGuestPayment.value
+  } catch (error: unknown) {
+    const maybe = error as ApiErrorLike
+    pendingGuestPaymentError.value = maybe.data?.statusMessage ?? maybe.message ?? 'Could not check payment status.'
+    return null
+  } finally {
+    pendingGuestPaymentLoading.value = false
+  }
+}
+
+async function resumePendingGuestPayment(bookingId?: string) {
+  const current = pendingGuestPayment.value?.bookingId === bookingId || !bookingId
+    ? pendingGuestPayment.value
+    : null
+  const payment = current ?? await loadPendingGuestPayment(bookingId)
+  if (!payment) {
+    toast.add({
+      title: 'Checkout is no longer available',
+      description: pendingGuestPaymentError.value ?? 'Choose the time again to start a new checkout.',
+      color: 'warning'
+    })
+    refreshCalendar()
+    return
+  }
+  if (payment.paymentCompleted) {
+    toast.add({ title: 'Payment is processing', description: payment.message, color: 'info' })
+    return
+  }
+  if (!payment.checkoutAvailable || !payment.checkoutUrl) {
+    toast.add({
+      title: 'Checkout expired',
+      description: 'Release this reservation and choose the time again to create a new checkout.',
+      color: 'warning'
+    })
+    return
+  }
+  window.location.assign(payment.checkoutUrl)
+}
+
 function onOwnBookingClick(payload: {
   bookingId: string
   start: string
@@ -421,6 +498,9 @@ function onOwnBookingClick(payload: {
   clickedBooking.value = payload
   clickedBookingNoteDraft.value = payload.notes ?? ''
   ownBookingActionOpen.value = true
+  if (String(payload.status ?? '').toLowerCase() === 'pending_payment') {
+    void loadPendingGuestPayment(payload.bookingId)
+  }
 }
 
 function clickedBookingHoursUntilStart() {
@@ -499,6 +579,12 @@ const ownBookingPendingExpiresLabel = computed(() => {
   })
 })
 
+const pendingPaymentForClicked = computed(() =>
+  pendingGuestPayment.value?.bookingId === clickedBooking.value?.bookingId
+    ? pendingGuestPayment.value
+    : null
+)
+
 async function refreshSidebarMembershipCredits() {
   await Promise.allSettled([
     refreshNuxtData('dash:sidebar:membership'),
@@ -570,6 +656,7 @@ async function cancelClickedBooking() {
   try {
     await $fetch(`/api/bookings/${clickedBooking.value.bookingId}`, { method: 'DELETE' })
     toast.add({ title: ownBookingIsPendingPayment.value ? 'Pending reservation released' : 'Booking canceled', color: 'success' })
+    if (ownBookingIsPendingPayment.value) pendingGuestPayment.value = null
     closeOwnBookingActions({ force: true })
     ownBookingDestructiveConfirmOpen.value = false
     ownBookingDestructiveAction.value = null
@@ -621,6 +708,7 @@ async function restartPendingBooking() {
   ownBookingActionLoading.value = true
   try {
     await $fetch(`/api/bookings/${target.bookingId}`, { method: 'DELETE' })
+    pendingGuestPayment.value = null
     ownBookingDestructiveConfirmOpen.value = false
     ownBookingDestructiveAction.value = null
     closeOwnBookingActions({ force: true })
@@ -773,6 +861,18 @@ watch(
   }
 )
 
+watch(
+  [isGuestBooking, currentUserId],
+  ([guest, userId]) => {
+    if (!import.meta.client || !guest || !userId) {
+      pendingGuestPayment.value = null
+      return
+    }
+    void loadPendingGuestPayment()
+  },
+  { immediate: true }
+)
+
 function _goToBuyCredits() {
   closeModal()
   router.push('/dashboard/credits')
@@ -885,7 +985,7 @@ function formatPrice(cents: number) {
           color="warning"
           icon="i-lucide-badge-alert"
           title="Create a guest booking"
-          description="Guests can book between 11am and 7pm using premium credits. Select at least 2 hours in whole-hour increments; you can confirm with existing credits or pay only the credit shortfall at checkout."
+          :description="`Guests can book between ${guestBookingHoursLabel} using premium credits. Select at least 2 hours in whole-hour increments; you can confirm with existing credits or pay only the credit shortfall at checkout.`"
         >
           <template #actions>
             <UButton
@@ -932,6 +1032,61 @@ function formatPrice(cents: number) {
               to="/dashboard/membership"
             >
               Review membership
+            </UButton>
+          </template>
+        </AppAlert>
+
+        <AppAlert
+          v-if="isGuestBooking && pendingGuestPayment"
+          :color="pendingGuestPayment.issueMessage ? 'error' : 'warning'"
+          variant="soft"
+          :icon="pendingGuestPayment.issueMessage ? 'i-lucide-credit-card' : 'i-lucide-clock'"
+          :title="pendingGuestPayment.issueMessage ? 'Payment needs attention' : 'Finish your pending booking'"
+          :description="pendingGuestPayment.message"
+        >
+          <template #actions>
+            <UButton
+              size="xs"
+              :loading="pendingGuestPaymentLoading"
+              :disabled="pendingGuestPayment.paymentCompleted"
+              @click="resumePendingGuestPayment(pendingGuestPayment.bookingId)"
+            >
+              {{ pendingGuestPayment.paymentCompleted ? 'Confirming payment' : `Resume payment · ${formatPrice(pendingGuestPayment.amountDueCents)}` }}
+            </UButton>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="soft"
+              @click="onOwnBookingClick({
+                bookingId: pendingGuestPayment.bookingId,
+                start: pendingGuestPayment.startTime,
+                end: pendingGuestPayment.endTime,
+                status: 'pending_payment',
+                paymentExpiresAt: pendingGuestPayment.paymentExpiresAt
+              })"
+            >
+              Manage reservation
+            </UButton>
+          </template>
+        </AppAlert>
+
+        <AppAlert
+          v-else-if="isGuestBooking && pendingGuestPaymentError"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-refresh-cw"
+          title="Could not check pending payment"
+          :description="pendingGuestPaymentError"
+        >
+          <template #actions>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="soft"
+              :loading="pendingGuestPaymentLoading"
+              @click="loadPendingGuestPayment()"
+            >
+              Retry
             </UButton>
           </template>
         </AppAlert>
@@ -1229,11 +1384,15 @@ function formatPrice(cents: number) {
           <div class="space-y-2 pr-1 text-sm">
             <AppAlert
               v-if="ownBookingIsPendingPayment"
-              color="info"
+              :color="pendingPaymentForClicked?.issueMessage ? 'error' : 'info'"
               variant="soft"
-              icon="i-lucide-clock"
-              :title="ownBookingPendingExpiresLabel ? `Held until ${ownBookingPendingExpiresLabel}` : 'Payment is pending'"
-              description="This slot is temporarily held while checkout is pending. Restarting releases the hold and opens this time for review again."
+              :icon="pendingPaymentForClicked?.issueMessage ? 'i-lucide-credit-card' : 'i-lucide-clock'"
+              :title="pendingPaymentForClicked?.issueMessage
+                ? 'Payment was not approved'
+                : ownBookingPendingExpiresLabel
+                  ? `Held until ${ownBookingPendingExpiresLabel}`
+                  : 'Payment is pending'"
+              :description="pendingPaymentForClicked?.message ?? 'This slot is temporarily held while checkout is pending. Resume payment, or release it to edit the time.'"
             />
             <AppAlert
               v-if="ownBookingLockReason"
@@ -1264,6 +1423,14 @@ function formatPrice(cents: number) {
 
           <template #footer>
             <div class="flex justify-end gap-2">
+              <UButton
+                v-if="ownBookingIsPendingPayment"
+                :loading="pendingGuestPaymentLoading"
+                :disabled="Boolean(pendingPaymentForClicked?.paymentCompleted)"
+                @click="resumePendingGuestPayment(clickedBooking.bookingId)"
+              >
+                {{ pendingPaymentForClicked?.paymentCompleted ? 'Confirming payment' : 'Resume payment' }}
+              </UButton>
               <UButton
                 color="neutral"
                 variant="soft"

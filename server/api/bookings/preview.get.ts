@@ -94,7 +94,6 @@ export default defineEventHandler(async (event) => {
   const q = qSchema.parse(getQuery(event))
   const peakWindow = await loadPeakWindowConfig(event)
   const supabase = serverSupabaseServiceRole(event)
-  await expireStalePendingGuestBookings(supabase)
 
   const start = DateTime.fromISO(q.start, { zone: STUDIO_TZ })
   const end = DateTime.fromISO(q.end, { zone: STUDIO_TZ })
@@ -105,6 +104,11 @@ export default defineEventHandler(async (event) => {
   if (!(start < end)) {
     throw createError({ statusCode: 400, statusMessage: 'End must be after start' })
   }
+
+  const startIso = start.toUTC().toISO()
+  const endIso = end.toUTC().toISO()
+  if (!startIso || !endIso) throw createError({ statusCode: 400, statusMessage: 'Invalid datetime' })
+  await expireStalePendingGuestBookings(event, supabase, undefined, { startTime: startIso, endTime: endIso })
 
   const durationHours = end.diff(start, 'hours').hours
 

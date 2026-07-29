@@ -25,7 +25,8 @@ test('my bookings separates request errors from empty states and shows pending p
 
   assert.match(bookings, /\.in\('status', \['confirmed', 'requested', 'pending_payment'\]\)/)
   assert.match(bookings, /if \(normalized === 'pending_payment'\) return 'Pending payment'/)
-  assert.match(bookings, /Payment is pending\. This time is temporarily reserved/)
+  assert.match(bookings, /Payment has not completed\. Resume checkout/)
+  assert.match(bookings, /resumePendingPayment/)
   assert.match(bookings, /show-retry/)
 
   const upcomingError = bookings.indexOf('v-else-if="upcomingError"')

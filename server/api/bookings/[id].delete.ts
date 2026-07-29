@@ -19,6 +19,7 @@ import type { RoleCarrier } from '~~/server/utils/auth'
 import { enqueueBookingAccessSync } from '~~/server/utils/access/jobs'
 import { maybeForceSyncGoogleCalendar } from '~~/server/utils/integrations/googleCalendar'
 import { sendMemberBookingLifecycleMail } from '~~/server/utils/mail/memberBookingLifecycle'
+import { closeGuestPaymentCheckout, findGuestPaymentSession } from '~~/server/utils/booking/guestPaymentCheckout'
 
 const TZ = 'America/Los_Angeles'
 const REFUND_WINDOW_HOURS = 24
@@ -102,6 +103,35 @@ export default defineEventHandler(async (event) => {
 
   // 5. Cancel the booking (service role needed for ledger insert)
   const serviceSupabase = serverSupabaseServiceRole(event)
+  if (isPendingPayment) {
+    try {
+      const paymentSession = await findGuestPaymentSession(serviceSupabase, bookingId, booking.user_id)
+      const closeResult = await closeGuestPaymentCheckout({
+        event,
+        supabase: serviceSupabase,
+        session: paymentSession,
+        reason: 'guest_released_pending_reservation'
+      })
+
+      if (closeResult.completed || closeResult.inFlight) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'Payment is already processing. Wait a moment and refresh before changing this reservation.'
+        })
+      }
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'statusCode' in error) throw error
+      console.error('[cancel] failed to close pending Square checkout', {
+        bookingId,
+        error: error instanceof Error ? error.message : String(error)
+      })
+      throw createError({
+        statusCode: 503,
+        statusMessage: 'Could not safely close the payment checkout. Please retry before releasing this reservation.'
+      })
+    }
+  }
+
   const { data: linkedHolds, error: holdFetchErr } = await serviceSupabase
     .from('booking_holds')
     .select('id')
@@ -126,32 +156,6 @@ export default defineEventHandler(async (event) => {
       .delete()
       .eq('booking_id', bookingId)
     if (holdDeleteErr) throw createError({ statusCode: 500, statusMessage: holdDeleteErr.message })
-  }
-
-  if (isPendingPayment) {
-    const db = serviceSupabase as unknown as {
-      from: (table: string) => {
-        update: (values: Record<string, unknown>) => {
-          eq: (column: string, value: unknown) => {
-            eq: (column: string, value: unknown) => {
-              eq: (column: string, value: unknown) => PromiseLike<{ error?: { message?: string } | null }>
-            }
-          }
-        }
-      }
-    }
-    const { error: topupCancelErr } = await db
-      .from('credit_topup_sessions')
-      .update({
-        status: 'expired'
-      })
-      .eq('user_id', booking.user_id)
-      .eq('status', 'pending')
-      .eq('metadata->>booking_id', bookingId)
-
-    if (topupCancelErr) {
-      console.warn('[cancel] failed to mark pending guest payment session canceled:', topupCancelErr)
-    }
   }
 
   // 6. Refund credits if eligible
