@@ -61,6 +61,12 @@ type AccessIncident = {
 }
 
 type AccessStatusPayload = {
+  provider: {
+    ok: boolean
+    mode: string
+    state: string | null
+    reason?: string | null
+  }
   summary: {
     pendingJobs: number
     deadJobs: number
@@ -928,6 +934,16 @@ function formatDateTime(value: string | null) {
           v-else
           class="space-y-4"
         >
+          <AppAlert
+            :color="accessStatus?.provider.ok ? 'success' : 'error'"
+            :variant="accessStatus?.provider.ok ? 'soft' : 'subtle'"
+            :icon="accessStatus?.provider.ok ? 'i-lucide-lock-keyhole' : 'i-lucide-triangle-alert'"
+            :title="accessStatus?.provider.ok ? 'Lock provider ready' : 'Lock provider degraded'"
+            :description="accessStatus?.provider.ok
+              ? `Home Assistant reports the lock as ${accessStatus.provider.state ?? 'available'}. Writes are verified against the physical code slot.`
+              : (accessStatus?.provider.reason ?? 'The lock provider health check did not pass.')"
+          />
+
           <div class="grid gap-3 sm:grid-cols-3">
             <UCard class="admin-panel-card border-0">
               <div class="text-xs uppercase tracking-wide text-dimmed">

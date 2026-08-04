@@ -5,8 +5,8 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import { ensureDoorCodeForUser } from '~~/server/utils/membership/doorCode'
 import { STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { createAccessIncident } from '~~/server/utils/access/incidents'
-import { computeAccessWindow, isAccessEligibleBookingStatus, isOutsideAbodeArmingGap } from '~~/server/utils/access/policy'
-import { clearLockUserCode, isLockSyncEnabled, sendAbodeAutomationEvent, setLockUserCode } from '~~/server/utils/access/providers'
+import { computeAccessWindow, isAccessEligibleBookingStatus, isInsideAccessWindow, isOutsideAbodeArmingGap } from '~~/server/utils/access/policy'
+import { clearLockUserCode, getLockProviderHealth, isLockSyncEnabled, sendAbodeAutomationEvent, setLockUserCode } from '~~/server/utils/access/providers'
 import { sanitizeForJSON } from '~~/server/utils/sanitize'
 import {
   allocateGuestSlot,
@@ -18,6 +18,8 @@ import {
 
 const DEFAULT_RETRY_SCHEDULE_SECONDS = [0, 60, 300, 900]
 const DEFAULT_MAX_ATTEMPTS = 4
+const AUTO_RECOVERY_COOLDOWN_MINUTES = 5
+const MAX_AUTO_RECOVERIES = 3
 
 type LockAccessJobType
   = | 'activate_member_window'
@@ -96,6 +98,25 @@ function nextRetryAtIso(now: DateTime, scheduleSeconds: number[], attempts: numb
 function normalizePayload(payload: unknown): Record<string, unknown> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {}
   return payload as Record<string, unknown>
+}
+
+function readAutoRecoveryCount(payload: Record<string, unknown> | null | undefined) {
+  const recovery = payload?.automaticRecovery
+  if (!recovery || typeof recovery !== 'object' || Array.isArray(recovery)) return 0
+  const count = Number((recovery as Record<string, unknown>).count)
+  return Number.isFinite(count) && count > 0 ? Math.floor(count) : 0
+}
+
+function summarizeProviderResult(result: {
+  status: number
+  body: unknown
+  verification?: { verified: true, inUse: boolean }
+}) {
+  return {
+    status: result.status,
+    response: result.body ?? null,
+    verification: result.verification ?? null
+  }
 }
 
 async function loadBooking(event: H3Event, bookingId: string): Promise<BookingRow | null> {
@@ -518,6 +539,7 @@ async function markJobSucceeded(event: H3Event, jobId: number, response: Record<
     .from('lock_access_jobs')
     .update({
       status: 'succeeded',
+      last_error: null,
       last_response: sanitizeForJSON(response) ?? null,
       processed_at: nowIso,
       updated_at: nowIso
@@ -525,6 +547,137 @@ async function markJobSucceeded(event: H3Event, jobId: number, response: Record<
     .eq('id', jobId)
 
   if (error) throw new Error(error.message)
+
+  const { error: incidentError } = await supabase
+    .from('lock_access_incidents')
+    .update({
+      status: 'resolved',
+      resolved_at: nowIso,
+      updated_at: nowIso
+    })
+    .eq('incident_type', 'lock_sync_failure')
+    .eq('status', 'open')
+    .contains('metadata', { jobId })
+
+  if (incidentError) {
+    console.warn('[access/jobs] failed to resolve recovered job incidents', {
+      jobId,
+      error: incidentError.message
+    })
+  }
+}
+
+async function shouldAutomaticallyRecoverJob(event: H3Event, job: JobRow) {
+  if (job.job_type === 'refresh_member_active') {
+    if (!job.user_id) return false
+    const activeBookings = await listActiveMemberWindowBookings(event, job.user_id)
+    if (activeBookings.length > 0) return true
+    return Boolean((await getActiveMemberSlot(event, job.user_id))?.slot_number)
+  }
+
+  if (!job.booking_id) return false
+  const booking = await loadBooking(event, job.booking_id)
+  if (!booking) return false
+
+  if (job.job_type === 'activate_member_window' || job.job_type === 'activate_guest_window') {
+    return isAccessEligibleBookingStatus(booking.status) && isInsideAccessWindow(booking.start_time, booking.end_time)
+  }
+
+  if (job.job_type === 'deactivate_member_window' || job.job_type === 'deactivate_guest_window') {
+    if (!isAccessEligibleBookingStatus(booking.status)) return true
+    const { deactivateAt } = computeAccessWindow(booking.start_time, booking.end_time)
+    return deactivateAt <= DateTime.now().setZone(STUDIO_TZ)
+  }
+
+  return false
+}
+
+async function recoverDeadAccessJobs(event: H3Event, limit: number) {
+  const supabase = serverSupabaseServiceRole(event)
+  const now = DateTime.now().setZone(STUDIO_TZ)
+  const nowIso = now.toUTC().toISO()
+  const cutoffIso = now.minus({ minutes: AUTO_RECOVERY_COOLDOWN_MINUTES }).toUTC().toISO()
+  if (!nowIso || !cutoffIso) throw new Error('Could not compute access recovery timestamp')
+
+  const { data: rows, error } = await supabase
+    .from('lock_access_jobs')
+    .select('id,job_type,status,booking_id,user_id,run_at,attempts,max_attempts,payload')
+    .eq('status', 'dead')
+    .lte('updated_at', cutoffIso)
+    .order('updated_at', { ascending: false })
+    .limit(Math.max(1, Math.min(50, limit)))
+
+  if (error) throw new Error(error.message)
+  if (!rows?.length) {
+    return { checked: 0, recovered: 0, providerHealthy: null as boolean | null }
+  }
+
+  const candidates: Array<{ job: JobRow, recoveryCount: number }> = []
+  for (const row of rows) {
+    const job = {
+      ...row,
+      payload: normalizePayload(row.payload)
+    } as JobRow
+    const recoveryCount = readAutoRecoveryCount(job.payload)
+    if (recoveryCount >= MAX_AUTO_RECOVERIES) continue
+    if (await shouldAutomaticallyRecoverJob(event, job)) {
+      candidates.push({ job, recoveryCount })
+    }
+  }
+
+  if (!candidates.length) {
+    return { checked: rows.length, recovered: 0, providerHealthy: null as boolean | null }
+  }
+
+  const provider = await getLockProviderHealth(event)
+  if (!provider.ok) {
+    return {
+      checked: rows.length,
+      recovered: 0,
+      providerHealthy: false,
+      providerState: provider.state,
+      reason: provider.reason ?? 'Lock provider is unavailable'
+    }
+  }
+
+  let recovered = 0
+  for (const { job, recoveryCount } of candidates) {
+    const payload = {
+      ...normalizePayload(job.payload),
+      automaticRecovery: {
+        count: recoveryCount + 1,
+        recoveredAt: nowIso,
+        reason: 'provider_healthy_after_dead_job'
+      }
+    }
+
+    const { data: updated, error: updateError } = await supabase
+      .from('lock_access_jobs')
+      .update({
+        status: 'pending',
+        attempts: 0,
+        run_at: nowIso,
+        processed_at: null,
+        last_error: null,
+        last_response: null,
+        payload: sanitizeForJSON(payload) ?? {},
+        updated_at: nowIso
+      })
+      .eq('id', job.id)
+      .eq('status', 'dead')
+      .select('id')
+      .maybeSingle()
+
+    if (updateError) throw new Error(updateError.message)
+    if (updated) recovered += 1
+  }
+
+  return {
+    checked: rows.length,
+    recovered,
+    providerHealthy: true,
+    providerState: provider.state
+  }
 }
 
 async function markJobRetryOrDead(event: H3Event, params: {
@@ -661,7 +814,7 @@ async function runActivateMemberJob(event: H3Event, job: JobRow) {
     userId: job.user_id,
     customerId,
     slotNumber: slot.slotNumber,
-    provider: providerResult.body ?? null
+    provider: summarizeProviderResult(providerResult)
   }
 }
 
@@ -729,7 +882,7 @@ async function runDeactivateMemberJob(event: H3Event, job: JobRow) {
     bookingId: job.booking_id,
     userId: job.user_id,
     slotNumber: Number(assignment.slot_number),
-    provider: providerResult.body ?? null,
+    provider: summarizeProviderResult(providerResult),
     abode
   }
 }
@@ -794,7 +947,7 @@ async function runActivateGuestJob(event: H3Event, job: JobRow) {
     action: 'guest_code_set',
     bookingId: booking.id,
     slotNumber: slot.slotNumber,
-    provider: providerResult.body ?? null
+    provider: summarizeProviderResult(providerResult)
   }
 }
 
@@ -873,7 +1026,7 @@ async function runRefreshMemberActiveJob(event: H3Event, job: JobRow) {
       action: 'member_code_cleared_inactive_refresh',
       userId: job.user_id,
       slotNumber: Number(assignment.slot_number),
-      provider: providerResult.body ?? null
+      provider: summarizeProviderResult(providerResult)
     }
   }
 
@@ -918,6 +1071,7 @@ export async function processDueAccessJobs(event: H3Event, options?: { limit?: n
   const nowIso = new Date().toISOString()
   const limit = Math.max(1, Math.min(200, Number(options?.limit ?? 20)))
   const retrySchedule = await getRetryScheduleSeconds(event)
+  const recovery = await recoverDeadAccessJobs(event, limit)
 
   const { data: dueJobs, error: dueErr } = await supabase
     .from('lock_access_jobs')
@@ -963,6 +1117,7 @@ export async function processDueAccessJobs(event: H3Event, options?: { limit?: n
 
   return {
     enabled: true,
+    recovery,
     queued: dueJobs?.length ?? 0,
     processed: succeeded + failed,
     succeeded,

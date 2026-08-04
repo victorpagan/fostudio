@@ -54,9 +54,19 @@ Apply migration before using permanent codes:
 supabase db push
 ```
 
-### Home Assistant scheduler (recommended)
+### Scheduler
 
-Add these blocks in Home Assistant `configuration.yaml`:
+The authoritative scheduler is Supabase `pg_cron` + `pg_net`. Migration
+`20260804165256_schedule_fostudio_access_worker.sql` calls the protected worker
+once per minute using:
+
+- `system_config.ACCESS_PROCESSOR_URL` for the callback URL.
+- Vault secret `ACCESS_AUTOMATION_SHARED_KEY` for `x-access-key` authentication.
+
+Home Assistant scheduling is not authoritative because an HA outage would stop
+the recovery mechanism that is meant to repair HA-backed access. The following
+automation may be retained disabled as an emergency fallback, but it should not
+run continuously alongside the database scheduler:
 
 ```yaml
 rest_command:
@@ -78,7 +88,9 @@ automation:
     mode: single
 ```
 
-Then reload `rest_command` and automations (or restart HA).
+Keep the automation disabled unless Supabase scheduling is deliberately taken
+out of service. Reload `rest_command` and automations after changing this
+fallback configuration.
 
 ### Manual verification commands
 
@@ -103,6 +115,9 @@ curl -sS -X POST "$API_BASE/api/internal/access/booking-sync" \
 
 - Access activation window is `booking start - 30m` through `booking end + 30m`.
 - PINs are set when the activation window begins (not necessarily at booking creation time).
+- Home Assistant lock writes require a healthy lock entity and are read back from the physical user-code slot before the job succeeds.
+- Dead jobs are automatically reconsidered after a cooldown, but only while their booking/window still requires the action and the lock provider has recovered.
+- Abode arm/disarm calls are idempotent; an alarm already in the requested state is treated as successful.
 - Reschedule, cancel, and delete booking paths enqueue access sync jobs.
 - Guest bookings created as `pending_payment` do not get active access until payment confirmation marks them as `confirmed/requested` and `/api/internal/access/booking-sync` is called.
 

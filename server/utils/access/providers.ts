@@ -21,6 +21,23 @@ export type ClearLockCodeInput = {
   reason?: string | null
 }
 
+export type LockProviderHealth = {
+  ok: boolean
+  mode: string
+  state: string | null
+  reason?: string | null
+}
+
+type HomeAssistantEntityState = {
+  entity_id?: string
+  state?: string
+}
+
+type HomeAssistantLockCodeResponse = {
+  in_use?: boolean
+  usercode?: string | null
+}
+
 function asNumber(input: unknown, fallback: number) {
   const n = Number(input)
   return Number.isFinite(n) && n > 0 ? n : fallback
@@ -107,9 +124,93 @@ async function postJson(url: string, payload: Record<string, unknown>, options: 
       status: res.status,
       body: parsed
     }
+  } catch (error) {
+    if ((error as Error)?.name === 'AbortError') {
+      throw new Error(`Request timed out after ${options.timeoutMs}ms`)
+    }
+    throw error
   } finally {
     clearTimeout(timer)
   }
+}
+
+async function getJson(url: string, options: {
+  timeoutMs: number
+  apiKey?: string | null
+}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs)
+
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        ...(options.apiKey ? { authorization: `Bearer ${options.apiKey}` } : {})
+      }
+    })
+
+    const raw = await res.text().catch(() => '')
+    let parsed: unknown = raw
+    if (raw && (raw.startsWith('{') || raw.startsWith('['))) {
+      try {
+        parsed = JSON.parse(raw)
+      } catch {
+        parsed = raw
+      }
+    }
+
+    return {
+      ok: res.ok,
+      status: res.status,
+      body: parsed
+    }
+  } catch (error) {
+    if ((error as Error)?.name === 'AbortError') {
+      throw new Error(`Request timed out after ${options.timeoutMs}ms`)
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function getHomeAssistantToken(event: H3Event) {
+  const tokenFromPrimary = await getKey(event, 'HOME_ASSISTANT_API_TOKEN').catch(() => null)
+  const tokenFromLegacy = await getKey(event, 'HA_LONG_LIVED_ACCESS_TOKEN').catch(() => null)
+  const token = asString(tokenFromPrimary) ?? asString(tokenFromLegacy)
+  if (!token) throw new Error('HOME_ASSISTANT_API_TOKEN is not configured')
+  return token
+}
+
+async function getHomeAssistantEntityState(event: H3Event, params: {
+  baseUrl: unknown
+  timeoutMs: number
+  entityId: string
+}) {
+  const baseUrl = normalizeHomeAssistantBaseUrl(params.baseUrl)
+  if (!baseUrl) throw new Error('HOME_ASSISTANT_BASE_URL is not configured')
+
+  const token = await getHomeAssistantToken(event)
+  let result: Awaited<ReturnType<typeof getJson>>
+  try {
+    result = await getJson(`${baseUrl}/api/states/${encodeURIComponent(params.entityId)}`, {
+      timeoutMs: params.timeoutMs,
+      apiKey: token
+    })
+  } catch (error) {
+    throw new Error(
+      `Home Assistant state lookup for ${params.entityId} failed: ${(error as Error)?.message ?? String(error)}`
+    )
+  }
+
+  if (!result.ok) {
+    throw new Error(
+      `Home Assistant state lookup for ${params.entityId} failed (${result.status}): ${JSON.stringify(result.body)}`
+    )
+  }
+
+  const body = result.body as HomeAssistantEntityState | null
+  return asLower(body?.state)
 }
 
 async function postHomeAssistantService(event: H3Event, params: {
@@ -118,21 +219,26 @@ async function postHomeAssistantService(event: H3Event, params: {
   domain: string
   service: string
   payload: Record<string, unknown>
+  returnResponse?: boolean
 }) {
   const baseUrl = normalizeHomeAssistantBaseUrl(params.baseUrl)
   if (!baseUrl) throw new Error('HOME_ASSISTANT_BASE_URL is not configured')
 
-  const tokenFromPrimary = await getKey(event, 'HOME_ASSISTANT_API_TOKEN').catch(() => null)
-  const tokenFromLegacy = await getKey(event, 'HA_LONG_LIVED_ACCESS_TOKEN').catch(() => null)
-  const token = asString(tokenFromPrimary) ?? asString(tokenFromLegacy)
-  if (!token) throw new Error('HOME_ASSISTANT_API_TOKEN is not configured')
+  const token = await getHomeAssistantToken(event)
 
-  const url = `${baseUrl}/api/services/${params.domain}/${params.service}`
+  const url = `${baseUrl}/api/services/${params.domain}/${params.service}${params.returnResponse ? '?return_response' : ''}`
 
-  const result = await postJson(url, params.payload, {
-    timeoutMs: params.timeoutMs,
-    apiKey: token
-  })
+  let result: Awaited<ReturnType<typeof postJson>>
+  try {
+    result = await postJson(url, params.payload, {
+      timeoutMs: params.timeoutMs,
+      apiKey: token
+    })
+  } catch (error) {
+    throw new Error(
+      `Home Assistant ${params.domain}.${params.service} failed: ${(error as Error)?.message ?? String(error)}`
+    )
+  }
 
   if (!result.ok) {
     throw new Error(
@@ -141,6 +247,107 @@ async function postHomeAssistantService(event: H3Event, params: {
   }
 
   return result
+}
+
+async function readHomeAssistantLockCode(event: H3Event, params: {
+  baseUrl: unknown
+  timeoutMs: number
+  entityId: string
+  slotNumber: number
+}) {
+  const result = await postHomeAssistantService(event, {
+    baseUrl: params.baseUrl,
+    timeoutMs: params.timeoutMs,
+    domain: 'zwave_js',
+    service: 'get_lock_usercode',
+    returnResponse: true,
+    payload: {
+      entity_id: params.entityId,
+      code_slot: params.slotNumber
+    }
+  })
+
+  const body = result.body as {
+    service_response?: Record<string, Record<string, HomeAssistantLockCodeResponse>>
+  } | null
+  const slot = body?.service_response?.[params.entityId]?.[String(params.slotNumber)]
+  if (!slot || typeof slot.in_use !== 'boolean') {
+    throw new Error(`Home Assistant returned no user-code state for lock slot ${params.slotNumber}`)
+  }
+
+  return {
+    inUse: slot.in_use,
+    usercode: typeof slot.usercode === 'string' ? slot.usercode : ''
+  }
+}
+
+async function waitForVerifiedLockCode(event: H3Event, params: {
+  baseUrl: unknown
+  timeoutMs: number
+  entityId: string
+  slotNumber: number
+  expectedCode: string | null
+}) {
+  let lastResult: { inUse: boolean, usercode: string } | null = null
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) await new Promise(resolve => setTimeout(resolve, attempt * 350))
+    lastResult = await readHomeAssistantLockCode(event, params)
+    const verified = params.expectedCode === null
+      ? !lastResult.inUse && !lastResult.usercode
+      : lastResult.inUse && lastResult.usercode === params.expectedCode
+
+    if (verified) {
+      return {
+        verified: true as const,
+        inUse: lastResult.inUse
+      }
+    }
+  }
+
+  const expected = params.expectedCode === null ? 'empty' : 'assigned'
+  const actual = lastResult?.inUse ? 'assigned with a different code' : 'empty'
+  throw new Error(`Lock slot ${params.slotNumber} verification failed: expected ${expected}, found ${actual}`)
+}
+
+export async function getLockProviderHealth(event: H3Event): Promise<LockProviderHealth> {
+  const config = await getServerConfigMap(event, [
+    'LOCK_PROVIDER_MODE',
+    'LOCK_PROVIDER_TIMEOUT_MS',
+    'HOME_ASSISTANT_BASE_URL',
+    'HOME_ASSISTANT_LOCK_ENTITY_ID'
+  ])
+  const providerMode = asLower(config.LOCK_PROVIDER_MODE) ?? 'generic_webhook'
+  if (providerMode !== 'home_assistant') {
+    return { ok: true, mode: providerMode, state: null }
+  }
+
+  const entityId = asString(config.HOME_ASSISTANT_LOCK_ENTITY_ID)
+  if (!entityId) {
+    return { ok: false, mode: providerMode, state: null, reason: 'HOME_ASSISTANT_LOCK_ENTITY_ID is not configured' }
+  }
+
+  try {
+    const state = await getHomeAssistantEntityState(event, {
+      baseUrl: config.HOME_ASSISTANT_BASE_URL,
+      timeoutMs: asNumber(config.LOCK_PROVIDER_TIMEOUT_MS, 8000),
+      entityId
+    })
+    const ok = Boolean(state && !['unknown', 'unavailable'].includes(state))
+    return {
+      ok,
+      mode: providerMode,
+      state,
+      reason: ok ? null : `Home Assistant lock entity is ${state ?? 'missing'}`
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      mode: providerMode,
+      state: null,
+      reason: (error as Error)?.message ?? String(error)
+    }
+  }
 }
 
 export async function isLockSyncEnabled(event: H3Event) {
@@ -169,7 +376,12 @@ export async function setLockUserCode(event: H3Event, input: SetLockCodeInput) {
     const entityId = asString(config.HOME_ASSISTANT_LOCK_ENTITY_ID)
     if (!entityId) throw new Error('HOME_ASSISTANT_LOCK_ENTITY_ID is not configured')
 
-    return postHomeAssistantService(event, {
+    const health = await getLockProviderHealth(event)
+    if (!health.ok) {
+      throw new Error(health.reason ?? 'Home Assistant lock provider is unavailable')
+    }
+
+    const result = await postHomeAssistantService(event, {
       baseUrl: config.HOME_ASSISTANT_BASE_URL,
       timeoutMs,
       domain: 'zwave_js',
@@ -180,6 +392,16 @@ export async function setLockUserCode(event: H3Event, input: SetLockCodeInput) {
         usercode: input.code
       }
     })
+
+    const verification = await waitForVerifiedLockCode(event, {
+      baseUrl: config.HOME_ASSISTANT_BASE_URL,
+      timeoutMs,
+      entityId,
+      slotNumber: input.slotNumber,
+      expectedCode: input.code
+    })
+
+    return { ...result, verification }
   }
 
   const url = normalizeUrl(
@@ -232,7 +454,12 @@ export async function clearLockUserCode(event: H3Event, input: ClearLockCodeInpu
     const entityId = asString(config.HOME_ASSISTANT_LOCK_ENTITY_ID)
     if (!entityId) throw new Error('HOME_ASSISTANT_LOCK_ENTITY_ID is not configured')
 
-    return postHomeAssistantService(event, {
+    const health = await getLockProviderHealth(event)
+    if (!health.ok) {
+      throw new Error(health.reason ?? 'Home Assistant lock provider is unavailable')
+    }
+
+    const result = await postHomeAssistantService(event, {
       baseUrl: config.HOME_ASSISTANT_BASE_URL,
       timeoutMs,
       domain: 'zwave_js',
@@ -242,6 +469,16 @@ export async function clearLockUserCode(event: H3Event, input: ClearLockCodeInpu
         code_slot: input.slotNumber
       }
     })
+
+    const verification = await waitForVerifiedLockCode(event, {
+      baseUrl: config.HOME_ASSISTANT_BASE_URL,
+      timeoutMs,
+      entityId,
+      slotNumber: input.slotNumber,
+      expectedCode: null
+    })
+
+    return { ...result, verification }
   }
 
   const url = normalizeUrl(
@@ -312,6 +549,33 @@ export async function sendAbodeAutomationEvent(event: H3Event, payload: {
         ok: false,
         skipped: 'unsupported_abode_event_type' as const,
         eventType: payload.eventType
+      }
+    }
+
+    const expectedState = actionRef.service === 'alarm_disarm'
+      ? 'disarmed'
+      : actionRef.service === 'alarm_arm_home'
+        ? 'armed_home'
+        : actionRef.service === 'alarm_arm_away'
+          ? 'armed_away'
+          : null
+
+    if (expectedState) {
+      const currentState = await getHomeAssistantEntityState(event, {
+        baseUrl: config.HOME_ASSISTANT_BASE_URL,
+        timeoutMs,
+        entityId
+      })
+      if (!currentState || ['unknown', 'unavailable'].includes(currentState)) {
+        throw new Error(`Home Assistant alarm entity is ${currentState ?? 'missing'}`)
+      }
+      if (currentState === expectedState) {
+        return {
+          ok: true as const,
+          mode: 'home_assistant' as const,
+          skipped: 'already_in_requested_state' as const,
+          state: currentState
+        }
       }
     }
 

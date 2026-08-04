@@ -107,6 +107,9 @@ service:
       fomailer_event_types: "Registry-backed sends include account.signup plus booking, membership, credit, hold, admin member charge receipt, contact, reminder, and broadcast events."
       access_incident_mail: "Lock/access incident alerts are best-effort and route through mailing.memberBroadcast to configured admin recipients."
       access_dead_job_retry: "Dashboard admins can return dead lock_access_jobs to pending with a required reason; the route conditionally updates dead rows and stores requester/prior-error audit context in payload."
+      access_provider_verification: "Home Assistant lock writes require a healthy lock entity and physical user-code slot read-back; successful recovery clears stale job errors and resolves matching lock-sync incidents."
+      access_scheduler: "Supabase pg_cron + pg_net is the authoritative once-per-minute caller. Atomic job claims make rollout overlap safe; the Home Assistant scheduler is disabled fallback only."
+      abode_idempotency: "Alarm automation reads current state first and treats an already-satisfied arm/disarm request as success."
       app_error_reporting: "Nitro app-error reporting writes actionable failures to app_error_events/groups while filtering expected non-internal auth denials and static/bot 404 probes."
       authorization_role_source: "Admin authorization trusts Supabase app_metadata only; user_metadata is not an authorization source."
       booking_data_api: "Public/member occupancy is served through sanitized application routes. Direct booking/hold writes are denied to anon/authenticated Data API roles and restricted burn RPCs are service-role only."
@@ -121,6 +124,16 @@ service:
       service_instance_heartbeat_compatibility: "The compatibility migration copy includes the SECURITY INVOKER, service-role-only service_instance_heartbeats_current view for schema parity. Fostudio does not consume PhaseTwo topology heartbeat data."
       dashboard_order_note_counts_compatibility: "The compatibility migration copy includes the SECURITY INVOKER, service-role-only count_order_note_events(bigint[]) aggregate and partial order.note.added index for schema parity. Fostudio does not consume this dashboard contract."
   background_jobs:
+    access_worker:
+      endpoint: "/api/internal/access/process"
+      schedule: "Every minute via Supabase pg_cron + pg_net"
+      auth: "x-access-key using ACCESS_AUTOMATION_SHARED_KEY from Vault"
+      responsibilities:
+        - atomically claim and process due lock access jobs
+        - verify Home Assistant lock writes against physical user-code slots
+        - health-gate bounded recovery of still-relevant dead jobs
+      config:
+        - ACCESS_PROCESSOR_URL
     calendar_maintenance:
       endpoint: "/api/internal/calendar/maintenance"
       schedule: "Every 5 minutes via Supabase pg_cron + pg_net"

@@ -71,10 +71,10 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
   - `GET /ready`: Supabase-backed readiness check using service-role server access.
 - Service Fabric should use `/health` for public reachability and `/ready` for Supabase-backed readiness.
 - Public `/ready` currently validates Supabase-backed server readiness; it does not fully validate Square, Home Assistant, Abode, Google Calendar, or internal worker auth/provider availability.
-- Access subsystem has `GET /api/admin/access/status` for queue/incident visibility and `POST /api/admin/access/jobs.retry` for authenticated, reason-audited retries of dead jobs. Retry uses a conditional `status='dead'` update, resets execution state, and records the requesting admin plus prior error context in the job payload.
+- Access subsystem has `GET /api/admin/access/status` for queue/incident and live provider-health visibility, plus `POST /api/admin/access/jobs.retry` for authenticated, reason-audited retries of dead jobs. Retry uses a conditional `status='dead'` update, resets execution state, and records the requesting admin plus prior error context in the job payload.
 - Nitro app-error reporting writes to `app_error_groups` and `app_error_events`, but intentionally filters expected non-internal `401`/`403` auth denials and common static/bot `404` probes so Service Fabric alerts represent actionable application failures.
 - Internal workers include `POST /api/internal/access/process`, `POST /api/internal/access/booking-sync`, `POST /api/internal/calendar/maintenance`, `POST /api/internal/mail/reminders/process`, `GET /api/internal/analytics/outputs`, and `POST /api/internal/analytics/run`.
-- Recommended Home Assistant scheduler calls `POST /api/internal/access/process` every minute with `x-access-key`.
+- Supabase `pg_cron`/`pg_net` calls `POST /api/internal/access/process` every minute with `x-access-key`. The database scheduler is authoritative so a Home Assistant outage cannot also remove queue scheduling; the former HA automation is a disabled emergency fallback.
 - Supabase `pg_cron`/`pg_net` calls `POST /api/internal/calendar/maintenance` every five minutes with `x-access-key`. In bounded batches, the worker checks Square before releasing a stale guest-payment reservation, preserves completed or in-flight payments for confirmation, deletes unpaid checkout links, expires the linked top-up session, and then cancels the local reservation. It also runs throttled Google Calendar maintenance; calendar GET requests are read-only.
 - Status mapping:
   - `Up`: host responds.
@@ -87,7 +87,9 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 ## Operational Notes
 
 - Access jobs activate 30 minutes before booking start and deactivate 30 minutes after booking end.
-- `lock_access_jobs` is processed only if an external scheduler calls the internal process endpoint.
+- `lock_access_jobs` is processed by the once-per-minute Supabase scheduler. Jobs use atomic compare-and-claim updates so brief scheduler overlap is safe.
+- Home Assistant lock writes fail closed when the lock entity is `unknown`/`unavailable` and must pass a physical `get_lock_usercode` read-back before the job succeeds. Still-relevant dead jobs are health-gated and automatically requeued after a cooldown, up to a bounded recovery limit; successful recovery clears stale errors and resolves matching lock-sync incidents.
+- Abode actions read the current alarm state first and skip redundant arm/disarm calls, preventing an already-satisfied state from creating a false automation incident.
 - Admin dead-job retry only returns a job to `pending`; the normal internal access processor remains responsible for execution. Non-dead or concurrently changed jobs fail closed with `409`.
 - Permanent lock codes are stored in `lock_permanent_codes`; active permanent slots are reserved from booking/member allocation.
 - Access incident records are written before notification attempts. Notification email is best-effort and routes through the registry-backed `mailing.memberBroadcast` Fomailer handler to configured admin recipients so notification failure does not block incident creation.
@@ -95,7 +97,7 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 - Authenticated guests can inspect and resume their own active Square checkout through `GET /api/bookings/guest/payment-status`. Releasing a pending reservation closes its Square payment link before the local slot is canceled; a completed or in-flight payment fails closed for confirmation instead of being discarded.
 - Secrets are loaded through Supabase Vault via `get_secret`; non-secret settings use `system_config` and runtime env.
 - Guest booking policy is runtime-configurable through `system_config`; the current operational access window and application fallback are 9:00 AM–9:00 PM Los Angeles time.
-- `ACCESS_AUTOMATION_SHARED_KEY` authenticates both access and calendar-maintenance workers. `CALENDAR_MAINTENANCE_URL` in `system_config` owns the maintenance callback URL.
+- `ACCESS_AUTOMATION_SHARED_KEY` authenticates both access and calendar-maintenance workers. `ACCESS_PROCESSOR_URL` and `CALENDAR_MAINTENANCE_URL` in `system_config` own their callback URLs; the shared key remains Vault-only.
 - Database/RLS changes must be authored in `fosupabase`.
 - Booking hardening rollout order is additive RPC migration, application deployment, then Data API RLS lockdown and calendar cron activation. Reversing that order would temporarily break calendar reads or booking creation.
 

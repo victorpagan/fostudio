@@ -1,4 +1,5 @@
 import { requireServerAdmin } from '~~/server/utils/auth'
+import { getLockProviderHealth } from '~~/server/utils/access/providers'
 
 export default defineEventHandler(async (event) => {
   const { supabase } = await requireServerAdmin(event)
@@ -10,7 +11,8 @@ export default defineEventHandler(async (event) => {
     openIncidentsRes,
     deadJobsRes,
     recentJobsRes,
-    recentIncidentsRes
+    recentIncidentsRes,
+    provider
   ] = await Promise.all([
     db
       .from('lock_access_jobs')
@@ -39,7 +41,8 @@ export default defineEventHandler(async (event) => {
       .from('lock_access_incidents')
       .select('id,incident_type,severity,status,title,message,booking_id,user_id,created_at,updated_at')
       .order('created_at', { ascending: false })
-      .limit(20)
+      .limit(20),
+    getLockProviderHealth(event)
   ])
 
   const errors = [
@@ -56,6 +59,7 @@ export default defineEventHandler(async (event) => {
   }
 
   return {
+    provider,
     summary: {
       pendingJobs: pendingRes.count ?? 0,
       deadJobs: deadRes.count ?? 0,
