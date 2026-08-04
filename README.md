@@ -57,7 +57,7 @@ supabase db push
 ### Scheduler
 
 The authoritative scheduler is Supabase `pg_cron` + `pg_net`. Migration
-`20260804165256_schedule_fostudio_access_worker.sql` calls the protected worker
+`20260804170550_schedule_fostudio_access_worker.sql` calls the protected worker
 once per minute using:
 
 - `system_config.ACCESS_PROCESSOR_URL` for the callback URL.
