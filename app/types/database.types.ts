@@ -904,6 +904,72 @@ export type Database = {
           },
         ]
       }
+      booking_external_access: {
+        Row: {
+          booking_id: string
+          created_at: string
+          created_by: string | null
+          delivery_status: string
+          external_calendar_event_id: string | null
+          external_reference: string | null
+          id: string
+          manage_url: string | null
+          metadata: Json
+          provider: string
+          shared_at: string | null
+          shared_by: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          booking_id: string
+          created_at?: string
+          created_by?: string | null
+          delivery_status?: string
+          external_calendar_event_id?: string | null
+          external_reference?: string | null
+          id?: string
+          manage_url?: string | null
+          metadata?: Json
+          provider: string
+          shared_at?: string | null
+          shared_by?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          booking_id?: string
+          created_at?: string
+          created_by?: string | null
+          delivery_status?: string
+          external_calendar_event_id?: string | null
+          external_reference?: string | null
+          id?: string
+          manage_url?: string | null
+          metadata?: Json
+          provider?: string
+          shared_at?: string | null
+          shared_by?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_external_access_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: true
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_external_access_external_calendar_event_id_fkey"
+            columns: ["external_calendar_event_id"]
+            isOneToOne: true
+            referencedRelation: "external_calendar_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       booking_holds: {
         Row: {
           booking_id: string

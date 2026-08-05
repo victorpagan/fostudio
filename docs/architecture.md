@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`fostudio` is the FO Studio booking, membership, admin, analytics, access-control, and content application. It manages studio bookings, member credits/holds, Square payments/subscriptions, Google Calendar sync, Home Assistant lock/Abode automation, mail campaigns/reminders, analytics outputs, incidents/expenses, waivers, referrals, and admin dashboards.
+`fostudio` is the FO Studio booking, membership, admin, analytics, access-control, and content application. It manages studio bookings, member credits/holds, Square payments/subscriptions, Google Calendar and Peerspace-mirror sync, Home Assistant lock/Abode automation, mail campaigns/reminders, analytics outputs, incidents/expenses, waivers, referrals, and admin dashboards.
 
 ## Runtime
 
@@ -36,7 +36,7 @@
 - Square for payments, subscriptions, cards, catalog/pricing, customers, and webhooks. Customer sync normalizes phone numbers to Square-safe E.164 at the Square boundary and omits invalid/ambiguous phone values from Square requests while preserving local customer data. Admin-only member repair/damage charges use Square saved cards through a separate audit path and do not mint credits or alter membership revenue flows.
 - `fomailer` for mail sends; SendGrid for template/admin checks. FO Studio sends registry-backed lifecycle events including `account.signup`, `booking.memberCreated`, booking changes, membership changes, credits/holds top-ups, admin member charge receipts, contact, and broadcasts.
 - Home Assistant and Abode for lock/alarm access automation.
-- Google Calendar API for booking calendar sync.
+- Google Calendar API for booking calendar sync and Peerspace calendar-mirror ingestion. Peerspace is not treated as a direct API dependency; its supported Google/iCal mirror supplies reservation time, title, confirmation reference, and manage URL but not the guest email.
 - Google Ads and Meta Marketing APIs for analytics ingestion.
 - Google Ads browser measurement is loaded only after explicit cookie consent; essential account cookies remain available after an analytics opt-out.
 - Nuxt Studio/content repository integration.
@@ -48,7 +48,7 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 - The compatibility migration set mirrors the shared `links.created_at` and `links_archive.created_at` lifecycle timestamps, the service-only latest `service_instance_heartbeats_current` view, the one-active-request-per-order `link_worker_requests`/`replace_link_for_worker` contract, and the service-only `count_order_note_events(bigint[])` dashboard aggregate with its partial activity index. `fosupabase` remains authoritative; FO Studio consumes none of these dashboard/PhaseTwo contracts.
 
 - Studio core writes: `bookings`, `booking_holds`, `calendar_blocks`, `customers`, `memberships`, `membership_tiers`, `membership_credit_grants`, `membership_checkout_sessions`, `credit_balance`, `credit_topup_sessions`, `hold_balance`, `hold_topup_sessions`, `credits_ledger`, `hold_ledger`.
-- Access-control writes: `lock_access_jobs`, `lock_access_incidents`, `lock_permanent_codes`, `lock_slot_assignments`, `booking_access_codes`, `door_code_change_requests`.
+- Access-control writes: `lock_access_jobs`, `lock_access_incidents`, `lock_permanent_codes`, `lock_slot_assignments`, `booking_access_codes`, `booking_external_access`, `door_code_change_requests`.
 - Admin/content/ops writes: `admin_expense_reports`, `admin_incident_reports`, `admin_manual_membership_events`, `admin_member_charges`, `mail_campaigns`, `mail_campaign_templates`, `mail_campaign_template_id_history`, `mail_reminder_rules`, `mail_reminder_deliveries`, `waiver_templates`, `member_waiver_signatures`, `promo_codes`, `referral_credit_rules`, `membership_referrals`, `member_referral_codes`.
 - Analytics writes: `analytics_outputs`, `analytics_ad_daily`.
 - Shared config/mail/error reads/writes: `system_config`, `mail_template_registry`, `mail_user_preferences`, `mail_admin_copy_preferences`, `app_error_groups`, `app_error_events`, `orders2`.
@@ -94,12 +94,14 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 - Permanent lock codes are stored in `lock_permanent_codes`; active permanent slots are reserved from booking/member allocation.
 - Access incident records are written before notification attempts. Notification email is best-effort and routes through the registry-backed `mailing.memberBroadcast` Fomailer handler to configured admin recipients so notification failure does not block incident creation.
 - Admin member charges write a pending audit row before Square is called, update to `paid` or `failed` after Square response, and send the customer only the `billing.memberChargeReceipt` email receipt on successful payment.
+- Admin scheduled external access represents Peerspace/manual reservations as ordinary guest `bookings` rows linked by `booking_external_access`. This intentionally reuses the existing 30-minute lead/trail window, guest slot allocator, physical lock read-back, retry/dead-job recovery, and cancellation cleanup. Linked external calendar rows are suppressed from occupancy responses, and linked local bookings are not pushed back to Google, preventing duplicate blocks and sync loops. Migration `20260805174630_fostudio_external_booking_access.sql` and the matching runtime are `Ready` in production as of 2026-08-05.
+- Peerspace reconciliation runs after inbound Google Calendar upserts. A confirmation number can attach a previously manual entry to the later mirrored event; cancellation updates the linked booking and queues immediate access cleanup. PIN delivery remains an explicit admin action through the Peerspace conversation because the calendar mirror does not provide the guest email. `peerspace_access_auto_provision_enabled` in `system_config` owns automatic provisioning.
 - Authenticated guests can inspect and resume their own active Square checkout through `GET /api/bookings/guest/payment-status`. Releasing a pending reservation closes its Square payment link before the local slot is canceled; a completed or in-flight payment fails closed for confirmation instead of being discarded.
 - Secrets are loaded through Supabase Vault via `get_secret`; non-secret settings use `system_config` and runtime env.
 - Guest booking policy is runtime-configurable through `system_config`; the current operational access window and application fallback are 9:00 AM–9:00 PM Los Angeles time.
 - `ACCESS_AUTOMATION_SHARED_KEY` authenticates both access and calendar-maintenance workers. `ACCESS_PROCESSOR_URL` and `CALENDAR_MAINTENANCE_URL` in `system_config` own their callback URLs; the shared key remains Vault-only.
 - Database/RLS changes must be authored in `fosupabase`.
-- Booking hardening rollout order is additive RPC migration, application deployment, then Data API RLS lockdown and calendar cron activation. Reversing that order would temporarily break calendar reads or booking creation.
+- Booking hardening rollout order is additive RPC migration, application deployment, then Data API RLS lockdown and calendar cron activation. Reversing that order would temporarily break calendar reads or booking creation. Scheduled external access followed the required additive `booking_external_access` migration-first order before its admin UI/API deployment; calendar reads retain a missing-table compatibility fallback for older environments.
 
 ## Update Triggers
 

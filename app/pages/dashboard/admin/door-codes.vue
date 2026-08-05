@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatAdminDateTime } from '~~/app/utils/adminTime'
+import ScheduledCodesPanel from '~~/app/components/dashboard/admin/access/ScheduledCodesPanel.vue'
 
 definePageMeta({ middleware: ['admin'] })
 
@@ -77,7 +78,7 @@ type AccessStatusPayload = {
   recentIncidents: AccessIncident[]
 }
 
-type DoorCodesTab = 'members' | 'permanent' | 'jobs'
+type DoorCodesTab = 'members' | 'scheduled' | 'permanent' | 'jobs'
 
 const toast = useToast()
 const route = useRoute()
@@ -268,7 +269,7 @@ watch([routePermanentId, permanentCodes], ([permanentId]) => {
 }, { immediate: true })
 
 watch(() => route.query.accessTab, (value) => {
-  if (value === 'permanent' || value === 'jobs') doorCodesTab.value = value
+  if (value === 'scheduled' || value === 'permanent' || value === 'jobs') doorCodesTab.value = value
   else if (value === 'members') doorCodesTab.value = 'members'
 }, { immediate: true })
 
@@ -289,7 +290,8 @@ function setDoorCodesTab(tab: DoorCodesTab) {
       ...route.query,
       accessTab: tab,
       accountId: tab === 'members' ? route.query.accountId : undefined,
-      permanentId: tab === 'permanent' ? route.query.permanentId : undefined
+      permanentId: tab === 'permanent' ? route.query.permanentId : undefined,
+      scheduledId: tab === 'scheduled' ? route.query.scheduledId : undefined
     }
   })
 }
@@ -584,7 +586,7 @@ function formatDateTime(value: string | null) {
         variant="soft"
         icon="i-lucide-key-round"
         title="Door code controls"
-        description="Manage account codes for members and guests, plus permanent lock codes. Permanent codes stay active outside booking windows."
+        description="Manage account codes, scheduled external guest access, permanent lock codes, and provider queue health."
       />
 
       <UCard>
@@ -624,6 +626,15 @@ function formatDateTime(value: string | null) {
           @click="setDoorCodesTab('members')"
         >
           Account codes
+        </UButton>
+        <UButton
+          size="sm"
+          :variant="doorCodesTab === 'scheduled' ? 'solid' : 'soft'"
+          :color="doorCodesTab === 'scheduled' ? 'primary' : 'neutral'"
+          :aria-pressed="doorCodesTab === 'scheduled'"
+          @click="setDoorCodesTab('scheduled')"
+        >
+          Scheduled codes
         </UButton>
         <UButton
           size="sm"
@@ -930,8 +941,10 @@ function formatDateTime(value: string | null) {
           </template>
         </DashboardDataPanel>
 
+        <ScheduledCodesPanel v-else-if="doorCodesTab === 'scheduled'" />
+
         <div
-          v-else
+          v-else-if="doorCodesTab === 'jobs'"
           class="space-y-4"
         >
           <AppAlert

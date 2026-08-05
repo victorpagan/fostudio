@@ -4,6 +4,7 @@ import { getRequestURL, type H3Event } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { getKey, getServerConfigMap, refreshServerConfig } from '~~/server/utils/config/secret'
 import { STUDIO_TZ } from '~~/server/utils/booking/peak'
+import { reconcilePeerspaceExternalBookings } from '~~/server/utils/access/externalBookings'
 
 type SupabaseLike = {
   from: <T = Record<string, unknown>>(table: string) => SupabaseQueryBuilder<T>
@@ -12,7 +13,7 @@ type SupabaseLike = {
 type SupabaseQueryResult<T = Record<string, unknown>> = {
   count?: number | null
   data?: T[] | null
-  error?: { message: string } | null
+  error?: { code?: string, message: string } | null
 }
 
 type SupabaseQueryBuilder<T = Record<string, unknown>> = PromiseLike<SupabaseQueryResult<T>> & {
@@ -84,6 +85,15 @@ export type GoogleCalendarSyncResult = {
   windowEnd: string | null
   syncedAt: string
   dryRun: boolean
+  peerspaceAccess: {
+    enabled: boolean
+    candidates: number
+    created: number
+    updated: number
+    canceled: number
+    failed: number
+    error?: string
+  } | null
 }
 
 export type GoogleCalendarListEntry = {
@@ -137,6 +147,13 @@ function asInteger(value: unknown, fallback: number, min: number, max: number) {
 function asString(value: unknown, fallback = '') {
   if (typeof value !== 'string') return fallback
   return value.trim() || fallback
+}
+
+function isMissingRelationError(error: { code?: string, message?: string } | null | undefined) {
+  const message = String(error?.message ?? '').toLowerCase()
+  return error?.code === '42P01'
+    || message.includes('schema cache')
+    || (message.includes('booking_external_access') && message.includes('does not exist'))
 }
 
 function getSupabaseDb(event: H3Event): SupabaseLike {
@@ -611,7 +628,28 @@ async function collectLocalBusyWindows(db: SupabaseLike, windowStartIso: string,
     last_name: string | null
   }
 
-  const bookingRows = bookingsRes.data ?? []
+  const rawBookingRows = bookingsRes.data ?? []
+  const bookingIds = rawBookingRows
+    .map(row => asString((row as Record<string, unknown>).id))
+    .filter(Boolean)
+  const externalAccessRes = bookingIds.length
+    ? await db
+        .from('booking_external_access')
+        .select('booking_id')
+        .in('booking_id', bookingIds)
+    : { data: [], error: null }
+
+  if (externalAccessRes.error && !isMissingRelationError(externalAccessRes.error)) {
+    throw new Error(externalAccessRes.error.message)
+  }
+
+  const linkedBookingIds = new Set((externalAccessRes.data ?? [])
+    .map(row => asString((row as Record<string, unknown>).booking_id))
+    .filter(Boolean))
+  const bookingRows = rawBookingRows.filter((booking) => {
+    const id = asString((booking as Record<string, unknown>).id)
+    return !id || !linkedBookingIds.has(id)
+  })
   const bookingUserIds = [...new Set(bookingRows
     .map((booking: Record<string, unknown>) => asString(booking.user_id))
     .filter((value): value is string => Boolean(value)))]
@@ -894,7 +932,8 @@ export async function syncGoogleCalendarToExternalBlocks(
       windowStart: null,
       windowEnd: null,
       syncedAt,
-      dryRun
+      dryRun,
+      peerspaceAccess: null
     }
   }
 
@@ -919,7 +958,8 @@ export async function syncGoogleCalendarToExternalBlocks(
           windowStart: null,
           windowEnd: null,
           syncedAt,
-          dryRun
+          dryRun,
+          peerspaceAccess: null
         }
       }
     }
@@ -1030,6 +1070,7 @@ export async function syncGoogleCalendarToExternalBlocks(
     .filter(Boolean) as Array<Record<string, unknown>>
 
   let deactivatedRows = 0
+  let peerspaceAccess: GoogleCalendarSyncResult['peerspaceAccess'] = null
 
   if (!dryRun) {
     const deactivateRes = await db
@@ -1057,6 +1098,25 @@ export async function syncGoogleCalendarToExternalBlocks(
       if (error) throw new Error(error.message)
     }
 
+    try {
+      peerspaceAccess = await reconcilePeerspaceExternalBookings(event, {
+        windowStartIso,
+        windowEndIso
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('[gcal-sync] Peerspace access reconciliation failed', { error: message })
+      peerspaceAccess = {
+        enabled: true,
+        candidates: 0,
+        created: 0,
+        updated: 0,
+        canceled: 0,
+        failed: 1,
+        error: message
+      }
+    }
+
     await writeSyncStatus(db, syncedAt, {
       ok: true,
       reason,
@@ -1066,6 +1126,7 @@ export async function syncGoogleCalendarToExternalBlocks(
       deactivatedRows,
       pushedRows,
       deletedManagedRows,
+      peerspaceAccess,
       dryRun: false,
       windowStart: windowStartIso,
       windowEnd: windowEndIso,
@@ -1085,7 +1146,8 @@ export async function syncGoogleCalendarToExternalBlocks(
     windowStart: windowStartIso,
     windowEnd: windowEndIso,
     syncedAt,
-    dryRun
+    dryRun,
+    peerspaceAccess
   }
 }
 

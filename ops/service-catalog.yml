@@ -53,6 +53,7 @@ service:
         - app_error_events
         - app_error_groups
         - booking_access_codes
+        - booking_external_access
         - booking_holds
         - bookings
         - calendar_blocks
@@ -98,6 +99,7 @@ service:
       - Home Assistant
       - Abode
       - Google Calendar API
+      - Peerspace via Google Calendar mirror (no direct Peerspace API)
       - Google Ads API
       - Meta Marketing API
       - Nuxt Studio
@@ -109,6 +111,7 @@ service:
       access_dead_job_retry: "Dashboard admins can return dead lock_access_jobs to pending with a required reason; the route conditionally updates dead rows and stores requester/prior-error audit context in payload."
       access_provider_verification: "Home Assistant lock writes require a healthy lock entity and physical user-code slot read-back; successful recovery clears stale job errors and resolves matching lock-sync incidents."
       access_scheduler: "Supabase pg_cron + pg_net is the authoritative once-per-minute caller. Atomic job claims make rollout overlap safe; the Home Assistant scheduler is disabled fallback only."
+      peerspace_scheduled_access: "Admin/manual and Google-mirrored Peerspace reservations are linked to guest bookings through booking_external_access. They reuse the existing access queue; linked external events are hidden from occupancy and linked local rows are not pushed back to Google. PIN delivery remains manual in Peerspace because the mirror omits guest email. Migration 20260805174630 and the matching runtime are Ready in production as of 2026-08-05."
       abode_idempotency: "Alarm automation reads current state first and treats an already-satisfied arm/disarm request as success."
       app_error_reporting: "Nitro app-error reporting writes actionable failures to app_error_events/groups while filtering expected non-internal auth denials and static/bot 404 probes."
       authorization_role_source: "Admin authorization trusts Supabase app_metadata only; user_metadata is not an authorization source."
@@ -142,6 +145,7 @@ service:
         - reconcile bounded batches of stale guest payments with Square before releasing reservations
         - delete unpaid expired Square checkout links and expire their top-up sessions
         - run throttled Google Calendar synchronization
+        - reconcile mirrored Peerspace reservations into linked guest access bookings
       config:
         - CALENDAR_MAINTENANCE_URL
     rollout_order:
@@ -151,6 +155,7 @@ service:
       - enable calendar maintenance cron
   owned_operational_tables:
     - bookings
+    - booking_external_access
     - booking_holds
     - memberships
     - membership_credit_grants

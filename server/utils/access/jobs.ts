@@ -166,27 +166,46 @@ function randomPinCode() {
   return randomInt(0, 1_000_000).toString().padStart(6, '0')
 }
 
-async function hasPinCollision(event: H3Event, pinCode: string) {
+async function hasPinCollision(event: H3Event, pinCode: string, excludeBookingId?: string | null) {
   const supabase = serverSupabaseServiceRole(event)
 
-  const [{ data: memberCollision, error: memberErr }, { data: guestCollision, error: guestErr }] = await Promise.all([
+  let guestQuery = supabase
+    .from('booking_access_codes')
+    .select('id')
+    .eq('pin_code', pinCode)
+    .in('status', ['scheduled', 'active'])
+    .limit(1)
+
+  if (excludeBookingId) {
+    guestQuery = guestQuery.neq('booking_id', excludeBookingId)
+  }
+
+  const [
+    { data: memberCollision, error: memberErr },
+    { data: guestCollision, error: guestErr },
+    { data: permanentCollision, error: permanentErr }
+  ] = await Promise.all([
     supabase
       .from('customers')
       .select('id')
       .eq('door_code', pinCode)
       .limit(1),
+    guestQuery,
     supabase
-      .from('booking_access_codes')
+      .from('lock_permanent_codes')
       .select('id')
-      .eq('pin_code', pinCode)
-      .in('status', ['scheduled', 'active'])
+      .eq('code', pinCode)
+      .eq('active', true)
       .limit(1)
   ])
 
   if (memberErr) throw new Error(memberErr.message)
   if (guestErr) throw new Error(guestErr.message)
+  if (permanentErr) throw new Error(permanentErr.message)
 
-  return (memberCollision?.length ?? 0) > 0 || (guestCollision?.length ?? 0) > 0
+  return (memberCollision?.length ?? 0) > 0
+    || (guestCollision?.length ?? 0) > 0
+    || (permanentCollision?.length ?? 0) > 0
 }
 
 async function createUniqueGuestPin(event: H3Event) {
@@ -199,9 +218,16 @@ async function createUniqueGuestPin(event: H3Event) {
   throw new Error('Could not generate a unique guest PIN')
 }
 
-async function ensureGuestAccessCode(event: H3Event, booking: BookingRow) {
+export async function upsertGuestAccessCode(event: H3Event, params: {
+  bookingId: string
+  pinCode?: string | null
+  source?: string
+}) {
   const supabase = serverSupabaseServiceRole(event)
   const nowIso = new Date().toISOString()
+  const booking = await loadBooking(event, params.bookingId)
+  if (!booking) throw new Error('Booking not found')
+  if (booking.user_id) throw new Error('Temporary access codes require a guest booking')
 
   const { activateAtIso, deactivateAtIso } = computeAccessWindow(booking.start_time, booking.end_time)
 
@@ -211,34 +237,36 @@ async function ensureGuestAccessCode(event: H3Event, booking: BookingRow) {
 
   const { data: existing, error: readErr } = await supabase
     .from('booking_access_codes')
-    .select('id,pin_code,status')
+    .select('id,pin_code,status,slot_assignment_id,metadata')
     .eq('booking_id', booking.id)
     .eq('code_type', 'guest')
     .maybeSingle()
 
   if (readErr) throw new Error(readErr.message)
 
-  if (existing?.pin_code && ['scheduled', 'active'].includes(String(existing.status ?? '').toLowerCase())) {
-    const { error: updateErr } = await supabase
-      .from('booking_access_codes')
-      .update({
-        valid_from: activateAtIso,
-        valid_until: deactivateAtIso,
-        updated_at: nowIso
-      })
-      .eq('id', existing.id)
-
-    if (updateErr) throw new Error(updateErr.message)
-
-    return {
-      id: String(existing.id),
-      pinCode: String(existing.pin_code),
-      validFrom: activateAtIso,
-      validUntil: deactivateAtIso
-    }
+  const requestedPin = typeof params.pinCode === 'string' ? params.pinCode.trim() : ''
+  if (requestedPin && !/^\d{6}$/.test(requestedPin)) {
+    throw new Error('Code must be exactly 6 digits')
   }
 
-  const pinCode = await createUniqueGuestPin(event)
+  const existingPin = typeof existing?.pin_code === 'string' ? existing.pin_code : ''
+  const existingStatus = String(existing?.status ?? '').toLowerCase()
+  const canReuseExisting = existingPin && ['scheduled', 'active'].includes(existingStatus)
+  const pinCode = requestedPin || (canReuseExisting ? existingPin : await createUniqueGuestPin(event))
+
+  if (pinCode !== existingPin && await hasPinCollision(event, pinCode, booking.id)) {
+    throw new Error('Code is already assigned to another active or scheduled account')
+  }
+
+  if (existingStatus === 'active' && existingPin && pinCode !== existingPin) {
+    throw new Error('Active access codes must be revoked before changing the PIN')
+  }
+
+  const metadata = {
+    ...normalizePayload(existing?.metadata),
+    source: params.source ?? 'booking_sync',
+    prepared_at: nowIso
+  }
 
   if (existing?.id) {
     const { data: updated, error: updateErr } = await supabase
@@ -247,11 +275,9 @@ async function ensureGuestAccessCode(event: H3Event, booking: BookingRow) {
         pin_code: pinCode,
         valid_from: activateAtIso,
         valid_until: deactivateAtIso,
-        status: 'scheduled',
-        slot_assignment_id: null,
-        metadata: {
-          regenerated_at: nowIso
-        },
+        status: existingStatus === 'active' ? 'active' : 'scheduled',
+        slot_assignment_id: existingStatus === 'active' ? existing.slot_assignment_id : null,
+        metadata,
         updated_at: nowIso
       })
       .eq('id', existing.id)
@@ -277,9 +303,7 @@ async function ensureGuestAccessCode(event: H3Event, booking: BookingRow) {
       valid_from: activateAtIso,
       valid_until: deactivateAtIso,
       status: 'scheduled',
-      metadata: {
-        source: 'booking_sync'
-      },
+      metadata,
       created_at: nowIso,
       updated_at: nowIso
     })
@@ -294,6 +318,13 @@ async function ensureGuestAccessCode(event: H3Event, booking: BookingRow) {
     validFrom: String(inserted.valid_from),
     validUntil: String(inserted.valid_until)
   }
+}
+
+async function ensureGuestAccessCode(event: H3Event, booking: BookingRow) {
+  return upsertGuestAccessCode(event, {
+    bookingId: booking.id,
+    source: 'booking_sync'
+  })
 }
 
 async function clearGuestAccessCode(event: H3Event, bookingId: string, status: 'expired' | 'revoked') {
@@ -409,7 +440,34 @@ export async function enqueueBookingAccessSync(event: H3Event, params: {
 
   const activateRunAtIso = activateAt <= now ? nowIso : activateAtIso
 
+  let activeGuestCodeNeedsPause = false
+  if (isGuest && activateAt > now) {
+    const supabase = serverSupabaseServiceRole(event)
+    const { data: activeCode, error: activeCodeError } = await supabase
+      .from('booking_access_codes')
+      .select('id')
+      .eq('booking_id', booking.id)
+      .eq('code_type', 'guest')
+      .eq('status', 'active')
+      .maybeSingle()
+
+    if (activeCodeError) throw new Error(activeCodeError.message)
+    activeGuestCodeNeedsPause = Boolean(activeCode?.id)
+  }
+
   const queued = await insertJobs(event, [
+    ...(activeGuestCodeNeedsPause
+      ? [{
+          jobType: 'deactivate_guest_window' as const,
+          bookingId: booking.id,
+          userId: null,
+          runAtIso: nowIso,
+          payload: {
+            reason: 'guest_window_rescheduled_to_future',
+            preserve_code: true
+          }
+        }]
+      : []),
     {
       jobType: isGuest ? 'activate_guest_window' : 'activate_member_window',
       bookingId: booking.id,
@@ -954,6 +1012,7 @@ async function runActivateGuestJob(event: H3Event, job: JobRow) {
 async function runDeactivateGuestJob(event: H3Event, job: JobRow) {
   if (!job.booking_id) throw new Error('deactivate_guest_window missing booking_id')
 
+  const preserveCode = job.payload?.preserve_code === true
   const assignment = await getActiveGuestSlot(event, job.booking_id)
 
   if (assignment?.slot_number) {
@@ -966,7 +1025,22 @@ async function runDeactivateGuestJob(event: H3Event, job: JobRow) {
   }
 
   await releaseGuestSlot(event, job.booking_id)
-  await clearGuestAccessCode(event, job.booking_id, 'expired')
+  if (preserveCode) {
+    const supabase = serverSupabaseServiceRole(event)
+    const { error: codeError } = await supabase
+      .from('booking_access_codes')
+      .update({
+        status: 'scheduled',
+        slot_assignment_id: null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('booking_id', job.booking_id)
+      .eq('code_type', 'guest')
+
+    if (codeError) throw new Error(codeError.message)
+  } else {
+    await clearGuestAccessCode(event, job.booking_id, 'expired')
+  }
 
   const abode = await triggerAbodeArmAwayForWindowEnd(event, {
     bookingId: job.booking_id,
@@ -993,7 +1067,7 @@ async function runDeactivateGuestJob(event: H3Event, job: JobRow) {
 
   return {
     ok: true,
-    action: 'guest_code_cleared',
+    action: preserveCode ? 'guest_code_paused_for_reschedule' : 'guest_code_cleared',
     bookingId: job.booking_id,
     slotNumber: assignment?.slot_number ? Number(assignment.slot_number) : null,
     abode
