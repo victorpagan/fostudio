@@ -310,6 +310,46 @@ async function waitForVerifiedLockCode(event: H3Event, params: {
   throw new Error(`Lock slot ${params.slotNumber} verification failed: expected ${expected}, found ${actual}`)
 }
 
+async function waitForVerifiedAlarmState(event: H3Event, params: {
+  baseUrl: unknown
+  timeoutMs: number
+  entityId: string
+  expectedState: string
+}) {
+  let lastState: string | null = null
+  let lastError: string | null = null
+  const retryDelaysMs = [0, 300, 700, 1400]
+
+  for (const delayMs of retryDelaysMs) {
+    if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs))
+
+    try {
+      lastState = await getHomeAssistantEntityState(event, {
+        baseUrl: params.baseUrl,
+        timeoutMs: Math.min(params.timeoutMs, 2500),
+        entityId: params.entityId
+      })
+      lastError = null
+    } catch (error) {
+      lastError = (error as Error)?.message ?? String(error)
+    }
+
+    if (lastState === params.expectedState) {
+      return {
+        verified: true as const,
+        state: lastState
+      }
+    }
+  }
+
+  const actual = lastState
+    ? `found ${lastState}`
+    : lastError
+      ? `state lookup failed: ${lastError}`
+      : 'state was missing'
+  throw new Error(`Alarm entity ${params.entityId} verification failed: expected ${params.expectedState}, ${actual}`)
+}
+
 export async function getLockProviderHealth(event: H3Event): Promise<LockProviderHealth> {
   const config = await getServerConfigMap(event, [
     'LOCK_PROVIDER_MODE',
@@ -574,7 +614,11 @@ export async function sendAbodeAutomationEvent(event: H3Event, payload: {
           ok: true as const,
           mode: 'home_assistant' as const,
           skipped: 'already_in_requested_state' as const,
-          state: currentState
+          state: currentState,
+          verification: {
+            verified: true as const,
+            state: currentState
+          }
         }
       }
     }
@@ -594,11 +638,21 @@ export async function sendAbodeAutomationEvent(event: H3Event, payload: {
       }
     })
 
+    const verification = expectedState
+      ? await waitForVerifiedAlarmState(event, {
+          baseUrl: config.HOME_ASSISTANT_BASE_URL,
+          timeoutMs,
+          entityId,
+          expectedState
+        })
+      : null
+
     return {
       ok: true as const,
       mode: 'home_assistant' as const,
       action: `${actionRef.domain}.${actionRef.service}`,
-      result
+      result,
+      verification
     }
   }
 

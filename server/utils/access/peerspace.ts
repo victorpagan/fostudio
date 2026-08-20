@@ -16,7 +16,7 @@ function normalizeText(value: unknown) {
   return normalized || null
 }
 
-function normalizeReference(value: unknown) {
+export function normalizePeerspaceReference(value: unknown) {
   const normalized = normalizeText(value)
   return normalized ? normalized.replace(/^,+/, '').trim().toUpperCase() || null : null
 }
@@ -34,7 +34,20 @@ function extractReferenceFromManageUrl(manageUrl: string | null) {
   } catch {
     // Keep the original URL when a malformed escape sequence is present.
   }
-  return normalizeReference(decoded.match(/\/inbox\/([a-z0-9-]+)/i)?.[1])
+  return normalizePeerspaceReference(decoded.match(/\/inbox\/([a-z0-9-]+)/i)?.[1])
+}
+
+export function getPeerspaceReferenceMatches<T extends {
+  provider: 'peerspace' | 'manual'
+  external_reference: string | null
+}>(links: T[], reference: unknown) {
+  const normalizedReference = normalizePeerspaceReference(reference)
+  if (!normalizedReference) return []
+
+  return links.filter(link => (
+    ['peerspace', 'manual'].includes(link.provider)
+    && normalizePeerspaceReference(link.external_reference) === normalizedReference
+  ))
 }
 
 export function parsePeerspaceEventDetails(event: PeerspaceEventLike): PeerspaceEventDetails {
@@ -43,7 +56,7 @@ export function parsePeerspaceEventDetails(event: PeerspaceEventLike): Peerspace
   const manageUrl = extractManageUrl(description)
   const titleMatch = title.match(/^Peerspace\s+Booking\s*,\s*(.+)$/i)
   const confirmationMatch = description.match(/Confirmation\s+number\s*:\s*,?\s*([a-z0-9-]+)/i)
-  const externalReference = normalizeReference(confirmationMatch?.[1])
+  const externalReference = normalizePeerspaceReference(confirmationMatch?.[1])
     ?? extractReferenceFromManageUrl(manageUrl)
 
   return {

@@ -16,6 +16,8 @@ test('Home Assistant lock writes require health and physical slot verification',
   assert.match(provider, /waitForVerifiedLockCode/)
   assert.match(provider, /Lock slot .* verification failed/)
   assert.match(provider, /already_in_requested_state/)
+  assert.match(provider, /waitForVerifiedAlarmState/)
+  assert.match(provider, /Alarm entity .* verification failed/)
 })
 
 test('dead access jobs recover only while relevant and after provider recovery', async () => {
@@ -29,6 +31,15 @@ test('dead access jobs recover only while relevant and after provider recovery',
   assert.match(jobs, /status:\s*'resolved'/)
   assert.match(jobs, /last_error:\s*null/)
   assert.match(jobs, /summarizeProviderResult/)
+})
+
+test('booking access disarms before arrival and rearming respects every active booking', async () => {
+  const jobs = await readProjectFile('server/utils/access/jobs.ts')
+
+  assert.match(jobs, /triggerAbodeDisarmForWindowStart/)
+  assert.match(jobs, /eventType:\s*'unlock_disarm_home'/)
+  assert.match(jobs, /hasAnotherActiveBookingWindowNow/)
+  assert.match(jobs, /another_active_booking_window_exists/)
 })
 
 test('admin access status reports lock-provider health', async () => {

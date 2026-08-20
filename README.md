@@ -7,6 +7,9 @@ This project uses a queued lock access workflow:
 1. Booking and membership events enqueue jobs in `public.lock_access_jobs`.
 2. A worker endpoint processes due jobs.
 3. Processed jobs call Home Assistant service APIs to set/clear Z-Wave lock PINs and trigger Abode alarm actions.
+4. Outside daytime lab hours, activation jobs disarm and verify Abode when the PIN becomes valid, 30 minutes before booking start. Unlock callbacks remain a fallback.
+
+Alarm service calls are not considered successful until Home Assistant reports the requested alarm state. End-of-window jobs also skip arming while another booking access window is active.
 
 If no scheduler calls the worker endpoint, lock changes never reach Home Assistant.
 

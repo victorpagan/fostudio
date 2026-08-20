@@ -546,6 +546,30 @@ async function hasAnotherActiveMemberWindowNow(event: H3Event, params: {
   return (count ?? 0) > 0
 }
 
+async function hasAnotherActiveBookingWindowNow(event: H3Event, excludeBookingId?: string | null) {
+  const supabase = serverSupabaseServiceRole(event)
+  const now = DateTime.now().setZone(STUDIO_TZ)
+  const startsBeforeIso = now.plus({ minutes: 30 }).toUTC().toISO()
+  const endsAfterIso = now.minus({ minutes: 30 }).toUTC().toISO()
+
+  if (!startsBeforeIso || !endsAfterIso) return false
+
+  let query = supabase
+    .from('bookings')
+    .select('id', { count: 'exact', head: true })
+    .in('status', ['confirmed', 'requested'])
+    .lte('start_time', startsBeforeIso)
+    .gte('end_time', endsAfterIso)
+
+  if (excludeBookingId) {
+    query = query.neq('id', excludeBookingId)
+  }
+
+  const { count, error } = await query
+  if (error) throw new Error(error.message)
+  return (count ?? 0) > 0
+}
+
 async function listActiveMemberWindowBookings(event: H3Event, userId: string) {
   const supabase = serverSupabaseServiceRole(event)
   const now = DateTime.now().setZone(STUDIO_TZ)
@@ -578,6 +602,12 @@ async function triggerAbodeArmAwayForWindowEnd(event: H3Event, params: {
     }
   }
 
+  if (await hasAnotherActiveBookingWindowNow(event, params.bookingId)) {
+    return {
+      skipped: 'another_active_booking_window_exists'
+    }
+  }
+
   const result = await sendAbodeAutomationEvent(event, {
     eventType: 'booking_window_end_arm_away',
     bookingId: params.bookingId ?? null,
@@ -587,6 +617,26 @@ async function triggerAbodeArmAwayForWindowEnd(event: H3Event, params: {
   })
 
   return result
+}
+
+async function triggerAbodeDisarmForWindowStart(event: H3Event, params: {
+  bookingId?: string | null
+  userId?: string | null
+  slotNumber?: number | null
+}) {
+  if (!isOutsideAbodeArmingGap()) {
+    return {
+      skipped: 'inside_daytime_gap'
+    }
+  }
+
+  return sendAbodeAutomationEvent(event, {
+    eventType: 'unlock_disarm_home',
+    bookingId: params.bookingId ?? null,
+    userId: params.userId ?? null,
+    lockSlot: params.slotNumber ?? null,
+    occurredAt: new Date().toISOString()
+  })
 }
 
 async function markJobSucceeded(event: H3Event, jobId: number, response: Record<string, unknown>) {
@@ -865,6 +915,14 @@ async function runActivateMemberJob(event: H3Event, job: JobRow) {
     userId: job.user_id
   })
 
+  // The code becomes valid at the access-window lead time. Disarm then so the
+  // customer's door-open action is never racing a remote alarm round trip.
+  const abode = await triggerAbodeDisarmForWindowStart(event, {
+    bookingId: targetBooking.id,
+    userId: job.user_id,
+    slotNumber: slot.slotNumber
+  })
+
   return {
     ok: true,
     action: 'member_code_set',
@@ -872,7 +930,8 @@ async function runActivateMemberJob(event: H3Event, job: JobRow) {
     userId: job.user_id,
     customerId,
     slotNumber: slot.slotNumber,
-    provider: summarizeProviderResult(providerResult)
+    provider: summarizeProviderResult(providerResult),
+    abode
   }
 }
 
@@ -1000,12 +1059,18 @@ async function runActivateGuestJob(event: H3Event, job: JobRow) {
 
   if (updateErr) throw new Error(updateErr.message)
 
+  const abode = await triggerAbodeDisarmForWindowStart(event, {
+    bookingId: booking.id,
+    slotNumber: slot.slotNumber
+  })
+
   return {
     ok: true,
     action: 'guest_code_set',
     bookingId: booking.id,
     slotNumber: slot.slotNumber,
-    provider: summarizeProviderResult(providerResult)
+    provider: summarizeProviderResult(providerResult),
+    abode
   }
 }
 

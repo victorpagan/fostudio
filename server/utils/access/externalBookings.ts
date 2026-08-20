@@ -6,7 +6,10 @@ import { createAccessIncident } from '~~/server/utils/access/incidents'
 import { computeAccessWindow } from '~~/server/utils/access/policy'
 import { STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { getServerConfigMap } from '~~/server/utils/config/secret'
-import { parsePeerspaceEventDetails } from '~~/server/utils/access/peerspace'
+import {
+  getPeerspaceReferenceMatches,
+  parsePeerspaceEventDetails
+} from '~~/server/utils/access/peerspace'
 
 type ExternalCalendarEventRow = {
   id: string
@@ -113,6 +116,18 @@ async function reportReconcileFailure(event: H3Event, params: {
   externalEventId: string
   externalReference?: string | null
 }) {
+  const serviceRole = serverSupabaseServiceRole(event)
+  const { data: existingIncident, error: existingIncidentError } = await serviceRole
+    .from('lock_access_incidents')
+    .select('id')
+    .eq('incident_type', 'peerspace_access_sync_failure')
+    .eq('status', 'open')
+    .contains('metadata', { externalCalendarEventId: params.externalEventId })
+    .limit(1)
+    .maybeSingle()
+
+  if (!existingIncidentError && existingIncident?.id) return
+
   await createAccessIncident(event, {
     incidentType: 'peerspace_access_sync_failure',
     severity: 'error',
@@ -124,6 +139,31 @@ async function reportReconcileFailure(event: H3Event, params: {
       externalReference: params.externalReference ?? null
     }
   }).catch(() => {})
+}
+
+async function resolveReconcileFailures(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  externalEventId: string
+) {
+  const nowIso = new Date().toISOString()
+  const { error } = await db
+    .from('lock_access_incidents')
+    .update({
+      status: 'resolved',
+      resolved_at: nowIso,
+      updated_at: nowIso
+    })
+    .eq('incident_type', 'peerspace_access_sync_failure')
+    .eq('status', 'open')
+    .contains('metadata', { externalCalendarEventId: externalEventId })
+
+  if (error) {
+    console.warn('[access/peerspace] failed to resolve recovered sync incidents', {
+      externalEventId,
+      error: error.message
+    })
+  }
 }
 
 export async function reconcilePeerspaceExternalBookings(event: H3Event, params: {
@@ -186,7 +226,7 @@ export async function reconcilePeerspaceExternalBookings(event: H3Event, params:
       ? db
           .from('booking_external_access')
           .select('id,booking_id,provider,external_calendar_event_id,external_reference,manage_url,delivery_status,metadata')
-          .eq('provider', 'peerspace')
+          .in('provider', ['peerspace', 'manual'])
           .in('external_reference', references)
       : Promise.resolve({ data: [] as ExternalAccessRow[], error: null })
   ])
@@ -209,11 +249,9 @@ export async function reconcilePeerspaceExternalBookings(event: H3Event, params:
   if (bookingsError) throw new Error(bookingsError.message)
 
   const linkByEventId = new Map<string, ExternalAccessRow>()
-  const linkByReference = new Map<string, ExternalAccessRow>()
   const bookingById = new Map<string, LinkedBookingRow>()
   for (const link of links) {
     if (link.external_calendar_event_id) linkByEventId.set(link.external_calendar_event_id, link)
-    if (link.external_reference) linkByReference.set(link.external_reference, link)
   }
   for (const booking of (bookingRows ?? []) as LinkedBookingRow[]) bookingById.set(booking.id, booking)
 
@@ -223,12 +261,25 @@ export async function reconcilePeerspaceExternalBookings(event: H3Event, params:
   let failed = 0
 
   for (const { row, details } of candidates) {
-    let link = linkByEventId.get(row.id)
-      ?? (details.externalReference ? linkByReference.get(details.externalReference) : null)
-      ?? null
+    const directLink = linkByEventId.get(row.id) ?? null
+    const referenceMatches = getPeerspaceReferenceMatches(links, details.externalReference)
+    const adoptableReferenceLinks = referenceMatches.filter(candidate => (
+      !candidate.external_calendar_event_id || candidate.external_calendar_event_id === row.id
+    ))
+    const linksClaimedByOtherEvents = referenceMatches.filter(candidate => (
+      candidate.external_calendar_event_id && candidate.external_calendar_event_id !== row.id
+    ))
+    let link = directLink ?? (adoptableReferenceLinks.length === 1 ? adoptableReferenceLinks[0] : null)
     let booking = link ? bookingById.get(link.booking_id) ?? null : null
 
     try {
+      if (!directLink && linksClaimedByOtherEvents.length) {
+        throw new Error(`Peerspace confirmation ${details.externalReference} is already linked to another calendar event`)
+      }
+      if (!directLink && adoptableReferenceLinks.length > 1) {
+        throw new Error(`Peerspace confirmation ${details.externalReference} matches multiple scheduled access records`)
+      }
+
       const status = String(row.status ?? '').toLowerCase()
       const isActive = row.active && status !== 'cancelled' && status !== 'canceled'
       const { deactivateAt } = computeAccessWindow(row.start_time, row.end_time)
@@ -331,21 +382,24 @@ export async function reconcilePeerspaceExternalBookings(event: H3Event, params:
 
         link = insertedLink as ExternalAccessRow
         booking = insertedBooking as LinkedBookingRow
+        links.push(link)
         linkByEventId.set(row.id, link)
-        if (details.externalReference) linkByReference.set(details.externalReference, link)
         bookingById.set(booking.id, booking)
 
         await enqueueBookingAccessSync(event, {
           bookingId: booking.id,
           reason: 'peerspace_event_created'
         })
+        await resolveReconcileFailures(db, row.id)
         created += 1
         continue
       }
 
       const needsBookingUpdate = bookingNeedsUpdate(booking, row, details.guestName)
       const wasCanceled = ['canceled', 'cancelled'].includes(String(booking.status).toLowerCase())
-      const needsLinkUpdate = link.external_calendar_event_id !== row.id
+      const adoptedFromProvider = link.provider === 'manual' ? link.provider : null
+      const needsLinkUpdate = link.provider !== 'peerspace'
+        || link.external_calendar_event_id !== row.id
         || link.external_reference !== details.externalReference
         || link.manage_url !== details.manageUrl
         || (wasCanceled && link.delivery_status === 'not_required')
@@ -368,6 +422,7 @@ export async function reconcilePeerspaceExternalBookings(event: H3Event, params:
         const { error: linkUpdateError } = await db
           .from('booking_external_access')
           .update({
+            provider: 'peerspace',
             external_calendar_event_id: row.id,
             external_reference: details.externalReference,
             manage_url: details.manageUrl,
@@ -382,7 +437,13 @@ export async function reconcilePeerspaceExternalBookings(event: H3Event, params:
               ...asRecord(link.metadata),
               source: 'google_calendar_sync',
               eventTitle: row.title,
-              rawEventId: normalizeText(asRecord(row.raw_payload).id)
+              rawEventId: normalizeText(asRecord(row.raw_payload).id),
+              ...(adoptedFromProvider
+                ? {
+                    adoptedFromProvider,
+                    adoptedAt: new Date().toISOString()
+                  }
+                : {})
             },
             updated_at: new Date().toISOString()
           })
@@ -397,6 +458,7 @@ export async function reconcilePeerspaceExternalBookings(event: H3Event, params:
         })
       }
 
+      await resolveReconcileFailures(db, row.id)
       if (needsBookingUpdate || needsLinkUpdate) updated += 1
     } catch (error) {
       failed += 1

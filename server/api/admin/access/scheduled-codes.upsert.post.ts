@@ -180,12 +180,15 @@ export default defineEventHandler(async (event) => {
     const { data: referenceLink, error: referenceLinkError } = await db
       .from('booking_external_access')
       .select('id')
-      .eq('provider', body.provider)
+      .in('provider', ['peerspace', 'manual'])
       .eq('external_reference', externalReference)
       .maybeSingle()
     if (referenceLinkError) throw createError({ statusCode: 500, statusMessage: referenceLinkError.message })
     if (referenceLink?.id && referenceLink.id !== existingLink?.id) {
-      throw createError({ statusCode: 409, statusMessage: `Confirmation ${externalReference} already has a scheduled access code.` })
+      throw createError({
+        statusCode: 409,
+        statusMessage: `Confirmation ${externalReference} already has scheduled access. Edit that record or use Sync Peerspace to attach the calendar event.`
+      })
     }
   }
 

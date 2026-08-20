@@ -109,10 +109,10 @@ service:
       fomailer_event_types: "Registry-backed sends include account.signup plus booking, membership, credit, hold, admin member charge receipt, contact, reminder, and broadcast events."
       access_incident_mail: "Lock/access incident alerts are best-effort and route through mailing.memberBroadcast to configured admin recipients."
       access_dead_job_retry: "Dashboard admins can return dead lock_access_jobs to pending with a required reason; the route conditionally updates dead rows and stores requester/prior-error audit context in payload."
-      access_provider_verification: "Home Assistant lock writes require a healthy lock entity and physical user-code slot read-back; successful recovery clears stale job errors and resolves matching lock-sync incidents."
+      access_provider_verification: "Home Assistant lock writes require a healthy lock entity and physical user-code slot read-back. Outside daytime hours, booking activation pre-disarms Abode and verifies the requested alarm state; successful recovery clears stale job errors and resolves matching lock-sync incidents."
       access_scheduler: "Supabase pg_cron + pg_net is the authoritative once-per-minute caller. Atomic job claims make rollout overlap safe; the Home Assistant scheduler is disabled fallback only."
-      peerspace_scheduled_access: "Admin/manual and Google-mirrored Peerspace reservations are linked to guest bookings through booking_external_access. They reuse the existing access queue; linked external events are hidden from occupancy and linked local rows are not pushed back to Google. PIN delivery remains manual in Peerspace because the mirror omits guest email. Migration 20260805174630 and the matching runtime are Ready in production as of 2026-08-05."
-      abode_idempotency: "Alarm automation reads current state first and treats an already-satisfied arm/disarm request as success."
+      peerspace_scheduled_access: "Admin/manual and Google-mirrored Peerspace reservations are linked to guest bookings through booking_external_access. A unique normalized confirmation adopts a pre-entered manual record, preserves its PIN, and lets Peerspace times recalculate the normal access window; ambiguous matches fail closed and recovered sync incidents resolve. Linked external events are hidden from occupancy and linked local rows are not pushed back to Google. PIN delivery remains manual because the mirror omits guest email. Migration 20260805174630 and the matching runtime are Ready."
+      abode_idempotency: "Alarm automation reads current state first, treats an already-satisfied request as success, verifies state after service calls, and refuses to arm while another booking access window is active."
       app_error_reporting: "Nitro app-error reporting writes actionable failures to app_error_events/groups while filtering expected non-internal auth denials and static/bot 404 probes."
       authorization_role_source: "Admin authorization trusts Supabase app_metadata only; user_metadata is not an authorization source."
       booking_data_api: "Public/member occupancy is served through sanitized application routes. Direct booking/hold writes are denied to anon/authenticated Data API roles and restricted burn RPCs are service-role only."
@@ -134,6 +134,8 @@ service:
       responsibilities:
         - atomically claim and process due lock access jobs
         - verify Home Assistant lock writes against physical user-code slots
+        - pre-disarm and verify Abode for after-hours booking access windows
+        - suppress end-of-window arming while another booking window is active
         - health-gate bounded recovery of still-relevant dead jobs
       config:
         - ACCESS_PROCESSOR_URL
