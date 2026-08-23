@@ -609,21 +609,9 @@ export async function sendAbodeAutomationEvent(event: H3Event, payload: {
       if (!currentState || ['unknown', 'unavailable'].includes(currentState)) {
         throw new Error(`Home Assistant alarm entity is ${currentState ?? 'missing'}`)
       }
-      // A long-unchanged Home Assistant alarm state can be stale while the
-      // physical Abode panel has re-armed. Always send disarm as a safety
-      // command; only arm requests may use the idempotent state shortcut.
-      if (currentState === expectedState && actionRef.service !== 'alarm_disarm') {
-        return {
-          ok: true as const,
-          mode: 'home_assistant' as const,
-          skipped: 'already_in_requested_state' as const,
-          state: currentState,
-          verification: {
-            verified: true as const,
-            state: currentState
-          }
-        }
-      }
+      // Abode is shared control: employees and schedules can change the panel
+      // independently. Use the current state only as a provider health check,
+      // then always reconcile the requested state at this booking transition.
     }
 
     const alarmCodePrimary = await getKey(event, 'HOME_ASSISTANT_ABODE_ALARM_CODE').catch(() => null)
