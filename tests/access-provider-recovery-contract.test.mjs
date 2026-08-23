@@ -16,6 +16,7 @@ test('Home Assistant lock writes require health and physical slot verification',
   assert.match(provider, /waitForVerifiedLockCode/)
   assert.match(provider, /Lock slot .* verification failed/)
   assert.match(provider, /already_in_requested_state/)
+  assert.match(provider, /actionRef\.service !== 'alarm_disarm'/)
   assert.match(provider, /waitForVerifiedAlarmState/)
   assert.match(provider, /Alarm entity .* verification failed/)
 })

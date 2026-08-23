@@ -609,7 +609,10 @@ export async function sendAbodeAutomationEvent(event: H3Event, payload: {
       if (!currentState || ['unknown', 'unavailable'].includes(currentState)) {
         throw new Error(`Home Assistant alarm entity is ${currentState ?? 'missing'}`)
       }
-      if (currentState === expectedState) {
+      // A long-unchanged Home Assistant alarm state can be stale while the
+      // physical Abode panel has re-armed. Always send disarm as a safety
+      // command; only arm requests may use the idempotent state shortcut.
+      if (currentState === expectedState && actionRef.service !== 'alarm_disarm') {
         return {
           ok: true as const,
           mode: 'home_assistant' as const,
