@@ -232,6 +232,9 @@ export default defineEventHandler(async (event) => {
     const guestValidation = validateGuestBookingWindow({
       start: nextStart.setZone(STUDIO_TZ),
       end: nextEnd.setZone(STUDIO_TZ),
+      // An extension intentionally keeps the original (already-started) start
+      // time. Validate its shape/hours without rejecting that historical start.
+      now: isExtensionOperation ? nextStart.setZone(STUDIO_TZ) : undefined,
       policy: guestPolicy
     })
     if (!isAdmin && !guestValidation.ok) {

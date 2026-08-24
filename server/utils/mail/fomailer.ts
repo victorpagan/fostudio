@@ -20,6 +20,7 @@ type FomailerRequest = {
 const FOMAILER_NATIVE_TYPES = new Set([
   'account.signup',
   'booking.guestConfirmed',
+  'booking.endingSoonReminder',
   'booking.memberCanceled',
   'booking.memberCreated',
   'booking.memberRescheduled',

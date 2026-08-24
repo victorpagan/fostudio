@@ -5,8 +5,23 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import { ensureDoorCodeForUser } from '~~/server/utils/membership/doorCode'
 import { STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { createAccessIncident } from '~~/server/utils/access/incidents'
-import { computeAccessWindow, isAccessEligibleBookingStatus, isInsideAccessWindow, isOutsideAbodeArmingGap } from '~~/server/utils/access/policy'
+import {
+  computeAccessWindow,
+  isAccessEligibleBookingStatus,
+  isInsideAccessWindow,
+  isOutsideAbodeArmingGap
+} from '~~/server/utils/access/policy'
+import {
+  computeBookingEndJobTimes,
+  DEFAULT_ABODE_BOOKING_END_ARM_DELAY_MINUTES,
+  DEFAULT_ABODE_BOOKING_END_EARLY_HOUR,
+  DEFAULT_ABODE_BOOKING_END_LATE_HOUR,
+  DEFAULT_BOOKING_END_REMINDER_MINUTES,
+  shouldScheduleAbodeArmAfterBookingEnd
+} from '~~/server/utils/access/bookingEndPolicy'
 import { clearLockUserCode, getLockProviderHealth, isLockSyncEnabled, sendAbodeAutomationEvent, setLockUserCode } from '~~/server/utils/access/providers'
+import { getServerConfigMap } from '~~/server/utils/config/secret'
+import { sendBookingEndingSoonReminderMail } from '~~/server/utils/mail/bookingEndingSoonReminder'
 import { sanitizeForJSON } from '~~/server/utils/sanitize'
 import {
   allocateGuestSlot,
@@ -26,6 +41,8 @@ type LockAccessJobType
     | 'deactivate_member_window'
     | 'activate_guest_window'
     | 'deactivate_guest_window'
+    | 'send_booking_ending_reminder'
+    | 'arm_after_booking_end'
     | 'refresh_member_active'
 
 type BookingRow = {
@@ -36,6 +53,7 @@ type BookingRow = {
   end_time: string
   guest_name: string | null
   guest_email: string | null
+  booking_rate_kind: string | null
 }
 
 type JobRow = {
@@ -89,6 +107,60 @@ async function getRetryScheduleSeconds(event: H3Event) {
   return parseRetrySchedule(data?.value)
 }
 
+type BookingEndAutomationPolicy = {
+  reminderMinutes: number
+  armDelayMinutes: number
+  earlyHour: number
+  lateHour: number
+}
+
+function boundedInteger(value: unknown, fallback: number, minimum: number, maximum: number) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(minimum, Math.min(maximum, Math.floor(parsed)))
+}
+
+async function loadBookingEndAutomationPolicy(event: H3Event): Promise<BookingEndAutomationPolicy> {
+  const config = await getServerConfigMap(event, [
+    'BOOKING_END_REMINDER_MINUTES',
+    'ABODE_BOOKING_END_ARM_DELAY_MINUTES',
+    'ABODE_BOOKING_END_EARLY_HOUR',
+    'ABODE_BOOKING_END_LATE_HOUR'
+  ]).catch((error) => {
+    console.warn('[access/jobs] failed to load booking-end policy, using defaults', {
+      message: (error as Error)?.message ?? String(error)
+    })
+    return {} as Record<string, unknown>
+  })
+
+  return {
+    reminderMinutes: boundedInteger(
+      config.BOOKING_END_REMINDER_MINUTES,
+      DEFAULT_BOOKING_END_REMINDER_MINUTES,
+      1,
+      180
+    ),
+    armDelayMinutes: boundedInteger(
+      config.ABODE_BOOKING_END_ARM_DELAY_MINUTES,
+      DEFAULT_ABODE_BOOKING_END_ARM_DELAY_MINUTES,
+      0,
+      240
+    ),
+    earlyHour: boundedInteger(
+      config.ABODE_BOOKING_END_EARLY_HOUR,
+      DEFAULT_ABODE_BOOKING_END_EARLY_HOUR,
+      0,
+      23
+    ),
+    lateHour: boundedInteger(
+      config.ABODE_BOOKING_END_LATE_HOUR,
+      DEFAULT_ABODE_BOOKING_END_LATE_HOUR,
+      0,
+      23
+    )
+  }
+}
+
 function nextRetryAtIso(now: DateTime, scheduleSeconds: number[], attempts: number) {
   const idx = Math.min(Math.max(1, attempts), scheduleSeconds.length - 1)
   const delaySeconds = scheduleSeconds[idx] ?? scheduleSeconds[scheduleSeconds.length - 1] ?? 60
@@ -123,7 +195,7 @@ async function loadBooking(event: H3Event, bookingId: string): Promise<BookingRo
   const supabase = serverSupabaseServiceRole(event)
   const { data, error } = await supabase
     .from('bookings')
-    .select('id,user_id,status,start_time,end_time,guest_name,guest_email')
+    .select('id,user_id,status,start_time,end_time,guest_name,guest_email,booking_rate_kind')
     .eq('id', bookingId)
     .maybeSingle()
 
@@ -408,6 +480,17 @@ export async function enqueueBookingAccessSync(event: H3Event, params: {
     throw new Error('Could not compute access window')
   }
 
+  const endPolicy = await loadBookingEndAutomationPolicy(event)
+  const bookingEnd = DateTime.fromISO(booking.end_time, { setZone: true }).setZone(STUDIO_TZ)
+  const {
+    reminderAt,
+    reminderAtIso,
+    armAtIso
+  } = computeBookingEndJobTimes(booking.end_time, endPolicy)
+  if (!bookingEnd.isValid || !reminderAtIso || !armAtIso) {
+    throw new Error('Could not compute booking-end automation times')
+  }
+
   if (deactivateAt <= now) {
     const jobType: LockAccessJobType = isGuest ? 'deactivate_guest_window' : 'deactivate_member_window'
     await insertJobs(event, [{
@@ -439,6 +522,14 @@ export async function enqueueBookingAccessSync(event: H3Event, params: {
   }
 
   const activateRunAtIso = activateAt <= now ? nowIso : activateAtIso
+  const shouldQueueEndingReminder = Boolean(booking.user_id)
+    && String(booking.booking_rate_kind ?? 'standard').toLowerCase() !== 'standby'
+    && bookingEnd > now
+  const shouldQueueArmAway = shouldScheduleAbodeArmAfterBookingEnd(booking.end_time, {
+    earlyHour: endPolicy.earlyHour,
+    lateHour: endPolicy.lateHour
+  })
+  const reminderRunAtIso = reminderAt <= now ? nowIso : reminderAtIso
 
   let activeGuestCodeNeedsPause = false
   if (isGuest && activateAt > now) {
@@ -485,7 +576,35 @@ export async function enqueueBookingAccessSync(event: H3Event, params: {
       payload: {
         reason: params.reason ?? 'booking_sync'
       }
-    }
+    },
+    ...(shouldQueueEndingReminder
+      ? [{
+          jobType: 'send_booking_ending_reminder' as const,
+          bookingId: booking.id,
+          userId: booking.user_id,
+          runAtIso: reminderRunAtIso,
+          payload: {
+            reason: params.reason ?? 'booking_sync',
+            expected_end_time: booking.end_time,
+            reminder_minutes: endPolicy.reminderMinutes
+          }
+        }]
+      : []),
+    ...(shouldQueueArmAway
+      ? [{
+          jobType: 'arm_after_booking_end' as const,
+          bookingId: booking.id,
+          userId: booking.user_id,
+          runAtIso: armAtIso,
+          payload: {
+            reason: params.reason ?? 'booking_sync',
+            expected_end_time: booking.end_time,
+            arm_delay_minutes: endPolicy.armDelayMinutes,
+            early_hour: endPolicy.earlyHour,
+            late_hour: endPolicy.lateHour
+          }
+        }]
+      : [])
   ])
 
   return {
@@ -494,7 +613,9 @@ export async function enqueueBookingAccessSync(event: H3Event, params: {
     isGuest,
     status: booking.status,
     activateAt: activateRunAtIso,
-    deactivateAt: deactivateAtIso
+    deactivateAt: deactivateAtIso,
+    reminderAt: shouldQueueEndingReminder ? reminderRunAtIso : null,
+    armAt: shouldQueueArmAway ? armAtIso : null
   }
 }
 
@@ -580,7 +701,7 @@ async function listActiveMemberWindowBookings(event: H3Event, userId: string) {
 
   const { data, error } = await supabase
     .from('bookings')
-    .select('id,user_id,status,start_time,end_time,guest_name,guest_email')
+    .select('id,user_id,status,start_time,end_time,guest_name,guest_email,booking_rate_kind')
     .eq('user_id', userId)
     .in('status', ['confirmed', 'requested'])
     .lte('start_time', startsBeforeIso)
@@ -591,7 +712,7 @@ async function listActiveMemberWindowBookings(event: H3Event, userId: string) {
   return (data ?? []) as BookingRow[]
 }
 
-async function triggerAbodeArmAwayForWindowEnd(event: H3Event, params: {
+async function triggerAbodeArmAwayAfterBookingEnd(event: H3Event, params: {
   bookingId?: string | null
   userId?: string | null
   slotNumber?: number | null
@@ -619,6 +740,13 @@ async function triggerAbodeArmAwayForWindowEnd(event: H3Event, params: {
   return result
 }
 
+function timestampsMatch(left: unknown, right: string) {
+  if (typeof left !== 'string' || !left.trim()) return false
+  const leftTime = DateTime.fromISO(left, { setZone: true })
+  const rightTime = DateTime.fromISO(right, { setZone: true })
+  return leftTime.isValid && rightTime.isValid && leftTime.toMillis() === rightTime.toMillis()
+}
+
 async function triggerAbodeDisarmForWindowStart(event: H3Event, params: {
   bookingId?: string | null
   userId?: string | null
@@ -639,7 +767,13 @@ async function triggerAbodeDisarmForWindowStart(event: H3Event, params: {
   })
 }
 
-async function markJobSucceeded(event: H3Event, jobId: number, response: Record<string, unknown>) {
+function incidentTypeForJob(jobType: LockAccessJobType) {
+  if (jobType === 'arm_after_booking_end') return 'abode_automation_failure'
+  if (jobType === 'send_booking_ending_reminder') return 'booking_reminder_failure'
+  return 'lock_sync_failure'
+}
+
+async function markJobSucceeded(event: H3Event, job: JobRow, response: Record<string, unknown>) {
   const supabase = serverSupabaseServiceRole(event)
   const nowIso = new Date().toISOString()
 
@@ -652,7 +786,7 @@ async function markJobSucceeded(event: H3Event, jobId: number, response: Record<
       processed_at: nowIso,
       updated_at: nowIso
     })
-    .eq('id', jobId)
+    .eq('id', job.id)
 
   if (error) throw new Error(error.message)
 
@@ -663,13 +797,13 @@ async function markJobSucceeded(event: H3Event, jobId: number, response: Record<
       resolved_at: nowIso,
       updated_at: nowIso
     })
-    .eq('incident_type', 'lock_sync_failure')
+    .eq('incident_type', incidentTypeForJob(job.job_type))
     .eq('status', 'open')
-    .contains('metadata', { jobId })
+    .contains('metadata', { jobId: job.id })
 
   if (incidentError) {
     console.warn('[access/jobs] failed to resolve recovered job incidents', {
-      jobId,
+      jobId: job.id,
       error: incidentError.message
     })
   }
@@ -695,6 +829,11 @@ async function shouldAutomaticallyRecoverJob(event: H3Event, job: JobRow) {
     if (!isAccessEligibleBookingStatus(booking.status)) return true
     const { deactivateAt } = computeAccessWindow(booking.start_time, booking.end_time)
     return deactivateAt <= DateTime.now().setZone(STUDIO_TZ)
+  }
+
+  if (job.job_type === 'arm_after_booking_end') {
+    if (!timestampsMatch(job.payload?.expected_end_time, booking.end_time)) return false
+    return isAccessEligibleBookingStatus(booking.status)
   }
 
   return false
@@ -822,12 +961,18 @@ async function markJobRetryOrDead(event: H3Event, params: {
 
   const shouldAlert = params.attempts === 1 || isDead
   if (shouldAlert) {
+    const incidentType = incidentTypeForJob(params.job.job_type)
+    const jobLabel = params.job.job_type === 'arm_after_booking_end'
+      ? 'Abode booking-end arm job'
+      : params.job.job_type === 'send_booking_ending_reminder'
+        ? 'Booking ending reminder job'
+        : 'Lock access job'
     await createAccessIncident(event, {
-      incidentType: 'lock_sync_failure',
+      incidentType,
       severity: isDead ? 'critical' : 'error',
       title: isDead
-        ? 'Lock access job failed permanently'
-        : 'Lock access job failed (retry scheduled)',
+        ? `${jobLabel} failed permanently`
+        : `${jobLabel} failed (retry scheduled)`,
       message: params.errorMessage,
       bookingId: params.job.booking_id,
       userId: params.job.user_id,
@@ -968,39 +1113,13 @@ async function runDeactivateMemberJob(event: H3Event, job: JobRow) {
     reason: 'window_ended'
   })
 
-  const abode = await triggerAbodeArmAwayForWindowEnd(event, {
-    bookingId: job.booking_id,
-    userId: job.user_id,
-    slotNumber: Number(assignment.slot_number)
-  }).catch(async (error) => {
-    const message = (error as Error)?.message ?? String(error)
-    await createAccessIncident(event, {
-      incidentType: 'abode_automation_failure',
-      severity: 'error',
-      title: 'Abode arm-away automation failed',
-      message,
-      bookingId: job.booking_id,
-      userId: job.user_id,
-      metadata: {
-        source: 'member_window_end',
-        slotNumber: Number(assignment.slot_number)
-      }
-    }).catch(() => {})
-
-    return {
-      ok: false,
-      error: message
-    }
-  })
-
   return {
     ok: true,
     action: 'member_code_cleared',
     bookingId: job.booking_id,
     userId: job.user_id,
     slotNumber: Number(assignment.slot_number),
-    provider: summarizeProviderResult(providerResult),
-    abode
+    provider: summarizeProviderResult(providerResult)
   }
 }
 
@@ -1107,34 +1226,122 @@ async function runDeactivateGuestJob(event: H3Event, job: JobRow) {
     await clearGuestAccessCode(event, job.booking_id, 'expired')
   }
 
-  const abode = await triggerAbodeArmAwayForWindowEnd(event, {
-    bookingId: job.booking_id,
-    slotNumber: assignment?.slot_number ? Number(assignment.slot_number) : null
-  }).catch(async (error) => {
-    const message = (error as Error)?.message ?? String(error)
-    await createAccessIncident(event, {
-      incidentType: 'abode_automation_failure',
-      severity: 'error',
-      title: 'Abode arm-away automation failed',
-      message,
-      bookingId: job.booking_id,
-      metadata: {
-        source: 'guest_window_end',
-        slotNumber: assignment?.slot_number ? Number(assignment.slot_number) : null
-      }
-    }).catch(() => {})
-
-    return {
-      ok: false,
-      error: message
-    }
-  })
-
   return {
     ok: true,
     action: preserveCode ? 'guest_code_paused_for_reschedule' : 'guest_code_cleared',
     bookingId: job.booking_id,
-    slotNumber: assignment?.slot_number ? Number(assignment.slot_number) : null,
+    slotNumber: assignment?.slot_number ? Number(assignment.slot_number) : null
+  }
+}
+
+async function runBookingEndingReminderJob(event: H3Event, job: JobRow) {
+  if (!job.booking_id) throw new Error('send_booking_ending_reminder missing booking_id')
+
+  const booking = await loadBooking(event, job.booking_id)
+  if (!booking) {
+    return {
+      ok: true,
+      skipped: 'booking_missing',
+      bookingId: job.booking_id
+    }
+  }
+
+  if (!timestampsMatch(job.payload?.expected_end_time, booking.end_time)) {
+    return {
+      ok: true,
+      skipped: 'booking_end_changed',
+      bookingId: booking.id,
+      expectedEndTime: job.payload?.expected_end_time ?? null,
+      currentEndTime: booking.end_time
+    }
+  }
+
+  return sendBookingEndingSoonReminderMail(event, {
+    bookingId: booking.id,
+    expectedEndTime: booking.end_time,
+    reminderMinutes: boundedInteger(
+      job.payload?.reminder_minutes,
+      DEFAULT_BOOKING_END_REMINDER_MINUTES,
+      1,
+      180
+    )
+  })
+}
+
+async function runArmAfterBookingEndJob(event: H3Event, job: JobRow) {
+  if (!job.booking_id) throw new Error('arm_after_booking_end missing booking_id')
+
+  const booking = await loadBooking(event, job.booking_id)
+  if (!booking) {
+    return {
+      ok: true,
+      skipped: 'booking_missing',
+      bookingId: job.booking_id
+    }
+  }
+
+  if (!timestampsMatch(job.payload?.expected_end_time, booking.end_time)) {
+    return {
+      ok: true,
+      skipped: 'booking_end_changed',
+      bookingId: booking.id,
+      expectedEndTime: job.payload?.expected_end_time ?? null,
+      currentEndTime: booking.end_time
+    }
+  }
+
+  if (!isAccessEligibleBookingStatus(booking.status)) {
+    return {
+      ok: true,
+      skipped: 'booking_not_access_eligible',
+      bookingId: booking.id,
+      status: booking.status
+    }
+  }
+
+  const earlyHour = boundedInteger(
+    job.payload?.early_hour,
+    DEFAULT_ABODE_BOOKING_END_EARLY_HOUR,
+    0,
+    23
+  )
+  const lateHour = boundedInteger(
+    job.payload?.late_hour,
+    DEFAULT_ABODE_BOOKING_END_LATE_HOUR,
+    0,
+    23
+  )
+  if (!shouldScheduleAbodeArmAfterBookingEnd(booking.end_time, { earlyHour, lateHour })) {
+    return {
+      ok: true,
+      skipped: 'booking_end_inside_no_arm_hours',
+      bookingId: booking.id
+    }
+  }
+
+  const armDelayMinutes = boundedInteger(
+    job.payload?.arm_delay_minutes,
+    DEFAULT_ABODE_BOOKING_END_ARM_DELAY_MINUTES,
+    0,
+    240
+  )
+  const { armAt } = computeBookingEndJobTimes(booking.end_time, { armDelayMinutes })
+  if (DateTime.now().setZone(STUDIO_TZ) < armAt) {
+    throw new Error(`Booking-end arm job ran before its ${armDelayMinutes}-minute delay elapsed`)
+  }
+
+  const abode = await triggerAbodeArmAwayAfterBookingEnd(event, {
+    bookingId: booking.id,
+    userId: booking.user_id
+  })
+
+  return {
+    ok: true,
+    action: 'booking_end_arm_away',
+    bookingId: booking.id,
+    userId: booking.user_id,
+    bookingEnd: booking.end_time,
+    armDelayMinutes,
     abode
   }
 }
@@ -1185,6 +1392,10 @@ async function executeJob(event: H3Event, job: JobRow) {
       return runActivateGuestJob(event, job)
     case 'deactivate_guest_window':
       return runDeactivateGuestJob(event, job)
+    case 'send_booking_ending_reminder':
+      return runBookingEndingReminderJob(event, job)
+    case 'arm_after_booking_end':
+      return runArmAfterBookingEndJob(event, job)
     case 'refresh_member_active':
       return runRefreshMemberActiveJob(event, job)
     default:
@@ -1194,25 +1405,15 @@ async function executeJob(event: H3Event, job: JobRow) {
 
 export async function processDueAccessJobs(event: H3Event, options?: { limit?: number }) {
   const enabled = await isLockSyncEnabled(event)
-  if (!enabled) {
-    return {
-      enabled: false,
-      queued: 0,
-      processed: 0,
-      succeeded: 0,
-      failed: 0,
-      dead: 0,
-      message: 'LOCK_SYNC_ENABLED is false; queue is not processed.'
-    }
-  }
-
   const supabase = serverSupabaseServiceRole(event)
   const nowIso = new Date().toISOString()
   const limit = Math.max(1, Math.min(200, Number(options?.limit ?? 20)))
   const retrySchedule = await getRetryScheduleSeconds(event)
-  const recovery = await recoverDeadAccessJobs(event, limit)
+  const recovery = enabled
+    ? await recoverDeadAccessJobs(event, limit)
+    : { checked: 0, recovered: 0, providerHealthy: null as boolean | null }
 
-  const { data: dueJobs, error: dueErr } = await supabase
+  let dueQuery = supabase
     .from('lock_access_jobs')
     .select('id,job_type,status,booking_id,user_id,run_at,attempts,max_attempts,payload')
     .eq('status', 'pending')
@@ -1220,6 +1421,14 @@ export async function processDueAccessJobs(event: H3Event, options?: { limit?: n
     .order('run_at', { ascending: true })
     .order('id', { ascending: true })
     .limit(limit)
+
+  // Booking reminders remain available during lock-provider maintenance. All
+  // physical access and alarm jobs stay queued until lock sync is re-enabled.
+  if (!enabled) {
+    dueQuery = dueQuery.eq('job_type', 'send_booking_ending_reminder')
+  }
+
+  const { data: dueJobs, error: dueErr } = await dueQuery
 
   if (dueErr) throw new Error(dueErr.message)
 
@@ -1237,7 +1446,7 @@ export async function processDueAccessJobs(event: H3Event, options?: { limit?: n
         payload: normalizePayload(claimed.payload)
       })
 
-      await markJobSucceeded(event, claimed.id, response)
+      await markJobSucceeded(event, claimed, response)
       succeeded += 1
     } catch (error) {
       const attempts = Number(claimed.attempts ?? 1)
@@ -1255,12 +1464,15 @@ export async function processDueAccessJobs(event: H3Event, options?: { limit?: n
   }
 
   return {
-    enabled: true,
+    enabled,
     recovery,
     queued: dueJobs?.length ?? 0,
     processed: succeeded + failed,
     succeeded,
     failed,
-    dead
+    dead,
+    ...(!enabled
+      ? { message: 'LOCK_SYNC_ENABLED is false; only booking-ending reminder jobs are processed.' }
+      : {})
   }
 }

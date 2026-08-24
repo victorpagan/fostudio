@@ -112,6 +112,11 @@ const REGISTERED_MAIL_EVENTS: RegisteredMailEvent[] = [
     description: 'Reminder before an upcoming booking.'
   },
   {
+    eventType: 'booking.endingSoonReminder',
+    category: 'critical',
+    description: 'Transactional reminder and extension CTA shortly before an active booking ends.'
+  },
+  {
     eventType: 'credits.expiringReminder',
     category: 'non_critical',
     description: 'Reminder before active credits expire.'
@@ -383,6 +388,23 @@ const EVENT_VARIABLES: AvailableVariablesByEvent = {
     'bookingEndHuman',
     'hoursUntilBooking',
     'reminderLabel',
+    'manageUrl',
+    'calendarUrl',
+    'studioAddress'
+  ],
+  'booking.endingSoonReminder': [
+    'customerName',
+    'customerEmail',
+    'bookingId',
+    'bookingStart',
+    'bookingEnd',
+    'bookingStartHuman',
+    'bookingEndHuman',
+    'accessEndsAt',
+    'accessEndsAtHuman',
+    'minutesUntilEnd',
+    'extensionIncrementMinutes',
+    'extendUrl',
     'manageUrl',
     'calendarUrl',
     'studioAddress'
@@ -760,6 +782,23 @@ const EVENT_DEFAULT_COPY: Record<string, MailTemplateDefaultCopy> = {
 <p style="margin:0 0 8px;"><a href="{{ manageUrl }}">View booking</a></p>
 <p style="margin:0 0 16px;"><a href="{{ calendarUrl }}">Open studio calendar</a></p>
 <p style="margin:16px 0 0;font-size:13px;color:#666;">Questions? Reply to this email or contact <a href="mailto:{{ supportEmail }}">{{ supportEmail }}</a>.</p>
+</div>`
+  },
+  'booking.endingSoonReminder': {
+    subjectTemplate: 'Your FO Studio booking ends in {{ minutesUntilEnd }} minutes',
+    preheaderTemplate: 'Need more time? Extend now before your current booking ends.',
+    bodyTemplate: `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;max-width:640px;margin:0 auto;">
+<h1 style="font-size:24px;margin:0 0 12px;">Your booking ends soon</h1>
+<p style="margin:0 0 14px;">Hi {{ customerName }}, your FO Studio booking ends in about {{ minutesUntilEnd }} minutes.</p>
+<div style="background:#f6f6f6;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin:0 0 16px;">
+<p style="margin:0 0 8px;"><strong>Booking ID:</strong> {{ bookingId }}</p>
+<p style="margin:0 0 8px;"><strong>Ends:</strong> {{ bookingEndHuman }}</p>
+<p style="margin:0;"><strong>Door access ends:</strong> {{ accessEndsAtHuman }}</p>
+</div>
+<p style="margin:0 0 14px;">Need more time? Extend before the current booking ends so your reservation, credits, and studio access stay in sync. Additional time remains subject to availability, your account policy, and available credits.</p>
+<p style="margin:0 0 16px;"><a href="{{ extendUrl }}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;border-radius:6px;padding:11px 16px;font-weight:700;">Extend booking</a></p>
+<p style="margin:0 0 8px;"><a href="{{ manageUrl }}">View booking details</a></p>
+<p style="margin:16px 0 0;font-size:13px;color:#666;">If you are leaving on time, no action is needed. Questions? Reply to this email or contact <a href="mailto:{{ supportEmail }}">{{ supportEmail }}</a>.</p>
 </div>`
   },
   'credits.expiringReminder': {

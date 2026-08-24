@@ -34,13 +34,44 @@ test('dead access jobs recover only while relevant and after provider recovery',
   assert.match(jobs, /summarizeProviderResult/)
 })
 
-test('booking access disarms before arrival and rearming respects every active booking', async () => {
+test('booking access disarms before arrival and delayed rearming respects every active booking', async () => {
   const jobs = await readProjectFile('server/utils/access/jobs.ts')
 
   assert.match(jobs, /triggerAbodeDisarmForWindowStart/)
   assert.match(jobs, /eventType:\s*'unlock_disarm_home'/)
+  assert.match(jobs, /arm_after_booking_end/)
+  assert.match(jobs, /expected_end_time/)
+  assert.match(jobs, /triggerAbodeArmAwayAfterBookingEnd/)
   assert.match(jobs, /hasAnotherActiveBookingWindowNow/)
   assert.match(jobs, /another_active_booking_window_exists/)
+
+  const memberDeactivation = jobs.slice(
+    jobs.indexOf('async function runDeactivateMemberJob'),
+    jobs.indexOf('async function runActivateGuestJob')
+  )
+  const guestDeactivation = jobs.slice(
+    jobs.indexOf('async function runDeactivateGuestJob'),
+    jobs.indexOf('async function runBookingEndingReminderJob')
+  )
+  assert.doesNotMatch(memberDeactivation, /triggerAbodeArmAway/)
+  assert.doesNotMatch(guestDeactivation, /triggerAbodeArmAway/)
+})
+
+test('eligible booking-ending reminders use the Fomailer idempotency contract', async () => {
+  const [jobs, reminder, fomailer] = await Promise.all([
+    readProjectFile('server/utils/access/jobs.ts'),
+    readProjectFile('server/utils/mail/bookingEndingSoonReminder.ts'),
+    readProjectFile('server/utils/mail/fomailer.ts')
+  ])
+
+  assert.match(jobs, /send_booking_ending_reminder/)
+  assert.match(jobs, /only booking-ending reminder jobs are processed/)
+  assert.match(reminder, /booking\.endingSoonReminder/)
+  assert.match(reminder, /booking_rate_kind.*standby/s)
+  assert.match(reminder, /guest_extension_window_closed/)
+  assert.match(reminder, /x-idempotency-key/)
+  assert.match(reminder, /dashboard\/bookings\?extend=/)
+  assert.match(fomailer, /booking\.endingSoonReminder/)
 })
 
 test('admin access status reports lock-provider health', async () => {

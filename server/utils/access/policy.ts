@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon'
-import { STUDIO_TZ } from '~~/server/utils/booking/peak'
+
+const STUDIO_TZ = 'America/Los_Angeles'
 
 export const ACCESS_WINDOW_LEAD_MINUTES = 30
 export const ACCESS_WINDOW_TRAIL_MINUTES = 30
@@ -35,5 +36,5 @@ export function isInsideAccessWindow(startIso: string, endIso: string, now = Dat
 
 export function isOutsideAbodeArmingGap(now = DateTime.now().setZone(STUDIO_TZ)) {
   const hour = now.hour
-  return hour < 11 || hour >= 19
+  return hour < 11 || hour >= 21
 }
