@@ -60,6 +60,8 @@ service:
         - credit_balance
         - credit_pricing_options
         - credit_topup_sessions
+        - credit_ledger_operations
+        - credit_ledger_repair_audit
         - credits_ledger
         - customers
         - door_code_change_requests
@@ -92,6 +94,10 @@ service:
         - get_secret
         - create_confirmed_booking_with_burn_and_rate
         - create_confirmed_booking_with_burn_no_membership_and_rate
+        - reschedule_booking_with_credit_adjustment
+        - cancel_booking_with_credit_refund
+        - consume_credit_lots
+        - refund_booking_credit_lots
     external:
       - Square API and webhooks
       - fomailer
@@ -117,6 +123,7 @@ service:
       authorization_role_source: "Admin authorization trusts Supabase app_metadata only; user_metadata is not an authorization source."
       booking_data_api: "Public/member occupancy is served through sanitized application routes. Direct booking/hold writes are denied to anon/authenticated Data API roles and restricted burn RPCs are service-role only."
       booking_rate_atomicity: "Booking creation, credit burn, booking_rate_kind, and rate_policy_snapshot are committed by one service-role RPC transaction."
+      booking_credit_lot_accounting: "Automated booking, reschedule, and paid-hold debits consume earliest-expiring credit lots and inherit each source expiry. Booking reductions and cancellation refunds restore the debit expiry. UUID-independent operation keys prevent duplicate ledger effects, and migration repair evidence preserves every changed historical row while lifetime totals remain invariant. Database migrations 20260906033152 and 20260906040828 are Ready in production."
       rich_html_safety: "Waiver HTML is allowlist-sanitized before storage and rendering."
       browser_security: "Production responses set CSP/HSTS/frame/MIME/referrer/permissions headers; Google Ads browser measurement requires explicit consent."
       public_rate_limits: "Signup, checkout-signup, password recovery, and contact use process-local hashed IP/identifier limits; edge controls remain recommended for multi-dyno abuse protection."
@@ -155,6 +162,8 @@ service:
         - CALENDAR_MAINTENANCE_URL
     rollout_order:
       - apply additive booking rate RPC migration
+      - apply credit-lot accounting and historical repair migration
+      - apply credit-repair audit foreign-key index migration
       - deploy application routes and RPC caller
       - apply booking Data API RLS lockdown
       - enable calendar maintenance cron
@@ -165,6 +174,8 @@ service:
     - memberships
     - membership_credit_grants
     - membership_checkout_sessions
+    - credit_ledger_operations
+    - credit_ledger_repair_audit
     - lock_access_jobs
     - lock_access_incidents
     - lock_permanent_codes

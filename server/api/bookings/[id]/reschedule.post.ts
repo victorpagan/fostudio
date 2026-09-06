@@ -81,8 +81,6 @@ export default defineEventHandler(async (event) => {
   const role = readUserRole(user as RoleCarrier)
   const isAdmin = isAdminRole(role)
   const supabase = serverSupabaseServiceRole(event)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = supabase as any
   const peakWindow = await loadPeakWindowConfig(event)
 
   const nextStart = DateTime.fromISO(body.start_time)
@@ -246,14 +244,14 @@ export default defineEventHandler(async (event) => {
     peakMultiplier = guestPolicy.peakMultiplier
   }
   if (hasActiveMembership && membership?.tier) {
-    const { data: tierWithCap, error: tierWithCapErr } = await db
+    const { data: tierWithCap, error: tierWithCapErr } = await supabase
       .from('membership_tiers')
       .select('peak_multiplier,holds_included,active_hold_cap')
       .eq('id', membership.tier)
       .maybeSingle()
 
     if (tierWithCapErr && /column .* does not exist/i.test(tierWithCapErr.message)) {
-      const { data: tierLegacy, error: tierLegacyErr } = await db
+      const { data: tierLegacy, error: tierLegacyErr } = await supabase
         .from('membership_tiers')
         .select('peak_multiplier,holds_included')
         .eq('id', membership.tier)
@@ -275,7 +273,6 @@ export default defineEventHandler(async (event) => {
   const recalculatedCreditsBurned = computeCredits(startIso, endIso, peakMultiplier, peakWindow)
   const roundedCreditDelta = Math.round((recalculatedCreditsBurned - oldCreditsBurned) * 100) / 100
   const additionalBookingCreditsNeeded = roundedCreditDelta > 0 ? roundedCreditDelta : 0
-  const bookingCreditRefund = roundedCreditDelta < 0 ? Math.abs(roundedCreditDelta) : 0
 
   let consumePaidHold = false
   let holdCreditCharge = 0
@@ -494,20 +491,45 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const { data: updated, error: updateErr } = await supabase
-    .from('bookings')
-    .update({
-      start_time: startIso,
-      end_time: endIso,
-      credits_burned: recalculatedCreditsBurned,
-      notes: body.notes ?? null,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', bookingId)
-    .select('id,start_time,end_time,notes,credits_burned')
-    .single()
-
-  if (updateErr) throw createError({ statusCode: 500, statusMessage: updateErr.message })
+  const creditOperationKey = [
+    'booking_reschedule',
+    bookingId,
+    currentStart.toUTC().toISO(),
+    currentEnd.toUTC().toISO(),
+    startIso,
+    endIso
+  ].join(':')
+  const { data: rawAdjustedRows, error: adjustmentErr } = await supabase.rpc(
+    'reschedule_booking_with_credit_adjustment',
+    {
+      p_user_id: bookingUserId,
+      p_booking_id: bookingId,
+      p_expected_start_time: currentStart.toUTC().toISO(),
+      p_expected_end_time: currentEnd.toUTC().toISO(),
+      p_start_time: startIso,
+      p_end_time: endIso,
+      // Generated RPC args do not encode nullable PostgreSQL parameters.
+      p_notes: body.notes ?? null as unknown as string,
+      p_old_credits: oldCreditsBurned,
+      p_new_credits: recalculatedCreditsBurned,
+      p_operation_key: creditOperationKey
+    }
+  )
+  if (adjustmentErr) {
+    const statusCode = /insufficient credits/i.test(adjustmentErr.message) ? 402 : 500
+    throw createError({ statusCode, statusMessage: adjustmentErr.message })
+  }
+  const adjustedRow = Array.isArray(rawAdjustedRows) ? rawAdjustedRows[0] : rawAdjustedRows
+  if (!adjustedRow) {
+    throw createError({ statusCode: 500, statusMessage: 'Booking reschedule did not return a result' })
+  }
+  const updated = {
+    id: String(adjustedRow.booking_id),
+    start_time: String(adjustedRow.start_time),
+    end_time: String(adjustedRow.end_time),
+    notes: adjustedRow.notes == null ? null : String(adjustedRow.notes),
+    credits_burned: Number(adjustedRow.credits_burned ?? recalculatedCreditsBurned)
+  }
 
   if (hasLinkedHold) {
     const { error: holdDeleteErr } = await supabase
@@ -552,62 +574,22 @@ export default defineEventHandler(async (event) => {
     }
 
     if (holdCreditCharge > 0) {
-      const { data: existingCreditLedger, error: existingCreditLedgerErr } = await supabase
-        .from('credits_ledger')
-        .select('id')
-        .eq('user_id', bookingUserId)
-        .eq('reason', 'booking_hold')
-        .eq('external_ref', bookingId)
-        .maybeSingle()
-      if (existingCreditLedgerErr) throw createError({ statusCode: 500, statusMessage: existingCreditLedgerErr.message })
-      if (!existingCreditLedger) {
-        const { error: creditLedgerErr } = await supabase
-          .from('credits_ledger')
-          .insert({
-            user_id: bookingUserId,
-            membership_id: null,
-            delta: -holdCreditCharge,
-            reason: 'booking_hold',
-            external_ref: bookingId,
-            metadata: { source: 'booking_reschedule_hold', hold_credit_cost: holdCreditCharge }
-          })
-        if (creditLedgerErr) throw createError({ statusCode: 500, statusMessage: creditLedgerErr.message })
-      }
+      const holdOperationKey = `booking_hold_add:${bookingId}:${startIso}:${endIso}`
+      const { error: creditLedgerErr } = await supabase.rpc('consume_credit_lots', {
+        p_user_id: bookingUserId,
+        p_amount: holdCreditCharge,
+        p_reason: 'booking_hold',
+        p_operation_key: holdOperationKey,
+        p_membership_id: null as unknown as string,
+        p_booking_id: bookingId,
+        p_component: 'hold',
+        p_metadata: {
+          source: 'booking_reschedule_hold',
+          hold_credit_cost: holdCreditCharge
+        }
+      })
+      if (creditLedgerErr) throw createError({ statusCode: 500, statusMessage: creditLedgerErr.message })
     }
-  }
-
-  if (additionalBookingCreditsNeeded > 0) {
-    const { error: extraBurnErr } = await supabase
-      .from('credits_ledger')
-      .insert({
-        user_id: bookingUserId,
-        membership_id: null,
-        delta: -additionalBookingCreditsNeeded,
-        reason: 'booking_reschedule_charge',
-        external_ref: bookingId,
-        metadata: {
-          source: 'booking_reschedule',
-          old_credits_burned: oldCreditsBurned,
-          new_credits_burned: recalculatedCreditsBurned
-        }
-      })
-    if (extraBurnErr) throw createError({ statusCode: 500, statusMessage: extraBurnErr.message })
-  } else if (bookingCreditRefund > 0) {
-    const { error: refundErr } = await supabase
-      .from('credits_ledger')
-      .insert({
-        user_id: bookingUserId,
-        membership_id: null,
-        delta: bookingCreditRefund,
-        reason: 'booking_reschedule_refund',
-        external_ref: bookingId,
-        metadata: {
-          source: 'booking_reschedule',
-          old_credits_burned: oldCreditsBurned,
-          new_credits_burned: recalculatedCreditsBurned
-        }
-      })
-    if (refundErr) throw createError({ statusCode: 500, statusMessage: refundErr.message })
   }
 
   await enqueueBookingAccessSync(event, {

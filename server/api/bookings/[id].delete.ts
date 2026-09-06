@@ -132,52 +132,50 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const { data: linkedHolds, error: holdFetchErr } = await serviceSupabase
-    .from('booking_holds')
-    .select('id')
-    .eq('booking_id', bookingId)
-
-  if (holdFetchErr) throw createError({ statusCode: 500, statusMessage: holdFetchErr.message })
-  const holdsRemoved = linkedHolds?.length ?? 0
-
-  const { error: cancelErr } = await serviceSupabase
-    .from('bookings')
-    .update({
-      status: 'canceled',
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', bookingId)
-
-  if (cancelErr) throw createError({ statusCode: 500, statusMessage: cancelErr.message })
-
-  if (holdsRemoved > 0) {
-    const { error: holdDeleteErr } = await serviceSupabase
-      .from('booking_holds')
-      .delete()
-      .eq('booking_id', bookingId)
-    if (holdDeleteErr) throw createError({ statusCode: 500, statusMessage: holdDeleteErr.message })
-  }
-
-  // 6. Refund credits if eligible
-  if (creditsToRefund > 0) {
-    const { error: refundErr } = await serviceSupabase
-      .from('credits_ledger')
-      .insert({
-        user_id: booking.user_id!,
-        delta: creditsToRefund,
-        reason: 'refund',
-        external_ref: bookingId,
-        metadata: {
-          booking_id: bookingId,
+  let holdsRemoved = 0
+  let creditsRefunded = 0
+  if (booking.user_id) {
+    const canceledAt = new Date().toISOString()
+    const { data: rawCancelRows, error: cancelErr } = await serviceSupabase.rpc(
+      'cancel_booking_with_credit_refund',
+      {
+        p_user_id: booking.user_id,
+        p_booking_id: bookingId,
+        p_refund_amount: creditsToRefund,
+        p_operation_key: `booking_cancel:${bookingId}`,
+        p_metadata: {
           original_burn: booking.credits_burned,
-          canceled_at: new Date().toISOString(),
-          hours_before_start: Math.round(hoursUntilStart * 10) / 10
+          canceled_at: canceledAt,
+          hours_before_start: Math.round(hoursUntilStart * 10) / 10,
+          actioned_by: isAdmin ? 'admin' : 'member'
         }
-      })
+      }
+    )
+    if (cancelErr) throw createError({ statusCode: 500, statusMessage: cancelErr.message })
+    const cancelRow = Array.isArray(rawCancelRows) ? rawCancelRows[0] : rawCancelRows
+    if (!cancelRow) throw createError({ statusCode: 500, statusMessage: 'Booking cancellation did not return a result' })
+    holdsRemoved = Number(cancelRow.holds_removed ?? 0)
+    creditsRefunded = Number(cancelRow.credits_refunded ?? 0)
+  } else {
+    const { data: linkedHolds, error: holdFetchErr } = await serviceSupabase
+      .from('booking_holds')
+      .select('id')
+      .eq('booking_id', bookingId)
+    if (holdFetchErr) throw createError({ statusCode: 500, statusMessage: holdFetchErr.message })
+    holdsRemoved = linkedHolds?.length ?? 0
 
-    if (refundErr) {
-      // Booking is already canceled — log but don't fail the request
-      console.error('[cancel] credit refund failed:', refundErr)
+    const { error: cancelErr } = await serviceSupabase
+      .from('bookings')
+      .update({ status: 'canceled', updated_at: new Date().toISOString() })
+      .eq('id', bookingId)
+    if (cancelErr) throw createError({ statusCode: 500, statusMessage: cancelErr.message })
+
+    if (holdsRemoved > 0) {
+      const { error: holdDeleteErr } = await serviceSupabase
+        .from('booking_holds')
+        .delete()
+        .eq('booking_id', bookingId)
+      if (holdDeleteErr) throw createError({ statusCode: 500, statusMessage: holdDeleteErr.message })
     }
   }
 
@@ -206,7 +204,7 @@ export default defineEventHandler(async (event) => {
       bookingStart: booking.start_time,
       bookingEnd: booking.end_time,
       creditsBurned: Number(booking.credits_burned ?? 0),
-      creditsRefunded: Number(creditsToRefund ?? 0),
+      creditsRefunded,
       holdRemoved: holdsRemoved > 0,
       actionedBy: isAdmin ? 'admin' : 'member'
     })
@@ -217,7 +215,7 @@ export default defineEventHandler(async (event) => {
     bookingId,
     status: 'canceled',
     holdsRemoved,
-    creditsRefunded: creditsToRefund,
+    creditsRefunded,
     eligible_for_refund: eligibleForRefund,
     hours_until_start: Math.round(hoursUntilStart * 10) / 10
   }

@@ -245,44 +245,49 @@ export default defineEventHandler(async (event) => {
 
     const { data: creditBurnRows, error: creditBurnErr } = await supabase
       .from('credits_ledger')
-      .select('delta')
+      .select('delta,external_ref,metadata')
       .eq('user_id', booking.user_id)
       .eq('reason', 'booking_hold')
-      .eq('external_ref', body.bookingId)
     if (creditBurnErr) throw createError({ statusCode: 500, statusMessage: creditBurnErr.message })
 
-    const consumedHoldCredits = Math.abs((creditBurnRows ?? []).reduce((sum, row) => {
+    const consumedHoldCredits = Math.abs((creditBurnRows ?? []).filter((row) => {
+      const metadata = row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+        ? row.metadata as Record<string, unknown>
+        : null
+      return row?.external_ref === body.bookingId || metadata?.booking_id === body.bookingId
+    }).reduce((sum, row) => {
       const delta = asNumber(row?.delta)
       return delta < 0 ? sum + delta : sum
     }, 0))
 
     const { data: existingCreditRefundRows, error: creditRefundReadErr } = await supabase
       .from('credits_ledger')
-      .select('delta')
+      .select('delta,external_ref,metadata')
       .eq('user_id', booking.user_id)
       .eq('reason', 'booking_hold_refund')
-      .eq('external_ref', body.bookingId)
     if (creditRefundReadErr) throw createError({ statusCode: 500, statusMessage: creditRefundReadErr.message })
 
-    const creditRefundedAlready = (existingCreditRefundRows ?? []).reduce((sum, row) => {
+    const creditRefundedAlready = (existingCreditRefundRows ?? []).filter((row) => {
+      const metadata = row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+        ? row.metadata as Record<string, unknown>
+        : null
+      return row?.external_ref === body.bookingId || metadata?.booking_id === body.bookingId
+    }).reduce((sum, row) => {
       const delta = asNumber(row?.delta)
       return delta > 0 ? sum + delta : sum
     }, 0)
 
     refundedHoldCredits = Math.max(0, consumedHoldCredits - creditRefundedAlready)
     if (refundedHoldCredits > 0) {
-      const { error: creditRefundInsertErr } = await supabase
-        .from('credits_ledger')
-        .insert({
-          user_id: booking.user_id,
-          membership_id: null,
-          delta: refundedHoldCredits,
-          reason: 'booking_hold_refund',
-          external_ref: body.bookingId,
-          metadata: {
-            source: 'admin_reschedule_remove_hold'
-          }
-        })
+      const { error: creditRefundInsertErr } = await supabase.rpc('refund_booking_credit_lots', {
+        p_user_id: booking.user_id,
+        p_booking_id: body.bookingId,
+        p_amount: refundedHoldCredits,
+        p_reason: 'booking_hold_refund',
+        p_operation_key: `booking_hold_remove:${body.bookingId}:${nextStartIso}:${nextEndIso}`,
+        p_component: 'hold',
+        p_metadata: { source: 'admin_reschedule_remove_hold' }
+      })
       if (creditRefundInsertErr) throw createError({ statusCode: 500, statusMessage: creditRefundInsertErr.message })
     }
   }
