@@ -198,6 +198,24 @@ const { data: comparisonPolicyData } = await useFetch<ImportantBitsPayload>('/ap
   default: () => comparisonPolicyFallback
 })
 const comparisonPolicy = computed(() => comparisonPolicyData.value ?? comparisonPolicyFallback)
+const pricingCadence = ref<'monthly' | 'quarterly' | 'annual'>('monthly')
+const cadenceChoices = ['monthly', 'quarterly', 'annual'] as const
+const cadenceMonths = { monthly: 1, quarterly: 3, annual: 12 }
+
+function hourlyMoney(value: number) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value)
+}
+
+function selectedOption(tier: Tier) {
+  return tier.membership_plan_variations.find(option => option.cadence === pricingCadence.value) ?? null
+}
+
+function effectiveRate(tier: Tier, multiplier: number) {
+  const option = selectedOption(tier)
+  if (!option || option.credits_per_month <= 0) return 'Not available'
+  const rate = option.price_cents / 100 / cadenceMonths[pricingCadence.value] / option.credits_per_month
+  return `${hourlyMoney(rate * multiplier)} / hour · ${formatPeakCredits(multiplier)} cr / hour`
+}
 
 const tiers = computed(() => data.value?.tiers ?? [])
 const visibleTiers = computed(() => {
@@ -247,18 +265,12 @@ onMounted(async () => {
 })
 
 function formatMoney(cents: number, currency: string) {
-  const dollars = (cents / 100).toFixed(0)
-  return currency === 'USD' ? `$${dollars}` : `${dollars} ${currency}`
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100)
 }
 
 function sortedOptions(tier: Tier) {
   const order: Record<Cadence, number> = { daily: 0, weekly: 1, monthly: 2, quarterly: 3, annual: 4 }
   return [...tier.membership_plan_variations].sort((left, right) => order[left.cadence] - order[right.cadence])
-}
-
-function monthlyOption(tier: Tier) {
-  const options = sortedOptions(tier)
-  return options.find(option => option.cadence === 'monthly') ?? options[0] ?? null
 }
 
 function formatPeakCredits(value: number) {
@@ -277,7 +289,7 @@ function tierLead(tier: Tier) {
 }
 
 function membershipCreditsLabel(tier: Tier) {
-  const monthly = monthlyOption(tier)
+  const monthly = selectedOption(tier)
   if (!monthly) return 'Not published'
 
   const highest = sortedOptions(tier)
@@ -285,10 +297,10 @@ function membershipCreditsLabel(tier: Tier) {
     .reduce((best, option) => option.credits_per_month > best.credits_per_month ? option : best, monthly)
 
   if (highest.credits_per_month <= monthly.credits_per_month) {
-    return `Starts at ${monthly.credits_per_month} / month`
+    return `${monthly.credits_per_month} / month`
   }
 
-  return `Starts at ${monthly.credits_per_month} / month · up to ${highest.credits_per_month} with ${highest.cadence} billing`
+  return `${monthly.credits_per_month} / month · up to ${highest.credits_per_month} with ${highest.cadence} billing`
 }
 
 function formatHourCount(value: number) {
@@ -307,8 +319,8 @@ const comparisonColumns = computed<ComparisonColumn[]>(() => {
     access: `${policy.guest.hoursLabel} during confirmed bookings`,
     bookingWindow: `${policy.guest.bookingWindowDays} days ahead`,
     bookingLength: `${formatHourCount(policy.guest.minBookingHours)}-hour minimum · ${policy.guest.bookingIncrementMinutes}-minute increments`,
-    offPeakRate: '1 credit / hour',
-    peakRate: `${formatPeakCredits(policy.guest.peakMultiplier)} credits / hour`,
+    offPeakRate: `${hourlyMoney(policy.guest.ratePerCreditCents / 100)} / hour · 1 cr / hour`,
+    peakRate: `${hourlyMoney(policy.guest.ratePerCreditCents / 100 * policy.guest.peakMultiplier)} / hour · ${formatPeakCredits(policy.guest.peakMultiplier)} cr / hour`,
     standby: `Last-minute same-day · ${policy.standby.discountPercent}% fewer credits · up to ${formatHourCount(policy.standby.nonMemberWindowHours)}h reach`,
     holds: 'Not included',
     creditPolicy: `Purchased credits expire after ${policy.guest.creditExpiryDays} days`,
@@ -317,7 +329,7 @@ const comparisonColumns = computed<ComparisonColumn[]>(() => {
   }
 
   const memberColumns = visibleTiers.value.map((tier): ComparisonColumn => {
-    const option = monthlyOption(tier)
+    const option = selectedOption(tier)
     const holds = tier.holds_included > 0
       ? `${tier.holds_included} included / month`
       : 'Not included'
@@ -326,13 +338,13 @@ const comparisonColumns = computed<ComparisonColumn[]>(() => {
       name: tier.display_name,
       category: 'Membership',
       price: option ? formatMoney(option.price_cents, option.currency) : 'Contact us',
-      priceNote: option ? 'Starting monthly price; quarterly and annual options are available at checkout.' : 'Pricing is not currently published.',
+      priceNote: option ? `Billed ${pricingCadence.value === 'annual' ? 'annually' : pricingCadence.value}. Credits issued monthly.` : 'This billing option is not available.',
       monthlyCredits: membershipCreditsLabel(tier),
       access: '24/7 member access',
       bookingWindow: `${tier.booking_window_days} days ahead`,
       bookingLength: '30-minute increments',
-      offPeakRate: '1 credit / hour',
-      peakRate: `${formatPeakCredits(tier.peak_multiplier)} credits / hour`,
+      offPeakRate: effectiveRate(tier, 1),
+      peakRate: effectiveRate(tier, tier.peak_multiplier),
       standby: `Last-minute same-day · ${policy.standby.discountPercent}% fewer credits · up to ${formatHourCount(policy.standby.memberWindowHours)}h reach`,
       holds,
       creditPolicy: `Rollover up to ${tier.max_bank} credits`,
@@ -360,7 +372,7 @@ const pricingTableTiers = computed<MembershipPricingTier[]>(() => {
       availabilityLabel: sourceTier ? tierSpotsLeftLabel(sourceTier) : 'No membership required',
       availabilityColor: sourceTier ? tierSpotsLeftColor(sourceTier) : 'neutral',
       availabilityClass: sourceTier ? tierSpotsLeftClass(sourceTier) : 'membership-slots-badge--neutral',
-      priceSuffix: sourceTier ? 'per month' : 'per credit',
+      priceSuffix: sourceTier ? `per ${pricingCadence.value === 'annual' ? 'year' : pricingCadence.value === 'quarterly' ? 'quarter' : 'month'}` : 'per credit',
       priceFootnote: column.priceNote
     }
   })
@@ -416,7 +428,7 @@ function comparisonActionLabel(column: ComparisonColumn) {
 function selectComparisonColumn(column: ComparisonColumn) {
   if (!column.tier) return
   if (isTierBlockedForCheckout(column.tier)) {
-    openWaitlist(column.tier)
+    openWaitlist(column.tier, pricingCadence.value)
     return
   }
   onSelectTier(column.tier.id)
@@ -445,7 +457,7 @@ function tierSpotsLeftClass(tier: Tier) {
 }
 
 function checkoutUrl(tierId: string) {
-  const base = `/checkout?tier=${encodeURIComponent(tierId)}&returnTo=${encodeURIComponent(returnTo.value)}`
+  const base = `/checkout?tier=${encodeURIComponent(tierId)}&cadence=${pricingCadence.value}&returnTo=${encodeURIComponent(returnTo.value)}`
   return isPlanSwitchMode.value ? `${base}&mode=switch` : base
 }
 
@@ -536,6 +548,30 @@ async function submitWaitlist() {
           </div>
         </div>
 
+        <div class="hourly-comparison-intro">
+          <div>
+            <p class="editorial-label">
+              WHAT AN HOUR REALLY COSTS
+            </p>
+            <p>Compare the cost of your studio time, not just the subscription.</p>
+          </div>
+          <div
+            class="cadence-switch"
+            role="group"
+            aria-label="Compare billing schedules"
+          >
+            <button
+              v-for="cadence in cadenceChoices"
+              :key="cadence"
+              type="button"
+              :aria-pressed="pricingCadence === cadence"
+              @click="pricingCadence = cadence"
+            >
+              {{ cadence }}
+            </button>
+          </div>
+        </div>
+
         <UPricingTable
           :tiers="pricingTableTiers"
           :sections="pricingTableSections"
@@ -582,6 +618,7 @@ async function submitWaitlist() {
               <UButton
                 size="lg"
                 block
+                :disabled="!selectedOption(tier.source.tier)"
                 :color="isTierBlockedForCheckout(tier.source.tier) ? 'neutral' : 'primary'"
                 :variant="isTierBlockedForCheckout(tier.source.tier) ? 'soft' : 'solid'"
                 @click="selectComparisonColumn(tier.source)"
@@ -614,6 +651,13 @@ async function submitWaitlist() {
             </span>
           </template>
         </UPricingTable>
+        <p class="hourly-comparison-footnote">
+          Membership hourly rates are effective costs assuming you use all included credits, not additional booking fees or top-up prices.
+          Standard prices shown before promotions. Bookings crossing peak hours use the applicable rate for each portion.
+          <template v-if="comparisonPolicy.standby.enabled">
+            Eligible last-minute, same-day standby bookings use {{ comparisonPolicy.standby.discountPercent }}% fewer credits.
+          </template>
+        </p>
       </div>
     </section>
 
@@ -697,3 +741,14 @@ async function submitWaitlist() {
     </UModal>
   </UContainer>
 </template>
+
+<style scoped>
+.hourly-comparison-intro { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.5rem; margin: 2rem 0; padding: 0 clamp(1rem, 3vw, 2rem); }
+.hourly-comparison-intro .editorial-label { color: #ee91ab; }
+.hourly-comparison-intro p + p { margin-top: .5rem; }
+.cadence-switch { display: flex; flex-wrap: wrap; gap: .25rem; border: 1px solid var(--ui-border); padding: .3rem; border-radius: .75rem; }
+.cadence-switch button { padding: .65rem 1rem; border-radius: .5rem; text-transform: capitalize; cursor: pointer; }
+.cadence-switch button[aria-pressed='true'] { background: var(--ui-primary); color: var(--ui-bg); }
+.cadence-switch button:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 3px; }
+.hourly-comparison-footnote { font-size: .85rem; line-height: 1.7; color: #ccc; max-width: 80ch; margin: 1.5rem clamp(1rem, 3vw, 2rem); }
+</style>
