@@ -21,6 +21,19 @@ export function normalizePeerspaceReference(value: unknown) {
   return normalized ? normalized.replace(/^,+/, '').trim().toUpperCase() || null : null
 }
 
+export function canReplacePeerspaceEvent(
+  previous: { active: boolean, status: string, calendar_id: string } | undefined,
+  replacement: { active: boolean, status: string, calendar_id: string },
+  activeMatches: number
+) {
+  return Boolean(previous
+    && (!previous.active || ['canceled', 'cancelled'].includes(previous.status.toLowerCase()))
+    && replacement.active
+    && !['canceled', 'cancelled'].includes(replacement.status.toLowerCase())
+    && previous.calendar_id === replacement.calendar_id
+    && activeMatches === 1)
+}
+
 function extractManageUrl(description: string) {
   const match = description.match(/https:\/\/(?:www\.)?peerspace\.com\/[^\s<>"']+/i)
   return normalizeText(match?.[0])

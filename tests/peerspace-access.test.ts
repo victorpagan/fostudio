@@ -63,3 +63,15 @@ test('matches a manual scheduled-access record by normalized Peerspace confirmat
     [manualLink]
   )
 })
+
+test('replacement requires a retired event, same calendar, and a unique active successor', async () => {
+  const { canReplacePeerspaceEvent } = await import('../server/utils/access/peerspace.ts')
+  const old = { active: false, status: 'cancelled', calendar_id: 'calendar-a' }
+  const next = { active: true, status: 'confirmed', calendar_id: 'calendar-a' }
+  assert.equal(canReplacePeerspaceEvent(old, next, 1), true)
+  assert.equal(canReplacePeerspaceEvent({ ...old, active: true, status: 'confirmed' }, next, 1), false)
+  assert.equal(canReplacePeerspaceEvent(undefined, next, 1), false)
+  assert.equal(canReplacePeerspaceEvent(old, next, 2), false)
+  assert.equal(canReplacePeerspaceEvent(old, { ...next, calendar_id: 'other' }, 1), false)
+  assert.equal(canReplacePeerspaceEvent(old, { ...next, active: false }, 1), false)
+})

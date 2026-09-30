@@ -7,12 +7,14 @@ import { computeAccessWindow } from '~~/server/utils/access/policy'
 import { STUDIO_TZ } from '~~/server/utils/booking/peak'
 import { getServerConfigMap } from '~~/server/utils/config/secret'
 import {
+  canReplacePeerspaceEvent,
   getPeerspaceReferenceMatches,
   parsePeerspaceEventDetails
 } from '~~/server/utils/access/peerspace'
 
 type ExternalCalendarEventRow = {
   id: string
+  calendar_id: string
   title: string | null
   description: string | null
   status: string
@@ -190,7 +192,7 @@ export async function reconcilePeerspaceExternalBookings(event: H3Event, params:
 
   const { data: eventRows, error: eventsError } = await db
     .from('external_calendar_events')
-    .select('id,title,description,status,start_time,end_time,active,raw_payload')
+    .select('id,calendar_id,title,description,status,start_time,end_time,active,raw_payload')
     .lt('start_time', params.windowEndIso)
     .gt('end_time', params.windowStartIso)
     .order('start_time', { ascending: true })
@@ -239,6 +241,14 @@ export async function reconcilePeerspaceExternalBookings(event: H3Event, params:
       .map((row: ExternalAccessRow) => [row.id, row] as const)
   ).values())
   const bookingIds = links.map(row => row.booking_id)
+  const linkedEventIds = links.flatMap(link => link.external_calendar_event_id ? [link.external_calendar_event_id] : [])
+  const { data: linkedEvents, error: linkedEventsError } = linkedEventIds.length
+    ? await db.from('external_calendar_events').select('id,calendar_id,active,status').in('id', linkedEventIds)
+    : { data: [], error: null }
+  if (linkedEventsError) throw new Error(linkedEventsError.message)
+  const previousEvents = new Map<string, ExternalCalendarEventRow>(
+    (linkedEvents ?? []).map((row: ExternalCalendarEventRow) => [row.id, row])
+  )
   const { data: bookingRows, error: bookingsError } = bookingIds.length
     ? await db
         .from('bookings')
@@ -262,18 +272,27 @@ export async function reconcilePeerspaceExternalBookings(event: H3Event, params:
 
   for (const { row, details } of candidates) {
     const directLink = linkByEventId.get(row.id) ?? null
+    const isActive = row.active && !['canceled', 'cancelled'].includes(row.status.toLowerCase())
+    // A superseded tombstone must not reclaim or cancel the replacement's access.
+    if (!isActive && !directLink) continue
     const referenceMatches = getPeerspaceReferenceMatches(links, details.externalReference)
+    const activeMatches = candidates.filter(candidate => candidate.details.externalReference === details.externalReference
+      && candidate.row.active && !['canceled', 'cancelled'].includes(candidate.row.status.toLowerCase())).length
+    const replacementLink = !directLink && referenceMatches.length === 1
+      && canReplacePeerspaceEvent(previousEvents.get(referenceMatches[0]!.external_calendar_event_id ?? ''), row, activeMatches)
+      ? referenceMatches[0]
+      : null
     const adoptableReferenceLinks = referenceMatches.filter(candidate => (
       !candidate.external_calendar_event_id || candidate.external_calendar_event_id === row.id
     ))
     const linksClaimedByOtherEvents = referenceMatches.filter(candidate => (
       candidate.external_calendar_event_id && candidate.external_calendar_event_id !== row.id
     ))
-    let link = directLink ?? (adoptableReferenceLinks.length === 1 ? adoptableReferenceLinks[0] : null)
+    let link = directLink ?? replacementLink ?? (adoptableReferenceLinks.length === 1 ? adoptableReferenceLinks[0] : null)
     let booking = link ? bookingById.get(link.booking_id) ?? null : null
 
     try {
-      if (!directLink && linksClaimedByOtherEvents.length) {
+      if (!directLink && !replacementLink && linksClaimedByOtherEvents.length) {
         throw new Error(`Peerspace confirmation ${details.externalReference} is already linked to another calendar event`)
       }
       if (!directLink && adoptableReferenceLinks.length > 1) {
@@ -318,6 +337,8 @@ export async function reconcilePeerspaceExternalBookings(event: H3Event, params:
             reason: 'peerspace_event_canceled'
           })
         }
+        booking.status = 'canceled'
+        link.delivery_status = 'not_required'
         continue
       }
 
@@ -435,6 +456,12 @@ export async function reconcilePeerspaceExternalBookings(event: H3Event, params:
               : {}),
             metadata: {
               ...asRecord(link.metadata),
+              ...(replacementLink
+                ? {
+                    replacedCalendarEventId: link.external_calendar_event_id,
+                    replacementLinkedAt: new Date().toISOString()
+                  }
+                : {}),
               source: 'google_calendar_sync',
               eventTitle: row.title,
               rawEventId: normalizeText(asRecord(row.raw_payload).id),
@@ -449,6 +476,9 @@ export async function reconcilePeerspaceExternalBookings(event: H3Event, params:
           })
           .eq('id', link.id)
         if (linkUpdateError) throw new Error(linkUpdateError.message)
+        if (link.external_calendar_event_id) linkByEventId.delete(link.external_calendar_event_id)
+        link.external_calendar_event_id = row.id
+        linkByEventId.set(row.id, link)
       }
 
       if (needsBookingUpdate) {

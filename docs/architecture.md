@@ -2,6 +2,10 @@
 
 ## Purpose
 
+## Peerspace Replacement Recovery
+
+Calendar reconciliation can transfer an existing access link to one active replacement with the same confirmation reference and calendar, only after the previously linked event is canceled or inactive. Missing predecessors, multiple matching links, and active-event conflicts remain Blocked. Retired unlinked events cannot reclaim the link. Transfers retain the booking identity, record the previous calendar event in metadata, and reuse normal conflict checks and access scheduling. This recovery patch is pending production deployment.
+
 `fostudio` is the FO Studio booking, membership, admin, analytics, access-control, and content application. It manages studio bookings, member credits/holds, Square payments/subscriptions, Google Calendar and Peerspace-mirror sync, Home Assistant lock/Abode automation, mail campaigns/reminders, analytics outputs, incidents/expenses, waivers, referrals, and admin dashboards.
 
 ## Runtime
