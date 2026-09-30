@@ -7,6 +7,7 @@ import { normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
 import { computeCyclePriceCents } from '~~/server/utils/membership/cadencePricing'
 import { normalizeReferralCode } from '~~/server/utils/referrals'
 import { isMembershipCurrentlyActive } from '~~/server/utils/membership/status'
+import { guardLinkedSubscription } from '~~/server/utils/square/checkoutSubscriptionGuard'
 import { serverSupabaseUser, serverSupabaseServiceRole } from '#supabase/server'
 
 const bodySchema = z.object({
@@ -251,7 +252,7 @@ export default defineEventHandler(async (event) => {
     if (existingCustomer?.user_id) {
       const { data: existingMembership, error: existingMembershipErr } = await supabase
         .from('memberships')
-        .select('id,status,current_period_end,canceled_at')
+        .select('id,status,current_period_end,canceled_at,square_subscription_id,billing_subscription_id')
         .eq('user_id', existingCustomer.user_id)
         .order('updated_at', { ascending: false })
         .limit(1)
@@ -262,6 +263,7 @@ export default defineEventHandler(async (event) => {
       }
 
       const existingStatus = String(existingMembership?.status ?? '').toLowerCase()
+      await guardLinkedSubscription(event, existingMembership?.square_subscription_id || existingMembership?.billing_subscription_id)
       const hasBlockingMembership = existingStatus === 'pending_checkout'
         || existingStatus === 'past_due'
         || isMembershipCurrentlyActive(existingMembership)
@@ -328,6 +330,10 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   if (memErr) throw createError({ statusCode: 500, statusMessage: memErr.message })
+
+  if (!isTestTier && membership?.membership_source !== 'manual') {
+    await guardLinkedSubscription(event, membership?.square_subscription_id || membership?.billing_subscription_id)
+  }
 
   // Block duplicate active Square-managed memberships from starting a second checkout.
   // Allow active non-managed memberships (ex: admin/test tier) to transition into Square.

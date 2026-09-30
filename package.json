@@ -41,6 +41,7 @@
     "@vueuse/nuxt": "^14.2.1",
     "better-sqlite3": "^12.8.0",
     "debug": "^4.4.3",
+    "h3": "1.15.11",
     "luxon": "^3.7.2",
     "nuxt": "^4.4.8",
     "nuxt-og-image": "^6.4.11",

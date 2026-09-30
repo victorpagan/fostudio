@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { extractSquareCards } from '~~/server/utils/square/cards'
+import { assertCardNotUsedBySubscription } from '~~/server/utils/square/subscriptionSafety'
 import { ensureSquareCustomerForUser, getPrimaryCustomerRowForUser } from '~~/server/utils/square/customer'
 
 const bodySchema = z.object({
@@ -53,6 +54,8 @@ export default defineEventHandler(async (event) => {
   const cards = extractSquareCards(listRes)
   const ownsCard = cards.some(card => readString(card, 'id') === body.cardId.trim())
   if (!ownsCard) throw createError({ statusCode: 404, statusMessage: 'Card not found for this account.' })
+
+  await assertCardNotUsedBySubscription(square, squareCustomerId, body.cardId.trim())
 
   try {
     await square.cards.disable({ cardId: body.cardId.trim() } as never)

@@ -1,5 +1,8 @@
+import { DateTime } from 'luxon'
+
 type BillingPeriodInput = {
   cadence: string
+  timeZone?: string
   invoice?: unknown
   subscription?: unknown
   fallbackStart?: string | null
@@ -32,62 +35,26 @@ function readFirst(source: unknown, paths: string[][]) {
   return null
 }
 
-function toIso(value: unknown): string | null {
+function toIso(value: unknown, zone: string): string | null {
   if (typeof value !== 'string' || !value.trim()) return null
-
-  const trimmed = value.trim()
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    return `${trimmed}T00:00:00.000Z`
-  }
-
-  const parsed = new Date(trimmed)
-  if (Number.isNaN(parsed.getTime())) return null
-  return parsed.toISOString()
+  const parsed = DateTime.fromISO(value.trim(), { zone })
+  return parsed.isValid ? parsed.toUTC().toISO() : null
 }
 
-function addMonths(iso: string, months: number) {
-  const value = new Date(iso)
-  value.setUTCMonth(value.getUTCMonth() + months)
-  return value.toISOString()
-}
-
-function subtractMonths(iso: string, months: number) {
-  return addMonths(iso, -months)
-}
-
-function addCadenceInterval(iso: string, cadence: string) {
-  if (cadence === 'daily') {
-    const value = new Date(iso)
-    value.setUTCDate(value.getUTCDate() + 1)
-    return value.toISOString()
-  }
-  if (cadence === 'weekly') {
-    const value = new Date(iso)
-    value.setUTCDate(value.getUTCDate() + 7)
-    return value.toISOString()
-  }
-  if (cadence === 'annual') return addMonths(iso, 12)
-  if (cadence === 'quarterly') return addMonths(iso, 3)
-  return addMonths(iso, 1)
-}
-
-function subtractCadenceInterval(iso: string, cadence: string) {
-  if (cadence === 'daily') {
-    const value = new Date(iso)
-    value.setUTCDate(value.getUTCDate() - 1)
-    return value.toISOString()
-  }
-  if (cadence === 'weekly') {
-    const value = new Date(iso)
-    value.setUTCDate(value.getUTCDate() - 7)
-    return value.toISOString()
-  }
-  if (cadence === 'annual') return subtractMonths(iso, 12)
-  if (cadence === 'quarterly') return subtractMonths(iso, 3)
-  return subtractMonths(iso, 1)
+function shiftCadence(iso: string, cadence: string, zone: string, direction: number) {
+  const value = DateTime.fromISO(iso, { zone })
+  const duration = cadence === 'daily'
+    ? { days: direction }
+    : cadence === 'weekly'
+      ? { weeks: direction }
+      : { months: direction * (cadence === 'annual' ? 12 : cadence === 'quarterly' ? 3 : 1) }
+  return value.plus(duration).toUTC().toISO()
 }
 
 export function resolveMembershipBillingPeriod(input: BillingPeriodInput): BillingPeriod | null {
+  const zone = String(readFirst(input.subscription, [['timezone']]) ?? input.timeZone ?? 'America/Los_Angeles')
+  if (!DateTime.now().setZone(zone).isValid) return null
+
   const rawStart = readFirst(input.invoice, [
     ['subscriptionDetails', 'billingPeriodStartDate'],
     ['subscription_details', 'billing_period_start_date'],
@@ -112,15 +79,15 @@ export function resolveMembershipBillingPeriod(input: BillingPeriodInput): Billi
     ['current_period_end_date']
   ]) ?? input.fallbackEnd
 
-  let currentPeriodStart = toIso(rawStart)
-  let currentPeriodEnd = toIso(rawEnd)
+  let currentPeriodStart = toIso(rawStart, zone)
+  let currentPeriodEnd = toIso(rawEnd, zone)
 
   if (!currentPeriodStart && currentPeriodEnd) {
-    currentPeriodStart = subtractCadenceInterval(currentPeriodEnd, input.cadence)
+    currentPeriodStart = shiftCadence(currentPeriodEnd, input.cadence, zone, -1)
   }
 
   if (currentPeriodStart && !currentPeriodEnd) {
-    currentPeriodEnd = addCadenceInterval(currentPeriodStart, input.cadence)
+    currentPeriodEnd = shiftCadence(currentPeriodStart, input.cadence, zone, 1)
   }
 
   if (!currentPeriodStart || !currentPeriodEnd) return null

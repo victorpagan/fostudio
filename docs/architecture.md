@@ -112,3 +112,11 @@ Schema ownership lives in `fosupabase`; this repo owns Studio operational behavi
 ## Update Triggers
 
 Update this file and `ops/service-catalog.yml` whenever changing runtime boundaries, hosting/deploy flow, env/config ownership, database/RLS behavior, Supabase table contracts, external integrations, background jobs, health/readiness/heartbeat behavior, or cross-repo contracts.
+
+### Studio subscription billing safety
+
+- Selecting a default card verifies ownership, updates the currently linked Square subscription's card and verifies Square's response before saving the local default. Manual entitlements never invoke subscription card updates.
+- Card removal is Blocked while any nonterminal Square subscription for the customer still references it, including subscriptions owned by another Film Objektiv service. Choose its replacement before disabling the old card.
+- Checkout checks the linked provider subscription even when local access has expired. Payment checks all pages of the customer's Square subscriptions against all studio variation mappings (including retired mappings), allowing only the current checkout's existing subscription for retries. Lab subscriptions do not block studio purchases.
+- Date-only billing boundaries use the subscription's timezone (studio fallback America/Los_Angeles), not UTC midnight; cadence arithmetic follows local calendar dates across DST.
+- FO Hooks must deploy its subscription/invoice identity guards before retiring a replaced subscription. Superseded webhooks must not overwrite the current entitlement or award credits against an unrelated invoice. This change does not rewrite historical invoices, payments, or ledger entries.

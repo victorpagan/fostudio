@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
+import { guardCustomerSubscriptions } from '~~/server/utils/square/checkoutSubscriptionGuard'
 import { extractSquareCards } from '~~/server/utils/square/cards'
 import { resolveMembershipBillingPeriod } from '~~/server/utils/square/billingPeriod'
 import { resolveOrderPaymentState } from '~~/server/utils/square/orderPayment'
@@ -677,7 +678,9 @@ export default defineEventHandler(async (event) => {
 
   const nowIso = new Date().toISOString()
   let subscriptionProvisioningIssue: string | null = null
-  let subscription = await findLatestSubscription(square, squareCustomerId, session.plan_variation_id)
+  let subscription = session.square_subscription_id
+    ? (await square.subscriptions.get({ subscriptionId: session.square_subscription_id })).subscription as Record<string, unknown> | null
+    : await findLatestSubscription(square, squareCustomerId, session.plan_variation_id)
   let subscriptionId = readString(subscription, 'id') || session.square_subscription_id?.trim() || null
   let rawSubscriptionStatus = readString(subscription, 'status')
   if (subscriptionId && !rawSubscriptionStatus) {
@@ -685,6 +688,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (!subscriptionId && session.plan_variation_id) {
+    await guardCustomerSubscriptions(event, squareCustomerId)
     const { data: variation, error: variationErr } = await supabase
       .from('membership_plan_variations')
       .select('discount_label,currency,membership_tiers(display_name)')

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
+import { guardCustomerSubscriptions } from '~~/server/utils/square/checkoutSubscriptionGuard'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { ensureSquareCustomerForGuest, ensureSquareCustomerForUser } from '~~/server/utils/square/customer'
 import { buildSubscriptionCreatePhasesFromPlanVariation } from '~~/server/utils/square/subscriptionPhases'
@@ -354,6 +355,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const square = await useSquareClient(event)
+  await guardCustomerSubscriptions(event, squareCustomerId, session.square_subscription_id)
   const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
   const idempotencyBase = `mco:${session.id}`
   const logPrefix = '[checkout/pay]'

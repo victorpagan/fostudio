@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { useSquareClient } from '~~/server/utils/square'
 import { extractSquareCards } from '~~/server/utils/square/cards'
+import { updateSubscriptionCard } from '~~/server/utils/square/subscriptionSafety'
 import { ensureSquareCustomerForUser, getPrimaryCustomerRowForUser } from '~~/server/utils/square/customer'
 
 const bodySchema = z.object({
@@ -45,6 +46,17 @@ export default defineEventHandler(async (event) => {
   if (!selected) throw createError({ statusCode: 404, statusMessage: 'Card not found for this account.' })
   const isEnabled = typeof selected.enabled === 'boolean' ? selected.enabled : true
   if (!isEnabled) throw createError({ statusCode: 409, statusMessage: 'Selected card is not available.' })
+
+  const { data: membership, error: membershipError } = await supabase
+    .from('memberships')
+    .select('membership_source,square_subscription_id,billing_subscription_id')
+    .eq('user_id', user.sub)
+    .maybeSingle()
+  if (membershipError) throw createError({ statusCode: 500, statusMessage: 'Could not check subscription billing. Please retry.' })
+  const subscriptionId = membership?.square_subscription_id || membership?.billing_subscription_id
+  if (subscriptionId && membership?.membership_source !== 'manual') {
+    await updateSubscriptionCard(square, subscriptionId, squareCustomerId, body.cardId.trim())
+  }
 
   const { error } = await supabase
     .from('customers')
