@@ -22,6 +22,14 @@ test('only terminal Square subscriptions allow a replacement checkout', () => {
   for (const status of ['CANCELED', 'DEACTIVATED']) assert.equal(isLiveSquareSubscription(status), false)
 })
 
+test('private introductory variants are guarded like canonical studio plans', async () => {
+  const square = { subscriptions: { search: async () => ({ subscriptions: [
+    { id: 'intro-sub', status: 'ACTIVE', planVariationId: 'private-intro' }
+  ] }) } } as unknown as SquareClient
+  await assert.rejects(assertNoLiveStudioSubscription(square, 'customer', ['canonical', 'private-intro']), /already exists/)
+  await assertNoLiveStudioSubscription(square, 'customer', ['canonical', 'private-intro'], 'intro-sub')
+})
+
 test('duplicate guard paginates and ignores lab subscriptions, but rejects live studio subscriptions', async () => {
   const square = { subscriptions: { search: async ({ cursor }: { cursor?: string }) => cursor
     ? { subscriptions: [{ id: 'studio-sub', status: 'ACTIVE', planVariationId: 'studio' }] }

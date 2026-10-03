@@ -124,3 +124,15 @@ Update this file and `ops/service-catalog.yml` whenever changing runtime boundar
 ### Subscription phase identifiers
 
 Square catalog phase UIDs are never treated as subscription order-template IDs. When a relative-priced phase has no actual order reference, the shared phase resolver leaves it unset so checkout/pay and checkout/claim can create a real DRAFT order through the Orders API. This also preserves the explicit discount/cadence template paths; no catalog edits or customer charges are performed by the resolver.
+# Introductory Subscription Variants
+
+Private Square introductory variations map to the canonical membership plan through
+`membership_square_variation_aliases` (owned by fosupabase). The existing service-only
+`get_membership_by_square_variation` contract resolves both canonical and alias IDs,
+so fohooks continues normal subscription/invoice reconciliation and credit grants.
+Public checkout still sells only canonical variations. The duplicate-subscription
+guard uses `get_studio_square_variation_ids` including retired and alias IDs.
+Apply the database migration before deploying the guard, and verify that both are
+Ready before creating a subscription on a private variation. A one-month discount
+must use an explicitly finite Square phase followed by full-price recurring billing;
+a one-redemption promo alone does not limit the duration of a recurring discount.

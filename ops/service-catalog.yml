@@ -110,6 +110,7 @@ service:
       - Meta Marketing API
       - Nuxt Studio
     integration_contracts:
+      square_introductory_variants: "Private Square variations inherit canonical plan entitlements through service-only membership_square_variation_aliases and get_membership_by_square_variation. The duplicate guard uses get_studio_square_variation_ids, including retired variants. Deploy the fosupabase alias migration first; both contracts must be Ready before billing. Finite introductory phases must transition to full-price recurring phases."
       square_subscription_phase_ids: "Catalog phase UIDs are not order-template IDs. Missing relative-priced order references remain unset so checkout creates a real DRAFT order; explicit cadence/discount handling is preserved."
       square_subscription_safety: "Default cards update the linked Square subscription before local persistence; in-use cards cannot be disabled. Checkout verifies provider state and paginates studio subscriptions before payment. Date-only periods use the subscription timezone. Deploy FO Hooks identity guards before retiring a replaced subscription."
       square_customer_phone: "Phone values are normalized to E.164 or omitted before Square customer search/create/update calls."

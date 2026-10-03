@@ -15,12 +15,12 @@ export async function guardLinkedSubscription(event: H3Event, subscriptionId: st
 
 export async function guardCustomerSubscriptions(event: H3Event, customerId: string, allowedSubscriptionId?: string | null) {
   const supabase = serverSupabaseServiceRole(event)
-  // Include retired variations: their existing subscriptions can still renew.
-  const { data, error } = await supabase.from('membership_plan_variations')
-    .select('provider_plan_variation_id').eq('provider', 'square')
-  if (error || !data?.length) {
+  // Include retired and introductory variants, not just the public catalog.
+  const { data, error } = await supabase.rpc('get_studio_square_variation_ids' as never)
+  const rows = data as unknown as { provider_plan_variation_id: string }[] | null
+  if (error || !rows?.length) {
     throw createError({ statusCode: 503, statusMessage: 'Could not verify existing studio subscriptions. Please retry later.' })
   }
-  const ids = data.map(row => row.provider_plan_variation_id).filter((id): id is string => Boolean(id))
+  const ids = rows.map(row => row.provider_plan_variation_id).filter(Boolean)
   await assertNoLiveStudioSubscription(await useSquareClient(event), customerId, ids, allowedSubscriptionId)
 }
