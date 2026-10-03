@@ -169,14 +169,14 @@ export async function buildSubscriptionCreatePhasesFromPlanVariation(
 
         const ordinal = readNonNegativeInt(phase.ordinal)
         const cadence = readString(phase, 'cadence')
-        const phaseUid = readString(phase, 'uid')
-        const planPhaseUid = readString(phase, 'planPhaseUid', 'plan_phase_uid') ?? phaseUid
         const orderTemplateFromRelated = relatedOrderTemplateIds[ordinal ?? index] ?? relatedOrderTemplateIds[index] ?? null
+        // A catalog phase UID is not an order ID. Leave this unset when absent
+        // so checkout creates a real DRAFT order for relative pricing.
         const orderTemplateId = readString(
           phase,
           'orderTemplateId',
           'order_template_id'
-        ) ?? orderTemplateFromRelated ?? planPhaseUid ?? phaseUid
+        ) ?? orderTemplateFromRelated
         const pricingSource = asRecord(phase.pricing ?? phase.pricing_data)
         const pricingType = readString(pricingSource, 'type')?.toUpperCase()
         if (ordinal === null || !cadence || !pricingSource || !pricingType) return null

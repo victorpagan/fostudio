@@ -120,3 +120,7 @@ Update this file and `ops/service-catalog.yml` whenever changing runtime boundar
 - Checkout checks the linked provider subscription even when local access has expired. Payment checks all pages of the customer's Square subscriptions against all studio variation mappings (including retired mappings), allowing only the current checkout's existing subscription for retries. Lab subscriptions do not block studio purchases.
 - Date-only billing boundaries use the subscription's timezone (studio fallback America/Los_Angeles), not UTC midnight; cadence arithmetic follows local calendar dates across DST.
 - FO Hooks must deploy its subscription/invoice identity guards before retiring a replaced subscription. Superseded webhooks must not overwrite the current entitlement or award credits against an unrelated invoice. This change does not rewrite historical invoices, payments, or ledger entries.
+
+### Subscription phase identifiers
+
+Square catalog phase UIDs are never treated as subscription order-template IDs. When a relative-priced phase has no actual order reference, the shared phase resolver leaves it unset so checkout/pay and checkout/claim can create a real DRAFT order through the Orders API. This also preserves the explicit discount/cadence template paths; no catalog edits or customer charges are performed by the resolver.

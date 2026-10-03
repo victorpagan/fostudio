@@ -110,6 +110,7 @@ service:
       - Meta Marketing API
       - Nuxt Studio
     integration_contracts:
+      square_subscription_phase_ids: "Catalog phase UIDs are not order-template IDs. Missing relative-priced order references remain unset so checkout creates a real DRAFT order; explicit cadence/discount handling is preserved."
       square_subscription_safety: "Default cards update the linked Square subscription before local persistence; in-use cards cannot be disabled. Checkout verifies provider state and paginates studio subscriptions before payment. Date-only periods use the subscription timezone. Deploy FO Hooks identity guards before retiring a replaced subscription."
       square_customer_phone: "Phone values are normalized to E.164 or omitted before Square customer search/create/update calls."
       square_admin_member_charges: "Admin-only member repair/damage charges use Square saved cards through admin_member_charges and stay separate from credit top-ups, memberships, and expenses."
