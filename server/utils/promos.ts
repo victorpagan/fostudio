@@ -1,3 +1,5 @@
+import { firstMonthPromoBase } from './membership/introPricing'
+
 type PromoAppliesTo = 'all' | 'membership' | 'credits' | 'holds'
 
 type PromoRow = {
@@ -53,6 +55,7 @@ export async function resolvePromoPricing(params: {
   tierId?: string | null
   creditOptionKey?: string | null
   basePriceCents: number
+  cadence?: string
   requireSquareDiscount?: boolean
 }) {
   if (!params.promoCode) return null
@@ -101,14 +104,20 @@ export async function resolvePromoPricing(params: {
     throw createError({ statusCode: 400, statusMessage: 'Promo code discount value is invalid.' })
   }
 
+  if (params.context === 'membership' && !['monthly', 'quarterly', 'annual'].includes(params.cadence ?? '')) {
+    throw createError({ statusCode: 400, statusMessage: 'First-month membership promos require monthly, quarterly, or annual billing.' })
+  }
+  const discountBase = params.context === 'membership'
+    ? firstMonthPromoBase(params.basePriceCents, params.cadence ?? '')
+    : params.basePriceCents
   let discountCents = 0
   if (promo.discount_type === 'percent') {
-    discountCents = Math.round(params.basePriceCents * Math.min(100, Math.max(0, discountValue)) / 100)
+    discountCents = Math.round(discountBase * Math.min(100, Math.max(0, discountValue)) / 100)
   } else {
     discountCents = Math.round(discountValue)
   }
 
-  discountCents = Math.max(0, Math.min(params.basePriceCents, discountCents))
+  discountCents = Math.max(0, Math.min(discountBase, discountCents))
   const effectivePriceCents = Math.max(0, params.basePriceCents - discountCents)
   if (effectivePriceCents > 0 && effectivePriceCents < 100) {
     throw createError({ statusCode: 400, statusMessage: 'Promo reduces price below Square minimum ($1.00).' })

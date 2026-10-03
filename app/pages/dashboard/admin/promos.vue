@@ -628,7 +628,7 @@ function formatSquareSyncReason(reason: string | null | undefined) {
         </div>
 
         <p class="mt-2 text-xs text-dimmed">
-          Featuring this promotion replaces any previously featured public code. It appears on the homepage and memberships comparison only while active, in date, redeemable, and synced with Square.
+          Featuring this promotion replaces any previously featured public code. It appears on the homepage and memberships comparison only while active, in date, redeemable, and synced with Square. Membership codes discount the first month only, never renewals. Quarterly and annual purchases discount only one month's share of the initial payment; built-in cadence pricing is unchanged.
         </p>
 
         <AppAlert

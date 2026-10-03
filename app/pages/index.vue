@@ -313,15 +313,15 @@ const featuredPromoEyebrow = computed(() => {
 const featuredPromoDiscount = computed(() => {
   const promo = importantBits.value.featuredPromo
   if (!promo) return null
-  if (promo.discountType === 'percent') return `${promo.discountValue}% off memberships`
-  return `${formatCurrency(promo.discountValue)} off memberships`
+  if (promo.discountType === 'percent') return `${promo.discountValue}% off your first month`
+  return `${formatCurrency(promo.discountValue)} off your first month`
 })
 
 const featuredPromoDetails = computed(() => {
   const promo = importantBits.value.featuredPromo
   if (!promo) return null
   const ending = formatPublicDate(promo.endsAt)
-  return `Use code ${promo.code} on ${formatList(promo.tierNames)} memberships${ending ? ` through ${ending}` : ''}.`
+  return `Use code ${promo.code} for the first month of ${formatList(promo.tierNames)} memberships${ending ? ` through ${ending}` : ''}. Renewals use regular plan pricing.`
 })
 
 function normalizeCta(input: unknown, fallback: LandingCta): LandingCta {

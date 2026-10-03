@@ -416,7 +416,7 @@ const comparisonPromoSummary = computed(() => {
         timeZone: 'America/Los_Angeles'
       }).format(new Date(promo.endsAt))
     : null
-  return `${discount} eligible memberships with code ${promo.code}${endDate ? ` through ${endDate}` : ''}.`
+  return `${discount} the first month of eligible memberships with code ${promo.code}${endDate ? ` through ${endDate}` : ''}. Renewals use regular plan pricing.`
 })
 
 function comparisonActionLabel(column: ComparisonColumn) {

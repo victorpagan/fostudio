@@ -71,6 +71,7 @@ function buildCheckoutSessionMetadata(input: {
     effective_price_cents: input.effectivePriceCents,
     ...(input.promoCode ? { promo_code: input.promoCode } : {}),
     ...(input.promoId ? { promo_id: input.promoId } : {}),
+    ...(input.promoId ? { promo_duration: 'first_month', renewal_price_cents: input.basePriceCents } : {}),
     ...(input.promoDiscountCents > 0 ? { promo_discount_cents: input.promoDiscountCents } : {}),
     ...(input.promoSquareDiscountId ? { promo_square_discount_id: input.promoSquareDiscountId } : {}),
     ...(input.referralCode ? { referral_code: input.referralCode } : {}),
@@ -194,6 +195,7 @@ export default defineEventHandler(async (event) => {
     supabase,
     promoCode,
     context: 'membership',
+    cadence,
     tierId,
     basePriceCents: planPriceCents
   })

@@ -126,6 +126,17 @@ Update this file and `ops/service-catalog.yml` whenever changing runtime boundar
 Square catalog phase UIDs are never treated as subscription order-template IDs. When a relative-priced phase has no actual order reference, the shared phase resolver leaves it unset so checkout/pay and checkout/claim can create a real DRAFT order through the Orders API. This also preserves the explicit discount/cadence template paths; no catalog edits or customer charges are performed by the resolver.
 # Introductory Subscription Variants
 
+New membership promo checkouts use immutable two-phase STATIC Square variants:
+one initial billing cycle whose discount is capped to one month's share, then
+indefinite normal cadence pricing. Quarterly/annual plans remain paid upfront;
+their ordinary cadence discounts remain part of both cycle prices. Checkout
+validation and session creation share this calculation. Payment verifies the
+catalog schedule and persists its alias/customer link before CreateSubscription.
+Legacy uncharged promo sessions must restart; claim recovery cannot create an
+alternate recurring discounted subscription. Promo codes are not accepted on
+existing-member plan changes. Credit/hold purchases remain one-off discounts.
+No existing Square subscriptions are rewritten by this policy change.
+
 Private Square introductory variations map to the canonical membership plan through
 `membership_square_variation_aliases` (owned by fosupabase). The existing service-only
 `get_membership_by_square_variation` contract resolves both canonical and alias IDs,

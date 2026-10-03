@@ -244,13 +244,6 @@ function readPromoId(metadata: Record<string, unknown> | null | undefined) {
   return value || null
 }
 
-function readPromoSquareDiscountId(metadata: Record<string, unknown> | null | undefined) {
-  const raw = metadata?.promo_square_discount_id
-  if (typeof raw !== 'string') return null
-  const value = raw.trim()
-  return value || null
-}
-
 function readPricingDiscountIds(pricing: Record<string, unknown> | null | undefined) {
   const raw = pricing?.discountIds ?? pricing?.discount_ids
   if (!Array.isArray(raw)) return [] as string[]
@@ -688,6 +681,9 @@ export default defineEventHandler(async (event) => {
   }
 
   if (!subscriptionId && session.plan_variation_id) {
+    if (session.metadata?.promo_id || session.metadata?.promo_code || session.metadata?.promo_square_discount_id) {
+      throw createError({ statusCode: 409, statusMessage: 'Promo checkout is awaiting its original Square subscription. Contact support; no replacement subscription was created.' })
+    }
     await guardCustomerSubscriptions(event, squareCustomerId)
     const { data: variation, error: variationErr } = await supabase
       .from('membership_plan_variations')
@@ -700,7 +696,6 @@ export default defineEventHandler(async (event) => {
     const variationRecord = asRecord(variation)
     const parsedCadenceDiscount = parseDiscountLabel(readString(variationRecord, 'discount_label'))
     const expectedCadenceDiscount = parsedCadenceDiscount.type !== 'none' && Number(parsedCadenceDiscount.amount) > 0
-    const promoSquareDiscountId = readPromoSquareDiscountId(session.metadata)
 
     const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID').catch(() => null)
     if (!locationId || typeof locationId !== 'string') {
@@ -743,7 +738,6 @@ export default defineEventHandler(async (event) => {
       }
 
       const requiredPhaseDiscountIds = Array.from(new Set([
-        promoSquareDiscountId,
         cadenceDiscountId
       ].filter((value): value is string => Boolean(value))))
 

@@ -5,7 +5,7 @@ import { useSquareClient } from '~~/server/utils/square'
 import { getServerConfig } from '~~/server/utils/config/secret'
 import { extractSquareCards } from '~~/server/utils/square/cards'
 import { buildSubscriptionCreatePhasesFromPlanVariation } from '~~/server/utils/square/subscriptionPhases'
-import { markPromoRedemption, normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
+import { normalizePromoCode } from '~~/server/utils/promos'
 import { syncMembershipCreditGrantsForUser } from '~~/server/utils/membership/grantsSync'
 import {
   findPendingCancelAction,
@@ -237,32 +237,6 @@ function isSquareInternalApiError(error: unknown) {
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-function applyPromoDiscountToRelativePhases(
-  phases: Array<Record<string, unknown>> | null,
-  promoSquareDiscountId: string | null
-) {
-  if (!Array.isArray(phases) || !promoSquareDiscountId) return phases
-  return phases.map((phase) => {
-    const pricing = asRecord(phase.pricing)
-    const pricingType = readString(pricing, 'type')?.toUpperCase()
-    if (pricingType !== 'RELATIVE') return phase
-    const discountIds = Array.isArray(pricing?.discountIds)
-      ? pricing.discountIds.map(value => String(value)).filter(Boolean)
-      : []
-    if (!discountIds.includes(promoSquareDiscountId)) {
-      discountIds.push(promoSquareDiscountId)
-    }
-    return {
-      ...phase,
-      pricing: {
-        ...(pricing ?? {}),
-        type: 'RELATIVE',
-        discountIds
-      }
-    }
-  })
 }
 
 async function ensureRelativeOrderTemplatesOnPhases(params: {
@@ -508,15 +482,9 @@ export default defineEventHandler(async (event) => {
   const square = await useSquareClient(event)
   const locationId = await getServerConfig(event, 'SQUARE_STUDIO_LOCATION_ID')
   const promoCode = normalizePromoCode(body.promo_code)
-  const promoPricing = promoCode
-    ? await resolvePromoPricing({
-        supabase,
-        promoCode,
-        context: 'membership',
-        tierId: body.tier,
-        basePriceCents: Number(targetVariation.price_cents ?? 0)
-      })
-    : null
+  if (promoCode) {
+    throw createError({ statusCode: 400, statusMessage: 'Membership promo codes apply only to the first month of a new membership, not renewals or plan changes.' })
+  }
   console.info(logPrefix, 'resolved-membership-and-target', {
     membershipId: membership.id,
     currentTier: membership.tier,
@@ -525,21 +493,16 @@ export default defineEventHandler(async (event) => {
     targetPlanVariationId,
     billingProvider,
     hasSubscriptionId: Boolean(subscriptionId),
-    hasCustomerId: Boolean(customerId),
-    promoCode: promoPricing?.code ?? null,
-    promoSquareDiscountId: promoPricing?.squareDiscountId ?? null
+    hasCustomerId: Boolean(customerId)
   })
 
   let targetPhases = await buildSubscriptionCreatePhasesFromPlanVariation(square, targetPlanVariationId) as Array<Record<string, unknown>> | null
-  targetPhases = applyPromoDiscountToRelativePhases(targetPhases, promoPricing?.squareDiscountId ?? null)
   targetPhases = await ensureRelativeOrderTemplatesOnPhases({
     square,
     planVariationId: targetPlanVariationId,
     locationId,
     cadence: body.cadence,
-    phases: targetPhases,
-    promoSquareDiscountId: promoPricing?.squareDiscountId ?? null,
-    forceRegenerateRelativeTemplates: Boolean(promoPricing?.squareDiscountId)
+    phases: targetPhases
   })
   console.info(logPrefix, 'target-phases-resolved', {
     targetPlanVariationId,
@@ -752,8 +715,6 @@ export default defineEventHandler(async (event) => {
     planVariationId: targetPlanVariationId,
     locationId: swapLocationId,
     phases: targetPhases,
-    promoSquareDiscountId: promoPricing?.squareDiscountId ?? null,
-    forceRegenerateRelativeTemplates: Boolean(promoPricing?.squareDiscountId),
     cadence: body.cadence
   })
   console.info(logPrefix, 'target-phases-after-subscription-location-resolution', {
@@ -800,8 +761,6 @@ export default defineEventHandler(async (event) => {
           planVariationId: targetPlanVariationId,
           locationId: swapLocationId,
           phases: targetPhases,
-          promoSquareDiscountId: promoPricing?.squareDiscountId ?? null,
-          forceRegenerateRelativeTemplates: Boolean(promoPricing?.squareDiscountId),
           cadence: body.cadence
         })
       }
@@ -870,10 +829,6 @@ export default defineEventHandler(async (event) => {
     subscriptionId,
     pendingSwap: pendingSwap ?? null
   })
-
-  if (promoPricing?.promoId) {
-    await markPromoRedemption(supabase, promoPricing.promoId, '[membership/change-plan]')
-  }
 
   try {
     const grantSync = await syncMembershipCreditGrantsForUser(event, user.sub, { processLimit: 24 })

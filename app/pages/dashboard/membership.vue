@@ -702,7 +702,6 @@ const paymentAmountCents = ref(0)
 const paymentCurrency = ref('USD')
 const paymentLabel = ref('purchase')
 const purchasePromoCode = ref('')
-const planChangePromoCode = ref('')
 const planChangeLoading = ref(false)
 const membershipCancelLoading = ref(false)
 const membershipUndoCancelLoading = ref(false)
@@ -877,39 +876,18 @@ async function schedulePlanChange(tierId: string, cadence: string): Promise<bool
   if (planChangeLoading.value) return false
   planChangeLoading.value = true
   try {
-    let validatedPromoCode: string | undefined
-    const promoCandidate = planChangePromoCode.value.trim().toUpperCase()
-    if (promoCandidate) {
-      const promoRes = await $fetch<{
-        valid: boolean
-        promo: {
-          code: string
-        }
-      }>('/api/promos/validate', {
-        method: 'POST',
-        body: {
-          context: 'membership',
-          promo_code: promoCandidate,
-          tier: tierId,
-          cadence
-        }
-      })
-      validatedPromoCode = promoRes.promo.code
-      planChangePromoCode.value = promoRes.promo.code
-    }
-
     const res = await $fetch<{
       effectiveDate: string | null
       target: { displayName: string, cadence: string }
       message: string
     }>('/api/membership/change-plan', {
       method: 'POST',
-      body: { tier: tierId, cadence, promo_code: validatedPromoCode }
+      body: { tier: tierId, cadence }
     })
     const effective = formatDateLabel(res.effectiveDate) ?? 'your next billing cycle'
     toast.add({
       title: 'Plan change scheduled',
-      description: `${res.target.displayName} (${formatCadence(res.target.cadence)}) starts ${effective}.${validatedPromoCode ? ` Promo ${validatedPromoCode} applied.` : ''}`,
+      description: `${res.target.displayName} (${formatCadence(res.target.cadence)}) starts ${effective}.`,
       color: 'success'
     })
     showRefreshPageToast()
@@ -1882,29 +1860,9 @@ onUnmounted(() => {
                 <p class="text-xs text-dimmed">
                   No prorated mid-cycle membership changes.
                 </p>
-                <UFormField
-                  label="Discount code (optional)"
-                  description="Applied to the selected scheduled cadence after validation."
-                >
-                  <div class="flex flex-wrap items-center gap-2">
-                    <UInput
-                      v-model="planChangePromoCode"
-                      placeholder="SPRING20"
-                      class="min-w-52"
-                      autocomplete="off"
-                    />
-                    <UButton
-                      v-if="planChangePromoCode.trim()"
-                      size="sm"
-                      color="neutral"
-                      variant="ghost"
-                      icon="i-lucide-x"
-                      @click="planChangePromoCode = ''"
-                    >
-                      Remove
-                    </UButton>
-                  </div>
-                </UFormField>
+                <p class="text-xs text-dimmed">
+                  Promo codes are for the first month of a new membership, not plan changes or renewals.
+                </p>
                 <div class="grid gap-2 sm:grid-cols-3">
                   <div
                     v-for="v in variations"
@@ -2085,14 +2043,6 @@ onUnmounted(() => {
               icon="i-lucide-calendar-sync"
               :title="`Current plan access continues through ${membershipActionEffectiveLabel}`"
               description="No prorated mid-cycle charge is requested. On the effective date, Square switches the billing cadence and future plan benefits and credit grants follow the target option."
-            />
-            <AppAlert
-              v-if="planChangePromoCode.trim()"
-              color="neutral"
-              variant="soft"
-              icon="i-lucide-ticket-percent"
-              :title="`Promo ${planChangePromoCode.trim().toUpperCase()} will be validated`"
-              description="The promo is recorded only if scheduling succeeds and may change the listed next-cycle charge."
             />
           </div>
 

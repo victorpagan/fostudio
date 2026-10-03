@@ -824,7 +824,10 @@ async function submitWaitlist() {
             v-if="!isTestTier"
             class="mt-3"
           >
-            <UFormField label="Promo code (optional)">
+            <UFormField
+              label="Promo code (optional)"
+              description="Membership promos apply to the first month only. For quarterly or annual billing, only one month's share of the first payment is discounted. Renewals use the regular cadence price."
+            >
               <div class="flex flex-wrap items-center gap-2">
                 <UInput
                   v-model="promoCode"

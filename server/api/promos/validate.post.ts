@@ -3,6 +3,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import { getCreditOptionEffectivePriceCents } from '~~/server/utils/credits/topup'
 import type { CreditPricingOptionRow } from '~~/server/utils/credits/topup'
 import { normalizePromoCode, resolvePromoPricing } from '~~/server/utils/promos'
+import { computeCyclePriceCents } from '~~/server/utils/membership/cadencePricing'
 
 const bodySchema = z.object({
   context: z.enum(['membership', 'credits', 'holds']),
@@ -31,7 +32,7 @@ export default defineEventHandler(async (event) => {
     tierId = body.tier
     const { data: variation, error: variationErr } = await db
       .from('membership_plan_variations')
-      .select('price_cents,active')
+      .select('price_cents,active,discount_label')
       .eq('tier_id', body.tier)
       .eq('cadence', body.cadence)
       .eq('provider', 'square')
@@ -41,7 +42,10 @@ export default defineEventHandler(async (event) => {
     if (!variation || !variation.active) {
       throw createError({ statusCode: 400, statusMessage: 'Selected membership option is not available.' })
     }
-    basePriceCents = Number(variation.price_cents ?? 0)
+    const { data: monthly, error: monthlyError } = await db.from('membership_plan_variations')
+      .select('price_cents').eq('tier_id', body.tier).eq('cadence', 'monthly').eq('provider', 'square').maybeSingle()
+    if (monthlyError) throw createError({ statusCode: 500, statusMessage: monthlyError.message })
+    basePriceCents = computeCyclePriceCents({ monthlyPriceCents: Number(monthly?.price_cents ?? variation.price_cents ?? 0), cadence: body.cadence, discountLabel: variation.discount_label })
   } else if (body.context === 'credits') {
     if (!body.optionKey) {
       throw createError({ statusCode: 400, statusMessage: 'Credit option is required for promo validation.' })
@@ -76,6 +80,7 @@ export default defineEventHandler(async (event) => {
     supabase,
     promoCode,
     context: body.context,
+    cadence: body.cadence,
     tierId,
     creditOptionKey: body.optionKey ?? null,
     basePriceCents
