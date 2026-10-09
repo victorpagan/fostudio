@@ -23,8 +23,18 @@ export default defineAppConfig({
       slots: {
         overlay: 'app-dialog-overlay',
         content: 'app-dialog-surface',
+        header: 'shrink-0',
+        body: 'min-h-0 overscroll-contain',
+        footer: 'shrink-0 flex-wrap',
         title: 'app-dialog-title',
         description: 'app-dialog-description'
+      }
+    },
+    slideover: {
+      slots: {
+        header: 'shrink-0',
+        body: 'min-h-0 overflow-y-auto overscroll-contain',
+        footer: 'shrink-0 flex-wrap'
       }
     },
     switch: {

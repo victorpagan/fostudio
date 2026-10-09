@@ -637,7 +637,7 @@ function canExtend(booking: Booking) {
   if (booking.booking_rate_kind === 'standby') return false
   if (isPendingPayment(booking)) return false
   if (!['confirmed', 'requested', 'pending_payment'].includes(String(booking.status ?? '').toLowerCase())) return false
-  return hasPassed(booking) && !hasEnded(booking)
+  return !hasEnded(booking)
 }
 
 function rescheduleLockReason(booking: Booking) {
@@ -655,7 +655,6 @@ function extendLockReason(booking: Booking) {
   if (!['confirmed', 'requested', 'pending_payment'].includes(status)) {
     return `Extension unavailable for booking status "${booking.status}".`
   }
-  if (!hasPassed(booking)) return 'Extension becomes available once your booking has started.'
   if (hasEnded(booking)) return 'Extension unavailable: booking has already ended.'
   return 'Extension unavailable.'
 }

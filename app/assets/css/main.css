@@ -223,6 +223,32 @@ h6 {
   overscroll-behavior: contain;
 }
 
+/* Custom #content cards must share the dialog's viewport limit. Only their
+   body scrolls, keeping close and confirmation actions reachable on mobile. */
+.app-dialog-surface > .app-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: inherit;
+  overflow: hidden;
+}
+
+.app-dialog-surface > .app-card > [data-slot='body'] {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app-dialog-surface > .app-card > [data-slot='header'],
+.app-dialog-surface > .app-card > [data-slot='footer'] {
+  flex-shrink: 0;
+}
+
+.app-dialog-surface > .app-card > [data-slot='footer'] > .flex {
+  flex-wrap: wrap;
+}
+
 .app-switch-row {
   display: flex;
   align-items: flex-start;
