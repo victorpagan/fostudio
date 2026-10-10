@@ -147,3 +147,35 @@ Apply the database migration before deploying the guard, and verify that both ar
 Ready before creating a subscription on a private variation. A one-month discount
 must use an explicitly finite Square phase followed by full-price recurring billing;
 a one-redemption promo alone does not limit the duration of a recurring discount.
+
+### Access retry outcome visibility
+The admin access status API exposes an allowlisted outcome summary, completion time,
+and lock/alarm verification evidence; raw provider responses and retry payloads are
+not returned. A requested job ID supports checking that exact retry rather than
+inferring its success from batch totals. The door-code jobs tab refreshes every
+15 seconds while visible, labels skipped/unverified completion separately from
+verified recovery, and groups alerts by job within the returned recent history.
+No physical lock/alarm commands or queue-state changes occur during status reads.
+
+Alarm recovery also checks the Abode alarm entity, rather than relying on lock
+health alone. Entity reachability does not prove Abode cloud command availability.
+Arm-away retries are bounded to 30 minutes after the original computed arming time,
+including manual retries; overdue work is skipped without physical commands. This
+retains the normal initial retry cycle but prevents later replay. Skipped operations
+do not automatically resolve the original incident. HA restarts, integration reloads,
+and arm-away tests require a safe maintenance window with occupancy confirmed.
+
+### Hybrid Abode monitoring
+`ops/home-assistant/fo_studio_abode_monitor.yaml` is a passive HA package for Abode
+system-log errors and entity availability. It requires system_log.fire_event and
+produces one persistent notification; staff mobile notify targets remain deployment
+configuration. Reachability restoration explicitly leaves command verification pending.
+The independent shared-key `/api/internal/access/monitor` endpoint runs from pg_cron
+via pg_net every five minutes, gated by ACCESS_MONITOR_ENABLED (default false). The
+fosupabase-owned studio_access_monitor_state/events tables are service-role-only;
+atomic per-key observation RPCs deduplicate state transitions. A Fomailer outbox sends
+staff transition alerts with stable idempotency keys and retains delivery failures.
+Admin monitor reads show last actual verified alarm commands, recent transitions,
+notification delivery and 24h/7d alarm incident counts. No health probe sends physical
+commands. Install HA package, apply migration, deploy endpoint, then enable scheduler.
+Monitoring staleness is Degraded. See ops/home-assistant/README.md for safe rollout.

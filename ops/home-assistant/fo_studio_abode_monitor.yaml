@@ -1,0 +1,69 @@
+# Merge as an HA package. Do not replace configuration.yaml.
+# Existing system_log configuration must have fire_event: true.
+# Notification ID is stable: repeated failures update one notification.
+# No alarm commands or integration reloads are performed by this package.
+template:
+  - triggers:
+      - trigger: event
+        event_type: system_log_event
+        id: error
+      - trigger: state
+        entity_id: alarm_control_panel.abode_alarm
+        not_to:
+          - unknown
+          - unavailable
+        id: state
+      - trigger: state
+        entity_id: alarm_control_panel.abode_alarm
+        to:
+          - unknown
+          - unavailable
+        id: unavailable
+      - trigger: homeassistant
+        event: start
+        id: startup
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ trigger.id != 'error' or
+             'abode' in ((trigger.event.data.name | default('')) ~ ' ' ~
+             (trigger.event.data.exception | default('')) ~ ' ' ~
+             (trigger.event.data.message | default([]) | join(' '))) | lower }}
+    sensor:
+      - name: FO Studio Abode Monitor
+        unique_id: fo_studio_abode_monitor
+        state: >-
+          {% if trigger.id == 'error' %}Degraded
+          {% elif states('alarm_control_panel.abode_alarm') in ['unknown', 'unavailable'] %}Down
+          {% else %}Up{% endif %}
+        attributes:
+          checked_at: "{{ now().isoformat() }}"
+          meaning: >-
+            {% if trigger.id == 'error' %}Abode integration error observed. Review HA logs.
+            {% elif trigger.id == 'unavailable' %}Alarm entity unavailable.
+            {% else %}Alarm state observed; command verification is separate.{% endif %}
+          last_error_at: >-
+            {{ now().isoformat() if trigger.id == 'error' else this.attributes.get('last_error_at', '') }}
+          last_observed_state: "{{ states('alarm_control_panel.abode_alarm') }}"
+automation:
+  - id: fo_studio_abode_monitor_notification
+    alias: FO Studio - Abode health notifications
+    mode: queued
+    max: 5
+    triggers:
+      - trigger: state
+        entity_id: sensor.fo_studio_abode_monitor
+        to:
+          - Degraded
+          - Down
+          - Up
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: fo_studio_abode_health
+          title: >-
+            {{ 'Abode connection/state observed; command verification pending' if trigger.to_state.state == 'Up' else 'Abode ' ~ trigger.to_state.state }}
+          message: >-
+            {{ trigger.to_state.attributes.get('meaning', 'Check Abode integration logs.') }}
+            Last integration error: {{ trigger.to_state.attributes.get('last_error_at', 'not recorded') }}.
+            FO Studio reports verified booking-command results separately. Do not test arming while occupied.

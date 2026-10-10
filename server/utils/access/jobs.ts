@@ -13,13 +13,14 @@ import {
 } from '~~/server/utils/access/policy'
 import {
   computeBookingEndJobTimes,
+  isBookingEndArmRetryExpired,
   DEFAULT_ABODE_BOOKING_END_ARM_DELAY_MINUTES,
   DEFAULT_ABODE_BOOKING_END_EARLY_HOUR,
   DEFAULT_ABODE_BOOKING_END_LATE_HOUR,
   DEFAULT_BOOKING_END_REMINDER_MINUTES,
   shouldScheduleAbodeArmAfterBookingEnd
 } from '~~/server/utils/access/bookingEndPolicy'
-import { clearLockUserCode, getLockProviderHealth, isLockSyncEnabled, sendAbodeAutomationEvent, setLockUserCode } from '~~/server/utils/access/providers'
+import { clearLockUserCode, getAlarmProviderHealth, getLockProviderHealth, isLockSyncEnabled, sendAbodeAutomationEvent, setLockUserCode } from '~~/server/utils/access/providers'
 import { getServerConfigMap } from '~~/server/utils/config/secret'
 import { sendBookingEndingSoonReminderMail } from '~~/server/utils/mail/bookingEndingSoonReminder'
 import { sanitizeForJSON } from '~~/server/utils/sanitize'
@@ -790,6 +791,9 @@ async function markJobSucceeded(event: H3Event, job: JobRow, response: Record<st
 
   if (error) throw new Error(error.message)
 
+  // A no-op closes queue work, not the original physical-operation incident.
+  if (response.skipped || (response.abode as Record<string, unknown> | undefined)?.skipped) return
+
   const { error: incidentError } = await supabase
     .from('lock_access_incidents')
     .update({
@@ -833,7 +837,11 @@ async function shouldAutomaticallyRecoverJob(event: H3Event, job: JobRow) {
 
   if (job.job_type === 'arm_after_booking_end') {
     if (!timestampsMatch(job.payload?.expected_end_time, booking.end_time)) return false
+    const armDelayMinutes = boundedInteger(job.payload?.arm_delay_minutes, DEFAULT_ABODE_BOOKING_END_ARM_DELAY_MINUTES, 0, 240)
+    const { armAt } = computeBookingEndJobTimes(booking.end_time, { armDelayMinutes })
     return isAccessEligibleBookingStatus(booking.status)
+      && !isBookingEndArmRetryExpired(armAt)
+      && isOutsideAbodeArmingGap()
   }
 
   return false
@@ -888,7 +896,11 @@ async function recoverDeadAccessJobs(event: H3Event, limit: number) {
   }
 
   let recovered = 0
+  const alarmHealth = candidates.some(({ job }) => job.job_type === 'arm_after_booking_end')
+    ? await getAlarmProviderHealth(event)
+    : null
   for (const { job, recoveryCount } of candidates) {
+    if (job.job_type === 'arm_after_booking_end' && !alarmHealth?.ok) continue
     const payload = {
       ...normalizePayload(job.payload),
       automaticRecovery: {
@@ -1328,6 +1340,10 @@ async function runArmAfterBookingEndJob(event: H3Event, job: JobRow) {
   const { armAt } = computeBookingEndJobTimes(booking.end_time, { armDelayMinutes })
   if (DateTime.now().setZone(STUDIO_TZ) < armAt) {
     throw new Error(`Booking-end arm job ran before its ${armDelayMinutes}-minute delay elapsed`)
+  }
+
+  if (isBookingEndArmRetryExpired(armAt)) {
+    return { ok: true, skipped: 'arm_retry_window_expired', bookingId: booking.id }
   }
 
   const abode = await triggerAbodeArmAwayAfterBookingEnd(event, {

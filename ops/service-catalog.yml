@@ -191,3 +191,15 @@ service:
   contacts:
     owner: unknown
     note: "No explicit owner/contact file found in repo."
+  access_retry_observability:
+    endpoint: "/api/admin/access/status?jobId=<id>"
+    evidence: "Allowlisted lock/alarm read-back, completion timestamp, retry indicator; no raw provider payloads."
+    ui: "Visible jobs tab polls every 15 seconds; failed refresh is marked stale. Skipped work is not labeled verified recovery."
+    alarm_recovery: "Alarm entity health is checked before requeue. Arming expires 30 minutes after its original scheduled time; skipped jobs leave incidents unresolved. Entity reachability is not cloud command verification."
+  abode_monitor:
+    endpoint: "/api/internal/access/monitor"
+    schedule: "pg_cron/pg_net every five minutes, disabled until ACCESS_MONITOR_ENABLED=true"
+    auth: "ACCESS_AUTOMATION_SHARED_KEY from Vault"
+    storage: "studio_access_monitor_state / studio_access_monitor_events (fosupabase, service-role only)"
+    ha_package: "ops/home-assistant/fo_studio_abode_monitor.yaml"
+    safety: "Passive checks only; no arm/disarm/restart. Reachable is not command-verified."

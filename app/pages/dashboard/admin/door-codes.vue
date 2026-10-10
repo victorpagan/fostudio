@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import type { accessJobOutcome } from '~~/server/utils/access/jobOutcome'
 import { formatAdminDateTime } from '~~/app/utils/adminTime'
+import AbodeMonitorPanel from '~~/app/components/dashboard/admin/access/AbodeMonitorPanel.vue'
 import ScheduledCodesPanel from '~~/app/components/dashboard/admin/access/ScheduledCodesPanel.vue'
 
 definePageMeta({ middleware: ['admin'] })
@@ -35,6 +37,7 @@ type DoorCodesPayload = {
 }
 
 type AccessJob = {
+  outcome: ReturnType<typeof accessJobOutcome>
   id: number
   job_type: string
   status: string
@@ -49,6 +52,8 @@ type AccessJob = {
 }
 
 type AccessIncident = {
+  jobId: string
+  resolved_at: string | null
   id: string
   incident_type: string
   severity: string
@@ -62,6 +67,7 @@ type AccessIncident = {
 }
 
 type AccessStatusPayload = {
+  alarmProvider: { ok: boolean, state: string | null, reason?: string | null }
   provider: {
     ok: boolean
     mode: string
@@ -138,10 +144,28 @@ const { data, pending, refresh, error: loadError } = await useAsyncData<DoorCode
   }
 })
 
+const accessRefreshError = ref(false)
+let accessRefreshTimer: ReturnType<typeof setInterval> | undefined
+let refreshingAccess = false
+async function refreshAccessStatus() {
+  if (doorCodesTab.value !== 'jobs' || document.hidden || refreshingAccess || !data.value) return
+  refreshingAccess = true
+  try {
+    const access = await $fetch<AccessStatusPayload>('/api/admin/access/status')
+    if (data.value) data.value = { ...data.value, access }
+    accessRefreshError.value = false
+  } catch {
+    accessRefreshError.value = true
+  } finally {
+    refreshingAccess = false
+  }
+}
 onMounted(async () => {
   dashboardHydrated.value = true
+  accessRefreshTimer = setInterval(refreshAccessStatus, 15000)
   await refresh()
 })
+onBeforeUnmount(() => clearInterval(accessRefreshTimer))
 
 const hasDoorCodeData = computed(() => Boolean(data.value))
 const canMutate = computed(() => dashboardHydrated.value && hasDoorCodeData.value && !pending.value && !loadError.value)
@@ -152,7 +176,16 @@ const recentAccessJobs = computed(() => {
   const rows = [...(accessStatus.value?.deadJobs ?? []), ...(accessStatus.value?.recentJobs ?? [])]
   return Array.from(new Map(rows.map(row => [row.id, row] as const)).values())
 })
-const recentAccessIncidents = computed(() => accessStatus.value?.recentIncidents ?? [])
+const recentAccessIncidents = computed(() => {
+  const groups = new Map<string, AccessIncident & { count: number }>()
+  for (const incident of accessStatus.value?.recentIncidents ?? []) {
+    const key = incident.jobId ? incident.incident_type + ':' + incident.jobId : incident.id
+    const existing = groups.get(key)
+    if (existing) existing.count += 1
+    else groups.set(key, { ...incident, count: 1 })
+  }
+  return [...groups.values()]
+})
 const routeMemberId = computed(() => readQueryValue(route.query.accountId))
 const routePermanentId = computed(() => readQueryValue(route.query.permanentId))
 const memberMobileDetailOpen = computed(() => Boolean(routeMemberId.value))
@@ -508,17 +541,18 @@ async function retryAccessJob() {
       method: 'POST',
       body: { jobId: target.id, reason: retryReason.value.trim() }
     })
-    const response = await $fetch<{
-      result: { enabled?: boolean, processed?: number, succeeded?: number, failed?: number, dead?: number }
-    }>('/api/admin/access/process', {
+    await $fetch('/api/admin/access/process', {
       method: 'POST',
       body: { limit: 100 }
     })
-    const result = response.result
+    const status = await $fetch<AccessStatusPayload & { selectedJob: AccessJob | null }>('/api/admin/access/status', {
+      query: { jobId: target.id }
+    })
+    const job = status.selectedJob
     toast.add({
-      title: 'Access job retry completed',
-      description: `Processed ${Number(result.processed ?? 0)}. Succeeded ${Number(result.succeeded ?? 0)}, failed ${Number(result.failed ?? 0)}.`,
-      color: Number(result.failed ?? 0) > 0 || result.enabled === false ? 'warning' : 'success'
+      title: job ? `Job #${target.id}: ${job.outcome.label}` : 'Retry queued; outcome not confirmed',
+      description: job?.outcome.evidence.join('. ') || job?.outcome.skipReason || job?.last_error || 'Check the job status for the final result.',
+      color: job?.outcome.verified ? 'success' : 'warning'
     })
     retryJobConfirmOpen.value = false
     retryJobTarget.value = null
@@ -957,6 +991,16 @@ function formatDateTime(value: string | null) {
               : (accessStatus?.provider.reason ?? 'The lock provider health check did not pass.')"
           />
 
+          <AbodeMonitorPanel />
+
+          <AppAlert
+            :color="accessStatus?.alarmProvider?.ok ? 'neutral' : 'warning'"
+            :title="accessStatus?.alarmProvider?.ok ? 'Alarm entity reachable' : 'Alarm provider Degraded'"
+            :description="accessStatus?.alarmProvider?.ok
+              ? `Home Assistant reports ${accessStatus.alarmProvider.state}. This is a read-only health check, not proof that Abode will accept an arming command.`
+              : (accessStatus?.alarmProvider?.reason ?? 'Alarm health has not been confirmed.')"
+          />
+
           <div class="grid gap-3 sm:grid-cols-3">
             <UCard class="admin-panel-card border-0">
               <div class="text-xs uppercase tracking-wide text-dimmed">
@@ -991,7 +1035,7 @@ function formatDateTime(value: string | null) {
                   Queue remediation
                 </div>
                 <p class="mt-1 text-xs text-dimmed">
-                  Process currently due jobs, or retry a reviewed dead job below. Retrying resets attempts, records the admin reason, and immediately runs the due queue.
+                  Process currently due jobs, or retry a reviewed dead job below. Retrying resets attempts, records the admin reason, and immediately runs the due queue. Arming jobs expire 30 minutes after their scheduled arming time; expired work cannot arm the alarm.
                 </p>
               </div>
               <UButton
@@ -1013,6 +1057,15 @@ function formatDateTime(value: string | null) {
                 <div class="font-medium">
                   Recent access jobs
                 </div>
+                <p class="mt-1 text-xs text-dimmed">
+                  Refreshes every 15 seconds while this tab is visible. Verified means provider read-back confirmed the operation; skipped is not a physical recovery.
+                </p>
+                <p
+                  v-if="accessRefreshError"
+                  class="mt-1 text-xs text-error"
+                >
+                  Status refresh failed. Results may be stale; use Refresh before relying on them.
+                </p>
               </template>
               <DashboardSectionState
                 v-if="!recentAccessJobs.length"
@@ -1034,15 +1087,34 @@ function formatDateTime(value: string | null) {
                       <div class="flex flex-wrap items-center gap-2">
                         <span class="font-medium">#{{ job.id }} {{ job.job_type }}</span>
                         <UBadge
-                          :color="job.status === 'dead' ? 'error' : job.status === 'pending' ? 'warning' : job.status === 'succeeded' ? 'success' : 'neutral'"
+                          :color="job.status === 'dead' ? 'error' : job.outcome.verified ? 'success' : job.status === 'pending' ? 'warning' : 'neutral'"
                           variant="soft"
                           size="xs"
                         >
-                          {{ job.status }}
+                          {{ job.outcome.label }}
                         </UBadge>
                       </div>
                       <div class="mt-1 text-xs text-dimmed">
-                        Due {{ formatDateTime(job.run_at) }} · attempts {{ job.attempts }}/{{ job.max_attempts }}
+                        Due {{ formatDateTime(job.run_at) }} · attempts this cycle {{ job.attempts }}/{{ job.max_attempts }}
+                      </div>
+                      <div
+                        v-if="job.outcome.completedAt"
+                        class="mt-1 text-xs text-dimmed"
+                      >
+                        Completed {{ formatDateTime(job.outcome.completedAt) }}
+                      </div>
+                      <div
+                        v-for="evidence in job.outcome.evidence"
+                        :key="evidence"
+                        class="mt-1 text-xs text-success"
+                      >
+                        {{ evidence }}
+                      </div>
+                      <div
+                        v-if="job.outcome.skipReason"
+                        class="mt-1 text-xs text-dimmed"
+                      >
+                        Skipped: {{ job.outcome.skipReason }}. No physical action confirmed.
                       </div>
                       <div class="mt-1 break-all text-xs text-dimmed">
                         Booking {{ job.booking_id || 'n/a' }} · user {{ job.user_id || 'n/a' }}
@@ -1107,6 +1179,11 @@ function formatDateTime(value: string | null) {
                   </div>
                   <div class="mt-1 text-xs text-dimmed">
                     {{ incident.incident_type }} · {{ incident.status }} · {{ formatDateTime(incident.created_at) }}
+                    <span v-if="incident.jobId"> · Job #{{ incident.jobId }}</span>
+                    <span> · {{ incident.count }} alerts in recent history</span>
+                    <div v-if="incident.resolved_at">
+                      Resolved {{ formatDateTime(incident.resolved_at) }}
+                    </div>
                   </div>
                   <div
                     v-if="incident.message"

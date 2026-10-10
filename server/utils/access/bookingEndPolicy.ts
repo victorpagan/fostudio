@@ -7,6 +7,11 @@ export const DEFAULT_ABODE_BOOKING_END_ARM_DELAY_MINUTES = 60
 export const DEFAULT_ABODE_BOOKING_END_EARLY_HOUR = 11
 export const DEFAULT_ABODE_BOOKING_END_LATE_HOUR = 21
 
+// Do not replay an old arming command later that night or on a subsequent day.
+export function isBookingEndArmRetryExpired(armAt: DateTime, now = DateTime.now()) {
+  return !armAt.isValid || !now.isValid || now > armAt.plus({ minutes: 30 })
+}
+
 export function shouldScheduleAbodeArmAfterBookingEnd(
   endIso: string,
   options?: {

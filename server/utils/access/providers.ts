@@ -390,6 +390,62 @@ export async function getLockProviderHealth(event: H3Event): Promise<LockProvide
   }
 }
 
+export async function getAlarmProviderHealth(event: H3Event): Promise<LockProviderHealth> {
+  const config = await getServerConfigMap(event, [
+    'ABODE_PROVIDER_MODE',
+    'ABODE_AUTOMATION_TIMEOUT_MS',
+    'HOME_ASSISTANT_BASE_URL',
+    'HOME_ASSISTANT_ABODE_ALARM_ENTITY_ID'
+  ])
+  const providerMode = asLower(config.ABODE_PROVIDER_MODE) ?? 'generic_webhook'
+  if (providerMode !== 'home_assistant') {
+    return { ok: true, mode: providerMode, state: null }
+  }
+
+  const entityId = asString(config.HOME_ASSISTANT_ABODE_ALARM_ENTITY_ID)
+  if (!entityId) {
+    return { ok: false, mode: providerMode, state: null, reason: 'HOME_ASSISTANT_ABODE_ALARM_ENTITY_ID is not configured' }
+  }
+
+  try {
+    const state = await getHomeAssistantEntityState(event, {
+      baseUrl: config.HOME_ASSISTANT_BASE_URL,
+      timeoutMs: asNumber(config.ABODE_AUTOMATION_TIMEOUT_MS, 8000),
+      entityId
+    })
+    const ok = Boolean(state && !['unknown', 'unavailable'].includes(state))
+    return {
+      ok,
+      mode: providerMode,
+      state,
+      reason: ok ? null : `Home Assistant alarm entity is ${state ?? 'missing'}`
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      mode: providerMode,
+      state: null,
+      reason: (error as Error)?.message ?? String(error)
+    }
+  }
+}
+
+export async function getAbodeMonitorHealth(event: H3Event): Promise<LockProviderHealth> {
+  const health = await getAlarmProviderHealth(event)
+  if (!health.ok || health.mode !== 'home_assistant') return health
+  const config = await getServerConfigMap(event, ['HOME_ASSISTANT_BASE_URL', 'HOME_ASSISTANT_ABODE_MONITOR_ENTITY_ID'])
+  try {
+    const state = await getHomeAssistantEntityState(event, {
+      baseUrl: config.HOME_ASSISTANT_BASE_URL,
+      entityId: asString(config.HOME_ASSISTANT_ABODE_MONITOR_ENTITY_ID) ?? 'sensor.fo_studio_abode_monitor',
+      timeoutMs: 4000
+    })
+    return { ...health, ok: state === 'up', reason: state === 'up' ? null : 'HA Abode monitor reports errors or is not installed.' }
+  } catch {
+    return { ...health, ok: false, reason: 'HA Abode monitoring package is unavailable; monitoring is incomplete.' }
+  }
+}
+
 export async function isLockSyncEnabled(event: H3Event) {
   const config = await getServerConfigMap(event, ['LOCK_SYNC_ENABLED'])
   const value = config.LOCK_SYNC_ENABLED

@@ -100,6 +100,16 @@ function buildAccessIncidentBody(input: AccessIncidentInput, incidentId: string 
 }
 
 export async function createAccessIncident(event: H3Event, input: AccessIncidentInput) {
+  // Recovery cycles reuse a job ID. Keep one open incident/alert per job.
+  if (input.metadata?.jobId !== undefined) {
+    const db = serverSupabaseServiceRole(event)
+    const { data: existing, error: lookupError } = await db.from('lock_access_incidents')
+      .select('id,created_at').eq('incident_type', input.incidentType).eq('status', 'open')
+      .contains('metadata', { jobId: input.metadata.jobId as number })
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+    if (lookupError) throw new Error(lookupError.message)
+    if (existing) return { id: existing.id, createdAt: existing.created_at }
+  }
   const supabase = serverSupabaseServiceRole(event) as unknown as SupabaseAccessIncidentClient
   const nowIso = new Date().toISOString()
 

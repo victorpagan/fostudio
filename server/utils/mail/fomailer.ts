@@ -104,7 +104,7 @@ function enrichRequestBody(event: H3Event, body: Record<string, unknown>) {
   }
 }
 
-export async function sendViaFomailer(event: H3Event, input: FomailerRequest | FomailerLegacyBody) {
+export async function sendViaFomailer(event: H3Event, input: FomailerRequest | FomailerLegacyBody, options?: { timeoutMs?: number }) {
   const rawMailHost = await getServerConfig(event, 'MAIL_SERVER_CONFIG').catch(() => null)
   const mailHost = resolveMailHost(rawMailHost)
   if (!mailHost) {
@@ -118,6 +118,7 @@ export async function sendViaFomailer(event: H3Event, input: FomailerRequest | F
 
   const request = resolveRequest(input)
   const data = await $fetch(resolveEndpoint(mailHost, request.endpoint), {
+    timeout: options?.timeoutMs,
     method: 'POST',
     headers: {
       'x-mail-key': mailApiKey,
