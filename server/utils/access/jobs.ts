@@ -753,14 +753,9 @@ async function triggerAbodeDisarmForWindowStart(event: H3Event, params: {
   userId?: string | null
   slotNumber?: number | null
 }) {
-  if (!isOutsideAbodeArmingGap()) {
-    return {
-      skipped: 'inside_daytime_gap'
-    }
-  }
-
   return sendAbodeAutomationEvent(event, {
     eventType: 'unlock_disarm_home',
+    onlyIfAway: !isOutsideAbodeArmingGap(),
     bookingId: params.bookingId ?? null,
     userId: params.userId ?? null,
     lockSlot: params.slotNumber ?? null,

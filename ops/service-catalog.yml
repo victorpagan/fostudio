@@ -203,3 +203,8 @@ service:
     storage: "studio_access_monitor_state / studio_access_monitor_events (fosupabase, service-role only)"
     ha_package: "ops/home-assistant/fo_studio_abode_monitor.yaml"
     safety: "Passive checks only; no arm/disarm/restart. Reachable is not command-verified."
+  daytime_booking_alarm_policy:
+    window: "11am-9pm America/Los_Angeles"
+    behavior: "Validated booking activation/unlock may disarm only observed armed_away; preserve Home and Disarmed. Existing automatic arming restrictions and permanent staff-code behavior are unchanged."
+    failures: "Unknown/unavailable state, command failure, or read-back failure enters existing incident/email handling; activation jobs retry. Away-only requires HA verification."
+    limitation: "HA read then cloud command is not atomic against concurrent employee changes."

@@ -1,4 +1,5 @@
 import type { H3Event } from 'h3'
+import { shouldDisarmAwayOnly } from './alarmDisarmPolicy'
 import { getKey, getServerConfigMap } from '~~/server/utils/config/secret'
 
 export type SlotKind = 'member' | 'guest' | 'permanent'
@@ -609,6 +610,7 @@ export async function clearLockUserCode(event: H3Event, input: ClearLockCodeInpu
 }
 
 export async function sendAbodeAutomationEvent(event: H3Event, payload: {
+  onlyIfAway?: boolean
   eventType: string
   bookingId?: string | null
   userId?: string | null
@@ -648,6 +650,10 @@ export async function sendAbodeAutomationEvent(event: H3Event, payload: {
       }
     }
 
+    if (payload.onlyIfAway && (payload.eventType !== 'unlock_disarm_home' || actionRef.service !== 'alarm_disarm')) {
+      throw new Error('Daytime booking access requires the alarm_disarm action')
+    }
+
     const expectedState = actionRef.service === 'alarm_disarm'
       ? 'disarmed'
       : actionRef.service === 'alarm_arm_home'
@@ -662,6 +668,9 @@ export async function sendAbodeAutomationEvent(event: H3Event, payload: {
         timeoutMs,
         entityId
       })
+      if (payload.onlyIfAway && !shouldDisarmAwayOnly(currentState)) {
+        return { ok: true as const, skipped: 'daytime_alarm_not_away' as const, observedState: currentState }
+      }
       if (!currentState || ['unknown', 'unavailable'].includes(currentState)) {
         throw new Error(`Home Assistant alarm entity is ${currentState ?? 'missing'}`)
       }
@@ -701,6 +710,10 @@ export async function sendAbodeAutomationEvent(event: H3Event, payload: {
       result,
       verification
     }
+  }
+
+  if (payload.onlyIfAway) {
+    throw new Error('Daytime Away-only disarming requires Home Assistant state verification')
   }
 
   const url = typeof config.ABODE_AUTOMATION_WEBHOOK_URL === 'string'

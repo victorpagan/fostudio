@@ -179,3 +179,13 @@ Admin monitor reads show last actual verified alarm commands, recent transitions
 notification delivery and 24h/7d alarm incident counts. No health probe sends physical
 commands. Install HA package, apply migration, deploy endpoint, then enable scheduler.
 Monitoring staleness is Degraded. See ops/home-assistant/README.md for safe rollout.
+
+### Daytime booking disarming
+Valid member/guest booking activation and validated booking unlocks check HA during
+11am-9pm LA time and disarm only when its observed state is `armed_away`.
+Home, Disarmed, and other known modes remain untouched. Unknown/unavailable state,
+failed command, or failed read-back enters the existing incident/email path; scheduled
+jobs retry and alert on first failure. Away-only mode refuses unverified webhook
+providers or non-disarm actions. Overnight behavior, staff-code behavior, and automatic
+arming restrictions remain unchanged. This does not guarantee atomicity against an
+employee changing the panel between the HA state read and the cloud command.

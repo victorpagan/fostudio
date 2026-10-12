@@ -263,12 +263,12 @@ export default defineEventHandler(async (event) => {
     activeBookingId = booking.id
   }
 
-  if (!isOutsideAbodeArmingGap(occurredAt)) {
+  if (!activeBookingId) {
     return {
       ok: true,
       authMode,
       ignored: true,
-      reason: 'inside_daytime_gap',
+      reason: 'no_active_booking',
       bookingId: activeBookingId
     }
   }
@@ -276,6 +276,7 @@ export default defineEventHandler(async (event) => {
   try {
     const abode = await sendAbodeAutomationEvent(event, {
       eventType: 'unlock_disarm_home',
+      onlyIfAway: !isOutsideAbodeArmingGap(),
       bookingId: activeBookingId,
       userId: assignment.user_id ?? null,
       lockSlot: body.slotNumber,
