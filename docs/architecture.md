@@ -179,6 +179,11 @@ Admin monitor reads show last actual verified alarm commands, recent transitions
 notification delivery and 24h/7d alarm incident counts. No health probe sends physical
 commands. Install HA package, apply migration, deploy endpoint, then enable scheduler.
 Monitoring staleness is Degraded. See ops/home-assistant/README.md for safe rollout.
+Production HA package and external scheduler were activated on 2026-10-12 after
+configuration validation and an operator-approved restart. The sensor reports Up;
+the external connection observation reports Ready. Staff alert idempotency uses a
+stable UUIDv5 per monitoring event to satisfy Fomailer's UUID-only contract; skipped
+mail responses are not recorded as delivery. No probe verifies physical commands.
 
 ### Daytime booking disarming
 Valid member/guest booking activation and validated booking unlocks check HA during

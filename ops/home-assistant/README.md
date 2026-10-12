@@ -29,3 +29,16 @@ its own outage.
 
 Rollback: set ACCESS_MONITOR_ENABLED=false. Remove only the new HA package at the next
 safe reload. Retain monitoring tables/history; existing access scheduling is independent.
+
+## Production activation (2026-10-12)
+
+HA configuration validated without errors/warnings and restarted with operator approval.
+The package is installed at `/config/fo_studio_abode_monitor.yaml`, loaded through
+`homeassistant.packages.fo_studio_abode_monitor: !include fo_studio_abode_monitor.yaml`.
+`system_log.fire_event` is enabled. Sensor reports `Up`; notification automation is on.
+`ACCESS_MONITOR_ENABLED=true` enables the existing five-minute external scheduler.
+No alarm commands were issued during activation; the panel remained `armed_home`.
+
+Alert retries use a stable UUIDv5 derived from the monitoring event ID, matching
+Fomailer's UUID-only idempotency contract. Skipped responses stay pending rather
+than being labeled delivered. Verify `notified_at` and Fomailer delivery evidence.

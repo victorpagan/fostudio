@@ -202,6 +202,8 @@ service:
     auth: "ACCESS_AUTOMATION_SHARED_KEY from Vault"
     storage: "studio_access_monitor_state / studio_access_monitor_events (fosupabase, service-role only)"
     ha_package: "ops/home-assistant/fo_studio_abode_monitor.yaml"
+    activation: "2026-10-12: HA package installed and validated, operator-approved restart completed, ACCESS_MONITOR_ENABLED=true. Sensor Up; external connection Ready."
+    mail_delivery: "Stable per-event UUIDv5 idempotency keys required by Fomailer. Only confirmed staff sends set notified_at; skipped/failed deliveries remain pending."
     safety: "Passive checks only; no arm/disarm/restart. Reachable is not command-verified."
   daytime_booking_alarm_policy:
     window: "11am-9pm America/Los_Angeles"

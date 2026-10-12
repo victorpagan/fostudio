@@ -2,6 +2,7 @@ import type { H3Event } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { getAbodeMonitorHealth } from './providers'
 import { accessJobOutcome } from './jobOutcome'
+import { monitorMailOperationKey, monitorMailWasSent } from './monitorMail'
 import { sendViaFomailer } from '../mail/fomailer'
 import { normalizeMailRecipient } from '../mail/adminPayload'
 
@@ -69,9 +70,9 @@ export async function monitorAccess(event: H3Event) {
       const delivery = await sendViaFomailer(event, {
         body: { type: 'mailing.memberBroadcast',
           payload: { to, eventType: 'mailing.memberBroadcast', skipRegistryCopyOverrides: true, subject: `Studio access: ${title}`, body, bodyHtml: body, bodyHTML: body } },
-        headers: { 'x-idempotency-key': `studio-access-monitor:${alert.id}` }
+        headers: { 'x-idempotency-key': monitorMailOperationKey(alert.id) }
       }, { timeoutMs: 6000 })
-      if (!delivery.ok) throw new Error('Fomailer delivery not confirmed')
+      if (!delivery.ok || !monitorMailWasSent(delivery.data)) throw new Error('Fomailer delivery not confirmed')
       const { error: updateError } = await db.from('studio_access_monitor_events').update({ notified_at: new Date().toISOString(), notify_error: null }).eq('id', alert.id)
       if (updateError) throw new Error(updateError.message)
       notified++
